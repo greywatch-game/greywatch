@@ -180,6 +180,12 @@
  * them — committed in `post-expected.txt`, a section a sub-step, keyed on the
  * draws' STAGES), and exits 1 on any difference left. A lost device ends it
  * (`harness.mjs`'s header, exit 4), and so does a hard limit (exit 3).
+ *
+ * **The scene's clears and image processing are asked of the frame adapter since
+ * X6.1a** (`harness.mjs`' `babylon()` and `clearColor()`): with no scene
+ * `autoClear`, `autoClearDepthAndStencil` and `imageProcessing` are `null`
+ * (RETIRED: state nothing has drawn with since X5.2d) and the clear colour is
+ * the frame host's.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, freeze, FREEZE_SET, hardLimit, installRound, launchClient, placeVantage, root, settle, startDevServer, thaw, waitUntilDrawn } from "./harness.mjs";
@@ -1081,11 +1087,15 @@ function postAdapter() {
     /** The CPU facts a pass's draw does not show: Babylon's own fields. */
     chain() {
       const cam = g.cameraSys.camera;
-      const scene = g.scene;
+      // Babylon's scene through the frame adapter (`harness.mjs`, X6.1a): with
+      // none, its clears and its image processing — state nothing draws with
+      // since X5.2d — are RETIRED (null), and the clear colour is the frame's.
+      const scene = window.__refFrame().babylon()?.scene ?? null;
       // The canvas's size and scaling level: the game's surface since X5.4h
       // (`core/CanvasSurface.ts`), Babylon's engine before.
       const e = g.surface ?? g.engine;
-      const ipc = scene.imageProcessingConfiguration;
+      const ipc = scene ? scene.imageProcessingConfiguration : null;
+      const clear = window.__refFrame().clearColor();
       const names = new Map(babylon.stages().filter((s) => s.pp).map((s) => [s.pp, s.name]));
       const pass = (pp) => ({
         stage: names.get(pp) ?? null,
@@ -1153,9 +1163,9 @@ function postAdapter() {
         renderSizeTrue: [e.getRenderWidth(true), e.getRenderHeight(true)],
         canvasSize: [window.__refFrame().canvas()?.width ?? null, window.__refFrame().canvas()?.height ?? null],
         devicePixelRatio: window.devicePixelRatio,
-        autoClear: scene.autoClear,
-        autoClearDepthAndStencil: scene.autoClearDepthAndStencil,
-        clearColor: [scene.clearColor.r, scene.clearColor.g, scene.clearColor.b, scene.clearColor.a],
+        autoClear: scene ? scene.autoClear : null,
+        autoClearDepthAndStencil: scene ? scene.autoClearDepthAndStencil : null,
+        clearColor: [clear.r, clear.g, clear.b, clear.a],
         imageProcessing: ipc
           ? {
               isEnabled: ipc.isEnabled,

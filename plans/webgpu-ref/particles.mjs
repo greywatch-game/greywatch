@@ -87,6 +87,12 @@
  * fields nobody could count, and then every logged number by `Object.is`. It
  * names the first difference and exits 1; a log with an `editor` record (an
  * older `--editor` run's) has it ignored, said on the console.
+ *
+ * **The scene is asked of the frame adapter since X6.1a** (`harness.mjs`): its
+ * fields and switch (none with no scene), its group-0 visit (`babylon()`, RETIRED
+ * with no scene: the path reads "fallback"), and the frame's constant delta
+ * (`constantDelta`, which throws with no scene until X6.1h gives the frame its
+ * own).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
@@ -137,11 +143,16 @@ await page.evaluate(() => {
 // The adapter, the counters and the per-frame reader, once a boot.
 await page.evaluate(() => {
   const g = window.__celshock;
-  /** Babylon's fields: none since X4.7d; the rotor wash at a parent before it, and the ash too before X4.7c. */
+  /**
+   * Babylon's fields: none since X4.7d; the rotor wash at a parent before it,
+   * and the ash too before X4.7c. The scene's, through the frame adapter
+   * (`harness.mjs`, X6.1a): none, and no switch, with no scene.
+   */
+  const scene = window.__refFrame().babylon()?.scene ?? null;
   const babylon = {
-    all: () => g.scene.particleSystems,
+    all: () => (scene ? scene.particleSystems : []),
     enable: (on) => {
-      g.scene.particlesEnabled = on;
+      if (scene) scene.particlesEnabled = on;
     },
     ready: (f) => f.isReady(),
     reset: (f) => f.reset(),
@@ -311,18 +322,21 @@ await page.evaluate(() => {
   // The passes between the draw phase's start and the frame's end, read after
   // the frame; and WHICH PATH the seam took (`babylonSeam.onMainPass`): group 0
   // of the main pass visited, or not (X4.5a's fallback), by the seam's own test.
-  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
-  const e = g.scene.getEngine();
+  // Babylon's scene and engine, through the frame adapter (`harness.mjs`,
+  // X6.1a): `Game.engine` at a parent, a `NullEngine` since X5.4h — and with no
+  // scene the group-0 visit is RETIRED (no visit: the path reads "fallback").
+  const B = window.__refFrame().babylon();
+  const e = B?.engine ?? null;
   let target;
   let visited = false;
   // The draw phase through the frame adapter (`harness.mjs`, X5.4f: the
   // scene's observable on Babylon's arm, our frame's on ours).
   window.__refFrame().onDrawPhase(() => {
     window.__phaseStart = window.__passes.length;
-    target = e._currentRenderTarget;
+    target = e?._currentRenderTarget;
     visited = false;
   }, null);
-  g.scene.onBeforeRenderingGroupObservable.add((info) => {
+  B?.scene.onBeforeRenderingGroupObservable.add((info) => {
     if (info.renderingGroupId === 0 && e._currentRenderTarget === target) visited = true;
   });
   // The frame's draw through the frame adapter (`harness.mjs`, X5.4a).
@@ -380,8 +394,9 @@ for (const id of maps) {
     const order = F.all().map(F.name);
     const draws = window.__draws.slice(drawsFrom);
     const frame = () => window.__refFrame().drawn();
-    // The constant 16 ms until the window opens; the schedule through it (the header).
-    g.scene.useConstantAnimationDeltaTime = true;
+    // The constant 16 ms until the window opens; the schedule through it (the
+    // header) — the frame's constant delta through the frame adapter (X6.1a).
+    window.__refFrame().constantDelta(true);
     const cam = g.cameraSys.camera;
     const V = cam.position.constructor;
     const hull = g.vehicles.hulls.find((h) => h.flies) ?? null;
@@ -434,7 +449,7 @@ for (const id of maps) {
     // the frame adapter (`harness.mjs`, X5.4a: the engine's `getDeltaTime`;
     // our loop's clock's since X5.4g).
     window.__refFrame().scheduleDelta((k) => (k % 60 === 29 ? 0.25 : k % 60 === 59 ? 1500 : 16.7));
-    g.scene.useConstantAnimationDeltaTime = false;
+    window.__refFrame().constantDelta(false);
     const log = [];
     for (const p of places) {
       pin(p);
@@ -446,7 +461,7 @@ for (const id of maps) {
     F.enable(true);
     g.followEye = window.__fe;
     window.__refFrame().scheduleDelta(null);
-    g.scene.useConstantAnimationDeltaTime = false;
+    window.__refFrame().constantDelta(false);
     if (keep) {
       hull.pos.copyFrom(keep.pos);
       hull.flight.rotor = keep.rotor;

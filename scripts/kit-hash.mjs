@@ -3,20 +3,50 @@
  * `--models`, every other model in the game.
  *
  * Owns: nothing but a report and, when asked, one JSON file. Every placement
- * of every builder in every map's layout is built under a NullEngine, and its
- * PARTS (`world/parts.ts`) hashed twice: the DRAWING (every part's vertices,
- * indices, material, name and transform, the panes, the lights and the
- * sounds) and the COLLIDERS (the `BoxSpec` list, in the order it was emitted).
- * Each kind is also built once bare — default params, no `BuildCtx` — as a
- * preview would build it.
+ * of every builder in every map's layout is built, and its PARTS
+ * (`world/parts.ts`) hashed twice: the DRAWING (every part's record — below —
+ * then the structure's lights, sounds and panes) and the COLLIDERS (the
+ * `BoxSpec` list, in the order it was emitted). Each kind is also built once
+ * bare — default params, no `BuildCtx` — as a preview would build it.
  *
- * **A part is hashed as the Babylon mesh it used to be made into**
- * (`hashPart`), so the fingerprint is the one a part MESH gives, and a
- * baseline taken through meshes still compares:
- * the transform as a mesh holds it (a quaternion zeroes the Euler angles, as
- * Babylon's setter does), each attribute cut to the vertex count and hashed as
- * float32 bytes, the indices as Uint32. A baseline taken through the meshes
- * therefore still compares.
+ * **It runs with NO BABYLON** (`BABYLON_EXIT.md` X6.1a): no `NullEngine`, no
+ * `Scene`, no `StandardMaterial`, no `Mesh`, `TransformNode` or
+ * `BoundingInfo` is made, and the package is not loaded by this script (the
+ * game's modules it loads still import it until X6.1's later sub-steps take
+ * it out of them). A builder's `Scene` is a plain stand-in (`StubScene`: all
+ * a builder does with one is key its pictures' cache, `world/textures.ts`),
+ * and a material is a plain named object (`StubMaterial`).
+ *
+ * **What a record IS — what the drawing is, not the Babylon mesh it used to
+ * become** (X6.1a restated it; a fingerprint taken before X6.1a is of the
+ * other format and compares with nothing here). A part's record is its name,
+ * its material's name, its metadata, its transform as the part holds it
+ * (position, Euler rotation, scaling and quaternion, every one as set), and
+ * then every attribute it carries (`positions`, `normals`, `uvs`, `uvs2`,
+ * `colors`) and its indices, each WHOLE, with its array's TYPE (a `number[]`
+ * holds doubles and a `Float32Array` does not) and its numbers as exact
+ * doubles. A structure's record adds whether the part is `freeform`; its
+ * lights, sounds and panes and its colliders are its plain data. **A value is
+ * spelled by KIND and value, whichever library made it** — a vector, a
+ * quaternion, a colour or a matrix as `[class, ...numbers]`, read off its
+ * fields, so a Babylon `Vector3` and a `src/math` one of the same numbers are
+ * the same spelling and moving a builder onto `src/math/` (X6.1e) cannot
+ * change a fingerprint by spelling alone; a number JSON cannot spell
+ * (`Infinity`, `NaN`, `-0`) is spelled as a string; a material is
+ * `material:<name>`, the scene `scene`, a picture `Picture:<label>`.
+ *
+ * **What the old record took from Babylon's defaults, field by field**: the
+ * mesh's quaternion zeroing its Euler angles, the attributes cut to the
+ * vertex count and hashed as float32, and (in `--models`) the mesh's class,
+ * picking, collisions, rendering group, always-active flag, side orientation,
+ * visibility, alpha index, layer mask, infinite distance, billboard mode,
+ * pivot, sub-meshes and each vertex buffer's stride, offset, type and
+ * normalised flag — every one a constant of the stand-in or a default
+ * Babylon supplied, and DROPPED; the bounding box Babylon computed, RESTATED
+ * off ours (`world/worldGeometry.ts`' `boundsOf`, which `bounds-check.mjs`
+ * holds to Babylon's bit for bit); and the stand-in `camera` node and the
+ * glasses' and the card's stand-in materials, dropped for what the segment
+ * itself says (its `role`, and a glass's look, `ViewSegment.glass`).
  *
  * **What it is for is proving a change did or did not move something.** Take
  * a fingerprint, make the change, take another against it:
@@ -53,8 +83,9 @@
  * instead of over its placements. Its two halves are the scatter's own: the
  * DRAWING is the prop as `MapBuilder` hands it to the merge (`flattenParts`)
  * — the root and every child, in that order, each child's parent composed
- * into its own transform and the link cut (`flattenParts`), metadata included,
- * because `noInk`/`noGlow`/`noShadowCaster` are part of the merge key — and the
+ * into its own transform and the link cut (`flattenParts`), each a part's
+ * record (its metadata in it, because `noInk`/`noGlow`/`noShadowCaster` are
+ * part of the merge key) — and the
  * COLLIDERS are what decides where a blocking field's boxes go: the kind's
  * `PROP_BODIES` row, and how many numbers the builder drew from the REGION's
  * stream. That count is the one a rework must not move ("keep 48 rng draws"):
@@ -81,91 +112,57 @@
  *   pivots, which are MEASURED off the magazine's bounds;
  * - the `PlayerView` (`player`): its flash petals and casing pool, over a
  *   `ViewModel` of its own, as the `Player` it is handed to leaves it.
- *   `Player` itself draws nothing and owns no mesh;
- *
- *   **Since `BABYLON_EXIT.md` X4.3b the viewmodel's nodes are JOINTS** (its
- *   `ViewTree`, `src/entities/viewTree.ts`) and its meshes have no parent. So
- *   these three kinds hash the tree IN THE BYTES THE NODES GAVE: each joint
- *   that stands where a `TransformNode` was made is a node record (class,
- *   name, parent, own switch, channels, quaternion, pivot), after the scene's
- *   own nodes and in the order the joints were made, which is the order the
- *   nodes were; each mesh's parent is the joint it hangs from, named as the
- *   node or mesh it stands for; and a joint, or a `src/math` value, in the
- *   builder's data is spelled as the node or the Babylon value it replaced.
- *   **Since X4.3c every OPAQUE surface of the viewmodel is a SEGMENT our
- *   renderer draws** (`ViewSegment`, `viewTree.ts`) and Babylon is made no
- *   mesh of it, so a segment is hashed IN THE BYTES ITS MESH GAVE: made a
- *   throwaway mesh by the game's own `drawnMesh` — the call that made it
- *   before, on the same arrays — dressed with the flags the mesh carried (its
- *   own switch and `isVisible`, never pickable, and in a tree hung from a
- *   camera the viewmodel's group and always-active), recorded and disposed,
- *   at its place among the scene's meshes (a tree's surfaces in the order
- *   they were made, which was the scene's order, then every other mesh); a
- *   segment in the builder's data, or as a parent, is spelled `Mesh:<name>`.
- *   **Since X4.3d the optics' glasses and the kit card are segments too**
- *   (`ViewSegment.role`), and no viewmodel surface is a Babylon mesh: a glass
- *   is dressed as the opaque ones are, under a stand-in material of the name
- *   its own `StandardMaterial` had (the segment's own name), since its look is
- *   plain data on the segment (`ViewSegment.glass`, the owner's decision of
- *   2026-11-01); and the CARD
- *   as the mesh it was — rendering group 0 (it was never in the viewmodel's),
- *   always-active, `alphaIndex` infinite, under a stand-in material of the
- *   name its `StandardMaterial` had (`kitBackdrop`), which a record spells by
- *   class and name alone.
- *   A row that moves here moved in the build, not in the bookkeeping;
+ *   `Player` itself draws nothing;
  * - the four pooled bodies that fly or lie (`grenade`, `molotov`, `rocket`
- *   with its flame, `mine`, the laid one). **Since `BABYLON_EXIT.md` X4.4b
- *   each is a KIT our renderer draws** (`entities/pieces.ts`) and Babylon is
- *   made no mesh of any, so each is hashed IN THE BYTES ITS MESHES GAVE: the
- *   builder's parts (`grenadeParts`, `molotovPieceParts`, `rocketParts`,
- *   `minePieceParts`) made throwaway meshes by the game's own `drawnMesh`, in
- *   the order the builder made them, each hung from the part it names and
- *   dressed with the flags its mesh carried (never pickable; hidden or
- *   switched off as the builder left it), and the builder's data spelled as
- *   it was (`{ mesh, pip }`, `{ mesh, wick }`, `{ mesh, flame }`,
- *   `{ mesh, lamp }`). The `player`'s casing pool the same since X4.4b: each
- *   case's part (`casingParts`) made a mesh, hidden, after the tree;
+ *   with its flame, `mine`, the laid one), each the KIT our renderer draws
+ *   (`entities/pieces.ts`): the builder's parts (`grenadeParts`,
+ *   `molotovPieceParts`, `rocketParts`, `minePieceParts`) in the order the
+ *   builder made them, each with the part it hangs from and the switches the
+ *   pool leaves on it (shown or hidden, the root on or off), and the
+ *   builder's data spelled as the pool holds it (`{ mesh, pip }`,
+ *   `{ mesh, wick }`, `{ mesh, flame }`, `{ mesh, lamp }`). The `player`'s
+ *   casing pool the same: each case's part (`casingParts`), hidden, after the
+ *   tree;
  * - every vehicle kind (`vehicle:<kind>`: the `CONFIG.vehicles` blocks
  *   `kindOf` pairs with a spec, each built by `vehicleModels.modelOf`), for
- *   both sides, in its livery and wrecked;
+ *   both sides, in its livery and wrecked: its rig and its kit, as data;
  * - a soldier of each side (`soldier`), as `Bot` and `NetSoldier` build one;
  * - `CaptureZoneSystem`'s rings, poles and flags (`zone`), over every map's
  *   control points at their own positions and radii. They stand on
  *   `zoneWorld`, a striped stand-in that gives every ring open ground, made
  *   ground, a wall and a road to cross, and puts some poles under a roof. It
- *   is not the map. Since `BABYLON_EXIT.md` X4.6b our renderer draws them and
- *   Babylon is made no mesh, so what is hashed is what `ZoneDraw` is handed,
- *   each surface as the mesh it was (`zoneDrawStandIn`), which leaves the hash
- *   where it stood. **So this hash cannot fail on `ZoneDraw` itself**: the
- *   rebasing, the upload and the rewrite are outside it, and the bank's byte
- *   comparison holds them (`plans/webgpu-ref/exact.mjs`, `docs/rendering.md`).
- *   The one thing of `ZoneDraw`'s it does run is `addSurface`, for its sphere,
- *   which is compared with the mesh's and throws on any difference.
+ *   is not the map. What is hashed is what `ZoneDraw` is handed — each
+ *   surface's name, recipe, switch, stated box, geometry and indices — and the
+ *   sphere `ZoneDraw.addSurface` works out of it (the real method, on an
+ *   object holding only what it writes), **held to `boundsOf`'s** (ours, of
+ *   the stated box or of the positions), any difference in any bit a throw.
+ *   **So this hash cannot fail on the rest of `ZoneDraw`**: the rebasing, the
+ *   upload and the rewrite are outside it, and the bank's byte comparison
+ *   holds them (`plans/webgpu-ref/exact.mjs`, `docs/rendering.md`).
  *
- * Each build gets a fresh Scene under the NullEngine and the stub factory
- * above. The viewer is on side 0, so side 1 is the other kit, and
- * `Math.random` is seeded (none of these builders calls it today).
+ * **The viewmodel's three kinds are its JOINT TREE** (`ViewTree`,
+ * `entities/viewTree.ts`): each SURFACE the tree hangs (a `ViewSegment`, of
+ * every role) is a part's record with the joint it hangs from, its own
+ * switch, its `isVisible`, its role and a glass's look, and its local
+ * bounds, in the order the tree hung them; each other joint is a joint's
+ * record (name, parent, own switch, channels, quaternion, pivot), in the
+ * order the joints were made. A joint in the builder's data, or as a parent,
+ * is named for what it stands for (`camera:<name>` the root — the tree's
+ * camera a plain stand-in, `segment:<name>` a surface's joint,
+ * `joint:<name>` any other); a segment in the data is `segment:<name>`, a
+ * part `part:<name>`.
  *
- * **It is stricter than the kit half, on purpose.** Every mesh AND every
- * transform node left in the scene is hashed. A part disposed after its merge
- * is gone from the scene and is not counted. Each node's record is its class,
- * name, parent, enabled state, transform and pivot. A mesh adds its material
- * name, visibility, picking and collision flags, rendering group, culling
- * flag, side orientation, metadata, sub-meshes and bounding box, then every
- * vertex attribute it carries and its indices. Each array goes in with its
- * TYPE (a `number[]` holds doubles and a `Float32Array` does not) and its
- * numbers as exact doubles, not through float32. The builder's plain data is
- * hashed with it (landmarks, the finish list, a rig's reaches), with each
- * Babylon object named by class and name.
+ * Each build is fresh, with the viewer on side 0, and `Math.random` seeded
+ * (none of these builders calls it today).
  *
- * Each build gives two hashes. `draw` takes the records in SCENE ORDER;
- * `set` sorts them first. `--against` puts every build in one of three
- * buckets: "identical", "scene order differs" (the same nodes, created in
- * another order, as when a merge mints its mesh at a different moment) and
- * "content changed". It fails on content, and on order only under
- * `--strict-order`: whether creation order reaches a pixel is the reference
- * bank's question, not this one's. `--kinds` takes model kinds (`weapon:rifle`,
- * `viewmodel`, `vehicle:tank`, `zone`). `--feet` does not apply.
+ * Each build gives two hashes. `draw` takes the records in the order they
+ * were made; `set` sorts them first. `--against` puts every build in one of
+ * three buckets: "identical", "creation order differs" (the same records,
+ * made in another order) and "content changed". It fails on content, and on
+ * order only under `--strict-order`: whether creation order reaches a pixel
+ * is the reference bank's question, not this one's. `--kinds` takes model
+ * kinds (`weapon:rifle`, `viewmodel`, `vehicle:tank`, `zone`). `--feet` does
+ * not apply.
  *
  * `--feet` asks a different question of the same builds: for every kind in
  * `scripts/lib/footprints.mjs`'s `FOOT`, how far the DRAWING reaches past
@@ -185,10 +182,10 @@
  * the road's ground texture is painted on a canvas that draws nothing, being
  * a material's content rather than the builder's geometry.
  *
- * The builds run in WORKER processes, a few hundred each: Babylon keeps a
- * disposed Scene reachable through something a NullEngine run never
- * releases, so one process over the whole kit grows past Node's heap however
- * carefully it disposes, and a worker that exits hands all of it back at once.
+ * The builds run in WORKER processes, a few hundred each, so a run over the
+ * whole kit never holds the whole kit's arrays at once (it was the only way
+ * to give back what a NullEngine's disposed scenes kept, before X6.1a, and
+ * it bounds the heap still).
  *
  * Never: writes anything but `--out`, or fails a build — it is not a gate.
  * A `--feet` run's measurements stay out of `--out`'s fingerprint, which
@@ -245,53 +242,126 @@ function counted(next) {
   return f;
 }
 
-/** A vertex buffer's bytes, empty for a buffer the mesh does not carry. */
-const f32 = (a) => (a ? Buffer.from(new Float32Array(a).buffer) : Buffer.alloc(0));
+/** A number array's exact doubles, whatever array it arrived in. */
+const f64 = (a) => Buffer.from(Float64Array.from(a).buffer);
 
-/** Each hashed attribute: its Babylon kind, its field on a buffer, its size. */
-const ATTRIBUTES = [
-  ["position", "positions", 3],
-  ["normal", "normals", 3],
-  ["uv", "uvs", 2],
-  ["uv2", "uvs2", 2],
-  ["color", "colors", 4],
-  ["matricesIndices", null, 4],
-];
+/** A number JSON cannot spell (`Infinity`, `NaN`, `-0`), as a string; any other as itself. */
+const num = (v) => (Number.isFinite(v) && !Object.is(v, -0) ? v : String(Object.is(v, -0) ? "-0" : v));
+
+/** The fields each math kind is spelled by — Babylon's and `src/math`'s alike (the header). */
+const MATH_FIELDS = {
+  Vector2: ["x", "y"],
+  Vector3: ["x", "y", "z"],
+  Vector4: ["x", "y", "z", "w"],
+  Quaternion: ["x", "y", "z", "w"],
+  Color3: ["r", "g", "b"],
+  Color4: ["r", "g", "b", "a"],
+};
 
 /**
- * One part's transform and geometry into `draw`, as a part MESH hashes —
- * byte for byte, so a baseline taken
- * through meshes still compares. Each caller writes its own header line first
- * — the name and material, and whatever else its kind of build can see — so a
- * structure's hash is what it was before scatter shared this.
- *
- * What the mesh did on the way, written out: a quaternion ZEROED the Euler
- * angles (Babylon's `rotationQuaternion` setter, run after `rotation` was
- * set); `getVerticesData` cut every attribute to the vertex count (positions
- * over three) times its size (`GetFloatData`); and a part never had a parent
- * by then, because the adapter refused one — as this does.
+ * A vector, quaternion, colour or matrix spelled `[class, ...numbers]`, read
+ * off its fields — whichever library made it — or null for anything else. By
+ * class NAME and shape, never by `instanceof`: the game's modules are loaded
+ * through Vite, and their classes are not this script's.
  */
-function hashPart(draw, p) {
-  if (p.parent) throw new Error(`hashPart: "${p.name}" still has a parent — flattenParts first`);
-  const q = p.rotationQuaternion;
-  const v = (a) => [a.x, a.y, a.z];
-  draw.update(
-    JSON.stringify([
-      v(p.position),
-      q ? [0, 0, 0] : v(p.rotation),
-      v(p.scaling),
-      q ? [q.x, q.y, q.z, q.w] : null,
-      null,
-    ]),
-  );
-  const g = p.geometry;
-  const vertices = g.positions.length / 3;
-  for (const [kind, field, size] of ATTRIBUTES) {
-    draw.update(kind);
-    const a = field ? g[field] : null;
-    draw.update(f32(a ? a.subarray(0, vertices * size) : null));
+function mathValue(v) {
+  const name = v?.constructor?.name;
+  if (name === "Matrix" && v.m && v.m.length === 16) return ["Matrix", ...Array.from(v.m)];
+  const fields = MATH_FIELDS[name];
+  if (fields && fields.every((k) => typeof v[k] === "number")) return [name, ...fields.map((k) => v[k])];
+  return null;
+}
+
+/** The material stand-in: a name, and nothing else (the header). */
+class StubMaterial {
+  constructor(name) {
+    this.name = name;
   }
-  draw.update(Buffer.from(new Uint32Array(g.indices).buffer));
+}
+
+/** The scene stand-in: what a builder keys its pictures' cache on, and nothing else (the header). */
+class StubScene {
+  name = "scene";
+}
+
+/** A `Picture` (`render/TextureMaker.ts`), by shape. */
+const isPicture = (v) => v.canvas && typeof v.label === "string" && v.sampling;
+
+/**
+ * The plain-data replacer every record is spelled through (the header): a
+ * material, the scene, a picture or a segment NAMED (a graph of its own, or a
+ * drawing hashed as a record of its own), and a part NAMED where it is one of
+ * `recorded` (a record of its own) and walked anywhere else; a joint of `tree`
+ * named for what it stands for; a math value spelled by kind and value; a
+ * typed array as its type and its numbers; a `Map` or `Set` as its entries;
+ * the stub factory as `mats`; and a number JSON cannot spell as a string.
+ */
+function plainOf(mats = null, tree = null, recorded = null) {
+  return function (_k, v) {
+    if (mats !== null && v === mats) return "mats";
+    if (typeof v === "number") return num(v);
+    if (!v || typeof v !== "object") return v;
+    if (v instanceof StubMaterial) return `material:${v.name}`;
+    if (v instanceof StubScene) return "scene";
+    if (isPicture(v)) return `Picture:${v.label}`;
+    if (isSegment(v)) return `segment:${v.name}`;
+    if (recorded?.has(v)) return `part:${v.name}`;
+    if (tree && isJoint(v)) return labelOf(tree, v);
+    const math = mathValue(v);
+    if (math) return math;
+    if (ArrayBuffer.isView(v)) return [v.constructor.name, ...Array.from(v)];
+    if (v instanceof Map) return ["Map", ...v];
+    if (v instanceof Set) return ["Set", ...v];
+    return v;
+  };
+}
+
+/** A viewmodel `ViewSegment` (`viewTree.ts`), by class name (`mathValue`'s reason). */
+const isSegment = (v) => v?.constructor?.name === "ViewSegment";
+/** A `rigJoints.ts` joint, by shape. */
+const isJoint = (v) => v.constructor?.name === "Joint" && "world" in v && "scaling" in v;
+
+/** A part's transform as it holds it: position, Euler rotation, scaling, quaternion (the header). */
+function transformOf(p) {
+  const q = p.rotationQuaternion;
+  return [
+    [p.position.x, p.position.y, p.position.z],
+    [p.rotation.x, p.rotation.y, p.rotation.z],
+    [p.scaling.x, p.scaling.y, p.scaling.z],
+    q ? [q.x, q.y, q.z, q.w] : null,
+  ];
+}
+
+/** Each attribute a geometry may carry, in the order a record takes them. */
+const ATTRIBUTES = ["positions", "normals", "uvs", "uvs2", "colors"];
+
+/**
+ * A geometry's every attribute and its indices, WHOLE: each its name, its
+ * array's type and length, then its numbers as exact doubles (the header).
+ */
+function geometryRecord(g, indices = g.indices) {
+  const out = [];
+  for (const k of ATTRIBUTES) {
+    const a = g[k] ?? null;
+    out.push(Buffer.from(JSON.stringify([k, a ? a.constructor.name : null, a ? a.length : 0])));
+    if (a) out.push(f64(a));
+  }
+  out.push(Buffer.from(JSON.stringify(["indices", indices ? indices.constructor.name : null, indices ? indices.length : 0])));
+  if (indices) out.push(f64(indices));
+  return out;
+}
+
+/**
+ * One part's whole record (the header): `head` — what the caller's kind of
+ * build can see of it beyond its own fields — then its name, its material's
+ * name, its metadata and its transform, spelled through `plain`, then its
+ * geometry. A part that still has a parent is refused: what is handed on is
+ * flattened first, as the merge and the models' kits are handed it.
+ */
+function partRecord(p, plain, head = []) {
+  if (p.parent) throw new Error(`partRecord: "${p.name}" still has a parent — flattenParts first`);
+  const fields = [...head, p.name, p.material ? `material:${p.material.name}` : null, p.metadata ?? null, transformOf(p)];
+  return Buffer.concat([Buffer.from(JSON.stringify(fields, plain)), ...geometryRecord(p.geometry)]);
 }
 
 /** The ground every placement stands on: a swell, not any map's floor. */
@@ -331,7 +401,7 @@ const HEADROOM = 2;
  * structure is origin-local until `MapBuilder` turns and places it — twice:
  * everything (`plan`), and only what stands below `HEADROOM` (`ground`).
  */
-function planOf(B, worldMatrixOf, Matrix, parts) {
+function planOf(Vector3, worldMatrixOf, Matrix, parts) {
   const all = [Infinity, -Infinity, Infinity, -Infinity];
   const low = [Infinity, -Infinity, Infinity, -Infinity];
   const grow = (b, x, z) => {
@@ -340,14 +410,15 @@ function planOf(B, worldMatrixOf, Matrix, parts) {
     if (z < b[2]) b[2] = z;
     if (z > b[3]) b[3] = z;
   };
-  const v = new B.Vector3();
+  const v = new Vector3();
   for (const p of parts) {
     const pos = p.geometry.positions;
     // The part's float32 world matrix — `computeWorldMatrix(true)`'s numbers,
-    // by `worldMatrixOf`. Babylon's transform below reads only its `.m`.
+    // by `worldMatrixOf` — and `src/math`'s transform of a point by it
+    // (`math-check.mjs` holds it to Babylon's).
     const wm = worldMatrixOf(p, new Matrix());
     for (let i = 0; i < pos.length; i += 3) {
-      B.Vector3.TransformCoordinatesFromFloatsToRef(pos[i], pos[i + 1], pos[i + 2], wm, v);
+      Vector3.TransformCoordinatesFromFloatsToRef(pos[i], pos[i + 1], pos[i + 2], wm, v);
       grow(all, v.x, v.z);
       if (v.y < HEADROOM) grow(low, v.x, v.z);
     }
@@ -399,29 +470,20 @@ async function reportFeet(result, notBuilt) {
 }
 
 /**
- * The material factory every build is handed: a material is named for the
- * factory call that asked for it, so a builder that paints a part another
- * colour changes the drawing's hash. A Babylon object among the arguments is
- * named by its class and name, being a graph that points back at the engine;
- * so is the road's ground texture, a `Picture` since `BABYLON_EXIT.md` X5.4d
- * (`Picture:<label>`, where it was `DynamicTexture:<name>`: a fingerprint
- * taken before X5.4d differs on the road's 53 builds by that name alone —
- * X5.4d's note has the run that shows it). `scene` is read per call, so one
- * stub serves a worker that makes a fresh Scene per build.
+ * The material factory every build is handed: a material is a `StubMaterial`
+ * named for the factory call that asked for it — the method and its
+ * arguments spelled through `plainOf` — so a builder that paints a part
+ * another colour changes the drawing's hash. One material per name a build,
+ * as the factory caches one (`cache`, cleared per build).
  */
-function stubMats(B, cache, scene) {
-  const plain = (_k, v) =>
-    v && typeof v === "object" && typeof v.getClassName === "function"
-      ? `${v.getClassName()}:${v.name}`
-      : v && typeof v === "object" && v.canvas && typeof v.label === "string" && v.sampling
-        ? `Picture:${v.label}`
-        : v;
+function stubMats(cache) {
+  const plain = plainOf();
   return new Proxy(
     {},
     {
       get: (_t, prop) => (...a) => {
         const key = `${String(prop)}(${JSON.stringify(a, plain)})`;
-        if (!cache.has(key)) cache.set(key, new B.StandardMaterial(key, scene()));
+        if (!cache.has(key)) cache.set(key, new StubMaterial(key));
         return cache.get(key);
       },
     },
@@ -434,25 +496,22 @@ async function hashJobs(jobs) {
   const server = await vite();
   const out = {};
   try {
-    const B = await server.ssrLoadModule("@babylonjs/core");
-    B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
     const { SCATTER_BUILDERS, PROP_BODIES } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
     const { SHARED_DRAWS } = await server.ssrLoadModule("/src/world/props/sharedDraws.ts");
     const { flattenParts, worldMatrixOf } = await server.ssrLoadModule("/src/world/parts.ts");
-    const { Matrix } = await server.ssrLoadModule("/src/math/index.ts");
-    const engine = new B.NullEngine();
-    let scene = new B.Scene(engine);
+    const { Matrix, Vector3 } = await server.ssrLoadModule("/src/math/index.ts");
     const cache = new Map();
-    const mats = stubMats(B, cache, () => scene);
+    const mats = stubMats(cache);
+    const plain = plainOf(mats);
     const terrain = { flat: false, surfaceAt: swell, heightAt: swell };
     for (const [key, p] of jobs) {
-      scene.dispose();
-      scene = new B.Scene(engine);
+      // A fresh scene and a fresh factory a build, as a NullEngine's Scene was.
+      const scene = new StubScene();
       cache.clear();
       try {
         if (p.scatter) {
-          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], flattenParts, mats, p);
+          out[key] = hashScatter(SCATTER_BUILDERS[p.kind], PROP_BODIES[p.kind], flattenParts, mats, plain, p);
           // The replay `MapBuilder` spends a placement's shared draws with
           // (`props/sharedDraws.ts`) must take exactly what the builder took.
           const replayed = counted(mulberry32(p.seed));
@@ -469,14 +528,13 @@ async function hashJobs(jobs) {
         const s = p.bare ? BUILDERS[p.kind](scene, mats) : BUILDERS[p.kind](scene, mats, p.params ?? {}, ctx);
         const draw = createHash("sha256");
         for (const part of [...s.meshes, ...s.paneMeshes]) {
-          draw.update(`|${part.name}|${part.material?.name}|${s.freeform.has(part)}|`);
-          hashPart(draw, part);
+          draw.update(partRecord(part, plain, ["part", s.freeform.has(part)]));
         }
-        draw.update(JSON.stringify([s.lights, s.sounds, s.panes]));
-        const colliders = createHash("sha256").update(JSON.stringify(s.colliders));
+        draw.update(JSON.stringify([s.lights, s.sounds, s.panes], plain));
+        const colliders = createHash("sha256").update(JSON.stringify(s.colliders, plain));
         out[key] = { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16) };
         if (process.env.KIT_HASH_FEET) {
-          Object.assign(out[key], planOf(B, worldMatrixOf, Matrix, [...s.meshes, ...s.paneMeshes]));
+          Object.assign(out[key], planOf(Vector3, worldMatrixOf, Matrix, [...s.meshes, ...s.paneMeshes]));
         }
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
@@ -492,7 +550,7 @@ async function hashJobs(jobs) {
  * One scatter prop, built off `p.seed` at foliage `p.foliage` and hashed in
  * two halves — see the header for what each one is.
  */
-function hashScatter(build, body, flattenParts, mats, p) {
+function hashScatter(build, body, flattenParts, mats, plain, p) {
   const rng = counted(mulberry32(p.seed));
   const root = build(mats, rng, mulberry32(p.seed ^ 0x2545f491), p.foliage);
   const draw = createHash("sha256");
@@ -502,11 +560,8 @@ function hashScatter(build, body, flattenParts, mats, p) {
   // fingerprint is of what the merge reads and not of how a builder chose to
   // say it — a child parented to a trunk and one placed where the trunk would
   // have put it are the same drawing.
-  for (const part of flattenParts(root)) {
-    draw.update(`|${part.name}|${part.material?.name}|${JSON.stringify(part.metadata ?? null)}|`);
-    hashPart(draw, part);
-  }
-  const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws]));
+  for (const part of flattenParts(root)) draw.update(partRecord(part, plain, ["part"]));
+  const colliders = createHash("sha256").update(JSON.stringify([body, rng.draws], plain));
   return { draw: draw.digest("hex").slice(0, 16), colliders: colliders.digest("hex").slice(0, 16), draws: rng.draws };
 }
 
@@ -516,93 +571,21 @@ function hashScatter(build, body, flattenParts, mats, p) {
  * ---------------------------------------------------------------------------
  */
 
-/** A number array's exact doubles, whatever array it arrived in. */
-const f64 = (a) => Buffer.from(Float64Array.from(a).buffer);
-
 /**
- * A plain-data replacer for what a builder hands back: a node, a material, a
- * texture or the scene is named by class and name (each is a graph pointing
- * back at the engine), a Babylon maths value is spelled out by class and its
- * numbers, the stub factory is `mats`, a typed array is its type and its
- * numbers, and a number JSON cannot spell (`Infinity`, `NaN`, `-0`) is spelled
- * as a string so it is not silently `null` or `0`.
- */
-function plainOf(mats, tree = null) {
-  return function (_k, v) {
-    if (v === mats) return "mats";
-    if (typeof v === "number") return Number.isFinite(v) && !Object.is(v, -0) ? v : String(Object.is(v, -0) ? "-0" : v);
-    if (!v || typeof v !== "object") return v;
-    if (isGraph(v)) return `${v.getClassName()}:${v.name}`;
-    // A segment is spelled as the mesh it was (X4.3c).
-    if (isSegment(v)) return `Mesh:${v.name}`;
-    // A viewmodel joint is named as the node (or mesh) it stands for, and a
-    // `src/math` value is spelled as the Babylon one it replaced (X4.3b).
-    if (tree && isJoint(v)) return labelOf(tree, v);
-    const ours = tree ? mathValue(v) : null;
-    if (ours) return ours;
-    if (ArrayBuffer.isView(v)) return [v.constructor.name, ...Array.from(v)];
-    if (typeof v.getClassName === "function" && typeof v.asArray === "function") {
-      return [v.getClassName(), ...Array.from(v.asArray())];
-    }
-    if (v instanceof Map) return ["Map", ...v];
-    if (v instanceof Set) return ["Set", ...v];
-    return v;
-  };
-}
-
-/**
- * Whether a value is part of Babylon's object GRAPH — a node, a material, a
- * texture, the scene — rather than a value. Asked by shape, never by
- * `instanceof`: the `@babylonjs/core` this script loads through Vite is not
- * the instance the game's modules were linked against, so a mesh they build is
- * no instance of this script's `Mesh`, and a test by class would silently skip
- * every one of them.
- */
-const isGraph = (v) =>
-  typeof v.getClassName === "function" && (typeof v.uniqueId === "number" || v.getClassName() === "Scene");
-
-/** A viewmodel `ViewSegment` (`viewTree.ts`), by class name, for `isGraph`'s reason. */
-const isSegment = (v) => v?.constructor?.name === "ViewSegment";
-
-/** A `rigJoints.ts` joint, by shape (the module this script loads is not the game's instance either). */
-const isJoint = (v) => v.constructor?.name === "Joint" && "world" in v && "scaling" in v;
-
-/**
- * A `src/math` vector, quaternion or matrix spelled as Babylon's of the same
- * name and numbers — `[class, ...asArray()]` — or null for anything else. By
- * shape and class name, never by `instanceof` (see `isGraph`).
- */
-function mathValue(v) {
-  if (typeof v.getClassName === "function") return null;
-  const name = v.constructor?.name;
-  if (name === "Vector3" && "x" in v && "z" in v) return ["Vector3", v.x, v.y, v.z];
-  if (name === "Quaternion" && "w" in v) return ["Quaternion", v.x, v.y, v.z, v.w];
-  if (name === "Matrix" && typeof v.asArray === "function") return ["Matrix", ...Array.from(v.asArray())];
-  return null;
-}
-
-/**
- * What a joint of a viewmodel `ViewTree` was in the scene: the camera node at
- * its root, the mesh a mesh's joint stands for, or the `TransformNode` made
- * where it is — `class:name`, as `isGraph`'s values are spelled.
+ * What a joint of a viewmodel `ViewTree` stands for (the header): the
+ * camera's stand-in at its root, the surface a surface's joint hangs, or a
+ * joint of its own.
  */
 function labelOf(tree, j) {
-  if (j === tree.root) return `${tree.camera.getClassName()}:${tree.camera.name}`;
-  const mesh = tree.meshFor(j);
-  return mesh ? `Mesh:${mesh.name}` : `TransformNode:${j.name}`;
+  if (j === tree.root) return `camera:${tree.camera.name}`;
+  const segment = tree.meshFor(j);
+  return segment ? `segment:${segment.name}` : `joint:${j.name}`;
 }
 
-/** The identity a `TransformNode` with no pivot reports as its pivot matrix. */
-const IDENTITY16 = [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1];
-
-/**
- * A joint's record, in the bytes `nodeRecord` made of the `TransformNode` it
- * replaced: its class, name and parent, its own switch, its channels, its
- * quaternion, its pivot, and the two flags no viewmodel node ever set.
- */
+/** A joint's record (the header): its name, parent, own switch, channels, quaternion and pivot. */
 function jointRecord(tree, j, plain) {
   const head = [
-    "TransformNode",
+    "joint",
     j.name,
     j.parent ? labelOf(tree, j.parent) : null,
     j.enabled,
@@ -610,123 +593,31 @@ function jointRecord(tree, j, plain) {
     [j.rotation.x, j.rotation.y, j.rotation.z],
     [j.scaling.x, j.scaling.y, j.scaling.z],
     j.quaternion ? [j.quaternion.x, j.quaternion.y, j.quaternion.z, j.quaternion.w] : null,
-    j.pivot ? Array.from(j.pivot.m) : IDENTITY16,
-    false,
-    0,
+    j.pivot ? Array.from(j.pivot.m) : null,
   ];
   return Buffer.from(JSON.stringify(head, plain));
 }
 
 /**
- * One node's whole record — everything the hash can see of it, in one buffer.
- * Its NAME and its PARENT'S are in it, so a part hung off a different joint is
- * a different record and not merely a reordering.
+ * The two hashes of one model build: `draw`, every surface and then every
+ * joint in the order they were made, followed by the builder's plain data,
+ * and `set`, the same records hashed one by one and sorted first — so a
+ * build whose records are all the same but were made in another order
+ * matches on `set` and differs on `draw`. That is the difference `--against`
+ * reports as "creation order differs", apart from "content changed".
  */
-function nodeRecord(n, plain, parentLabel) {
-  const head = [
-    n.getClassName(),
-    n.name,
-    parentLabel !== undefined ? parentLabel : n.parent ? `${n.parent.getClassName()}:${n.parent.name}` : null,
-    n.isEnabled(false),
-    n.position.asArray(),
-    n.rotation.asArray(),
-    n.scaling.asArray(),
-    n.rotationQuaternion?.asArray() ?? null,
-    Array.from(n.getPivotMatrix().m),
-    n.infiniteDistance,
-    n.billboardMode,
-  ];
-  const parts = [];
-  if (typeof n.getBoundingInfo === "function") {
-    head.push(
-      n.material ? `${n.material.getClassName()}:${n.material.name}` : null,
-      n.isVisible,
-      n.isPickable,
-      n.checkCollisions,
-      n.renderingGroupId,
-      n.alwaysSelectAsActiveMesh,
-      n.sideOrientation ?? null,
-      n.visibility,
-      n.alphaIndex,
-      n.layerMask,
-      n.metadata ?? null,
-      n.getTotalVertices(),
-      (n.subMeshes ?? []).map((s) => [s.materialIndex, s.verticesStart, s.verticesCount, s.indexStart, s.indexCount]),
-    );
-    const box = n.getBoundingInfo().boundingBox;
-    head.push(box.minimum.asArray(), box.maximum.asArray());
-    if (typeof n.getVerticesDataKinds === "function") {
-      for (const kind of [...n.getVerticesDataKinds()].sort()) {
-        const vb = n.getVertexBuffer(kind);
-        const data = vb.getData();
-        // The array's TYPE is its precision — a `number[]` keeps doubles and a
-        // `Float32Array` rounds — so it is part of the record, and the numbers
-        // are hashed as exact doubles rather than through float32.
-        parts.push(
-          Buffer.from(
-            JSON.stringify([kind, data?.constructor?.name ?? null, vb.getSize(), vb.byteStride, vb.byteOffset, vb.type, vb.normalized]),
-          ),
-        );
-        if (data) parts.push(data instanceof ArrayBuffer ? Buffer.from(data) : f64(data));
-      }
-      const idx = n.getIndices(false, false);
-      parts.push(Buffer.from(JSON.stringify(["indices", idx?.constructor?.name ?? null])));
-      if (idx) parts.push(f64(idx));
-    }
-  }
-  return Buffer.concat([Buffer.from(JSON.stringify(head, plain)), ...parts]);
-}
-
-/**
- * The two hashes of one model build: `draw`, every mesh and then every
- * transform node in SCENE ORDER followed by the builder's plain data, and
- * `set`, the same records hashed one by one and sorted first — so a build
- * whose nodes are all the same but were created in another order matches on
- * `set` and differs on `draw`. That is the difference `--against` reports as
- * "scene order differs", apart from "content changed".
- */
-function hashScene(scene, data, plain, tree = null, meshOfSegment = null) {
+function hashModel(surfaces, joints, data, plain) {
   const draw = createHash("sha256");
   const each = [];
-  // A viewmodel tree's surfaces are unparented: each is named as hanging from
-  // the node its joint hangs from. Its node joints follow the scene's own
-  // nodes, in the order they were made (see the header).
-  const parentOf = new Map();
-  const jointNodes = [];
-  let meshRecords = scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n)));
-  if (tree) {
-    for (const v of tree.meshes) parentOf.set(v.segment, v.joint.parent ? labelOf(tree, v.joint.parent) : null);
-    for (const j of tree.jointList) if (j !== tree.root && !tree.meshFor(j)) jointNodes.push(j);
-    // A tree's surfaces in the order they were made — the scene's order for
-    // the meshes they were — then every other mesh in the scene (X4.3c, the
-    // header). Since X4.3d no surface of a tree is a mesh of the scene's.
-    const inViewmodel = tree.camera !== null;
-    meshRecords = [
-      ...tree.meshes.map((v) => () => {
-        const mesh = meshOfSegment(v.segment, inViewmodel);
-        try {
-          return nodeRecord(mesh, plain, parentOf.get(v.segment));
-        } finally {
-          mesh.dispose(false, false);
-        }
-      }),
-      ...scene.meshes.map((n) => () => nodeRecord(n, plain, parentOf.get(n))),
-    ];
-  }
-  const lists = [
-    ["meshes", "m", meshRecords],
-    [
-      "nodes",
-      "n",
-      [...scene.transformNodes.map((n) => () => nodeRecord(n, plain)), ...jointNodes.map((j) => () => jointRecord(tree, j, plain))],
-    ],
-  ];
-  for (const [label, tag, list] of lists) {
+  for (const [label, tag, list] of [
+    ["surfaces", "s", surfaces],
+    ["joints", "j", joints],
+  ]) {
     draw.update(`|${label}|${list.length}|`);
-    for (const record of list) {
-      const rec = record();
-      draw.update(createHash("sha256").update(rec).digest());
-      each.push(tag + createHash("sha256").update(rec).digest("hex"));
+    for (const rec of list) {
+      const digest = createHash("sha256").update(rec).digest();
+      draw.update(digest);
+      each.push(tag + digest.toString("hex"));
     }
   }
   const tail = JSON.stringify(data ?? null, plain);
@@ -737,21 +628,20 @@ function hashScene(scene, data, plain, tree = null, meshOfSegment = null) {
 }
 
 /**
- * `ZoneDraw` under the NullEngine, which has no renderer: what a round hands it,
- * each surface made at `finish` the mesh it was until `BABYLON_EXIT.md` X4.6b — a
- * ring's batch and a pole through the game's `drawnMesh`, a sheet's field and band
- * `applyToMesh`'d over its own arrays under the box it states, each dressed as it
- * was. A recipe IS the stub's material here (the job's `celRecipe`).
+ * `ZoneDraw` with no renderer: what a round hands it, each surface recorded
+ * at `finish` (the header). A recipe IS the stub's material here (the job's
+ * `celRecipe`).
  *
- * **It holds `ZoneDraw`'s sphere to the mesh's.** The size gate, the frustum, the
- * sort and the zones' split all read that sphere, and a mesh is what it was
- * copied from, so the real `addSurface` runs on an object holding only what it
- * writes (no device is needed to work out a sphere) and any difference from the
- * mesh's, in any bit, throws. Nothing else of `ZoneDraw`'s is reached from here.
+ * **It holds `ZoneDraw`'s sphere to `boundsOf`'s** (ours, which
+ * `bounds-check.mjs` holds to Babylon's `BoundingInfo`): the size gate, the
+ * frustum, the sort and the zones' split all read that sphere, so the real
+ * `addSurface` runs on an object holding only what it writes (no device is
+ * needed to work out a sphere), and any difference from `boundsOf` over the
+ * surface's stated box — or, where it states none, its positions — throws.
+ * Nothing else of `ZoneDraw`'s is reached from here.
  */
-function zoneDrawStandIn(B, PA, GB, scene, ZD) {
+function zoneDrawStandIn(ZD, boundsOf, identity, surfaces) {
   const ranges = [];
-  const surfaces = [];
   return {
     addVertices(geometry) {
       ranges.push(geometry);
@@ -767,7 +657,7 @@ function zoneDrawStandIn(B, PA, GB, scene, ZD) {
         box,
         geometry,
       );
-      const surface = { name, first, indices, recipe, box, on: true, mesh: null, sphere };
+      const surface = { name, first, indices, recipe, box, on: true, sphere };
       surfaces.push(surface);
       return surface;
     },
@@ -781,36 +671,13 @@ function zoneDrawStandIn(B, PA, GB, scene, ZD) {
     clear() {},
     finish() {
       for (const s of surfaces) {
-        const g = ranges[s.first];
-        let mesh;
-        if (s.box) {
-          mesh = new B.Mesh(s.name, scene);
-          const data = new B.VertexData();
-          data.positions = g.positions;
-          data.normals = g.normals;
-          data.indices = s.indices;
-          data.applyToMesh(mesh, true);
-          const b = s.box;
-          mesh.setBoundingInfo(new B.BoundingInfo(new B.Vector3(b[0], b[1], b[2]), new B.Vector3(b[3], b[4], b[5])));
-        } else {
-          const buffer = new GB.GeometryBuffer({ ...g, indices: s.indices });
-          mesh = PA.drawnMesh(s.name, buffer, scene);
-        }
-        mesh.material = s.recipe;
-        mesh.isPickable = false;
-        mesh.checkCollisions = false;
-        mesh.metadata = s.name.endsWith("-paint")
-          ? { noInk: true, noGlow: true, noShadowCaster: true }
-          : { noGlow: true, noShadowCaster: true };
-        mesh.freezeWorldMatrix();
-        mesh.setEnabled(s.on);
-        s.mesh = mesh;
-        const held = mesh.getBoundingInfo().boundingSphere;
-        const c = held.centerWorld;
+        s.geometry = ranges[s.first];
+        const b = s.box;
+        const held = boundsOf(b ? [b[0], b[1], b[2], b[3], b[4], b[5]] : s.geometry.positions, identity);
         const z = s.sphere;
-        if (z.x !== c.x || z.y !== c.y || z.z !== c.z || z.radius !== held.radiusWorld) {
+        if (z.x !== held.centerX || z.y !== held.centerY || z.z !== held.centerZ || z.radius !== held.radius) {
           throw new Error(
-            `ZoneDraw's sphere for ${s.name} is (${z.x}, ${z.y}, ${z.z}) r ${z.radius}; its mesh's is (${c.x}, ${c.y}, ${c.z}) r ${held.radiusWorld}`,
+            `ZoneDraw's sphere for ${s.name} is (${z.x}, ${z.y}, ${z.z}) r ${z.radius}; boundsOf's is (${held.centerX}, ${held.centerY}, ${held.centerZ}) r ${held.radius}`,
           );
         }
       }
@@ -879,9 +746,9 @@ function zoneWorld(points) {
 
 /**
  * Builds model jobs and returns `{ key: { draw, set } | { error } }`. Each build
- * is in a fresh Scene with the viewer on side 0 and `Math.random` seeded, so a
- * builder that reached for it would still hash the same twice running (none
- * does today).
+ * is fresh, with the viewer on side 0 and `Math.random` seeded, so a builder
+ * that reached for it would still hash the same twice running (none does
+ * today).
  */
 async function hashModelJobs(jobs) {
   stubCanvas();
@@ -889,12 +756,9 @@ async function hashModelJobs(jobs) {
   const out = {};
   const random = Math.random;
   try {
-    const B = await server.ssrLoadModule("@babylonjs/core");
-    B.Logger.LogLevels = B.Logger.NoneLogLevel;
     const load = (p) => server.ssrLoadModule(p);
-    const [W, VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, PA, CFG, GB, ZD, RID] = await Promise.all(
+    const [VM, PL, PV, GR, MO, RPG, MINE, VK, SM, CZ, FIN, TV, VT, CFG, ZD, RID, WG, M] = await Promise.all(
       [
-        "/src/entities/weapons.ts",
         "/src/entities/ViewModel.ts",
         "/src/entities/Player.ts",
         "/src/entities/PlayerView.ts",
@@ -908,57 +772,71 @@ async function hashModelJobs(jobs) {
         "/src/entities/finishes.ts",
         "/src/core/teamView.ts",
         "/src/entities/viewTree.ts",
-        "/src/world/parts.ts",
         "/src/config/index.ts",
-        "/src/geometry/buffer.ts",
         "/src/render/ZoneDraw.ts",
         "/src/core/renderId.ts",
+        "/src/world/worldGeometry.ts",
+        "/src/math/index.ts",
       ].map(load),
     );
-    // A pool's piece parts as the meshes they were until X4.4b (the header):
-    // made in order by the game's `drawnMesh`, each hung from the part it
-    // names, never pickable, hidden where the old builder hid it — and the
-    // root switched off where it was. Returns the meshes, in order.
-    const meshesOfParts = (parts, { hidden, rootOff = false, shown = [] }) => {
-      const meshes = [];
-      parts.forEach((pp, i) => {
-        const mesh = PA.drawnMesh(pp.part, scene);
-        if (pp.parent >= 0) mesh.parent = meshes[pp.parent];
-        mesh.isPickable = false;
-        if (hidden && !shown.includes(i)) mesh.isVisible = false;
-        meshes.push(mesh);
-      });
-      if (rootOff) meshes[0].setEnabled(false);
-      return meshes;
+    const identity = M.Matrix.Identity();
+    // A surface's local bounds, ours (the header): `boundsOf` at identity.
+    const boundsHead = (part) => {
+      const b = WG.boundsOf(part.geometry.positions, identity);
+      return [
+        [b.minX, b.minY, b.minZ],
+        [b.maxX, b.maxY, b.maxZ],
+      ];
     };
     const weaponBuilders = await modelWeaponBuilders(load);
-    const engine = new B.NullEngine();
-    let scene = new B.Scene(engine);
     const cache = new Map();
-    const mats = stubMats(B, cache, () => scene);
+    const mats = stubMats(cache);
+    // The camera a tree hangs from: a name and an identity world, all a
+    // `ViewCamera` is (`viewTree.ts`); `TransformNode:camera` before X6.1a.
+    const cameraStandIn = () => ({ name: "camera", getWorldMatrix: () => identity });
     for (const [key, p] of jobs) {
-      scene.dispose();
-      scene = new B.Scene(engine);
       cache.clear();
       TV.setViewerTeam(0);
       Math.random = mulberry32(0x6d0de15);
+      const scene = new StubScene();
+      // Every surface's record, in the order it was made; then every joint's.
+      const surfaces = [];
+      const joints = [];
+      // A pool's piece parts (the header): each part in the builder's order,
+      // the part it hangs from, its switch (the root's off where the pool
+      // leaves it off) and whether it is shown. Returns the parts, in order.
+      const recorded = new Set();
+      const pieces = (list, plain, { hidden, rootOff = false, shown = [] }) => {
+        const parts = list.map((pp) => pp.part);
+        for (const part of parts) recorded.add(part);
+        list.forEach((pp, i) => {
+          const head = [
+            "piece",
+            pp.parent >= 0 ? `part:${parts[pp.parent].name}` : null,
+            !(rootOff && i === 0),
+            !(hidden && !shown.includes(i)),
+            ...boundsHead(pp.part),
+          ];
+          surfaces.push(partRecord(pp.part, plain, head));
+        });
+        return parts;
+      };
       try {
         let data = null;
         // The viewmodel's tree, for the three kinds built on one (X4.3b).
         let tree = null;
+        // The pieces of the kinds that are not a tree, recorded as they are made.
+        let late = [];
         if (p.kind.startsWith("weapon:")) {
           const id = p.kind.slice("weapon:".length);
-          // Built alone, as before: a tree with no camera, the weapon's root
-          // at its top level. Every tree here is keyed on a render id of its
-          // own at 0 (`core/renderId.ts`, X5.4b), as the fresh scene's never
-          // rendered id was.
+          // Built alone: a tree with no camera, the weapon's root at its top
+          // level, keyed on a render id of its own at 0 (`core/renderId.ts`).
           tree = new VT.ViewTree(new RID.RenderId(), null);
           const parts = weaponBuilders[id](scene, mats, `view_${id}`, tree, null);
           if (p.finish) FIN.applyFinish(mats, parts.finish, p.finish);
           data = parts;
         } else if (p.kind === "viewmodel") {
-          const camera = new B.TransformNode("camera", scene);
-          const vm = new VM.ViewModel(scene, mats, camera, new RID.RenderId());
+          const vm = new VM.ViewModel(scene, mats, cameraStandIn(), new RID.RenderId());
           tree = vm.tree;
           if (p.weapon) vm.setWeapon(p.weapon);
           if (p.sight) vm.setSight(p.sight);
@@ -978,88 +856,79 @@ async function hashModelJobs(jobs) {
             ),
           };
         } else if (p.kind === "player") {
-          const camera = new B.TransformNode("camera", scene);
           // As `Game` builds the pair: the picture, then the player that
           // puts it away (`applyVisibility`) — which is part of the record.
-          const view = new PV.PlayerView(scene, mats, camera, new RID.RenderId());
+          const view = new PV.PlayerView(scene, mats, cameraStandIn(), new RID.RenderId());
           new PL.Player(view);
           tree = view.model.tree;
-          // The casing pool, as the meshes it was (X4.4b): one a case, made
-          // after the tree's surfaces, hidden, never pickable.
-          for (let i = 0; i < CFG.CONFIG.gunfeel.casingPool; i++) {
-            meshesOfParts(PV.casingParts(mats, `player_casing${i}`), { hidden: true });
-          }
+          // The casing pool (X4.4b): one a case, after the tree's surfaces, hidden.
+          late = Array.from({ length: CFG.CONFIG.gunfeel.casingPool }, (_, i) => PV.casingParts(mats, `player_casing${i}`));
         } else if (p.kind === "grenade") {
           // The body and the pip, both hidden.
-          const [mesh, pip] = meshesOfParts(GR.grenadeParts(mats, "grenade0"), { hidden: true });
+          const [mesh, pip] = pieces(GR.grenadeParts(mats, "grenade0"), plainOf(mats, null, recorded), { hidden: true });
           data = { mesh, pip };
         } else if (p.kind === "molotov") {
           // The body, the neck, the cloth and the wick, all hidden.
-          const m = meshesOfParts(MO.molotovPieceParts(mats, "molotov0"), { hidden: true });
+          const m = pieces(MO.molotovPieceParts(mats, "molotov0"), plainOf(mats, null, recorded), { hidden: true });
           data = { mesh: m[0], wick: m[3] };
         } else if (p.kind === "rocket") {
           // The head, the tail and the flame, shown, the head switched off.
-          const m = meshesOfParts(RPG.rocketParts(mats, "rocket0"), { hidden: false, rootOff: true });
+          const m = pieces(RPG.rocketParts(mats, "rocket0"), plainOf(mats, null, recorded), { hidden: false, rootOff: true });
           data = { mesh: m[0], flame: m[2] };
         } else if (p.kind === "mine") {
           // The plate and the pressure plate shown, the lamp hidden, the plate
           // switched off.
-          const m = meshesOfParts(MINE.minePieceParts(mats, "mine0"), { hidden: true, rootOff: true, shown: [0, 1] });
+          const m = pieces(MINE.minePieceParts(mats, "mine0"), plainOf(mats, null, recorded), { hidden: true, rootOff: true, shown: [0, 1] });
           data = { mesh: m[0], lamp: m[2] };
         } else if (p.kind.startsWith("vehicle:")) {
           // The client's table (`vehicleModels.ts`), keyed by the same kind
-          // `vehicleKinds.ts` pairs with its spec. The rig is joints and
-          // segments since `BABYLON_EXIT.md` X4.2b, and Babylon is made no
-          // mesh of it: the DRAWING is its kind's kit in its side's colours
-          // (`rig.kit`, hashed with the rig), which our renderer draws every
-          // hull of that pair as instances of; the wreck is a flag on it.
+          // `vehicleKinds.ts` pairs with its spec: the rig, joints and
+          // segments, and its kind's kit in its side's colours (`rig.kit`,
+          // hashed with the rig), which our renderer draws every hull of that
+          // pair as instances of; the wreck is a flag on it.
           const rig = VK.modelOf(p.kind.slice("vehicle:".length))(p.team);
           if (p.wrecked) rig.paint(true);
           data = rig;
         } else if (p.kind === "soldier") {
-          // The rig is joints and segments since `BABYLON_EXIT.md` X4.1d,
-          // and Babylon is made no mesh of it: the DRAWING is its side's kit,
-          // which our renderer draws every body of that side as instances of.
+          // The rig, joints and segments, and its side's kit, which our
+          // renderer draws every body of that side as instances of.
           const rig = SM.buildSoldier(p.team);
           data = { rig, drawing: SM.soldierKits()[rig.kit] };
         } else if (p.kind === "zone") {
           const w = zoneWorld(p.points);
           const zoneMats = new Proxy(mats, { get: (t, prop) => (prop === "celRecipe" ? (m) => m : t[prop]) });
-          const zones = new CZ.CaptureZoneSystem(zoneMats, zoneDrawStandIn(B, PA, GB, scene, ZD), () => true);
+          const held = [];
+          const zones = new CZ.CaptureZoneSystem(zoneMats, zoneDrawStandIn(ZD, WG.boundsOf, identity, held), () => true);
           zones.build(p.points, w.terrain, w.obstacles, w.roads, w.rays, w.env);
-          data = zones.zones.map((z) => ({ x: z.x, z: z.z, meshes: z.ring.map((s) => s.mesh) }));
+          const plain = plainOf(mats, null, recorded);
+          for (const s of held) {
+            const head = ["zone", s.name, s.recipe, s.on, s.box, [s.sphere.x, s.sphere.y, s.sphere.z, s.sphere.radius]];
+            surfaces.push(Buffer.concat([Buffer.from(JSON.stringify(head, plain)), ...geometryRecord(s.geometry, s.indices)]));
+          }
+          data = zones.zones.map((z) => ({ x: z.x, z: z.z, ring: z.ring.map((s) => s.name) }));
         } else throw new Error(`no model "${p.kind}"`);
-        // A segment as the mesh it was (X4.3c): the game's `drawnMesh`, dressed
-        // with the flags the mesh carried, recorded and disposed — made after
-        // the record lists were taken, so it is in none of them. The kit card
-        // (X4.3d) as ITS mesh was: group 0, always-active, last of the
-        // blended queue, under a material of its name (the header).
-        const meshOfSegment = (seg, inViewmodel) => {
-          const mesh = PA.drawnMesh(seg, scene);
-          mesh.isVisible = seg.isVisible;
-          mesh.isPickable = false;
-          mesh.setEnabled(seg.enabled);
-          // A stand-in carries no values: a record spells a material by its
-          // class and name alone.
-          const standIn = seg.role === "card" ? "kitBackdrop" : seg.role === "glass" ? seg.name : null;
-          if (standIn) {
-            mesh.material = new B.StandardMaterial(standIn, scene);
-            const dispose = mesh.dispose.bind(mesh);
-            mesh.dispose = (...a) => {
-              mesh.material?.dispose();
-              return dispose(...a);
-            };
+        const plain = plainOf(mats, tree, recorded);
+        if (tree) {
+          // A tree's surfaces in the order they were hung, each with the joint
+          // it hangs from (the header); then every other joint, in the order
+          // the joints were made.
+          for (const v of tree.meshes) {
+            const seg = v.segment;
+            const head = [
+              "segment",
+              v.joint.parent ? labelOf(tree, v.joint.parent) : null,
+              seg.enabled,
+              seg.isVisible,
+              seg.role,
+              seg.glass ?? null,
+              ...boundsHead(seg),
+            ];
+            surfaces.push(partRecord(seg, plain, head));
           }
-          if (seg.role === "card") {
-            mesh.alphaIndex = Number.POSITIVE_INFINITY;
-            mesh.alwaysSelectAsActiveMesh = true;
-          } else if (inViewmodel) {
-            mesh.renderingGroupId = 1;
-            mesh.alwaysSelectAsActiveMesh = true;
-          }
-          return mesh;
-        };
-        out[key] = hashScene(scene, data, plainOf(mats, tree), tree, meshOfSegment);
+          for (const j of tree.jointList) if (j !== tree.root && !tree.meshFor(j)) joints.push(jointRecord(tree, j, plain));
+        }
+        for (const list of late) pieces(list, plain, { hidden: true });
+        out[key] = hashModel(surfaces, joints, data, plain);
       } catch (e) {
         out[key] = { error: String(e?.message ?? e) };
       }
@@ -1298,13 +1167,13 @@ if (process.env.KIT_HASH_WORKER) {
     };
     console.log(`against ${againstFile}:`);
     if (models) {
-      // A build whose set of node records matches but whose scene order does
-      // not is reported apart: the same meshes, created in another order.
+      // A build whose set of records matches but whose creation order does
+      // not is reported apart: the same surfaces and joints, made in another order.
       const changed = both.filter((k) => differs(k, "set") || differs(k, "error"));
       const reordered = both.filter((k) => !changed.includes(k) && differs(k, "draw"));
       const same = both.filter((k) => !changed.includes(k) && !reordered.includes(k));
       report("identical", same);
-      report("scene order differs", reordered);
+      report("creation order differs", reordered);
       report("content changed", changed);
       report("builds added", added);
       report("builds gone", gone);
@@ -1312,7 +1181,7 @@ if (process.env.KIT_HASH_WORKER) {
       for (const k of changed.slice(0, 20)) console.log(`    change ${k}`);
       const strictOrder = args.includes("--strict-order");
       if (changed.length + added.length + gone.length || (strictOrder && reordered.length)) process.exit(1);
-      console.log(reordered.length ? "  same content (scene order differs)" : "  identical");
+      console.log(reordered.length ? "  same content (creation order differs)" : "  identical");
       process.exit(0);
     }
     const drawn = both.filter((k) => differs(k, "draw") || differs(k, "error"));

@@ -138,11 +138,19 @@
  * Boots the dev server and the GPU-capable Chromium the other browser scripts
  * use (`dev-server.mjs`, `browser.mjs`) — read `VERIFYING.md` first if it
  * times out at the boot gate.
+ *
+ * **What the scene holds is asked of the reference harness's frame adapter since
+ * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
+ * script): a mesh's rank in `scene.meshes` (every one -1 with no scene, which
+ * holds no mesh) and the `info` counts (`null` with none).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { launchClient } from "./browser.mjs";
 import { DEV_MAPS, MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
+// What the scene holds, through the reference harness's ONE frame adapter
+// (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
 
 const MAP_KEY = "greywatch.map";
 
@@ -224,8 +232,10 @@ function fingerprintMap() {
   // Where each mesh stands in the scene's list — its creation order, since
   // `removeMesh` splices and so keeps the survivors' order. A Map, because an
   // `indexOf` per mesh is quadratic over a list of thousands.
+  // Babylon's meshes through the frame adapter (`harness.mjs`, X6.1a): none
+  // with no scene, where every mesh's rank is -1 (there is no mesh to rank).
   const sceneIndex = new Map();
-  g.scene.meshes.forEach((m, i) => sceneIndex.set(m, i));
+  (window.__refFrame().babylon()?.scene.meshes ?? []).forEach((m, i) => sceneIndex.set(m, i));
   // A mesh's rank within its own LIST by that index: which of the list's
   // meshes was made before which, without the absolute index that every pool
   // or sky mesh made earlier would shift. -1 for a mesh not in the scene.
@@ -388,9 +398,10 @@ function fingerprintMap() {
     // Not compared: what the scene holds besides the map (pools, the sky,
     // the viewmodel) is not this script's business, but a change that leaks
     // meshes or geometries out of the merge shows up here first.
+    // Through the frame adapter (X6.1a): null with no scene, which holds nothing.
     info: {
-      sceneMeshes: g.scene.meshes.length,
-      sceneGeometries: g.scene.geometries.length,
+      sceneMeshes: window.__refFrame().counts()?.meshes ?? null,
+      sceneGeometries: window.__refFrame().counts()?.geometries ?? null,
     },
     boundsCheck,
   };
@@ -469,6 +480,7 @@ async function buildOne(browser, url, id) {
       );
     });
     await page.addInitScript(installSink);
+    await page.addInitScript(frameAdapter);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
     await page.evaluate(async (deadlineMs) => {

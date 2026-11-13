@@ -151,6 +151,15 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   those instead (Babylon only).
                               #   Also every file under src/render/ and
                               #   src/math/ (bar the crossing, math/babylon.ts)
+  babylon-census.mjs          # X6.1a's CENSUS of what is left of
+                              #   @babylonjs/core: every import of it under
+                              #   src/, server/, main.ts, scripts/,
+                              #   .claude/skills/ and plans/ by name, file and
+                              #   kind (value or type), every
+                              #   ssrLoadModule of it, every page-side load of
+                              #   its chunk, and dist/'s every file raw and
+                              #   gzipped. `--against` fails if anything grew.
+                              #   Not a gate; each X6.1 sub-step records it
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
                               #   samples.ts does not load (or a url it loads
@@ -194,9 +203,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
                               #   builder over every placement, and every
                               #   scatter prop over fixed seeds and foliage
-                              #   rungs, under a NullEngine — the DRAWING (the
-                              #   PARTS the merge is handed, a prop flattened,
-                              #   hashed as the part meshes they once became)
+                              #   rungs, with NO Babylon (X6.1a: a stand-in
+                              #   scene and plain named materials) — the
+                              #   DRAWING (the PARTS the merge is handed, a prop
+                              #   flattened, each hashed as what it IS: its
+                              #   arrays whole as exact doubles, its transform,
+                              #   material name and metadata; a math value by
+                              #   kind and value, whichever library made it)
                               #   and the COLLIDERS hashed apart, so a refactor
                               #   proves it moved nothing. Fails outright if a
                               #   scatter kind's replay (props/sharedDraws.ts)
@@ -206,8 +219,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   does the rest: weapons in every finish, the
                               #   viewmodel in every sight, the player, the
                               #   projectiles, the hulls, the soldiers and the
-                              #   capture rings, every node and every vertex
-                              #   as exact doubles, with order-only changes
+                              #   capture rings, every surface and joint and
+                              #   every vertex as exact doubles, a surface's
+                              #   box off boundsOf, with order-only changes
                               #   reported apart. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
                               #   builds every map in a real browser and hashes
@@ -375,8 +389,10 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   held deploy — the four render-cache readers as
                       #   float64 bits, every evaluated joint, the submitted
                       #   origins recomputed, every render-id change and its
-                      #   site; and `camera`, the camera's matrices per frame
-                      #   through every state with the pose pinned
+                      #   site; and `camera`, the camera's matrices, frustum
+                      #   planes and gun marker per frame through every state
+                      #   (a hull boarded as driver and gunner on a map with
+                      #   one, X6.1a) with the pose pinned
   leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
                       #   released and cached bind groups made after the boot,
                       #   live GPUBuffers (and their MB) and the heap, over

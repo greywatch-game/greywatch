@@ -391,7 +391,14 @@ you are on before you believe anything else in this section.
   time. This is not academic: `capture-map-shots.mjs` settled six frames, which
   was three wall-clock seconds on the Chromebook and 45 ms here, and running
   `npm run shots` would have overwritten Hollowmere's and Harrowmead's
-  committed backdrops with blank frames.
+  committed backdrops with blank frames. **Ask it through the frame adapter**
+  (`plans/webgpu-ref/harness.mjs`' `frameAdapter`, installed as an init script:
+  `window.__refFrame().ready()`, beside its `drawn`/`onDrawn`), never as
+  `g.scene.isReady()`: since `BABYLON_EXIT.md` X6.1a it answers with no scene
+  too (the game's pending data, the water's foam mask while it decodes), and
+  X6.1h deletes `Game.scene`. Every other question a script asks of the scene
+  — the camera's matrices and frustum planes, the particle switch, the
+  materials, the clear colour — is a member of the same adapter.
 - **…and ONE unuploaded texture anywhere in the scene turns that answer off
   for the whole process**, which is the trap rather than the rule above. A
   `DynamicTexture` is not READY until something calls `update()` on it, so a
@@ -1585,7 +1592,10 @@ is one machine's:
     than calling it once.
 
   What to READ is the landmark projected to pixels: `Vector3.Project(p,
-  Matrix.Identity(), scene.getTransformMatrix(), viewport)`, with the point
+  Matrix.Identity(), scene.getTransformMatrix(), viewport)` (the transform is
+  `window.__refFrame().camera().transform` through the frame adapter since
+  X6.1a, which answers with no scene; its sixteen floats into a matrix of
+  either library), with the point
   built by `Vector3.TransformCoordinates(local, node.getWorldMatrix())` so a
   weapon's own coordinates can be named directly (the muzzle at z 1.24, the
   round's nose at 1.2, its motor's tail at 0.44). There is no `BABYLON` global:

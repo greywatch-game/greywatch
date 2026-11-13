@@ -53,6 +53,12 @@
  * effect meshes are the meshes that carry NO vertex colour buffer, and they are
  * the half of the cel shader a frozen reference frame never holds (`bank.mjs`
  * disables every rig before it places a camera). Playing is how they get built.
+ *
+ * **The page's materials and Babylon's half are asked of the frame adapter since
+ * X6.1a** (`harness.mjs`): every material on the page (`materials()`, the
+ * scene's, or the factory's with no scene), the pictures' cache key
+ * (`pictureKey()`), and the scene itself (`babylon()`): with none, Babylon's half
+ * — its stand-in mesh and its compiles, skipped since X5.4h — is RETIRED.
  */
 import {
   assertNoTranspiler,
@@ -366,7 +372,11 @@ for (const id of MAPS) {
   const out = await page.evaluate(async () => {
     const g = window.__celshock;
     // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
-    const frame = () => window.__refFrame().drawn();
+    const F = window.__refFrame();
+    const frame = () => F.drawn();
+    // Babylon's scene, through the adapter (X6.1a): with none, Babylon's half
+    // of this check is RETIRED (no Babylon program to compile, as since X5.4h).
+    const B = F.babylon();
     // Everything that carries no vertex colour buffer is built by PLAYING:
     // the viewmodel, the rigs, the ink twins and the effect meshes.
     g.spawnPlayer();
@@ -382,18 +392,22 @@ for (const id of MAPS) {
     // map with no glazing: our renderer draws the rest and Babylon is made none.
     const { drawnMesh } = await import("/src/world/parts.ts");
     const { GeometryBuffer } = await import("/src/geometry/buffer.ts");
-    const probe = drawnMesh(
-      "shaders-probe",
-      new GeometryBuffer({
-        positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-        normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
-        indices: [0, 1, 2],
-      }),
-      g.scene,
-    );
-    probe.material = [...g.mats.cache.values()].find((m) => m.name.startsWith("cel-"));
-    probe.isVisible = false;
-    if (!probe.material) throw new Error("no cel material to compile against");
+    const probe = B
+      ? drawnMesh(
+          "shaders-probe",
+          new GeometryBuffer({
+            positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
+            normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
+            indices: [0, 1, 2],
+          }),
+          B.scene,
+        )
+      : null;
+    if (probe) {
+      probe.material = [...g.mats.cache.values()].find((m) => m.name.startsWith("cel-"));
+      probe.isVisible = false;
+      if (!probe.material) throw new Error("no cel material to compile against");
+    }
 
     // The one variant no shipped map mints: a ground albedo with no height map
     // beside it. Both call sites pass a bump today, so `CEL_GROUND_TEX` alone
@@ -408,7 +422,8 @@ for (const id of MAPS) {
     );
     if (anyGround) {
       const { getCobblestoneTexture } = await import("/src/world/textures.ts");
-      g.mats.getGroundTextured("smoke-flat", getCobblestoneTexture(g.scene), 1);
+      // The pictures' cache key through the adapter (X6.1a): the scene, or the factory.
+      g.mats.getGroundTextured("smoke-flat", getCobblestoneTexture(F.pictureKey()), 1);
     }
 
     // Every `ShaderMaterial` but the fire's: `FlameMaterial` is a recipe key
@@ -419,14 +434,15 @@ for (const id of MAPS) {
     // (`getFlame`, which mints it if no map has yet — harmless on a page about
     // to be thrown away), never by a class name a minifier may rename.
     const flame = g.mats.getFlame();
-    const shaders = [...g.scene.materials].filter(
+    // Every material on the page, through the adapter (X6.1a): the scene's, or the factory's.
+    const shaders = F.materials().filter(
       (m) => m._options && Array.isArray(m._options.defines) && m !== flame,
     );
     // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
     // than read: `isReady` is what ASKS for the compile as well as what reports
     // it, and the first call on a variant nothing has drawn always says no.
     // Not asked at all with no Babylon backend (X5.4h: a `NullEngine`).
-    const babylonGpu = Boolean(g.scene.getEngine().isWebGPU);
+    const babylonGpu = Boolean(B?.engine.isWebGPU);
     let pending = babylonGpu ? shaders : [];
     for (let i = 0; i < 240 && pending.length > 0; i++) {
       pending = pending.filter((m) => !m.isReady(probe));
@@ -443,7 +459,7 @@ for (const id of MAPS) {
     // palette's is a plain `Material` since X3.7c (no Babylon program to
     // compile), so the walk above never meets it.
     const paletteBiases = new Set();
-    for (const mat of g.scene.materials) {
+    for (const mat of F.materials()) {
       const palette = g.mats.emissiveRecipe(mat);
       if (palette) paletteBiases.add(palette.depthBias);
     }

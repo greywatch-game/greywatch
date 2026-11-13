@@ -67,6 +67,12 @@
  * **`--editor`**, which asked the same of the map editor's build, is retired
  * with the editor (`BABYLON_EXIT.md` X5.3c, row "X5.3, retire the editor") and
  * refused.
+ *
+ * **Babylon's hooks are asked of the frame adapter since X6.1a** (`harness.mjs`'
+ * `babylon()`: its `Mesh.render`, its fields' `render`, its pipeline states, its
+ * `_draw`, its group-0 visits and the size gate's walk of `scene.meshes`): with
+ * no scene every one is RETIRED, and the marks of OUR renderer's points are
+ * logged as before.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -133,9 +139,13 @@ const OVERLAPS = [
 function hangProbe(page) {
   return page.evaluate(() => {
     const g = window.__celshock;
-    // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
-    const e = g.scene.getEngine();
-    const scene = g.scene;
+    // Babylon's scene and engine through the frame adapter (`harness.mjs`,
+    // X6.1a): `Game.engine` at a parent, a `NullEngine` since X5.4h — and with
+    // no scene (`babylon()` null) every hook on Babylon's draws is RETIRED
+    // (nothing of Babylon's draws), the marks of OUR renderer's points kept.
+    const B = window.__refFrame().babylon();
+    const e = B?.engine ?? null;
+    const scene = B?.scene ?? null;
     const classOf = (mesh, mat) => {
       const n = mesh.name;
       if (/^zone-.*-flag/.test(n)) return "flag";
@@ -171,7 +181,7 @@ function hangProbe(page) {
     // the end inserted FIRST as it was on the scene's.
     const F = window.__refFrame();
     F.onDrawPhase(() => {
-      s.frame = e._currentRenderTarget;
+      s.frame = e?._currentRenderTarget;
       s.inMask = false;
       s.visited = false;
       if (s.rec) s.log.push({ mark: "phase" });
@@ -180,7 +190,7 @@ function hangProbe(page) {
     // group 0 of the main pass visited, so our points were told inside it, or
     // not, so they were told at the phase's end (X4.5a's fallback). Read off the
     // same public observable the seam reads, the same test.
-    scene.onBeforeRenderingGroupObservable.add((info) => {
+    scene?.onBeforeRenderingGroupObservable.add((info) => {
       if (info.renderingGroupId === 0 && s.frame !== undefined && e._currentRenderTarget === s.frame) s.visited = true;
     });
     F.onDrawPhase(
@@ -235,7 +245,9 @@ function hangProbe(page) {
         return out;
       };
     };
-    if (scene.meshes[0]) hookMesh(scene.meshes[0]);
+    if (!scene) {
+      // No scene: no Babylon mesh to hook (RETIRED).
+    } else if (scene.meshes[0]) hookMesh(scene.meshes[0]);
     else {
       const added = scene.onNewMeshAddedObservable.add((mesh) => {
         scene.onNewMeshAddedObservable.remove(added);
@@ -253,7 +265,7 @@ function hangProbe(page) {
     // (`_cachedUpdateDefines`) and render effect. `--pixels` skips the whole
     // call, which on a held field (a clock of zero) moves nothing it would not
     // move again.
-    const field = scene.particleSystems[0];
+    const field = scene?.particleSystems[0];
     if (field) {
       let fproto = Object.getPrototypeOf(field);
       while (!Object.prototype.hasOwnProperty.call(fproto, "render")) fproto = Object.getPrototypeOf(fproto);
@@ -308,9 +320,9 @@ function hangProbe(page) {
     // What the pipeline of a mesh's (first) draw actually has, which is not what
     // a material's flags say: a blended draw's depth write goes off in
     // `setAlphaMode`, whatever `disableDepthWrite` says.
-    const cache = e._cacheRenderPipeline;
-    const applyStates = e.applyStates;
-    e.applyStates = function (...a) {
+    const cache = e?._cacheRenderPipeline;
+    const applyStates = e?.applyStates;
+    if (e) e.applyStates = function (...a) {
       const out = applyStates.apply(this, a);
       if (s.rec && !s.drawn) {
         s.drawn = [
@@ -336,8 +348,8 @@ function hangProbe(page) {
       if (n && typeof n === "object") return n.fragment ?? n.fragmentElement ?? n.vertex ?? n.vertexElement ?? "(inline)";
       return "(none)";
     };
-    const drawOf = e._draw;
-    e._draw = function (...a) {
+    const drawOf = e?._draw;
+    if (e) e._draw = function (...a) {
       if (s.rec && !s.inMesh) {
         const rt = this._currentRenderTarget;
         s.engine.push(`${effName(this._currentEffect)} -> ${rt ? rt.label || rt.texture?.name || "target" : "canvas"}`);
@@ -444,9 +456,12 @@ function recordFrame(page) {
           s.rec = false;
           // What the frustum kept and nothing drew: the size gate's (`WorldCulling.offer`).
           const drawn = new Set(s.log.filter((it) => it.pass === "main").map((it) => it.id));
-          const planes = g.scene.frustumPlanes;
+          // Babylon's meshes the frustum kept, through the adapter (X6.1a):
+          // none with no scene (RETIRED).
+          const B = F.babylon();
+          const planes = B?.scene.frustumPlanes;
           const gated = {};
-          for (const m of g.scene.meshes) {
+          for (const m of B ? B.scene.meshes : []) {
             const cls = s.classOf(m, m.material);
             if (cls === "other" || drawn.has(m.uniqueId) || !m.isEnabled() || !m.isVisible || !m.visibility) continue;
             if (!m.alwaysSelectAsActiveMesh && !m.isInFrustum(planes)) continue;

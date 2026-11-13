@@ -69,6 +69,10 @@
  * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
  * under a stopped frame counter its own limit never fires. One such run sat
  * about 11 hours (`FINDINGS.md` 64).
+ *
+ * **The scene's meshes are asked of the frame adapter since X6.1a**
+ * (`harness.mjs`' `babylon()`): with no scene the `Mesh.render` hook is RETIRED
+ * (no Babylon mesh to file a pipeline under).
  */
 import {
   frameAdapter,
@@ -289,10 +293,13 @@ async function playRound(page) {
       };
     }
     let hooked = false;
+    // Babylon's meshes, the scene's, through the frame adapter (`harness.mjs`,
+    // X6.1a): none with no scene, where the hook is RETIRED.
+    const sceneMesh = () => window.__refFrame().babylon()?.scene.meshes[0];
     const hookMeshes = () => {
-      if (hooked || !g.scene.meshes[0]) return;
+      if (hooked || !sceneMesh()) return;
       hooked = true;
-      let meshProto = Object.getPrototypeOf(g.scene.meshes[0]);
+      let meshProto = Object.getPrototypeOf(sceneMesh());
       while (!Object.prototype.hasOwnProperty.call(meshProto, "render")) meshProto = Object.getPrototypeOf(meshProto);
       const render = meshProto.render;
       meshProto.render = function (...a) {

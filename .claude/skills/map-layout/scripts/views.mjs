@@ -13,6 +13,10 @@
 // With neither --flags nor --viewfile it takes --flags. Writes <dir>/<name>.jpg
 // at 1280x720. Needs a GPU (see VERIFYING.md for this machine). The capture
 // rings stay drawn on purpose: they are where the fight is.
+//
+// The frame — its draws and its readiness — is asked of the reference
+// harness's frame adapter (plans/webgpu-ref/harness.mjs, BABYLON_EXIT.md
+// X6.1a), which answers with or without a scene.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -48,12 +52,16 @@ const only = opt("only") ? new Set(opt("only").split(",")) : null;
 
 const { launchClient } = await import(pathToFileURL(join(ROOT, "scripts/browser.mjs")).href);
 const { startDevServer } = await import(pathToFileURL(join(ROOT, "scripts/dev-server.mjs")).href);
+// The frame — its draws, its readiness — through the reference harness's ONE
+// adapter (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+const { frameAdapter } = await import(pathToFileURL(join(ROOT, "plans/webgpu-ref/harness.mjs")).href);
 const vite = await startDevServer(ROOT);
 const browser = await launchClient({ headed: false });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
   await page.addInitScript((m) => window.localStorage.setItem("greywatch.map", m), id);
+  await page.addInitScript(frameAdapter);
   await page.goto(vite.url, { waitUntil: "domcontentloaded" });
   await page.addStyleTag({ content: "#hud{display:none!important}#boot{display:none!important}" });
   await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 120_000 });
@@ -92,27 +100,29 @@ try {
       // Ready first (WebGPU compiles pipelines lazily and presents nothing
       // until they exist), then a few frames for the shadow map and the post
       // chain to settle — capture-map-shots.mjs has the measurement.
-      // The frame drawn is OUR frame's point since BABYLON_EXIT.md X5.4f
-      // (`Game.sceneFrame`: the scene is never rendered), the scene's before.
+      // The frame drawn and the readiness through the frame adapter
+      // (`plans/webgpu-ref/harness.mjs`, BABYLON_EXIT.md X6.1a): OUR frame's
+      // point since X5.4f (the scene is never rendered), and the scene's
+      // readiness while there is one, the game's after.
       // The deadline is a TIMER as well as a test read from a frame, so a page
       // that has stopped drawing still gives up rather than hanging the run.
-      const drawn = (g.sceneFrame ?? g.scene).onAfterRenderObservable;
+      const F = window.__refFrame();
       const until = (done, ms) =>
         new Promise((res) => {
           const giveUp = performance.now() + ms;
-          let o = null;
+          let off = null;
           const stalled = setTimeout(() => {
-            drawn.remove(o);
+            off();
             res();
           }, ms + 5_000);
-          o = drawn.add(() => {
+          off = F.onDrawn(() => {
             if (!done() && performance.now() <= giveUp) return;
             clearTimeout(stalled);
-            drawn.remove(o);
+            off();
             res();
           });
         });
-      await until(() => g.scene.isReady(), 120_000);
+      await until(() => F.ready(), 120_000);
       let n = 0;
       await until(() => ++n >= 8, 120_000);
     }, v);

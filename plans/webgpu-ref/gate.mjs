@@ -29,6 +29,10 @@
  * reads 132. The uncapped number is the one worth writing down; the capped one
  * is the one that resembles what a player sees, so the flag is a choice the
  * caller makes rather than one this file makes for them.
+ *
+ * **Babylon's active meshes are asked of the frame adapter since X6.1a**
+ * (`harness.mjs`' `counts()`): `null` with no scene, where Babylon holds
+ * nothing; the transpiler tripwire's engine half the same (`transpilers()`).
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -141,7 +145,9 @@ for (const id of targets) {
         // (`NetSession.roster`) — offline too, the page being a client of its
         // own local match (`BABYLON_EXIT.md` X2.5c).
         bodies: g.net ? g.net.roster.soldiers.length : 0,
-        activeMeshes: g.scene.getActiveMeshes().length,
+        // Babylon's active meshes, through the frame adapter (X6.1a): null
+        // with no scene, where there is nothing of Babylon's to activate.
+        activeMeshes: F.counts()?.activeMeshes ?? null,
         isWebGPU: F.host().webgpu,
         engine: F.host().engine,
       };

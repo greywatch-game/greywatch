@@ -23,12 +23,20 @@
  * whose server nav graph quietly disagreed with its client would make every
  * number taken on it a measurement of the wrong thing. See `DEV_MAPS` in
  * `collision-hash.mjs`.
+ *
+ * **The frame is asked of the reference harness's frame adapter since
+ * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
+ * script): its index, its draws and its readiness, and the scene's meshes only
+ * to name an offender while there is a scene.
  */
 import { spawnSync } from "node:child_process";
 import { join } from "node:path";
 import { launchClient } from "./browser.mjs";
 import { DEV_MAPS, MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
+// The frame — its index, its draws, its readiness — through the reference
+// harness's ONE adapter (`BABYLON_EXIT.md` X6.1a), with or without a scene.
+import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
 
 const MAP_KEY = "greywatch.map";
 
@@ -143,6 +151,7 @@ async function inspectClient(browser, url, id) {
       ([key, value]) => window.localStorage.setItem(key, value),
       [MAP_KEY, id],
     );
+    await page.addInitScript(frameAdapter);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
 
@@ -157,7 +166,7 @@ async function inspectClient(browser, url, id) {
             return reject(
               new Error(
                 `never reached deploy in ${deadlineMs / 1000} s (state ` +
-                  `"${g.state}", frame ${g.sceneFrame?.index ?? g.scene.getFrameId()})`,
+                  `"${g.state}", frame ${window.__refFrame().index()})`,
               ),
             );
           }
@@ -175,41 +184,45 @@ async function inspectClient(browser, url, id) {
     const readiness = await page.evaluate(
       (deadlineMs) =>
         new Promise((resolve) => {
-          const s = window.__celshock.scene;
-          // The frame drawn: OUR frame's point since BABYLON_EXIT.md X5.4f
-          // (`Game.sceneFrame`: the scene is never rendered), the scene's before.
-          const drawn = (window.__celshock.sceneFrame ?? s).onAfterRenderObservable;
+          // The frame drawn and the readiness through the frame adapter
+          // (`harness.mjs`, X6.1a): OUR frame's point since BABYLON_EXIT.md
+          // X5.4f (the scene is never rendered), and the scene's readiness
+          // while there is one, the game's after.
+          const F = window.__refFrame();
+          const s = F.babylon()?.scene ?? null;
+          let off = null;
           const until = performance.now() + deadlineMs;
           let frames = 0;
           // The deadline below is only ever read FROM a frame, so a page that
           // has stopped drawing would never reach it. This is the clock that
           // does not need one.
           const stalled = setTimeout(() => {
-            drawn.remove(seen);
+            off();
             resolve({
               ready: false,
               frames,
               blocking: ["(no frame rendered — device lost?)"],
             });
           }, deadlineMs + 5_000);
-          const seen = drawn.add(() => {
+          off = F.onDrawn(() => {
             frames++;
-            if (s.isReady()) {
+            if (F.ready()) {
               clearTimeout(stalled);
-              drawn.remove(seen);
+              off();
               resolve({ ready: true, frames });
               return;
             }
             if (performance.now() < until) return;
             clearTimeout(stalled);
-            drawn.remove(seen);
+            off();
             // Name the offenders, with the material each one's first submesh
             // actually resolves to — a mesh carrying none answers with the
             // scene's default, and which of the two it is decides where to look.
             resolve({
               ready: false,
               frames,
-              blocking: s.meshes
+              // Babylon's meshes, while there is a scene (none after X6.1h).
+              blocking: (s ? s.meshes : [])
                 .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
                 .slice(0, 8)
                 .map((m) => {

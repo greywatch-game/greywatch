@@ -116,6 +116,14 @@
  * or compiles an effect, and every other state does none of the three — the
  * post chain being ours since X5.2d, so a round's frame holds no Babylon draw
  * at all. Since X5.3c no class here draws, visits group 0 or compiles.
+ *
+ * **With no scene** (`BABYLON_EXIT.md` X6.1a, for X6.1h): the scene and its
+ * engine are asked of the frame adapter (`harness.mjs`' `babylon()`), the meshes
+ * it holds of its `counts()` and the game's DEV counter of its `compiles()`, so
+ * nothing here names `g.scene`; where `babylon()` answers `null` every hook on
+ * Babylon — its draws, group 0, its compiles, `scene.meshes`, its renders and
+ * begin-frames — is RETIRED (a note says so, and the classes hold none of them),
+ * and what the round did is still counted at its doors.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, hardLimit, installRound, launchClient, root, startDevServer } from "./harness.mjs";
@@ -139,9 +147,14 @@ hardLimit(1800 * MAPS.length);
 /** Runs IN THE PAGE: the hooks. See the header for what each records. */
 function installHooks() {
   const g = window.__celshock;
-  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
-  const e = g.scene.getEngine();
-  const scene = g.scene;
+  // Babylon's scene and engine through the frame adapter (`harness.mjs`, X6.1a):
+  // `Game.engine` at a parent, a `NullEngine` since X5.4h — and with no scene
+  // (`babylon()` null) every hook on them is RETIRED, so the classes log no
+  // draw, visit, compile, mesh, render or begin of Babylon's (the header).
+  const F = window.__refFrame();
+  const B = F.babylon();
+  const e = B?.engine ?? null;
+  const scene = B?.scene ?? null;
   const fold = (n) => String(n).replace(/\d+/g, "#");
   const hash = (s) => {
     let h = 0x811c9dc5;
@@ -168,7 +181,7 @@ function installHooks() {
     return String(n);
   };
   const targetOf = () => {
-    const rt = e._currentRenderTarget;
+    const rt = e?._currentRenderTarget;
     if (!rt) return "canvas";
     return rt.label || rt.texture?.name || rt._textures?.[0]?.label || "rt";
   };
@@ -184,7 +197,7 @@ function installHooks() {
     draw: new Map(),
     group0: new Map(),
     meshCtx: null,
-    compiledAtBoot: Object.keys(e._compiledEffects ?? {}).map(effectKey).sort(),
+    compiledAtBoot: Object.keys(e?._compiledEffects ?? {}).map(effectKey).sort(),
     notes: [],
     renders: {},
     renderCalls: 0,
@@ -194,13 +207,13 @@ function installHooks() {
     resizeBegins: 0,
   });
   // The engine's begin-frames (the header): counted per frame, a resize's apart.
-  const beginFrame = e.beginFrame;
-  e.beginFrame = function (...a) {
+  const beginFrame = e?.beginFrame;
+  if (e) e.beginFrame = function (...a) {
     if (L.inResize > 0) L.resizeBegins++;
     else L.beginCalls++;
     return beginFrame.apply(this, a);
   };
-  const initMain = e._initializeMainAttachments;
+  const initMain = e?._initializeMainAttachments;
   if (typeof initMain === "function") {
     e._initializeMainAttachments = function (...a) {
       L.inResize++;
@@ -212,8 +225,8 @@ function installHooks() {
     };
   }
   // The scene's renders (the header): counted per frame, folded at its end.
-  const render = scene.render;
-  scene.render = function (...a) {
+  const render = scene?.render;
+  if (scene) scene.render = function (...a) {
     L.renderCalls++;
     return render.apply(this, a);
   };
@@ -234,7 +247,6 @@ function installHooks() {
   };
   // The frame's begin and end through the frame adapter (`harness.mjs`,
   // X5.4a): Babylon's engine observables at every parent so far.
-  const F = window.__refFrame();
   F.onBegin(() => {
     // Whatever was drawn since the last frame ENDED (a render target rendered
     // from a promise, say) is outside every frame: it is folded into a class
@@ -260,13 +272,14 @@ function installHooks() {
     fold1(c.group0, L.group0);
     L.draw.clear();
     L.group0.clear();
-    const n = scene.meshes.length;
-    if (!c.meshes.sizes.includes(n)) c.meshes.sizes.push(n);
+    // What the scene holds, through the adapter (X6.1a): none with no scene.
+    const n = F.counts()?.meshes ?? 0;
+    if (scene && !c.meshes.sizes.includes(n)) c.meshes.sizes.push(n);
     // The names are read on a visit's first frame and on every frame the
     // count moved, never on a clock: a sample keyed to the session's frame
     // number lands in a two-frame state or misses it as the machine's pace
     // decides, and the log stops repeating.
-    if (L.visit || n !== L.lastSize) {
+    if (scene && (L.visit || n !== L.lastSize)) {
       const names = {};
       for (const m of scene.meshes) {
         const k = fold(m.name);
@@ -276,13 +289,14 @@ function installHooks() {
     }
     L.visit = false;
     L.lastSize = n;
-    // The game's own counter (the header), its value at this frame's end.
-    const bc = g.babylonCompiles;
-    if (bc) {
+    // The game's own counter (the header), its value at this frame's end,
+    // through the adapter (X6.1a): null where the game has none.
+    const bc = F.compiles();
+    if (bc !== null) {
       const seen = (L.counter[L.cls] ??= []);
-      if (!seen.includes(bc.count)) seen.push(bc.count);
+      if (!seen.includes(bc)) seen.push(bc);
     }
-    if (!L.meshHooked) hookMeshRender();
+    if (!L.meshHooked && scene) hookMeshRender();
     const rs = (L.renders[L.cls] ??= []);
     if (!rs.includes(L.renderCalls)) rs.push(L.renderCalls);
     L.renderCalls = 0;
@@ -292,6 +306,11 @@ function installHooks() {
   });
 
   const bump = (map, key) => map.set(key, (map.get(key) ?? 0) + 1);
+  // Everything below hooks Babylon itself: RETIRED with no scene (the header).
+  if (!B) {
+    L.notes.push("no scene: Babylon's draws, group 0, compiles, meshes, renders and begins are retired");
+    return hookDoors();
+  }
   const draw = e._draw;
   e._draw = function (...a) {
     const m = L.meshCtx;
@@ -360,28 +379,31 @@ function installHooks() {
       return effect;
     };
   }
+  hookDoors();
   // What the round DID, counted at its doors (never compared).
-  L.did = {};
-  for (const [label, owner, key] of [
-    ["rounds", g.combatFx, "drawRound"],
-    ["throws", g.grenades, "throwAlong"],
-    ["blasts", g.grenadeFx, "blast"],
-    ["fires", g.grenadeFx, "ignite"],
-    ["rubble", g.blastDebris, "burst"],
-    ["rockets", g.antiTank, "launch"],
-    ["shards", g.debris, "burst"],
-    ["kills", g, "onNetKill"],
-  ]) {
-    const f = owner?.[key];
-    if (typeof f !== "function") {
-      L.notes.push(`no door ${label}`);
-      continue;
+  function hookDoors() {
+    L.did = {};
+    for (const [label, owner, key] of [
+      ["rounds", g.combatFx, "drawRound"],
+      ["throws", g.grenades, "throwAlong"],
+      ["blasts", g.grenadeFx, "blast"],
+      ["fires", g.grenadeFx, "ignite"],
+      ["rubble", g.blastDebris, "burst"],
+      ["rockets", g.antiTank, "launch"],
+      ["shards", g.debris, "burst"],
+      ["kills", g, "onNetKill"],
+    ]) {
+      const f = owner?.[key];
+      if (typeof f !== "function") {
+        L.notes.push(`no door ${label}`);
+        continue;
+      }
+      L.did[label] = 0;
+      owner[key] = function (...a) {
+        L.did[label]++;
+        return f.apply(this, a);
+      };
     }
-    L.did[label] = 0;
-    owner[key] = function (...a) {
-      L.did[label]++;
-      return f.apply(this, a);
-    };
   }
 }
 

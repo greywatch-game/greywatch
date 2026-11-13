@@ -88,6 +88,11 @@
  * game's. **Otherwise it exits
  * 0 whatever it counts**: it records, and X5.4b grades. A lost device ends it
  * (`harness.mjs`, exit 4), and so does a hard limit (exit 3).
+ *
+ * **The scene's engine is asked of the frame adapter since X6.1a** (`harness.mjs`'
+ * `babylon()`): with no scene its hook and Babylon's half of the control are
+ * RETIRED (the control says it was skipped), and the device's half runs as
+ * before.
  */
 import { bootMap, hardLimit, installRound, launchClient, MAP_IDS, root, startDevServer } from "./harness.mjs";
 
@@ -168,10 +173,11 @@ await page.evaluate(async () => {
     L.cls = g.state;
     bucket().frames++;
   });
-  // Babylon's engine, the scene's (`Game.engine` at a parent).
-  const e = g.scene.getEngine();
-  const del = e._deletePipelineContext;
-  e._deletePipelineContext = function (ctx, ...rest) {
+  // Babylon's engine, the scene's (`Game.engine` at a parent), through the
+  // frame adapter (`harness.mjs`, X6.1a): with no scene the hook is RETIRED.
+  const e = window.__refFrame().babylon()?.engine ?? null;
+  const del = e?._deletePipelineContext;
+  if (e) e._deletePipelineContext = function (ctx, ...rest) {
     const b = bucket();
     b.deletes++;
     if (ctx) b.deletesWithContext++;
@@ -197,8 +203,10 @@ await page.evaluate(async () => {
 const control = await page.evaluate(async () => {
   const g = window.__celshock;
   const L = window.__leaks;
-  // Babylon's engine, the scene's: a `NullEngine` since X5.4h (the header).
-  const e = g.scene.getEngine();
+  // Babylon's engine, the scene's: a `NullEngine` since X5.4h (the header);
+  // through the frame adapter (X6.1a), and none at all with no scene.
+  const e = window.__refFrame().babylon()?.engine ?? null;
+  if (!e) return { skipped: "no scene" };
   if (!e.isWebGPU) return { skipped: e.constructor.name };
   const CONTROL = "(control)";
   const effect = e.createEffect("clearQuad", [], ["color", "depthValue"], undefined, "#define LEAKS_MJS_CONTROL\n", undefined, undefined, undefined, undefined, 1 /* ShaderLanguage.WGSL */);
@@ -224,7 +232,9 @@ const control = await page.evaluate(async () => {
 const controlHeld = Boolean(control.skipped) || (!control.error && control.deletes === 1 && control.deletesWithContext === 1 && control.cacheCalls === 1 && control.cacheCreated === 1 && control.deviceBindGroups === 0);
 console.log(
   control.skipped
-    ? `the positive control is SKIPPED: Babylon's engine is a ${control.skipped}, no WebGPU backend to release an effect or fill a cache (X5.4h)`
+    ? control.skipped === "no scene"
+      ? `the positive control is SKIPPED: no scene, so no engine of Babylon's at all (RETIRED, X6.1a)`
+      : `the positive control is SKIPPED: Babylon's engine is a ${control.skipped}, no WebGPU backend to release an effect or fill a cache (X5.4h)`
     : control.error
     ? `the positive control FAILED: ${control.error}`
     : `the positive control: an effect released, ${control.deletes} pipeline context${control.deletes === 1 ? "" : "s"} deleted (${control.deletesWithContext} with a context); the engine's cache asked ${control.cacheCalls} time${control.cacheCalls === 1 ? "" : "s"}, ${control.cacheCreated} bind-group set made, the device's createBindGroup ${control.deviceBindGroups} — ${controlHeld ? "both hooks count" : "FAILED (1, 1, 1, 1 and 0 wanted)"}`,

@@ -55,6 +55,11 @@
  * they no longer agree with each other: a road marking sits ~20 mm under its
  * slab's ink shell and is swallowed down the whole street, and a board deck's
  * shell sits 185 mm under its own top face and is not swallowed anywhere.
+ *
+ * **Both modes are Babylon meshes, and RETIRED with no scene** (X6.1a): the scene
+ * is asked of the frame adapter (`harness.mjs`' `babylon()`), and a page with
+ * none fails each mode with a sentence saying so; `glass` already owes a port
+ * (a round's glazing is our renderer's since X4.6e).
  */
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -190,7 +195,11 @@ if (MODE === "glass") {
       for (const grp of g.map.paneGroups) {
         if (grp.mesh !== pane) grp.mesh.setEnabled(false);
       }
-      const Colour = g.scene.ambientColor.constructor;
+      // Babylon's scene through the frame adapter (`harness.mjs`, X6.1a): this
+      // mode is Babylon's meshes, RETIRED with no scene.
+      const B = window.__refFrame().babylon();
+      if (!B) throw new Error("depth.mjs glass: no scene — this mode reads Babylon's meshes (retired, BABYLON_EXIT.md X6.1a)");
+      const Colour = B.scene.ambientColor.constructor;
       pane.material.setColor3("baseColor", new Colour(1, 0, 0));
       if (pane.material.name.includes("-on-")) {
         pane.material.setColor3("glassBackdrop", new Colour(1, 0, 0));
@@ -293,12 +302,16 @@ if (MODE === "glass") {
         const g = window.__celshock;
         window.__depthRig?.forEach((m) => m.dispose());
         const top = 60;
-        const src = g.scene.materials.find((m) => /^cel-#/.test(m.name));
+        // Babylon's scene through the frame adapter (`harness.mjs`, X6.1a): the
+        // rig is Babylon meshes, RETIRED with no scene.
+        const scene = window.__refFrame().babylon()?.scene;
+        if (!scene) throw new Error("depth.mjs zoffset: no scene — the rig is Babylon meshes (retired, BABYLON_EXIT.md X6.1a)");
+        const src = window.__refFrame().materials().find((m) => /^cel-#/.test(m.name));
         const deck = (name, y, colour, biased) => {
           const box = B.MeshBuilder.CreateBox(
             name,
             { width: 60, height: 2, depth: len },
-            g.scene,
+            scene,
           );
           box.position.set(0, y - 1, len / 2 - 4);
           box.isPickable = false;

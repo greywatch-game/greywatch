@@ -18,6 +18,13 @@
 // is a high oblique. Local +Z is the placement's north before its rotation.
 //
 // Needs a GPU (see VERIFYING.md). Writes <out>/<view>.jpg.
+//
+// **The `sun` bearing has been the DEFAULT on every run**: it is read off a
+// scene light named "moonShadow", and the scene has held no light since the
+// cel shader carried its own, so it takes (0.7, 0.7) whatever the map's key
+// light is. Kept as it reads (BABYLON_EXIT.md X6.1a, through the frame
+// adapter's `babylon()`, plans/webgpu-ref/harness.mjs) rather than changing
+// which views this shoots; the key light is `g.mats.keyLight.dir`.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,7 +69,10 @@ try {
       const kit = await import("/src/world/BuildingKit.ts");
       const out = [];
       for (const p of variants) {
-        const s = kit.BUILDERS[kind](g.scene, g.mats, p);
+        // A builder's scene is only its pictures' cache key: the frame
+        // adapter's (`plans/webgpu-ref/harness.mjs`, BABYLON_EXIT.md X6.1a) —
+        // the scene, or the factory with none.
+        const s = kit.BUILDERS[kind](window.__refFrame().pictureKey(), g.mats, p);
         let verts = 0;
         const colours = new Set();
         // Parts (`world/parts.ts`), not meshes: nothing was put in the scene.
@@ -80,7 +90,12 @@ try {
   // The views, resolved in the page because the sun's bearing lives there.
   const views = await page.evaluate(({ R, extra }) => {
     const g = window.__celshock;
-    const sun = g.scene.getLightByName("moonShadow")?.direction;
+    // The light named "moonShadow" was the scene's; the scene has held no light
+    // since the cel shader carried its own, so this has read null — the
+    // default bearing below — on every run since. The adapter (X6.1a) keeps
+    // that answer rather than change which views this shoots (a change for its
+    // own commit: the key light is `g.mats.keyLight`).
+    const sun = window.__refFrame().babylon()?.scene.getLightByName("moonShadow")?.direction;
     // Horizontal bearing the light comes FROM, in world XZ.
     let sx = sun ? -sun.x : 0.7;
     let sz = sun ? -sun.z : 0.7;

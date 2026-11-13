@@ -52,6 +52,7 @@ node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json] [--ig
 node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json [--ignore=…]
 node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
 node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--match] [--twice] [--stale] [--strict] [--out=f.json]
+node scripts/babylon-census.mjs [--files] [--out f.json] [--against f.json]
 ```
 
 **Every question a script here asks about the FRAME goes through ONE adapter**
@@ -129,6 +130,37 @@ WebGPU; `compatibilityMode` null with no engine; the canvas pass's depth format
 gave it a device half that runs on every tree), and `shaders.mjs`
 skip Babylon's half (no backend to compile against; each material's defines
 still read for ours).
+
+**And it answers with NO SCENE since X6.1a** (for X6.1h, which deletes
+`Game.scene`): **Babylon's arm is built only where `g.scene` exists**, and
+every read a script here made of the scene or its engine is a member of the
+adapter, so no probe names `g.scene` (`harness.mjs`' header lists them): the
+readiness (`ready`, with no scene the game's pending data — the water's foam
+mask while it decodes — until X6.1h gives the game a readiness of its own);
+the camera (`camera()`: its view, projection and transform as float32s, the
+six frustum planes, `globalPosition`, the render size and the aspect — off the
+frame host's `viewProjection`, `Frustum.GetPlanesToRef`'s arithmetic restated
+and the surface with no scene); the particle fields and their switch
+(`fields`, `particles`) and the frame's constant delta (`constantDelta`, which
+THROWS with no scene until X6.1h); the frame's clear colour (`clearColor`);
+every material on the page (`materials`, the factory's with no scene); the
+pictures' cache key a builder's scene is (`pictureKey`); and — `null`, RETIRED,
+with no scene — what the scene holds (`counts`), the engine's two GLSL fields
+(`transpilers`), and the scene and its engine themselves (`babylon()`), for
+the probes that MEASURE Babylon (`census`, `drawlog`, `surfaces`, `particles`,
+`leaks`, `gi`, `pipelines`, `shaders`' Babylon half, `depth`, `post.mjs`'
+clears), each of which logs nothing of Babylon's when it answers `null`. The
+game's DEV counter of Babylon compiles is `compiles()`. **Proven equal at the
+parent on the same frames**: `window.__refFrame({ scene: false })` builds the
+adapter as a page with no scene would have it, and every arm off the game's
+objects answered what the scene's read answered on every frame of a session
+(X6.1a's note). `scripts/capture-map-shots.mjs`, `merge-hash.mjs`,
+`check-world-parity.mjs` and the skills' `views.mjs` and `shots.mjs` install it
+(an init script) and moved onto it. **Its census** is `scripts/babylon-census.mjs`
+(every import of the package by name, file and kind, every
+`ssrLoadModule("@babylonjs/core")`, every page-side load of Babylon's chunk,
+and the bundle, every chunk raw and gzipped; `--against` fails if anything
+grew), which every later sub-step of X6.1 records in its note.
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
@@ -528,7 +560,18 @@ still read for ours).
   render-scale change, a resize, the pause, the round-over card and the menu, the
   pose PINNED at each frame's before-draw (after the camera's updates, before its
   matrices are computed) as a function of the step — X5.4f's and
-  X5.4h's BEFORE, compared across processes and trees.
+  X5.4h's BEFORE, compared across processes and trees. **Since X6.1a** (X6.1f's
+  BEFORE) it reads the camera through the frame adapter (`camera()`) and logs
+  per frame the six FRUSTUM PLANES as float64 bits and the GUN MARKER — what the
+  frame pushed to the HUD: `"unpushed"`, `null`, or the point projected
+  (`Game.markerAt`), the projection's output (`Game.markerOut`) and the HUD's
+  fractions as float64 bits — and on a map with a gunned hull (`--map=coldharbour`)
+  two steps more after `resumed`: the hull boarded by hand as the driver and then
+  the gunner, the chase camera's place, both muzzles and both bearings pinned as
+  functions of the pose (so the marker is the camera's arithmetic and nothing of
+  the drive's). Between steps the pose holds the step's last frame (`n`), since
+  the marker reads the PREVIOUS frame's matrices. Its default map stays
+  Hollowmere, whose log is the old one's with the two new fields.
 - **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; the proof X5.4b deleted
   `src/core/webgpuLeaks.ts` on, and the regression read while Babylon's engine
   stands): one Coldharbour page, the boot settled as the

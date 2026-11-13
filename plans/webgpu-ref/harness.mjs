@@ -306,70 +306,276 @@ export const MAP_IDS = MAPS.map((m) => m.id);
  * `WebGPUEngine` the game held as `Game.engine`, the same object — so a probe
  * hooking Babylon's begin-frames, draws or compiles hooks the `NullEngine`
  * after X5.4h and reads the 0 Babylon does there.
+ *
+ * **And it answers with NO SCENE since X6.1a** (`BABYLON_EXIT.md` X6.1a, for
+ * X6.1h, which deletes `Game.scene`): **Babylon's arm is built only where
+ * `g.scene` exists**, and every question a probe here asks of the scene or its
+ * engine is a member of this adapter, so no probe names `g.scene`. Each
+ * member answers off the scene while there is one and off the GAME's own
+ * objects where there is not — or, where what it read was Babylon's own
+ * business, says so by answering `null` (RETIRED: there is no Babylon left to
+ * ask):
+ *
+ * - `ready()` with no scene: the game's PENDING DATA, read off the objects
+ *   that hold it — the water's foam mask while it decodes (`WaterSystem`'s
+ *   `foam`, a `MadeTexture` whose `texture` lands in the same task as the
+ *   scene's `removePendingData`), the one thing the game hands the scene's
+ *   `addPendingData` (X5.4d). A foam whose decode FAILED reads not ready for
+ *   good here, where the scene's went ready on the error (the console says
+ *   so, and every probe fails on a console error). X6.1h owes the game a
+ *   readiness of its own, and this arm reads it then.
+ * - `camera()`: the frame camera's matrices as the LAST render computed them
+ *   (read it after a draw) — `{ camera, view, projection, transform, planes,
+ *   globalPosition, renderWidth, renderHeight, aspect }`, the three matrices
+ *   their sixteen float32s, `planes` the six frustum planes as
+ *   `[nx, ny, nz, d]` doubles in Babylon's order (near, far, left, right,
+ *   top, bottom). The camera is the game's (`g.cameraSys.camera`) on both
+ *   arms, and so are its view and projection. Babylon's arm reads the scene's
+ *   transform (`getTransformMatrix`), its `frustumPlanes` and the scene
+ *   engine's render size and aspect; the game's reads the transform off the
+ *   frame host (`SceneFrame.host.viewProjection`, what every draw of ours is
+ *   handed), the planes off that transform by `Frustum.GetPlanesToRef`'s
+ *   arithmetic restated here (the row sums, then `Plane.normalize`), and the
+ *   size and the aspect off the surface (`Game.surface`). X6.1f ports the
+ *   camera, and the game's arm reads ours then.
+ * - `fields()` and `particles(on)`: every particle field (ours first, as the
+ *   frame steps and draws them, then the scene's `particleSystems`), and the
+ *   switch over both (`scene.particlesEnabled` and its twin
+ *   `ParticleDraw.enabled`) — ours alone with no scene. `constantDelta(on)`:
+ *   the frame's constant 16 ms (`scene.useConstantAnimationDeltaTime`, which
+ *   `SceneFrame` reads); with no scene it THROWS, until X6.1h gives the frame
+ *   its own.
+ * - `counts()`: what the scene holds — `{ meshes, geometries, materials,
+ *   activeMeshes }` — and `null` with no scene: Babylon holds nothing.
+ * - `materials()`: every material on the page — the scene's list, or with no
+ *   scene every one the FACTORY holds (`CelMaterialFactory`: its cache, its
+ *   emissives, its palette, its fire and its blast's paint).
+ * - `transpilers()`: the scene engine's two GLSL fields (`_glslang`,
+ *   `_tintWASM`; `assertNoTranspiler`), and `null` with no scene: no GLSL can
+ *   reach a backend that does not exist. `compiles()`: the game's DEV counter
+ *   of Babylon effect compiles (`Game.babylonCompiles`), `null` where the game
+ *   has none (a production build, a tree before X5.3d, and after X6.1c).
+ * - `clearColor()`: the frame's clear colour `{ r, g, b, a }` — the scene's
+ *   (`world/environment.ts` writes it), or with no scene the frame host's
+ *   (`SceneFrame.host.clearColor`, what our passes clear to).
+ * - `pictureKey()`: what the kit's pictures are cached under
+ *   (`world/textures.ts`' `WeakMap`, which a builder's `Scene` parameter
+ *   reaches): the scene, or with no scene the factory — X6.1d caches them per
+ *   factory (or renderer) and owes the probes that pass one its own.
+ * - `babylon()`: `{ scene, engine }` while there is a scene, else `null` — for
+ *   the probes that MEASURE Babylon itself (its `_draw`s, its rendering
+ *   groups, its effects, its pipeline contexts): what they hook is RETIRED
+ *   with it, and each says so when this answers `null`.
+ *
+ * `window.__refFrame({ scene: false })` builds the adapter as a page with no
+ * scene would have it, on a page that has one: how each arm off the game's
+ * objects is proven to answer what the Babylon read it replaces answers, on
+ * the same frame (X6.1a's check). And `window.__refNoScene = true` (an init
+ * script's, or `REF_NO_SCENE=1` in the environment, which `bootMap` turns
+ * into one) makes EVERY adapter the page asks for that one — how a probe runs
+ * as it will once X6.1h has deleted the scene, on a tree that still has one.
  */
 export function frameAdapter() {
-  window.__refFrame ??= () => {
+  window.__refFrame ??= (opts = {}) => {
     const g = window.__celshock;
-    const scene = g.scene;
+    const scene = opts.scene === false || window.__refNoScene ? null : (g.scene ?? null);
     // Babylon's engine: the SCENE's (the header) — `Game.engine` at a parent.
-    const e = scene.getEngine();
-    const babylon = {
-      arm: "babylon",
-      drawn: () =>
-        new Promise((res) => {
-          const o = scene.onAfterRenderObservable.add(() => {
-            scene.onAfterRenderObservable.remove(o);
-            res();
-          });
-        }),
-      onDrawn: (fn) => {
-        const o = scene.onAfterRenderObservable.add(fn);
-        return () => scene.onAfterRenderObservable.remove(o);
-      },
-      beforeDraw: (fn) => void scene.onBeforeRenderObservable.addOnce(fn),
-      onBeforeDraw: (fn) => {
-        const o = scene.onBeforeRenderObservable.add(fn);
-        return () => scene.onBeforeRenderObservable.remove(o);
-      },
-      submitted: () => new Promise((res) => void e.onEndFrameObservable.addOnce(() => res())),
-      onSubmitted: (fn) => {
-        const o = e.onEndFrameObservable.add(fn);
-        return () => e.onEndFrameObservable.remove(o);
-      },
-      onBegin: (fn) => {
-        const o = e.onBeginFrameObservable.add(fn);
-        return () => e.onBeginFrameObservable.remove(o);
-      },
-      index: () => scene.getFrameId(),
-      ready: () => scene.isReady(),
-      device: () => e._device ?? null,
-      canvas: () => e.getRenderingCanvas(),
-      canvasDepth: () => e._depthTexture ?? null,
-      scheduleDelta: (fn) => {
-        if (fn === null) {
-          delete e.getDeltaTime;
-          return;
+    const e = scene ? scene.getEngine() : null;
+    const none = (what) => () => {
+      throw new Error(`frame adapter: ${what} has no arm with no scene and no frame of the game's`);
+    };
+    const babylon = scene
+      ? {
+          arm: "babylon",
+          drawn: () =>
+            new Promise((res) => {
+              const o = scene.onAfterRenderObservable.add(() => {
+                scene.onAfterRenderObservable.remove(o);
+                res();
+              });
+            }),
+          onDrawn: (fn) => {
+            const o = scene.onAfterRenderObservable.add(fn);
+            return () => scene.onAfterRenderObservable.remove(o);
+          },
+          beforeDraw: (fn) => void scene.onBeforeRenderObservable.addOnce(fn),
+          onBeforeDraw: (fn) => {
+            const o = scene.onBeforeRenderObservable.add(fn);
+            return () => scene.onBeforeRenderObservable.remove(o);
+          },
+          submitted: () => new Promise((res) => void e.onEndFrameObservable.addOnce(() => res())),
+          onSubmitted: (fn) => {
+            const o = e.onEndFrameObservable.add(fn);
+            return () => e.onEndFrameObservable.remove(o);
+          },
+          onBegin: (fn) => {
+            const o = e.onBeginFrameObservable.add(fn);
+            return () => e.onBeginFrameObservable.remove(o);
+          },
+          index: () => scene.getFrameId(),
+          device: () => e._device ?? null,
+          canvas: () => e.getRenderingCanvas(),
+          canvasDepth: () => e._depthTexture ?? null,
+          scheduleDelta: (fn) => {
+            if (fn === null) {
+              delete e.getDeltaTime;
+              return;
+            }
+            const frame0 = e.frameId;
+            e.getDeltaTime = () => fn(e.frameId - frame0);
+          },
+          encoderRole: (enc) => (enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other"),
+          onDrawPhase: (begin, end, endFirst = false) => {
+            const b = begin ? scene.onBeforeDrawPhaseObservable.add(begin) : null;
+            const a = end ? scene.onAfterDrawPhaseObservable.add(end, undefined, endFirst) : null;
+            return () => {
+              if (b) scene.onBeforeDrawPhaseObservable.remove(b);
+              if (a) scene.onAfterDrawPhaseObservable.remove(a);
+            };
+          },
+          host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "babylon" }),
         }
-        const frame0 = e.frameId;
-        e.getDeltaTime = () => fn(e.frameId - frame0);
-      },
-      encoderRole: (enc) => (enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other"),
-      onDrawPhase: (begin, end, endFirst = false) => {
-        const b = begin ? scene.onBeforeDrawPhaseObservable.add(begin) : null;
-        const a = end ? scene.onAfterDrawPhaseObservable.add(end, undefined, endFirst) : null;
-        return () => {
-          if (b) scene.onBeforeDrawPhaseObservable.remove(b);
-          if (a) scene.onAfterDrawPhaseObservable.remove(a);
+      : {
+          // No scene and no frame of the game's yet: nothing to answer with.
+          arm: "none",
+          drawn: none("drawn"),
+          onDrawn: none("onDrawn"),
+          beforeDraw: none("beforeDraw"),
+          onBeforeDraw: none("onBeforeDraw"),
+          submitted: none("submitted"),
+          onSubmitted: none("onSubmitted"),
+          onBegin: none("onBegin"),
+          index: none("index"),
+          device: none("device"),
+          canvas: none("canvas"),
+          canvasDepth: none("canvasDepth"),
+          scheduleDelta: none("scheduleDelta"),
+          encoderRole: () => "other",
+          onDrawPhase: none("onDrawPhase"),
+          host: () => ({ engine: null, webgpu: false, frame: "none" }),
+        };
+    // Babylon's own two encoders, while it has an engine with any.
+    const babylonRole = (enc) =>
+      e && enc === e._renderEncoder ? "render" : e && enc === e._uploadEncoder ? "upload" : "other";
+    // `Frustum.GetPlanesToRef` (the header): near, far, left, right, top,
+    // bottom — each a column-3 sum or difference with one other column, then
+    // `Plane.normalize` — the arithmetic, in its order, on the same floats.
+    const planesOf = (m) =>
+      [
+        [2, 1],
+        [2, -1],
+        [0, 1],
+        [0, -1],
+        [1, -1],
+        [1, 1],
+      ].map(([k, s]) => {
+        let x = s > 0 ? m[3] + m[k] : m[3] - m[k];
+        let y = s > 0 ? m[7] + m[k + 4] : m[7] - m[k + 4];
+        let z = s > 0 ? m[11] + m[k + 8] : m[11] - m[k + 8];
+        let d = s > 0 ? m[15] + m[k + 12] : m[15] - m[k + 12];
+        const norm = Math.sqrt(x * x + y * y + z * z);
+        let magnitude = 0.0;
+        if (norm !== 0) magnitude = 1.0 / norm;
+        x *= magnitude;
+        y *= magnitude;
+        z *= magnitude;
+        d *= magnitude;
+        return [x, y, z, d];
+      });
+    // Every material the factory holds (the header), in the order it keeps them.
+    const factoryMaterials = () => {
+      const m = g.mats;
+      const out = [...m.cache.values(), ...m.emissiveCache.values()];
+      for (const w of m.emissiveWorld ?? []) if (w && !out.includes(w)) out.push(w);
+      for (const w of m.emissiveRecipes?.keys() ?? []) if (!out.includes(w)) out.push(w);
+      if (m.flame) out.push(m.flame);
+      if (m.blast) out.push(m.blast);
+      return out;
+    };
+    const questions = {
+      ready: scene
+        ? () => scene.isReady()
+        : () => {
+            // The game's pending data (the header): the foam mask, while it decodes.
+            const foam = g.water?.foam ?? null;
+            return foam === null || foam.texture !== null;
+          },
+      camera: () => {
+        const cam = g.cameraSys.camera;
+        let transform;
+        let planes;
+        let renderWidth;
+        let renderHeight;
+        let aspect;
+        if (scene) {
+          transform = Float32Array.from(scene.getTransformMatrix().m);
+          planes = scene.frustumPlanes.map((p) => [p.normal.x, p.normal.y, p.normal.z, p.d]);
+          renderWidth = e.getRenderWidth();
+          renderHeight = e.getRenderHeight();
+          aspect = e.getAspectRatio(cam);
+        } else {
+          transform = new Float32Array(16);
+          g.sceneFrame.host.viewProjection(transform);
+          planes = planesOf(transform);
+          renderWidth = g.surface.getRenderWidth();
+          renderHeight = g.surface.getRenderHeight();
+          aspect = g.surface.getAspectRatio(cam);
+        }
+        const gp = cam.globalPosition;
+        return {
+          camera: cam,
+          view: Float32Array.from(cam.getViewMatrix().m),
+          projection: Float32Array.from(cam.getProjectionMatrix().m),
+          transform,
+          planes,
+          globalPosition: [gp.x, gp.y, gp.z],
+          renderWidth,
+          renderHeight,
+          aspect,
         };
       },
-      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "babylon" }),
+      fields: () => [...(g.particleDraw ? g.particleDraw.fields : []), ...(scene ? scene.particleSystems : [])],
+      particles: (on) => {
+        if (scene) scene.particlesEnabled = on;
+        if (g.particleDraw) g.particleDraw.enabled = on;
+      },
+      constantDelta: (on) => {
+        if (!scene) {
+          throw new Error("frame adapter: the frame's constant delta has no arm with no scene (X6.1h owes the frame its own)");
+        }
+        scene.useConstantAnimationDeltaTime = on;
+      },
+      counts: () =>
+        scene
+          ? {
+              meshes: scene.meshes.length,
+              geometries: scene.geometries.length,
+              materials: scene.materials.length,
+              activeMeshes: scene.getActiveMeshes().length,
+            }
+          : null,
+      materials: () => (scene ? [...scene.materials] : factoryMaterials()),
+      transpilers: () => (e ? { _glslang: e._glslang, _tintWASM: e._tintWASM } : null),
+      compiles: () => (g.babylonCompiles ? g.babylonCompiles.count : null),
+      babylon: () => (scene ? { scene, engine: e } : null),
+      pictureKey: () => scene ?? g.mats,
+      clearColor: () => {
+        if (scene) {
+          const c = scene.clearColor;
+          return { r: c.r, g: c.g, b: c.b, a: c.a };
+        }
+        const out = { r: 0, g: 0, b: 0, a: 0 };
+        g.sceneFrame.host.clearColor(out);
+        return out;
+      },
     };
+    const base = { ...babylon, ...questions };
     // OURS (X5.4f): the frame is the game's (`Game.sceneFrame`), its points
     // Babylon's observables of its own, named for the scene's they replace.
     const f = g.sceneFrame;
-    if (!f) return babylon;
+    if (!f) return base;
     const ours = {
-      ...babylon,
+      ...base,
       arm: "ours",
       drawn: () =>
         new Promise((res) => {
@@ -397,7 +603,7 @@ export function frameAdapter() {
           if (a) f.onAfterDrawPhaseObservable.remove(a);
         };
       },
-      host: () => ({ engine: e.constructor.name, webgpu: Boolean(e.isWebGPU), frame: "ours" }),
+      host: () => ({ engine: e ? e.constructor.name : null, webgpu: Boolean(e?.isWebGPU), frame: "ours" }),
     };
     // OUR LOOP (X5.4g): the frame's begin, its submit, its delta and its one
     // encoder are the game's (`Game.frameLoop`).
@@ -422,8 +628,7 @@ export function frameAdapter() {
         const frame0 = l.frameId;
         l.clock.getDeltaTime = () => fn(l.frameId - frame0);
       },
-      encoderRole: (enc) =>
-        enc === l.submit.encoder ? "frame" : enc === e._renderEncoder ? "render" : enc === e._uploadEncoder ? "upload" : "other",
+      encoderRole: (enc) => (enc === l.submit.encoder ? "frame" : babylonRole(enc)),
     };
     // OUR DEVICE (X5.4h): the device and the canvas are the game's
     // (`Game.surface`); Babylon's engine is the scene's `NullEngine`.
@@ -434,7 +639,7 @@ export function frameAdapter() {
       device: () => g.renderer.device,
       canvas: () => s.canvas,
       host: () => ({
-        engine: e.constructor.name,
+        engine: e ? e.constructor.name : null,
         webgpu: typeof GPUDevice !== "undefined" && g.renderer.device instanceof GPUDevice,
         frame: "ours",
       }),
@@ -486,7 +691,9 @@ export async function bootMap(browser, url, id, { hideUI = true, init = null, vi
   });
   await page.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [MAP_KEY, id]);
   // The frame adapter, ahead of the caller's own init, so a probe's init may
-  // ask it from the game's first frame (it reads the game only when asked).
+  // ask it from the game's first frame (it reads the game only when asked) —
+  // as a page with no scene has it under `REF_NO_SCENE=1` (its header).
+  if (process.env.REF_NO_SCENE === "1") await page.addInitScript(() => (window.__refNoScene = true));
   await page.addInitScript(frameAdapter);
   if (init) await (Array.isArray(init) ? page.addInitScript(init[0], init[1]) : page.addInitScript(init));
   const started = Date.now();
@@ -595,7 +802,7 @@ export function placeVantage(page, vantage) {
     // they are: since X4.7c the ash is OURS and since X4.7d the rotor wash too
     // (`g.particleDraw`: `ParticleField`s, stepped and drawn by `ParticleDraw`,
     // in one list), where a parent before X4.7d held Babylon's rings
-    // (`GPUParticleSystem`s on `g.scene.particleSystems`) and one before X4.7c
+    // (`GPUParticleSystem`s on the scene's `particleSystems`) and one before X4.7c
     // its ash as well — and each call picks by which list a field is on, so a
     // BEFORE taken at any of those parents runs this file and touches each
     // field where it lies, exactly as the file before X4.7c did there. The names a field is written through (`emitter`,
@@ -609,16 +816,13 @@ export function placeVantage(page, vantage) {
       const ours = (f) => draw !== null && draw.fields.includes(f);
       const F = {
         /** Every field of the game's, in the order the frame steps and draws them: ours first, at `"particles"`. */
-        all: () => [...(draw ? draw.fields : []), ...g.scene.particleSystems],
+        all: () => window.__refFrame().fields(),
         motes: () => g.atmosphere.system,
         /** One hull's rings, dust then spray, as `RotorWash` holds them. */
         ringsOf: (w) => [w.dust, w.spray].filter(Boolean),
         rings: () => g.rotorWash.washes.flatMap((w) => F.ringsOf(w)),
-        /** `scene.particlesEnabled`, and ours's twin of it. */
-        enable: (on) => {
-          g.scene.particlesEnabled = on;
-          if (draw) draw.enabled = on;
-        },
+        /** `scene.particlesEnabled`, and ours's twin of it (the frame adapter's switch, X6.1a). */
+        enable: (on) => window.__refFrame().particles(on),
         ready: (f) => (ours(f) ? draw.isReady(f) : f.isReady()),
         /** Whether `RotorWash.update` left the ring emitting (a rate over zero). */
         emits: (f) => f.emitRate > 0,
@@ -1716,9 +1920,8 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
     // `scene.particlesEnabled`, and since X4.7c ours beside it
     // (`ParticleDraw.enabled`), the same at the thaw.
     if (f.includes("particles")) {
-      const on = Boolean(window.__refMotes || window.__refParticles);
-      g.scene.particlesEnabled = on;
-      if (g.particleDraw) g.particleDraw.enabled = on;
+      // Both through the frame adapter's switch (X6.1a): ours alone with no scene.
+      window.__refFrame().particles(Boolean(window.__refMotes || window.__refParticles));
     }
     if (f.includes("lights")) {
       // A lantern's flame is a clock like any other and is pinned like one.
@@ -1848,7 +2051,7 @@ export function freeze(page, set = FREEZE_SET, { windTime = 0, turn = 0, strike 
  * the constant rather than of how it got there.
  */
 export function thaw(page) {
-  return page.evaluate(() => {
+  return page.evaluate(frameAdapter).then(() => page.evaluate(() => {
     const s = window.__refThaw;
     if (!s) return;
     const g = window.__celshock;
@@ -1883,9 +2086,8 @@ export function thaw(page) {
     g.mats.updateWind = s.wind;
     if (g.grass && s.grass) g.grass.update = s.grass;
     if (g.water && s.water) g.water.update = s.water;
-    g.scene.particlesEnabled = true;
-    if (g.particleDraw) g.particleDraw.enabled = true;
-  });
+    window.__refFrame().particles(true);
+  }));
 }
 
 /**
@@ -2007,16 +2209,18 @@ export function fps(page, ms) {
  * Returns a list of failures so a caller can push them onto its own.
  */
 export function assertNoTranspiler(page) {
-  return page.evaluate(() => {
-    // Babylon's engine, the scene's (`frameAdapter`'s header): a `NullEngine`
-    // since X5.4h, which no GLSL can reach a backend through at all.
-    const e = window.__celshock.scene.getEngine();
+  return page.evaluate(frameAdapter).then(() => page.evaluate(() => {
+    // Babylon's engine, the scene's, through the frame adapter (X6.1a): a
+    // `NullEngine` since X5.4h, which no GLSL can reach a backend through at
+    // all, and with no scene RETIRED (`transpilers()` null): nothing to ask.
+    const t = window.__refFrame().transpilers();
     const bad = [];
+    if (!t) return bad;
     for (const k of ["_glslang", "_tintWASM"]) {
-      if (e[k] !== undefined && e[k] !== null) {
+      if (t[k] !== undefined && t[k] !== null) {
         bad.push(`engine.${k} exists — a GLSL shader reached the backend`);
       }
     }
     return bad;
-  });
+  }));
 }

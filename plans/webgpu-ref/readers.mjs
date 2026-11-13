@@ -52,7 +52,8 @@
  * across trees (`--against`): that is the oracle.
  *
  * **Every change of Babylon's render id, and the site that made it**, is logged
- * per frame in both modes: the scene's `_renderId` is made an accessor on the
+ * per frame in both modes (while there is a scene: through the frame adapter's
+ * `babylon()`, X6.1a, and with none the log is empty — RETIRED): the scene's `_renderId` is made an accessor on the
  * instance (reads and writes the same number; nothing else changes), and each
  * write is filed under the stack that made it — the CAMERA's render
  * (`_renderForCamera`), a render target's render (`RenderTargetTexture`; the
@@ -84,6 +85,27 @@
  * outputs Babylon computed (the view, the projection and the scene's transform
  * matrix as float32 bits, `globalPosition` as float64 bits). It is compared
  * across processes and trees (`--against`).
+ *
+ * **Since X6.1a it is X6.1f's BEFORE too**: the camera is read through the
+ * frame adapter (`harness.mjs`' `camera()`, which answers with no scene), and
+ * each frame also logs the six FRUSTUM PLANES (`planes`, float64 bits, in
+ * `Frustum.GetPlanesToRef`'s order) and the GUN MARKER (`marker`): what the
+ * frame pushed to the HUD — `"unpushed"` where nothing updated it, `null` for
+ * no marker, else the point it projected (`Game.markerAt`), the projection's
+ * output (`Game.markerOut`) and the fractions `HUD.setGunMarker` was handed, as
+ * float64 bits. On a map with a gunned hull (`--map=coldharbour`) two steps
+ * follow `resumed`: the hull BOARDED BY HAND (`Game.mount`, a picture of
+ * boarding, which is all a marker needs) as the driver and then the gunner,
+ * with the chase camera's place (its eye and look the pose's, roll 0, so the
+ * camera's focal distance is a constant), both guns' muzzles (a few metres
+ * ahead of the eye) and both bearings (the pose's own) pinned as functions of
+ * the pose — so the marker is the camera's arithmetic and nothing of the
+ * drive's — and taken off after (`Game.clearVehicle`). The marker projects
+ * through the PREVIOUS frame's transform, so between steps the pose holds the
+ * step's last frame (`n`) rather than counting on past it by however many
+ * frames the round trip to Node took; no logged frame's pose moved by that.
+ * The default map stays Hollowmere, whose log is the old one's with `planes`
+ * and `marker` beside it.
  *
  * **What makes two runs comparable**: a replay's frames are its record's, the
  * camera log's its steps', and neither depends on how fast the machine ran.
@@ -189,7 +211,9 @@ process.exit(failed ? 1 : 0);
 function installIds() {
   const g = window.__celshock;
   const F = window.__refFrame();
-  const scene = g.scene;
+  // Babylon's scene through the frame adapter (`harness.mjs`, X6.1a): with
+  // none, its render id is RETIRED and `ids` logs nothing.
+  const scene = F.babylon()?.scene ?? null;
   const X = (window.__rd = { frame: 0, inFrame: false, ids: [], ours: [], base: null });
   // OUR render id (X5.4f): each advance, wrapped on the instance.
   const rid = g.renderId;
@@ -226,6 +250,7 @@ function installIds() {
     if (!/Scene\.render|_renderLoop|tick/.test(all)) return { site: "the readiness timer", top };
     return { site: "other", top };
   };
+  if (!scene) return;
   let id = scene._renderId;
   Object.defineProperty(scene, "_renderId", {
     configurable: true,
@@ -620,28 +645,100 @@ async function cameraLog(page) {
       for (let i = 3; i >= 0; i--) s += u8b[i].toString(16).padStart(2, "0");
       return s;
     };
-    const C = (window.__cam = { step: null, k: 0, n, log: [], pins: 0 });
+    const C = (window.__cam = { step: null, k: 0, n, log: [], pins: 0, marker: "unpushed" });
     // The pose, pinned at the frame's own update: a function of the step and
-    // its frame alone.
-    const pin = () => {
+    // its frame alone — the frame held at the step's last (`n`) between steps,
+    // where a step's count runs on past it by however many frames the round
+    // trip to Node took (X6.1a: the gun marker reads the frame BEFORE's matrices).
+    const poseOf = () => {
       const s = C.stepIndex ?? 0;
-      const k = C.k;
-      cam.position.set(3 + s * 0.37 + k * 0.011, 2.1 + s * 0.05, -7 + k * 0.023);
-      cam.rotation.set(0.05 + k * 0.004, 0.3 + s * 0.21 + k * 0.009, 0);
+      const k = Math.min(C.k, C.n);
+      return {
+        x: 3 + s * 0.37 + k * 0.011,
+        y: 2.1 + s * 0.05,
+        z: -7 + k * 0.023,
+        pitch: 0.05 + k * 0.004,
+        yaw: 0.3 + s * 0.21 + k * 0.009,
+      };
     };
+    const pin = () => {
+      const q = poseOf();
+      cam.position.set(q.x, q.y, q.z);
+      cam.rotation.set(q.pitch, q.yaw, 0);
+    };
+    window.__camPose = poseOf;
     F.onBeforeDraw(() => {
       pin();
       C.pins++;
     });
+    // The gun marker (X6.1a, X6.1f's BEFORE): what the frame pushed to the HUD
+    // — `"unpushed"` on a frame whose HUD was not updated, `null` for no marker,
+    // else the point it projected (`Game.markerAt`), the projection's output
+    // (`Game.markerOut`) and the fractions the HUD was handed, as float64 bits.
+    F.onBegin(() => (C.marker = "unpushed"));
+    const setGunMarker = g.hud.setGunMarker;
+    g.hud.setGunMarker = function (x, y) {
+      C.marker =
+        x === null || x === undefined
+          ? null
+          : {
+              at: [g.markerAt.x, g.markerAt.y, g.markerAt.z].map(b64),
+              out: [g.markerOut.x, g.markerOut.y, g.markerOut.z].map(b64),
+              screen: [x, y].map(b64),
+            };
+      return setGunMarker.call(this, x, y);
+    };
+    // A HULL (X6.1a, on a map with a gunned one: the gun marker's frames).
+    // Boarded by hand — a picture of boarding, which is all a marker needs
+    // (`VERIFYING.md`: the authority never seats it, and refuses every drive
+    // the page reports) — and everything the marker reads PINNED as the pose
+    // is: the chase camera's place (its eye and look the pose's, so the
+    // camera's focal distance is a constant), the gun's and the cupola gun's
+    // muzzles a little ahead of the eye and their bearings the pose's own, so
+    // the marker is a function of the step and its frame alone.
+    const V = cam.position.constructor;
+    const aim = () => {
+      const q = poseOf();
+      const d = { x: Math.sin(q.yaw) * Math.cos(q.pitch), y: -Math.sin(q.pitch), z: Math.cos(q.yaw) * Math.cos(q.pitch) };
+      return { q, d };
+    };
+    window.__camHull = (i, seat) => {
+      const tank = g.vehicles.hulls[i];
+      if (!C.hull) {
+        C.hull = { tank };
+        g.cameraSys.place = function (_eye, _look, fov) {
+          const { q, d } = aim();
+          return Object.getPrototypeOf(this).place.call(this, new V(q.x, q.y, q.z), new V(q.x + d.x * 10, q.y + d.y * 10, q.z + d.z * 10), fov, 0);
+        };
+        const muzzle = (ahead, drop) => (out) => {
+          const { q, d } = aim();
+          return out.set(q.x + d.x * ahead, q.y + d.y * ahead - drop, q.z + d.z * ahead);
+        };
+        const bearing = (out) => {
+          const { d } = aim();
+          return out.set(d.x, d.y, d.z);
+        };
+        tank.muzzleToRef = muzzle(5, 0.5);
+        tank.gunDirToRef = bearing;
+        tank.mgMuzzleToRef = muzzle(3, 0.25);
+        tank.mgDirToRef = bearing;
+      }
+      if (g.driving) g.clearVehicle();
+      g.mount(tank, seat);
+    };
+    window.__camHullOff = () => {
+      if (!C.hull) return;
+      g.clearVehicle();
+      for (const k of ["muzzleToRef", "gunDirToRef", "mgMuzzleToRef", "mgDirToRef"]) delete C.hull.tank[k];
+      delete g.cameraSys.place;
+      C.hull = null;
+    };
     F.onDrawn(() => {
       if (C.step && C.k < C.n && g.state === C.want) {
-        // Babylon's engine, the scene's: what the camera's projection reads
-        // (`Game.engine` at a parent, a `NullEngine` since X5.4h).
-        const e = g.scene.getEngine();
-        const v = cam.getViewMatrix();
-        const p = cam.getProjectionMatrix();
-        const t = g.scene.getTransformMatrix();
-        const gp = cam.globalPosition;
+        // The camera through the frame adapter (`harness.mjs`, X6.1a): its
+        // matrices as this frame computed them, the render size and the aspect
+        // the engine handed it, and the frustum planes.
+        const c = F.camera();
         C.log.push({
           step: C.step,
           k: C.k,
@@ -654,13 +751,15 @@ async function cameraLog(page) {
             maxZ: b64(cam.maxZ),
             mode: cam.mode,
             fovMode: cam.fovMode,
-            renderSize: [e.getRenderWidth(), e.getRenderHeight()],
-            aspect: b64(e.getAspectRatio(cam)),
+            renderSize: [c.renderWidth, c.renderHeight],
+            aspect: b64(c.aspect),
           },
-          view: Array.from(v.m, b32).join(""),
-          projection: Array.from(p.m, b32).join(""),
-          transform: Array.from(t.m, b32).join(""),
-          globalPosition: [gp.x, gp.y, gp.z].map(b64),
+          view: Array.from(c.view, b32).join(""),
+          projection: Array.from(c.projection, b32).join(""),
+          transform: Array.from(c.transform, b32).join(""),
+          globalPosition: c.globalPosition.map(b64),
+          planes: c.planes.map((q) => q.map(b64)),
+          marker: C.marker,
         });
       }
       if (C.step && g.state === C.want) C.k++;
@@ -740,6 +839,13 @@ async function cameraLog(page) {
   });
   await step("the pause", "paused", () => g(() => window.__celshock.pause()));
   await step("resumed", "playing", () => g(() => window.__celshock.resume()));
+  // A gunned hull, where the map has one (X6.1a): the driver's marker, then the gunner's.
+  const hull = await g(() => window.__celshock.vehicles.hulls.findIndex((h) => Boolean(h.spec.gun)));
+  if (hull >= 0) {
+    await step("a hull, the driver", "playing", () => g((i) => window.__camHull(i, 0), hull));
+    await step("a hull, the gunner", "playing", () => g((i) => window.__camHull(i, 1), hull));
+    await g(() => window.__camHullOff());
+  }
   await step("the round over", "roundover", () => g(() => window.__celshock.endRound(0)));
   await step("the menu again", "menu", () => g(() => window.__celshock.enterMenu()));
   const log = await page.evaluate(() => window.__cam.log);

@@ -154,6 +154,10 @@
  *
  * A lost device ends it (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3).
+ *
+ * **The scene's engine is asked of the frame adapter since X6.1a** (`harness.mjs`'
+ * `babylon()`): its two hooks (a parent's Babylon compute, before X5.1b) are
+ * RETIRED with no scene.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { bootMap, freeze, FREEZE_SET, hardLimit, installRound, launchClient, root, startDevServer, thaw } from "./harness.mjs";
@@ -411,8 +415,10 @@ page.on("dialog", (d) => void d.accept());
 await page.evaluate(async () => {
   const g = window.__celshock;
   const P = window.__giProbe;
-  // Babylon's engine, the scene's (`harness.mjs`' `frameAdapter`): `Game.engine` at a parent, a `NullEngine` since X5.4h.
-  const e = g.scene.getEngine();
+  // Babylon's engine, the scene's, through the frame adapter (`harness.mjs`,
+  // X6.1a): `Game.engine` at a parent, a `NullEngine` since X5.4h — and with
+  // no scene its two hooks (a parent's Babylon compute, before X5.1b) RETIRED.
+  const e = window.__refFrame().babylon()?.engine ?? null;
   const gi = g.gi;
   P.src = await import("/src/shaders/wgsl/giTrace.ts");
   P.records = [];
@@ -430,8 +436,8 @@ await page.evaluate(async () => {
   P.tokens = 0;
   // Babylon's dispatch: did it END a render pass? `_endCurrentRenderPass`
   // answers 0 when none was open (`thinWebGPUEngine.js`).
-  const cd = e._computeDispatch;
-  e._computeDispatch = function (effect, ...rest) {
+  const cd = e?._computeDispatch;
+  if (e) e._computeDispatch = function (effect, ...rest) {
     const key = String(effect?._key ?? "");
     const n = key.includes("fn cloudLitAt(") ? "gi-trace" : key.includes("var outIrr:") ? "gi-compose" : key.includes("var outVis0:") ? "gi-vis" : null;
     if (!n) return cd.call(this, effect, ...rest);
@@ -465,8 +471,8 @@ await page.evaluate(async () => {
   window.__refFrame().onDrawPhase(() => P.dp++, null);
   // Babylon's materials binding the volume's textures or the cloud field: a
   // Babylon draw sampling them, counted at the engine's bind.
-  const st = e._setTexture;
-  e._setTexture = function (channel, texture, ...rest) {
+  const st = e?._setTexture;
+  if (e) e._setTexture = function (channel, texture, ...rest) {
     const nm = texture?.name ?? "";
     if (nm.startsWith("gi-") || nm === "cloudShadow") {
       P.setTex++;
@@ -1250,7 +1256,7 @@ async function samplerAB(n) {
       ? {}
       : filled
         ? { _cachedWrapU: null, _cachedWrapV: null, _cachedWrapR: null, _cachedAnisotropicFilteringLevel: null }
-        : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, g.scene.getEngine().getCaps().maxAnisotropy) };
+        : { _cachedWrapU: cloud.wrapU, _cachedWrapV: cloud.wrapV, _cachedWrapR: cloud.wrapR, _cachedAnisotropicFilteringLevel: Math.min(cloud.anisotropicFilteringLevel, window.__refFrame().babylon().engine.getCaps().maxAnisotropy) };
     for (const [k, v] of Object.entries(forced)) Object.defineProperty(it, k, { configurable: true, get: () => v, set: () => {} });
     const b = await run();
     if (it) {

@@ -73,6 +73,12 @@
  * pictures that nothing has happened to with five different ones, in a diff
  * where the sixth is the only one anybody meant. With no ids it does the lot,
  * which is what a fresh checkout and a palette change both want.
+ *
+ * **The frame is asked of the reference harness's frame adapter since
+ * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
+ * script): its draws (`onDrawn`), its readiness (`ready`, the scene's while there
+ * is one, the game's pending data after) and the render size (`camera()`), so
+ * nothing here names `g.scene`.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,6 +86,9 @@ import sharp from "sharp";
 import { launchClient } from "./browser.mjs";
 import { root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
+// The frame — its draws, its readiness — through the reference harness's ONE
+// adapter (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
 const MAP_KEY = "greywatch.map";
@@ -190,6 +199,7 @@ async function captureMap(browser, url, id, vantage) {
       [RENDER_SCALE_KEY, "1"],
     ],
   );
+  await page.addInitScript(frameAdapter);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // The whole window is what a page screenshot takes, so the interface has to
   // go — the round below leaves the deploy screen up over the view.
@@ -242,25 +252,29 @@ async function captureMap(browser, url, id, vantage) {
 
       // Readiness first and the settle after it, for the reason in the header:
       // a frame count cannot stand in for a map having compiled its shaders,
-      // and the frame that answers that question is `scene.isReady()`.
+      // and the frame that answers that question is `scene.isReady()` — the
+      // frame adapter's `ready` and `onDrawn` (`harness.mjs`, X6.1a): the
+      // scene's readiness while there is one, the game's after, and OUR
+      // frame's draw since X5.4f.
+      const F = window.__refFrame();
       const readyBy = performance.now() + readyTimeout;
       await new Promise((resolve, reject) => {
-        const seen = (g.sceneFrame ?? g.scene).onAfterRenderObservable.add(() => {
-          if (!g.scene.isReady()) {
+        const off = F.onDrawn(() => {
+          if (!F.ready()) {
             if (performance.now() < readyBy) return;
-            (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
+            off();
             reject(new Error("scene never became ready"));
             return;
           }
-          (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
+          off();
           resolve();
         });
       });
       await new Promise((resolve) => {
         let n = 0;
-        const seen = (g.sceneFrame ?? g.scene).onAfterRenderObservable.add(() => {
+        const off = F.onDrawn(() => {
           if (++n < frames) return;
-          (g.sceneFrame ?? g.scene).onAfterRenderObservable.remove(seen);
+          off();
           resolve();
         });
       });
@@ -278,11 +292,11 @@ async function captureMap(browser, url, id, vantage) {
   // one — which is the bug `SCALE` exists to fix, so it is checked rather
   // than trusted.
   const backing = await page.evaluate(() => {
-    // The canvas is the game's own since X5.4h (`Game.surface`,
-    // `core/CanvasSurface.ts`); an older tree's is Babylon's engine's.
-    const g = window.__celshock;
-    const e = g.surface ?? g.scene.getEngine();
-    return [e.getRenderWidth(), e.getRenderHeight()];
+    // The render size the camera is handed, through the frame adapter
+    // (`harness.mjs`, X6.1a): the scene engine's, which reads the game's
+    // surface since X5.4h (`core/CanvasSurface.ts`), or the surface's own.
+    const c = window.__refFrame().camera();
+    return [c.renderWidth, c.renderHeight];
   });
   await page.close();
   if (backing[0] !== WIDTH * SCALE || backing[1] !== HEIGHT * SCALE) {

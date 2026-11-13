@@ -481,3 +481,22 @@ changed 537` (car 94, depot 40, office 31, shophouse 82, tower 290) and
 arguments, and `Build.pane`'s `getGlass` call lost its slot argument. Measured
 at X4.6e's review: with that call given its old four arguments back, the
 same run against 8bf7789's baseline is `identical`.
+
+**And `kit:hash` runs with no Babylon since X6.1a, its record restated off what
+the drawing IS** (`scripts/kit-hash.mjs`' header): no `NullEngine`, `Scene`,
+`StandardMaterial`, `Mesh`, `TransformNode` or `BoundingInfo` is made — a
+builder's scene is a plain stand-in (all it keys is its pictures' cache) and a
+material a plain named object — and a part is hashed as its attributes and
+indices WHOLE (each array's type, its numbers as exact doubles), its
+transform as it holds it, its material's name and its metadata, where it was
+hashed as the Babylon mesh it used to become (float32, the quaternion zeroing
+the Euler angles, and in `--models` every flag Babylon's defaults supplied).
+The bounding box Babylon computed is restated off `boundsOf`, the defaults are
+dropped, and a math value is spelled by kind and value whichever library made
+it, so moving a builder onto `src/math/` cannot move a fingerprint by
+spelling. **So a fingerprint taken before X6.1a is of the other format and
+compares with nothing**: take the BEFORE with the same script. At X6.1a's
+parent the two instruments saw the same builds — every key, no error, and
+every build that one called equal to another the other did too, drawing,
+colliders and `set` alike (3,722 kit builds, 244 model builds) — and `--feet`
+printed the same table.

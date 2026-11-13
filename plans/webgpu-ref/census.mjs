@@ -32,6 +32,11 @@
  * It is a STRUCTURAL count of one vantage at a time, the rows the bank
  * already chose; `VERIFYING.md`'s 30-sample sweep is the protocol for a
  * figure quoted as a map's.
+ *
+ * **Babylon's half is asked of the frame adapter since X6.1a** (`harness.mjs`'
+ * `babylon()`): the scene's engine while there is a scene, and with none its
+ * `_draw`s are RETIRED and count 0, our renderer's main-pass draws counted as
+ * before.
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { freeze, hardLimit, installRound, MAP_IDS, placeVantage, root, settle, startDevServer, launchClient, thaw, vantages, waitUntilDrawn, bootMap } from "./harness.mjs";
@@ -64,16 +69,16 @@ const VANTAGES = await vantages(browser, vite.url);
 /** Arms a counter of main-pass draws in the page; returns nothing. */
 function arm(page) {
   return page.evaluate(() => {
-    const g = window.__celshock;
-    const scene = g.scene;
-    const engine = scene.getEngine();
+    // Babylon's engine, the scene's, through the frame adapter (`harness.mjs`,
+    // X6.1a): null with no scene, where Babylon's draws are RETIRED and count 0.
+    const engine = window.__refFrame().babylon()?.engine ?? null;
     const c = { frame: undefined, babylon: 0 };
     // The draw phase's two ends through the frame adapter (`harness.mjs`,
     // X5.4f: the scene's observables on Babylon's arm, our frame's on ours),
     // the end inserted FIRST as it was on the scene's.
     window.__refFrame().onDrawPhase(
       () => {
-        c.frame = engine._currentRenderTarget;
+        c.frame = engine ? engine._currentRenderTarget : undefined;
         c.babylon = 0;
       },
       () => (c.frame = undefined),
@@ -81,7 +86,7 @@ function arm(page) {
     );
     // Babylon's draws, on the scene's engine (a `NullEngine` since X5.4h,
     // which has no `_draw` and draws nothing: 0 by construction).
-    const draw = engine._draw?.bind(engine);
+    const draw = engine?._draw?.bind(engine);
     if (draw) {
       engine._draw = (...a) => {
         if (c.frame !== undefined && engine._currentRenderTarget === c.frame) c.babylon++;
