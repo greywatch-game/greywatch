@@ -36,6 +36,12 @@
  *     (`includes.ts`, the cel program's Babylon declarations), so a body no
  *     program of ours assembles yet is held too (X6.1's ratchet: a sub-step
  *     adds every directory it leaves with no value path to the package).
+ *   - The directories that reached nothing of the package already, added
+ *     together at X6.1d's review so the ratchet holds them too: `src/bench/`,
+ *     `src/config/`, `src/dev/` (the mixer), `src/geometry/`, `src/pwa/`, the
+ *     seven shipped maps' own directories under `src/world/` and the proving
+ *     ground's (`src/world/proving/`) — a map's layout, heights and collision
+ *     bake being data on `src/math/`.
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -50,7 +56,8 @@
  * in the commit that made the directory, X3.2 added `src/math/` to
  * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
  * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree, a directory at
- * a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`). **An entry in
+ * a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`; X6.1d's
+ * review: the thirteen that were already clean). **An entry in
  * `NOT_ROOTS` is exempt from being a root, never from being REACHED**: a
  * simulation that imports the crossing still fails, which is the point of
  * having one door.
@@ -107,8 +114,18 @@ import { fileURLToPath } from "node:url";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
-/** Every source file under these is a root. */
-const DIRECTORIES = ["server", "src/sim", "src/render", "src/math", "src/shaders/wgsl"];
+/**
+ * Every source file under these is a root (a directory's subdirectories with
+ * it: `src/dev` holds `src/dev/mixer`). The second line is X6.1d's review
+ * (`BABYLON_EXIT.md`): every directory that already reached nothing of the
+ * package at its parent, ac96836e, added at once so the ratchet holds them.
+ */
+const DIRECTORIES = [
+  "server", "src/sim", "src/render", "src/math", "src/shaders/wgsl",
+  "src/bench", "src/config", "src/dev", "src/geometry", "src/pwa",
+  "src/world/cinderhaven", "src/world/coldharbour", "src/world/greyfen", "src/world/harrowmead",
+  "src/world/hollowmere", "src/world/kurenai", "src/world/sarab", "src/world/proving",
+];
 
 /**
  * The simulation modules, one by one.

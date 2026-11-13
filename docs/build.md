@@ -340,7 +340,11 @@ adds `src/render/` and `src/math/` to its `DIRECTORIES`, naming
 file from being a root and never from being REACHED; X6.1 widens it to the
 whole tree, the day the package goes — a directory at a time as each of its
 sub-steps empties one (`src/shaders/wgsl/` at X6.1c, whose one Babylon importer,
-the cel program's Babylon declarations, went then).
+the cel program's Babylon declarations, went then). X6.1d's review added the
+thirteen that reached nothing of the package already, so the ratchet holds them
+too: `src/bench/`, `src/config/`, `src/dev/` (the mixer), `src/geometry/`,
+`src/pwa/`, the seven shipped maps' own directories under `src/world/` and the
+proving ground's.
 
 ## A map reproduces from its generator: `check-maps.mjs`
 

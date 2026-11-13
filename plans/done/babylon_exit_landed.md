@@ -13536,9 +13536,11 @@ valid, the lockfile unchanged), every GPU run alone on the GPU. No device lost.
   `plans/webgpu-ref/shaders.mjs`' comments.
 - **The gate**: no directory is left with no value path to the package — `src/world/kit` reaches it
   through `world/parts.ts` (X6.1g's), `src/ui` through `entities/weaponKit.ts`' `Vector3` (X6.1e's) —
-  so `DIRECTORIES` is unchanged. **Flagged**: `src/world/props`, `src/bench` and `src/config` pass the
-  gate today (tried by hand, not landed); no sub-step names them, and adding them is the owner's or
-  a later sub-step's.
+  so `DIRECTORIES` is unchanged. **Flagged** (corrected by its review): the directories with no value
+  path to the package, at ac96836e and at 40c058a alike, are `src/bench`, `src/config`, `src/geometry`,
+  `src/dev` and `src/dev/mixer`, `src/pwa`, the seven map directories and `src/world/proving` — clean
+  before X6.1d, so none is this sub-step's emptying. `src/world/props` is NOT among them (`props/ash.ts`
+  reaches `world/parts.ts:82`, X6.1g's). Its review added all thirteen to `DIRECTORIES`.
 - **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default and `volumetrics=low` **147
   of 147 byte-equal**; `volumetrics=high` 146 byte-equal and `harrowmead-view-pistol-reload` within its
   known flake (2 pixels, 1/255).
