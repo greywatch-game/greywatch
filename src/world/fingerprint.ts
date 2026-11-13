@@ -127,7 +127,7 @@ export function worldFingerprint(map: GameMap): WorldFingerprint {
   }
 
   // Order-dependent on purpose: two sides that built the same timber in a
-  // different order have merged it into different meshes.
+  // different order, or split it into different groups, hold different lists.
   const ray: number[] = [];
   for (const group of map.rayGroups) {
     ray.push(group.length);
@@ -136,7 +136,7 @@ export function worldFingerprint(map: GameMap): WorldFingerprint {
 
   // The grouping alone: the boxes themselves are already covered by the nav
   // graph and the volume, so what is left to disagree about is which of them
-  // share a mesh.
+  // share a group, and in what order (a body's sweep breaks ties in it).
   const groups: number[] = [];
   for (const group of map.boxGroups) {
     groups.push(group.length, ...group);

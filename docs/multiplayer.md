@@ -1820,9 +1820,11 @@ to report, because the client drew the outcome and the authority is the only
 side that counts.
 
 `rayGroups` stays **grouped as the client groups it**, one inner array per
-placement (one collider mesh each until `BABYLON_EXIT.md` X5.3e), and
-`RayWorld` indexes it group by group on both sides. The grouping was measured
-when every ray was a mesh pick — merged per fence, the timber cost a shot 0.2%;
+placement (one collider mesh each until `BABYLON_EXIT.md` X5.3e), because the
+server rebuilds the same list from it and `npm run parity` compares it group
+by group; `RayWorld` itself flattens it and indexes every strut on its own. The
+grouping was measured when every ray was a mesh pick — merged per fence, the
+timber cost a shot 0.2%;
 merged into one mesh for the map it wrapped a single bounding box around every
 fence in the village; not merged at all it cost ~17% on every ray in the
 process — and the server is told it rather than inventing one, because it is a
