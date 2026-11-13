@@ -13088,3 +13088,47 @@ clean at 5be4571 afterwards.
 Scripts and logs in the session's scratchpad, `x54-whole/` (`before.sh`, `after.sh`, `probes.sh`,
 `bisect.sh`, `bglabels.mjs`, `structure.mjs`, `viewer7.mjs`, `func.sh`, `bench.sh`,
 `x54-post-ignore.txt`, the BEFORE and AFTER logs and kept frames).
+
+**X5.4, the phone** (2026-11-13; no change to the game: this note, the plan's "The phone, read", the
+X5.4 heading and row "X5.4g, the frame timer's passes"). The owner's three captures on the branch's
+preview URL, the build 7896a35 (report version 38), the same phone as every earlier reading (Android,
+DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
+- **The protocol**: two warm-up runs thrown away, then `?bench=<map>&gpu` one run a map, Greyfen
+  00:40, Harrowmead 00:45, Sarab 00:49 UTC; render scale 0.5, cap 60, shadows, grass, Trees and glow
+  `low`, FXAA, blur, grain, volumetrics, GI and ground relief off, the minimap on. Every frame one
+  matched 1170x540 (`sizes` 1, `staleFrames` 0 on every group); fight hashes `83e8e74ef36916ba`,
+  `3ae90f2f08fb0643`, `986c2e35557fb679`; `pipelines` 0 render, 0 compute, 0 modules.
+- **The segment groups' means** (ms; "GPU" `gpu.frame`'s mean over its samples, "cull" `gpu.cull`'s):
+
+  | map | part | mean | p95 | 1% low | tick | render | GPU | cull |
+  | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+  | Greyfen | vantages | 16.67 | 17.6 | 21.8 | 2.60 | 1.02 | 12.0 | 0.38 |
+  | Greyfen | path | 16.70 | 17.4 | 26.4 | 2.56 | 0.98 | 12.9 | 0.33 |
+  | Greyfen | fight | 20.65 | 56.5 | 75.9 | 4.42 | 1.44 | 16.1 | 0.48 |
+  | Harrowmead | vantages | 19.02 | 40.9 | 68.3 | 3.10 | 1.10 | 15.4 | 0.51 |
+  | Harrowmead | path | 19.66 | 45.1 | 65.6 | 3.22 | 1.11 | 16.5 | 0.48 |
+  | Harrowmead | fight | 22.52 | 56.3 | 86.3 | 5.15 | 1.40 | 18.8 | 0.60 |
+  | Sarab | vantages | 16.68 | 17.2 | 20.9 | 3.12 | 1.31 | 11.1 | 0.57 |
+  | Sarab | path | 16.67 | 17.7 | 22.1 | 3.14 | 1.28 | 11.3 | 0.48 |
+  | Sarab | fight | 16.67 | 17.1 | 20.3 | 4.48 | 1.50 | 11.6 | 0.55 |
+
+  The fights' sim step (the core's `sim`, per stepped frame): 0.41, 0.68 and 0.95 ms.
+- **Against X4.1's AFTER** (2026-10-31, f7534f2), the fights: tick 8.38 / 9.16 / 10.99 → 4.42 / 5.15 /
+  4.48, `render` 4.92 / 5.06 / 7.22 → 1.44 / 1.40 / 1.50, p95 64.1 / 66.6 / 28.1 → 56.5 / 56.3 / 17.1,
+  GPU 18.6 / 19.8 / 13.2 → 16.1 / 18.8 / 11.6. The CPU's fall is past the ~8% floor and is the exit's;
+  the GPU's 5–13% is not credited to the code (the desktop's `gpu.frame` moved 0–1.3% over X5.4, and
+  X4.1's AFTER ran twenty minutes into a session).
+- **Sarab's fight holds 60**: 99.6% of its frames under 18 ms, 3 hitches and 4 long animation frames
+  in the capture; p95 17.1 against X0.4's 25. Greyfen's fight p95 56.5 against its 69. One run each,
+  so X6.2's reading of the targets is still owed.
+- **The frame timer** (row "X5.4g, the frame timer's passes"): not implausibly low. Sarab's vantages
+  and path, whose GPU work X5.4 did not move, read 11.1 / 11.3 against 11.1 / 11.5 on 2026-10-31 under
+  the old stamps, and every fight's mean frame is at or over its mean `gpu.frame` (Greyfen 20.65 /
+  16.1, Harrowmead 22.52 / 18.8, Sarab 16.67 / 11.6). No fix.
+- **Still the GPU on the forest maps**: Harrowmead's fight `gpu.frame` median 18.2 ms, 74% of its
+  samples over 16.7, 32% of its frames over 18 ms; 913 long animation frames in its capture, against
+  212 on Greyfen and 4 on Sarab. Its look parts' p95 41–45 against 58–68 on 2026-10-31. `FINDINGS.md`
+  66, the GPU work being after the exit.
+- **Offline, from the home screen** (X5.4's Verify): the owner launched the installed app in
+  airplane mode and it played. The captures were taken in the browser, not the installed app.
+- **Owed**: the `exit-phase-5` tag.
