@@ -13132,3 +13132,136 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 - **Offline, from the home screen** (X5.4's Verify): the owner launched the installed app in
   airplane mode and it played. The captures were taken in the browser, not the installed app.
 - **Owed**: the `exit-phase-5` tag.
+
+## Phase 6 — The cut
+
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83)
+
+The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
+the step's own four rules, "Every sub-step owes" and the ten sub-steps.
+
+**X6.1a LANDED** (1d13c83; 2026-11-13; no change to the game: instruments, their headers,
+`plans/webgpu-ref/README.md`, `docs/build.md`, `VERIFYING.md` and `FILES.md`; nothing under `src/`
+or `server/`). Measured headless on the Windows box against a BEFORE at 0edc6159, in the worktree
+`greywatch-2-before-x53a` (moved there, detached; its `node_modules` valid, no dependency having
+moved since 5be4571; its `ref/` identical to the main tree's), every GPU run alone on the GPU. No
+device lost in any run.
+
+- **The census** (`scripts/babylon-census.mjs`, a script beside `check-babylon-free.mjs` rather
+  than a flag on it, whose command-line paths already mean "walk from these"): every import of the
+  package under `src/`, `server/`, `main.ts`, `scripts/`, `.claude/skills/` and `plans/` (the last
+  because X6.1i's whole-tree gate walks it) by name, file and kind (`type` when the clause or the
+  specifier says so, as the gate reads it), every `ssrLoadModule("@babylonjs/core…")`, every
+  page-side load of Babylon's chunk by URL, and `dist/`'s every file raw and gzipped; `--against`
+  exits 1 if any file imports a name it did not, a type became a value, or a load was added.
+  **At 1d13c83**: 143 files import the package (120 with a value import, 23 by type alone; 141
+  under `src/`, `geometry-check` and `math-check` by `*`), by name the read's own table (`Scene`
+  77 + 16, `Vector3` 46 + 7, `Color3` 18 + 1, `Matrix` 10 + 1, `Material` 3 + 8, … 33 names);
+  `ssrLoadModule` 2 (`bounds-check.mjs`, `sweep-check.mjs`: `kit-hash.mjs`' two are gone);
+  page-side loads 2 (`leaks.mjs`, `depth.mjs`); the bundle 102 files, 16,846.3 kB raw and
+  6,027.4 kB gzipped, the JS 12,215.0 kB and 3,096.7 kB, the main chunk 9,358.5 kB and 2,316.3 kB
+  — unchanged from the parent's build, nothing that ships having moved. The JSON is
+  `census-x61a.json` in the scratchpad.
+- **The frame adapter answers with no scene** (`harness.mjs`' `frameAdapter`, its header the
+  contract): Babylon's arm is built only where `g.scene` exists, and every read a probe made of
+  the scene or its engine is a member — `ready` (with no scene the game's PENDING DATA, the
+  water's foam `MadeTexture` while it decodes: the one thing the game hands `addPendingData`),
+  `camera()` (the game's camera's view and projection; the transform, the six frustum planes,
+  the render size and the aspect off the scene and its engine, or off the frame host's
+  `viewProjection`, `Frustum.GetPlanesToRef`'s arithmetic restated, and the surface), `fields`,
+  `particles` and `constantDelta` (which THROWS with no scene until X6.1h gives the frame its
+  own), `clearColor` (the frame host's with no scene), `materials` (every one the factory holds
+  with no scene: its cache, its emissives, its palette, its fire, its blast's paint),
+  `pictureKey` (the scene, or the factory, for a builder's scene parameter until X6.1d), and —
+  `null`, RETIRED, with no scene — `counts`, `transpilers` and `babylon()`, which the probes that
+  measure Babylon itself hook through (each logs nothing of Babylon's when it is `null`);
+  `compiles()` the game's DEV counter. `window.__refFrame({ scene: false })` builds the no-scene
+  adapter on a page that has a scene, and `REF_NO_SCENE=1` (an init script `bootMap` adds) makes
+  every adapter the page asks for that one. Moved onto it: `census`, `drawlog`, `gate`,
+  `surfaces`, `particles`, `shaders`, `readers`, `leaks`, `gi`, `pipelines`, `depth`, `post` and
+  the harness's own particle switch and transpiler tripwire; `merge-hash.mjs`,
+  `capture-map-shots.mjs`, `check-world-parity.mjs`, `views.mjs` and `shots.mjs` install it as an
+  init script (they import it from `plans/webgpu-ref/harness.mjs`). No probe names `g.scene`.
+  **The no-scene arms against the scene's reads, on the same frames** (`adaptercheck.mjs`, both
+  arms asked at every frame's draw through the menu, the card, deploy, the kit lid, deploy, a
+  life and the menu): Coldharbour 749 frames, Hollowmere 744, **0 differences** — readiness, the
+  camera's every matrix, plane, eye, size and aspect as float bits, the fields, the switch's two
+  halves, the clear colour, the index, and every 20 frames the materials by what the probes ask
+  of them (the `ShaderMaterial`s with defines but the fire, the palette, the first `cel-#`).
+  Readiness went false on the three card frames the foam was pending (`_pendingData` held the
+  foam and nothing else on any frame) and both arms said so.
+- **The camera log** (`readers.mjs camera`) reads the camera through `camera()` and logs per frame
+  the six frustum planes and the GUN MARKER (`"unpushed"`, `null`, or `Game.markerAt`,
+  `Game.markerOut` and the HUD's fractions as float64 bits); on a map with a gunned hull
+  (`--map=coldharbour`) two steps follow `resumed`: the hull boarded BY HAND (`Game.mount`; a
+  picture of boarding, which is all a marker needs) as the driver and then the gunner, the chase
+  camera's place (eye and look the pose's, roll 0), both guns' muzzles and both bearings pinned
+  off the pose, taken off after. The marker projects through the PREVIOUS frame's transform, so
+  between steps the pose now holds the step's last frame (`n`) rather than counting on past it by
+  however many frames the round trip took; no logged frame's pose moved by that. Coldharbour's
+  log: 15 steps, 120 frames, 16 with a marker. X6.1f's BEFORE is both runs (Hollowmere and
+  Coldharbour).
+- **`kit:hash` runs with no Babylon** (`scripts/kit-hash.mjs`' header the contract): no
+  `NullEngine`, `Scene`, `StandardMaterial`, `Mesh`, `TransformNode` or `BoundingInfo`; a builder's
+  scene is a `StubScene` (it keys the pictures' cache and nothing else) and a material a
+  `StubMaterial` (a name; no builder reads a material's fields). The record restated off what the
+  drawing IS: a part's name, material name, metadata (now in a structure's record too),
+  transform as held (Euler and quaternion both), and every attribute and its indices WHOLE with
+  their array types as exact doubles; a structure's lights, sounds, panes and colliders and a
+  model's data through one replacer that spells a math value `[class, ...fields]` (both
+  libraries' class names checked equal under Vite: `Vector3`, `Quaternion`, `Color3`, `Color4`,
+  `Matrix`, and Babylon's `Vector2`/`Vector4`), a material `material:<name>`, a picture by label,
+  a segment by name, a part by name only where it is a record of its own. In `--models`, a tree's
+  segments (with their joint's label, own switch, `isVisible`, role, a glass's look and the local
+  box off `boundsOf`) and a pool's pieces (their parent, switch and shown flag, the box) are
+  records, then the joints; the zones' surfaces are what `ZoneDraw` is handed, with
+  `addSurface`'s sphere HELD TO `boundsOf`'s (it was held to the mesh's) — every one equal.
+  DROPPED, named in the header: the mesh's class, picking, collisions, rendering group,
+  always-active, side orientation, visibility, alpha index, layer mask, infinite distance,
+  billboard mode, pivot, sub-meshes, each vertex buffer's stride/offset/type/normalised, the
+  `camera` TransformNode and the glasses' and card's stand-in materials. **Both instruments at
+  the parent** (the old at 0edc6159 in the BEFORE worktree, the new at 1d13c83 over the same
+  game): 3,722 kit builds of 105 kinds and 244 model builds of 20 kinds, the same keys, no error
+  in either, and **the same equivalence classes** on `draw` (2,420 kit, 234 model), `colliders`
+  (1,555) and `set` (234) — no class split, none merged (`partition.cjs`); `--feet`'s table
+  byte-identical; the new fingerprint equal to itself across two runs (kit and `--models`
+  `identical`). The fingerprints are `kit-new.json` and `models-new.json` in the scratchpad, and
+  1d13c83's script regenerates them, the game unchanged.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: **default**, **`volumetrics=low`**
+  and **`volumetrics=high`** each 146 byte-equal and `harrowmead-view-pistol-reload` within its
+  known flake (2 pixels, 1/255). Under **`REF_NO_SCENE=1`** (readiness the game's), default: the
+  same.
+- **The probes against the parent's logs**: the draw log (Coldharbour, with the viewer) equal;
+  `census` equal on every map's total; `gi.mjs` equal (914,604 and 254,724 values); `particles.mjs`
+  equal (45,120 numbers over 480 frames); `surfaces.mjs` equal (5,719 values); `post.mjs` equal at
+  both sizes (31,837 values a size); `readers.mjs` replay of X5.4a's record equal (547 of 547 live
+  answers, three origins identical); the camera log equal with
+  `--ignore=log[*].planes,log[*].marker` (104 paths each, nothing else); `merge:hash` identical on
+  all eight maps; `pipelines.mjs hollowmere` and `coldharbour --round` nothing made in play (the
+  rounds' shot counts ride the wall clock, as at X5.4a); `leaks.mjs` 0 and 0 in every class;
+  `gate` all seven clean; `shaders` the same lines as the parent's. **Each changed probe equal to
+  itself across two processes**: the draw log, `census`, `particles.mjs`, the camera log on
+  Hollowmere and on Coldharbour, the replay.
+- **Under `REF_NO_SCENE=1`** (the probes as X6.1h will run them): both camera logs equal BIT FOR
+  BIT to the scene's runs (the planes off the restated arithmetic, the markers); `census`,
+  `surfaces.mjs`, `gi.mjs`, `gate` and `shaders` equal; the draw log only `meshes.sizes` `[0]` →
+  `[]` in its nine classes (retired); `post.mjs` only the chain's `autoClear`,
+  `autoClearDepthAndStencil` and `imageProcessing` → `null` (34 scenarios, equal under their
+  `--ignore`); `leaks.mjs` Babylon's control skipped and said, the device's counting.
+  `particles.mjs` is not run there: `constantDelta` throws, X6.1h's to give.
+- **Typecheck, build (its gates), corecheck, parity** (eight maps; every scene ready) clean;
+  `npm run shots -- hollowmere` ran to its end through the adapter (the committed picture put
+  back); `shots.mjs --stats barn` ran.
+- **Flagged for the owner, unchanged**: `.claude/skills/map-layout/scripts/views.mjs` fails before
+  it boots, at the parent as here (Node's `ERR_UNSUPPORTED_DIR_IMPORT` loading a layout's
+  `../../math`), so its move onto the adapter is unrun; `shots.mjs`' `sun` view takes the default
+  bearing (0.7, 0.7) on every map, its scene light "moonShadow" existing nowhere since the cel
+  shader carried its own light — kept, its header now says so (the key light is
+  `g.mats.keyLight.dir`).
+- **Not run**: the live rounds, the post settings toggled live, `?profile&gpu`, `F2`, `lost.mjs`
+  and the phone — nothing under `src/` moved, and the bank, the probes and the gate read the
+  game's own frames.
+
+Scripts and logs in the session's scratchpad, `x61a/` (`before.sh`, `after.sh`, `noscene.sh`,
+`probes.sh`, `adaptercheck.mjs`, `partition.cjs`, the BEFORE and AFTER logs and kept frames, the
+fingerprints and the census).

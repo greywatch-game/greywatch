@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6725,6 +6725,36 @@ Then the cut, then the sweep.
   - **Rewrites:** `plans/webgpu-ref/README.md`, the probes' and scripts' headers,
     `docs/build.md`'s `kit:hash` lines, `VERIFYING.md` where it names `__celshock.scene`,
     `FILES.md`.
+
+  **X6.1a LANDED** (1d13c83; 2026-11-13; no change to the game: instruments, their headers, the
+  README, `docs/build.md`, `VERIFYING.md` and `FILES.md`; nothing under `src/` or `server/`). The
+  full note is in `plans/done/babylon_exit_landed.md`. **The census** is
+  `scripts/babylon-census.mjs` (a script beside the gate, not a flag on it); at 1d13c83: 143 files
+  (120 with a value import), `Scene` 77 + 16, `ssrLoadModule` 2 (`bounds-check`, `sweep-check`;
+  `kit-hash`'s two gone), page-side loads 2 (`leaks.mjs`, `depth.mjs`), the bundle 16,846.3 kB
+  raw and 6,027.4 kB gzipped. **The adapter's no-scene arms** (`window.__refFrame({ scene: false
+  })`) answered what the scene's reads answered on every frame of a session on Coldharbour and on
+  Hollowmere (749 and 744 frames, 0 differences; readiness false on the three card frames the
+  foam was pending, on both arms); readiness with no scene is the game's PENDING DATA, the
+  water's foam, until X6.1h's own; `constantDelta` throws with no scene until X6.1h.
+  **Measured** against a BEFORE at 0edc6159: the bank by `exact.mjs` 146 byte-equal and the
+  pistol flake in all three runs; the draw log, `census`, `gi.mjs`, `particles.mjs`,
+  `surfaces.mjs`, `post.mjs` at both sizes, `readers.mjs` replay (547 of 547) and `merge:hash`
+  equal to the parent's; the camera log equal to the parent's but its two new fields
+  (`--ignore=log[*].planes,log[*].marker`); `pipelines.mjs`, `leaks.mjs`, `gate` and `shaders`
+  as at the parent; each changed probe equal to itself across two processes; under
+  `REF_NO_SCENE=1` (every adapter the no-scene one) the bank byte-equal, both camera logs bit
+  for bit equal to the scene's, and every other probe equal but what it names as retired.
+  **`kit:hash`'s two runs at the parent** (old and restated) see the same builds: 3,722 kit and
+  244 model builds, the same keys, no error, the same equivalence classes on drawing, colliders
+  and `set`; `--feet` identical. **The restated fingerprint is every later sub-step's
+  baseline**: 1d13c83's script runs the parent's game, so a later agent regenerates it there
+  (`kit:hash -- --out`, `--models --out`). **The camera log with a hull** is `readers.mjs camera
+  --map=coldharbour` (16 marker frames, driver and gunner); X6.1f owes both runs. **Flagged**:
+  `.claude/skills/map-layout/scripts/views.mjs` fails before it boots at the parent as at 1d13c83
+  (Node cannot load a layout's `../../math` directory import), so its move onto the adapter is
+  untested; `shots.mjs`' `sun` view has read the default bearing on every run (no scene light
+  "moonShadow" exists), kept as it reads.
 
 - **X6.1b — the collision bake's header, reworded** (no change to the game) — **S**.
   - The Rewrites' bake item, as written above: the three passages of
