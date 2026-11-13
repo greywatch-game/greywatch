@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6829,7 +6829,8 @@ Then the cut, then the sweep.
     choice). It is what `CelMaterialFactory` hands out for every variant: cel, glass,
     ground, emissive, flame, the emissive palette and the blast's paint. It carries
     exactly the fields a reader still asks of it (`name`, `emissiveColor`, `alpha`,
-    `backFaceCulling`, `zOffset`, `zOffsetUnits`). `instanceof ShaderMaterial` is restated
+    `zOffsetUnits`; `backFaceCulling` and `zOffset`, listed here at the split, had no
+    reader and were dropped by its review). `instanceof ShaderMaterial` is restated
     as the factory's own question.
   - **The sort that read `uniqueId` reads a creation counter of ours, over materials
     alone.** Babylon's counter is shared by every object the scene makes, and both count
@@ -6864,10 +6865,11 @@ Then the cut, then the sweep.
       `BlastShader.ts`, `ShadowBindings.ts`, `wgsl/includes.ts` and `wgsl/flame.ts`;
     - the Contracts table's frozen-material row, and `FILES.md`.
 
-  **X6.1c LANDED** (7b35c21; 2026-11-13; no change to the picture; the full note is in
+  **X6.1c LANDED** (7b35c21, its review 4e4c3cb; 2026-11-13; no change to the picture; the full note is in
   `plans/done/babylon_exit_landed.md`). A material is a `MaterialKey` of ours (`shaders/MaterialKey.ts`:
-  `name`, `program`, `emissiveColor`, `alpha`, `backFaceCulling`, `zOffset`, `zOffsetUnits`, `blended`,
-  and a creation `serial` over keys alone that the weapon's opaque sort reads where it read `uniqueId`),
+  `name`, `program`, `emissiveColor`, `alpha`, `zOffsetUnits`, `blended` — `backFaceCulling` and
+  `zOffset`, which nothing read, dropped by its review — and a creation `serial` over keys alone that
+  the weapon's opaque sort reads where it read `uniqueId`),
   minted by the factory for every variant, `EmissiveWorldMaterial`, `FlameMaterial` and `BlastPaint`
   among them as subclasses; `instanceof ShaderMaterial` is `isCelMaterial`, and `BlockHandover`'s blend
   test the key's `blended`. Deleted: `CelShader.ts`' two `ShaderStore` stages and every Babylon list,
@@ -6883,6 +6885,20 @@ Then the cut, then the sweep.
   `pipelines.mjs` nothing built in play; `leaks.mjs` 0; `gate` clean; parity, the four copy checks,
   typecheck, build and corecheck clean. **The census**: 143 files to 133, 37 names shrank, 0 grew; the
   bundle 16,818.8 kB raw, 6,018.3 kB gzipped (from 16,846.3 and 6,027.4).
+
+  **Its review** (4e4c3cb; 2026-11-13; no change to the game: `src/shaders/MaterialKey.ts`, comments in
+  `FlameShader.ts`, `celMaterial.ts`, `render/wgsl/preprocess.ts` and three `wgsl/` bodies' headers,
+  `plans/webgpu-ref/depth.mjs` and `shaders.mjs`, and the docs; the full note is in
+  `plans/done/babylon_exit_landed.md`) found four NITs, all fixed. Text still describing deleted pieces
+  as present (`docs/rendering.md`'s `StandardMaterial`s, `walk`, the fire's `ShaderMaterial`, the panes'
+  `needAlphaBlending`, `includes.ts`; the `wgsl/` headers' "both renderers"; `FILES.md`; the README's
+  compile counter) made true; the key's `backFaceCulling` and `zOffset`, which nothing read, dropped;
+  `FlameShader`'s constructor comment (its `emissiveColor` is the bloom's colour, which `Game`'s glow
+  rules read — the handover knows a fire by `isFlame`, the cull by its block); and `depth.mjs zoffset`, which died
+  on `clone` and whose subject (`OutlineRenderer`'s offsets) is no pass since X5.4f, RETIRED with a
+  throw naming why (`FINDINGS.md` 69). **Measured** against 467b9194: 185 assembled modules
+  sha-identical; `kit:hash` and `--models` identical; `merge:hash` identical on eight maps; the draw log
+  equal; typecheck, corecheck and build clean.
 
 - **X6.1d — the kit and the models take no scene** (no change to the game) — **S–M**,
   mechanical over about 65 files.

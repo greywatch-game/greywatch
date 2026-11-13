@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13398,13 +13398,14 @@ it writes (their header comment alone), `src/world/fingerprint.ts`' comments and
 - **Not run**: as X6.1b — the bank, the probes, `kit:hash`, `merge:hash` and the live rounds (no
   builder, frame or merge touched).
 
-**X6.1c LANDED** (7b35c21; 2026-11-13; no change to the picture). Measured headless on the Windows box
+**X6.1c LANDED** (7b35c21, its review 4e4c3cb; 2026-11-13; no change to the picture). Measured headless on the Windows box
 against a BEFORE at 9f657153 in the worktree `greywatch-2-before-x53a` (moved there, detached; its
 `node_modules` valid, no dependency having moved), every GPU run alone on the GPU. No device lost.
 
 - **The key** (`src/shaders/MaterialKey.ts`, Babylon-free): `name`, `program` (`cel`, `emissive`,
   `emissiveWorld`, `flame`, `blast`), and the fields a reader still asks — `emissiveColor` (null on
-  anything that emits nothing), `alpha`, `backFaceCulling`, `zOffset`, `zOffsetUnits` — plus `blended`,
+  anything that emits nothing), `alpha`, `zOffsetUnits` (`backFaceCulling` and `zOffset`, which nothing
+  read, dropped by its review) — plus `blended`,
   which `BlockHandover.blends` asks (it read `transparencyMode`, never set, and `needAlphaBlending`,
   true on a see-through pane alone), each the value the Babylon material held (Babylon's defaults where
   the factory set none), all set at construction. `serial` is a counter over keys alone; `Game`'s order
@@ -13463,3 +13464,50 @@ against a BEFORE at 9f657153 in the worktree `greywatch-2-before-x53a` (moved th
 
 Scripts and logs in the session's scratchpad, `x61c/` (`before.sh`, `after.sh`, `probes.sh`,
 `progtext.mjs`, the BEFORE and AFTER logs, kept frames, fingerprints and the census JSON).
+
+**Its review** (4e4c3cb; 2026-11-13; no change to the game: `src/shaders/MaterialKey.ts`, comments in
+`src/shaders/FlameShader.ts`, `src/render/celMaterial.ts`, `src/render/wgsl/preprocess.ts`,
+`src/shaders/wgsl/celVertex.ts`, `celSurface.ts` and `chunks.ts`, `plans/webgpu-ref/depth.mjs` and
+`shaders.mjs`, and `docs/rendering.md`, `FILES.md`, `FINDINGS.md`, `VERIFYING.md` and
+`plans/webgpu-ref/README.md`) found four NITs, all fixed, in one commit. Typecheck, the gates, and the
+equivalences the note above claims (`blended` against `needAlphaBlending`, `isCelMaterial` against
+`takesShading`'s old test, `serial` against `uniqueId`) it confirmed.
+
+- **NIT, finding 1**: docs and headers still described deleted pieces in the present tense. Made true,
+  in the past tense or restated for one renderer: `docs/rendering.md` — `getEmissive`'s unlit
+  `StandardMaterial`s (now its keys), the vertex bake's `walk` skipping non-`ShaderMaterial`s (now
+  `takesShading` asking `isCelMaterial`), the fire "a `ShaderMaterial`" and its `isFlame` skip, the
+  panes' `needAlphaBlending` (now the key's `blended`, `GlassDraw`'s see-through pipeline writing no
+  depth), `includes.ts` stripping and registering the chunks (now `WGSL_CHUNKS` resolved by our
+  preprocessor), `applyWind`/`applyEnvironment` reading `windShape`/`surfaceLook` (now `fillFrame`
+  alone), the size gate's `emissiveColor` test, the palette "as a `ShaderMaterial`", the impact disc's
+  `backFaceCulling` rule and its `EmissiveFog` fade; the headers of `wgsl/celVertex.ts`,
+  `wgsl/celSurface.ts` and `wgsl/chunks.ts` ("both renderers", "each side's `main`", "Babylon's
+  processor appends it") and `render/wgsl/preprocess.ts` ("`includes.ts` registers"); `celSurface`'s
+  `MAX_POINT_LIGHTS` comment, which is inside the WGSL literal, rewritten line for line so the
+  comment-stripped text is unchanged; `FILES.md`; `plans/webgpu-ref/README.md`'s draw log reading
+  `Game.babylonCompiles` (retired at X6.1c); `shaders.mjs`' palette comment; `FINDINGS.md`'s
+  `StandardMaterial` aside; `VERIFYING.md`'s `EmissiveFog` scaffold note.
+- **NIT, finding 2**: `MaterialKey`'s header said a key carries "exactly the fields a reader still
+  asks", but `backFaceCulling` and `zOffset` had no reader (`git grep` over `src/`, `scripts/` and the
+  probes; only `depth.mjs`' `zoffset` mode wrote `zOffset`, on a cloned Babylon material). **Dropped**,
+  from the class, its options, the header and `FILES.md`; the header now names `zOffsetUnits`' reader
+  (the weapon's view draw, of an unlit segment, in a DEV build) and says a culling and a bias slope are
+  no key's. The X6.1c bullet and both LANDED notes say so.
+- **NIT, finding 3**: `FlameShader`'s constructor comment said `WorldCulling` and the handover read
+  `emissiveColor` to know a fire is a light source. They do not: the handover knows a fire by `isFlame`
+  (`takeFire`) and the cull answers the fire draw by block (`offersBlock`); `emissiveColor` is the
+  bloom's colour, which `Game`'s glow rules read (`bloomColour`). Corrected.
+- **NIT, finding 4**: `plans/webgpu-ref/depth.mjs zoffset` died with `TypeError: src.clone is not a
+  function` (a cel material is a key since X6.1c), and its subject, the offsets Babylon's
+  `OutlineRenderer` drew the ink hull at, is no pass of this game since the scene stopped rendering
+  (X5.4f). **RETIRED**: it throws before it starts anything, naming why (its body kept as the record of
+  the ruler); `FINDINGS.md` 69 no longer says `zoffset` is "untouched", and the README and
+  `VERIFYING.md` say it is retired.
+- **Measured** on the Windows box against 467b9194 (whose code is 7b35c21's): the implementer's
+  `progtext.mjs`, 185 assembled modules of ours sha-identical (the file byte-identical); `kit:hash`
+  (3,722 builds) and `--models` identical; `merge:hash` identical on all eight maps; the draw log equal
+  (Coldharbour); typecheck, corecheck and build (its gates, `check-babylon-free`, `check-proving`)
+  clean; `depth.mjs zoffset` throws its sentence.
+- **Not run**: the bank and the other probes — no program's text, frame, material value or merge moved
+  (the dropped fields had no reader).
