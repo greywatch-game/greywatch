@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13511,8 +13511,10 @@ equivalences the note above claims (`blended` against `needAlphaBlending`, `isCe
   clean; `depth.mjs zoffset` throws its sentence.
 - **Not run**: the bank and the other probes — no program's text, frame, material value or merge moved
   (the dropped fields had no reader).
+- **Its live list** was run at X6.1d's review (75926dc; X6.1c is in that HEAD's history), against ac96836e:
+  everything passed, equal but for the wall clock. See X6.1d's review note below.
 
-**X6.1d LANDED** (40c058a; 2026-11-13; no change to the game). Measured headless on the Windows box against
+**X6.1d LANDED** (40c058a, its review 75926dc; 2026-11-13; no change to the game). Measured headless on the Windows box against
 a BEFORE at ac96836e in the worktree `greywatch-2-before-x53a` (moved there, detached; its `node_modules`
 valid, the lockfile unchanged), every GPU run alone on the GPU. No device lost.
 
@@ -13560,3 +13562,61 @@ valid, the lockfile unchanged), every GPU run alone on the GPU. No device lost.
 
 Scripts and logs in the session's scratchpad, `x61d/` (`before.sh`, `after.sh`, the logs, kept frames,
 fingerprints and the census JSON).
+
+**Its review** (75926dc; 2026-11-13; no change to the game: `scripts/check-babylon-free.mjs`, `docs/build.md`,
+`FILES.md` and this note) ran, at HEAD (f2d8988, whose code is 40c058a's) against the BEFORE at ac96836e in
+`greywatch-2-before-x53a`, what "Every sub-step owes" lists that X6.1c and X6.1d had not run: the probes, the
+four copy checks, the live list and `?profile&gpu`. Every GPU run was alone on the GPU, and no device was lost.
+
+- **The probes** (X6.1c's `probes.sh`, each tree in its own run): equal throughout.
+  - The draw log (Coldharbour).
+  - `census`: 168 and the other tables' totals.
+  - `gi.mjs`: 914,604 and 254,724 values.
+  - `particles.mjs`: 45,120 numbers over 480 frames.
+  - `surfaces.mjs`: 5,719 values.
+  - `post.mjs` at `desk` and `phone`: 31,837 values each.
+  - `readers.mjs` replay of X5.4a's record, and the camera log.
+  - `shaders`: the log byte-identical (7 maps).
+- **Named differences, each the wall clock's**:
+  - `pipelines.mjs`: `hollowmere` and `coldharbour --round` built nothing in play on either tree. In
+    `coldharbour --round`, the rounds fired came to 59 against 60, and the pane life's distance and shard
+    draws differ, since the shot counts ride the wall clock (as at X6.1c).
+  - `leaks.mjs`: 0 released and 0 cached in every state on both trees, the per-state frame counts within 3.
+  - `gate`: all seven maps clean, the probe counts equal, the boot and install times not.
+- **The four copy checks**: `geometry-check` 7,368, `math-check` 1,620,000, `bounds-check` 25,518 matrices,
+  `sweep-check` 7 maps, all clean.
+- **Live** (`x61d-fix/live.mjs`, X5.4h's script; its one change is that the DEV compile counter, retired at
+  X6.1c, reads `null` on both trees and is accepted as retired): 47 of 47 steps pass at both trees.
+  - The rounds: Hollowmere then a map change to Coldharbour offline; the kit lid, `F2`, a life fired and
+    thrown (the launcher on Coldharbour); a match on each map (dist-server).
+  - The settings: all 18 toggled (FXAA, motion blur, grain, glow, the volumetrics rungs, the shadow rung
+    low, off and back, render scale 0.75 and 0.5 and back).
+  - The moves: a resize, a pixel ratio of 1.25, an orientation change, fullscreen, a zoom of 125% and a
+    monitor at 2, each with its sizes equal to the BEFORE's; then the pause and the teardowns.
+  - Caps of 30 and 60 over a pan: 30.02 and 60.12 fps, p50 32 and 16 ms.
+  - Every frame read `0/0/1/1/1/2`; nothing was retired; 0 page or console errors. The only difference is
+    the frame totals (5,127 against 5,124, 544 against 542, 877 against 880).
+- **Sarab in a hull of each kind** (`x61d-fix/sarab.mjs`): a server's match with the join rewritten to
+  `bots: false` (`VERIFYING.md`). For each of the player's own team's TANK, TRUCK and HELI:
+  - walked to it at 4 m/s, asked for the driver's seat (`net.sendMount`);
+  - driven on the keys: the tank 17.3 m, the truck 29.3 m, the HELI 65.2 m up to 32 m after its 4.5 s spool,
+    at about 130 fps;
+  - crossed to the gunner's seat (`#gun-marker` drawn), dismounted (from the HELI's hover, a death, as
+    the game rules).
+  - 19 of 19 at both trees, the distances within 0.2 m (real-time key holds), 0 errors.
+- **`?profile&gpu`** (`bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, BEFORE and HEAD
+  alternating twice): `render` within 4.0% in every group of both pairs, and `gpu.frame` within 0.4%. The
+  fights were `549487ba93bceefe` and `de5622634abca6e7` on every run.
+- **These live runs cover X6.1c's skipped live list**, since X6.1c is in this HEAD's history.
+- **NIT, fixed**: the note's "Flagged" line said `src/world/props`, `src/bench` and `src/config` pass the
+  gate. `src/world/props` does not: `props/ash.ts` reaches `world/parts.ts:82`, X6.1g's.
+  - By the gate's own diagnostic over every directory under `src/` at both trees, the clean ones are
+    `src/bench`, `src/config`, `src/dev` and `src/dev/mixer`, `src/geometry`, `src/pwa`, the seven map
+    directories and `src/world/proving`, with nothing else beyond the five roots already held.
+  - The line is corrected, and **all thirteen are added to `check-babylon-free.mjs`' `DIRECTORIES`**
+    (`src/dev` holds the mixer), with its header, `docs/build.md` and `FILES.md` saying so. This is the
+    ratchet, the orchestrator's call.
+- **Verify**: typecheck, build (the widened gate: 254 modules walked, clean) and corecheck clean.
+
+Scripts and logs in the session's scratchpad, `x61d-fix/` (`probes.sh`, `after.sh`, `live.mjs`,
+`sarab.mjs`, the BEFORE and AFTER logs and JSON, and the bench captures).

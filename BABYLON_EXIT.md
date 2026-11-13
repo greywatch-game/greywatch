@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6900,6 +6900,11 @@ Then the cut, then the sweep.
   sha-identical; `kit:hash` and `--models` identical; `merge:hash` identical on eight maps; the draw log
   equal; typecheck, corecheck and build clean.
 
+  **Its live list** was run at X6.1d's review (75926dc; X6.1c is in that HEAD's history): a Hollowmere
+  and a Coldharbour round offline and in a match, Sarab in a hull of each kind, every post setting, a rung,
+  render scale, a resize, a teardown and a map change, the kit screen, `F2` and frame caps of 30 and 60, all
+  passing and equal to ac96836e's but for the wall clock (X6.1d's review note).
+
 - **X6.1d — the kit and the models take no scene** (no change to the game) — **S–M**,
   mechanical over about 65 files.
   - These lose the `Scene` parameter: `Build`, `WeaponBuild`, every builder in `BUILDERS`
@@ -6927,7 +6932,7 @@ Then the cut, then the sweep.
     A builder that arrives from `develop` after this sub-step (the Candy Land branch's)
     is converted in its merge commit ("The branch").
 
-  **X6.1d LANDED** (40c058a; 2026-11-13; no change to the game; the full note is in
+  **X6.1d LANDED** (40c058a, its review 75926dc; 2026-11-13; no change to the game; the full note is in
   `plans/done/babylon_exit_landed.md`). `Build`, `WeaponBuild`, every builder in `BUILDERS` (81
   kinds) and `WEAPON_BUILDERS`, `ViewModel` and `PlayerView` take no `Scene`; `MapBuilder`'s two
   calls and `Game`'s `PlayerView` pass the factory alone (`MapBuilder` keeps its scene for
@@ -6942,6 +6947,22 @@ Then the cut, then the sweep.
   the pistol flake under `volumetrics=high`; `maps:check`, parity, corecheck, typecheck, build and
   the four copy checks clean. **The census**: 133 files to 69, 76 shrank, 0 grew (`Scene` 76 + 13
   to 6 + 7); the bundle 16,817.7 kB raw and 6,018.1 kB gzipped (from 16,818.7 and 6,018.3).
+
+  **Its review** (75926dc; 2026-11-13; no change to the game: `scripts/check-babylon-free.mjs`, `docs/build.md`,
+  `FILES.md` and the landed note; the full note is in `plans/done/babylon_exit_landed.md`) ran what "Every
+  sub-step owes" lists that X6.1c and X6.1d had not, at HEAD (f2d8988) against a BEFORE at ac96836e.
+  **Measured**: the draw log, `census`, `gi.mjs`, `particles.mjs`, `surfaces.mjs`, `post.mjs` at both sizes,
+  `readers.mjs` replay and its camera log all equal; `shaders` the same lines; `pipelines.mjs` nothing built in
+  play; `leaks.mjs` 0; `gate` all seven clean; the four copy checks clean. **Live**, at both trees: a Hollowmere
+  and a Coldharbour round offline and in a match (47 of 47 steps, every frame `0/0/1/1/1/2`, 0 errors), and
+  Sarab on a botless match in the TANK, the TRUCK and the HELI (asked for, driven, crossed to the gunner's seat,
+  dismounted; 19 of 19). `?profile&gpu`: `render` within 4.0% and `gpu.frame` within 0.4%, the fights equal.
+  Every difference is the wall clock's. These live runs cover X6.1c's skipped live list too. **One NIT**:
+  the note's "Flagged" line named `src/world/props` among the clean directories. It is not
+  (`props/ash.ts` reaches `world/parts.ts:82`). The real list is `src/bench`, `src/config`, `src/dev` (the mixer
+  with it), `src/geometry`, `src/pwa`, the seven map directories and `src/world/proving`, clean at both trees.
+  Corrected, and **all thirteen added to `DIRECTORIES`** at the review (the ratchet, the orchestrator's call).
+  Typecheck, build and corecheck clean.
 
 - **X6.1e — Babylon's math leaves everything but the camera** (no change to the game) —
   **M**.
