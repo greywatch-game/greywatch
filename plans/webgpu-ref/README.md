@@ -293,8 +293,9 @@ grew), which every later sub-step of X6.1 records in its note.
   `OutlineRenderer`'s own offsets are both stated in a unit that moves when that
   flag moves. `glass` sweeps the bias against range on a tinted curtain wall
   (and throws since X4.6e, owing a port to our glazing: `FINDINGS.md` 69);
-  `zoffset` is a ruler that says what the outline pass's offsets are worth in
-  metres. **Nothing else re-derives these, the bank least of all** — a pane that
+  `zoffset` was a ruler that said what the outline pass's offsets were worth in
+  metres, RETIRED at X6.1c's review (no pass draws at them since X5.4f, and its
+  rig cloned a material that is a key of ours since X6.1c: it throws, naming why). **Nothing else re-derives these, the bank least of all** — a pane that
   has quietly stopped being drawn at 180 m is in no banked frame.
 - **`pipelines.mjs`** counts shader modules and render pipelines against the
   frame clock. This is the replacement for the WebGL2 `shaderSource` hook —
@@ -524,11 +525,13 @@ grew), which every later sub-step of X6.1 records in its note.
   the only classes in which Babylon draws, visits group 0 or compiles an effect; in every
   other state it does none of the three (the post chain is ours since X5.2d). Since
   X5.3c neither class exists, and a parent's log is compared with
-  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`. **Since X5.3d it also
-  reads the game's own DEV counter of Babylon effect compiles** (`Game.babylonCompiles`,
-  `src/core/babylonCompiles.ts`) at every frame's end and FAILS the run (exit 1) where it
-  is not 0 in every class, whatever `--against` says; it is kept beside the classes, so a
-  parent's log without one compares. A VISIT of group 0 in any class fails the run the
+  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`. **From X5.3d to X6.1c it also
+  read the game's own DEV counter of Babylon effect compiles** (`Game.babylonCompiles`,
+  `src/core/babylonCompiles.ts`) at every frame's end and FAILED the run (exit 1) where it
+  was not 0 in every class, whatever `--against` said; it was kept beside the classes, so a
+  parent's log without one compared. X6.1c deleted the counter with the cel program's
+  Babylon declarations: the arm is RETIRED, the record's `babylonCompiles` `null`, which a
+  comparison with a parent's log names (`--ignore=babylonCompiles`). A VISIT of group 0 in any class fails the run the
   same way (exit 1), since `onMainPass` assumes none (the seam's items 6 and 10 retired;
   X5.3d's review). **Since X5.4f it counts `scene.render` per class** (`renders`; 0
   asserted under our frame) **and since X5.4g the engine's `beginFrame`** (`begins`, a

@@ -14,8 +14,9 @@ Cel materials carry their own `lightDir`/`lightColor`/`ambientColor`/
 uniforms; `LightingSystem` is the sole owner of dynamic light and uploads the
 winning slots via `CelMaterialFactory.setPointLights()` once per frame. Adding a
 `PointLight`/`HemisphericLight` to the scene will not affect any cel-shaded mesh.
-Effect meshes (tracers, sparks, neon, reticles) use unlit emissive
-`StandardMaterial`s from `mats.getEmissive()` and are unaffected by lighting;
+Effects (sparks, neon, reticles) wear the unlit emissive keys
+`mats.getEmissive()` hands out (unlit `StandardMaterial`s until
+`BABYLON_EXIT.md` X6.1c) and are unaffected by lighting;
 the map's block-merged windows and lamps are moved off them onto the emissive
 palette (`mats.getEmissiveWorld()`), which draws the same unlit colour per
 vertex.
@@ -40,7 +41,7 @@ and a per-pixel `mix` in their fragment shader; **three** passes never run it.
 Babylon's outline renderer writes `outlineColor` flat (its whole fragment shader
 is `fragmentOutputs.color = uniforms.color`), the glow builds its bloom from a material's
 emissive colour, which says nothing about where the mesh stands, and
-`getEmissive()`'s unlit `StandardMaterial` — every lit window, flame, ember,
+`getEmissive()`'s unlit material — every lit window, flame, ember,
 tracer, spark and team-colour bar — draws a flat colour with lighting disabled.
 All three take their fog from the one published by
 `CelMaterialFactory.setEnvironment`, so nothing can describe different weather
@@ -217,19 +218,20 @@ Six rules about it, and the first is the one everything else rests on:
   the world is opaque — the alpha here is a lighting term, not a transparency.
 - **Only a CEL-SHADED mesh may be given the buffer**, and `visuals` is not all
   cel materials. The cel shader reads a colour buffer as a lighting term;
-  `StandardMaterial` reads it as a *colour* and multiplies its output by it,
+  `StandardMaterial` read it as a *colour* and multiplied its output by it,
   with `Mesh.useVertexColors` defaulting to true and nothing but the buffer's
-  absence to turn the `VERTEXCOLOR` define off. `mergeByMaterial` emits one mesh
-  per material, so every lit window, brazier flame, ember and sign arrives in
+  absence to turn the `VERTEXCOLOR` define off. `mergeByMaterial` emitted one mesh
+  per material, so every lit window, brazier flame, ember and sign arrived in
   `visuals` as a `block<x>,<y>-emissive-#rrggbb` drawn with an unlit emissive
   `StandardMaterial` — 42 of them on Hollowmere. Baking `rgb = (0, 1, 0)` onto
   those multiplied each one by pure green, so the village's lanterns and fires
   rendered as green blobs *inside their own correctly-coloured bloom*, since the
   glow builds its halo from `material.emissiveColor` and never saw the
-  vertex buffer. `walk` skips anything whose material is not a `ShaderMaterial`
-  — and, by name, the two `ShaderMaterial`s that are not cel either: the fire
-  and the emissive palette, onto which those windows and lamps have since
-  moved (`isFlame`, `isEmissiveWorld`).
+  vertex buffer. The bake gives the buffer to the cel program's keys alone
+  (`takesShading`, which asks `isCelMaterial`), and so not to the fire or the
+  emissive palette, onto which those windows and lamps have since moved.
+  Until `BABYLON_EXIT.md` X6.1c it skipped anything whose material was not a
+  `ShaderMaterial`, and those two by name (`isFlame`, `isEmissiveWorld`).
 
 **A map's GRIME is the MAP's and its ramp is not** (`EnvironmentSpec.wear`
 against `CONFIG.wear`), and the split is the one every override in this file
@@ -273,7 +275,7 @@ material layer that rebuilds anything per ask owes the same question.
 **Every material `CelMaterialFactory` handed out was frozen, and `remember`
 was the one door into the cache** — the six creation paths all filed through it, so
 no future seventh could leave one unfrozen by omission. The water's factory
-freezes on the same argument at its single return (the grass's two materials did
+froze on the same argument at its single return (the grass's two materials did
 until `BABYLON_EXIT.md` X4.6c took them out of Babylon).
 
 **What freezing skips is the ASKING, not the answer.**
@@ -1259,9 +1261,10 @@ geometry from `world/flame.ts`, and a building says `b.flame(...)` beside its
 ROUND is our renderer's since `BABYLON_EXIT.md` X4.4d** — the world's and the
 molotov's, drawn on the material's VALUES by its program ("The pools, ours":
 "The fires"), off the one copy of its bodies (`shaders/wgsl/flame.ts`). The
-`ShaderMaterial` is a recipe key and draws nothing: its Babylon stages and its
+material is a recipe key and draws nothing: its Babylon stages and its
 glow-mask twin, which drew the map editor's build's fires alone after X4.4d,
-were deleted at X5.3d. The rules that reach outside it:
+were deleted at X5.3d, and the `ShaderMaterial` itself became a `MaterialKey`
+of ours at X6.1c. The rules that reach outside it:
 
 - **It is merged like any other part, so everything it needs per vertex is in
   its UVs** — layer in `uv.x`'s whole part (outer tongue, core, ember, bounds
@@ -1294,9 +1297,10 @@ were deleted at X5.3d. The rules that reach outside it:
   map's rule: an animated caster is a per-frame redraw of the map — and since
   X4.4d a fire that casts is REFUSED (`BlockHandover.takeFire`): no shadow
   pass of ours draws a fire.
-- **It takes no vertex colour buffer** — `vertexShading` skips it by
-  `isFlame`, because it is a `ShaderMaterial` and the bake would otherwise
-  hand it an attribute it does not declare.
+- **It takes no vertex colour buffer** — `vertexShading` gives one to the
+  cel program's keys alone (`isCelMaterial`), and the fire's program declares
+  no colour attribute. (It skipped the fire by `isFlame` while the fire was a
+  `ShaderMaterial`, until `BABYLON_EXIT.md` X6.1c.)
 - **Its yellow is drawn over its orange by WINDING, not by depth.** The outer
   tongues are built inside out, so only their far wall draws; the silhouette is
   the whole tongue's and the core inside is always nearer. Nothing is biased in
@@ -1337,10 +1341,11 @@ tint of what you see through it. `CONFIG.graphics.glass` carries the four number
 — `reflectance` face-on, the Fresnel `falloff`, the sun `halo`'s width and how
 dark the `tint` is — and the shader composites the pair into one colour and one
 alpha, dividing by that alpha because the rasterizer is about to multiply by it.
-The material's own `alpha` stays 1; what puts these subMeshes in the transparent
-pass is `needAlphaBlending` in the `ShaderMaterial` options. Depth writes turn
-themselves off — Babylon's `setAlphaMode` clears the depth mask for any blended
-draw — so panes are sorted rather than z-buffered, which is why the glazing
+The material's own `alpha` stays 1; what puts these panes in the blended run
+is the key's `blended` (`BlockHandover`'s pass masks; `needAlphaBlending` in the
+`ShaderMaterial` options until `BABYLON_EXIT.md` X6.1c). The see-through
+pipeline writes no depth (`GlassDraw`, as Babylon's `setAlphaMode` cleared the
+depth mask for any blended draw) — so panes are sorted rather than z-buffered, which is why the glazing
 merges per map block (`MapBuilder.paneGroup`) and why a transparent mesh costs
 more than its triangle count says.
 
@@ -3143,8 +3148,9 @@ assumed.** The WGSL processor's `preProcessShaderCode` runs `RemoveComments`
 over the whole source before the cursor ever sees a line, so a comment is gone
 by the time anything splits on a `;`. **That is the TOP-LEVEL source only**:
 includes are pasted in after the strip, comments and all, which is why
-`wgsl/includes.ts` strips every entry itself (the WGSL section below). With
-that, comment WGSL freely. **There is no GLSL
+`wgsl/includes.ts` stripped every entry itself while Babylon read the bodies
+(until X6.1c; the WGSL section below). Our preprocessor strips first
+(`render/wgsl/preprocess.ts`), so comment WGSL freely. **There is no GLSL
 string left in the tree for the rule above to be true of** — the trap is kept
 because it is a fact about Babylon's GLSL processor that would come back with
 any GLSL that came back, and because the WGSL section below states the one that
@@ -3213,12 +3219,13 @@ that (`OutlineFog`) is gone with the outline pass. Nothing in the tree drives
 here: name the store explicitly, because writing the wrong one is not a compile
 error but a patch that silently does nothing.
 
-**What several shaders share is a registered INCLUDE and not an interpolated
+**What several shaders share is an INCLUDE and not an interpolated
 string**, and the reason is specific to WGSL rather than tidiness.
-`src/shaders/wgsl/includes.ts` writes every chunk in `WGSL_CHUNKS` (`celBand`,
-`celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`,
-`celSurface`) into `ShaderStore.IncludesShadersStoreWGSL`, and a consumer
-reaches them with `#include<celShadow>`. The bodies are `wgsl/chunks.ts`'s and
+`src/shaders/wgsl/chunks.ts`' `WGSL_CHUNKS` (`celBand`, `celCloud`,
+`celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`, `celSurface`,
+`celVertex`) is the table our preprocessor resolves `#include<celShadow>`
+against (`render/wgsl/preprocess.ts`); until X6.1c `wgsl/includes.ts` also
+wrote every chunk into Babylon's `ShaderStore.IncludesShadersStoreWGSL`. The bodies are `wgsl/chunks.ts`'s and
 `wgsl/celSurface.ts`'s (`celDither` reaches for `Dither.ts`'s, because there
 the argument is sixty lines against a six-line function and a reader arriving
 at either wants the other). The GLSL they replace were
@@ -3282,9 +3289,9 @@ processor removes comments from the top-level source and THEN pastes includes
 in whole. An included comment that quoted a texture or uniform declaration
 would therefore be matched by Babylon's declaration regexes, and would mint a
 binding with nothing behind it, losing every draw that uses it. So every
-registered entry goes through `stripComments` (`render/wgsl/preprocess.ts`,
-the same function our side runs first), and a body's prose can say anything
-on either side. The review of the split found this: the cel fragment's ~700
+registered entry went through `stripComments` (`render/wgsl/preprocess.ts`,
+the same function our side runs first), and a body's prose could say anything
+on either side — as it still can on ours. The review of the split found this: the cel fragment's ~700
 lines of comments had been top-level, and stripped, until they became an
 include.
 
@@ -3963,11 +3970,11 @@ the shader names it, made once and filled in place.
   their owners. A copy taken off the fields cannot miss a change; an
   interceptor on the setters would.
 - **The CONFIG-derived values are module constants in `CelShader.ts`**
-  (`windShape`, `surfaceLook`). `applyWind` and `applyEnvironment` read
-  them, and so does `fillFrame`, so the materials and the frame are one
-  statement.
+  (`windShape`, `surfaceLook`), and `fillFrame` reads them: one statement
+  (the Babylon materials' `applyWind` and `applyEnvironment` read the same
+  copies, until X6.1c deleted every push into a material).
 - **`viewProjection` is the host's** (`scene.getTransformMatrix()`), as
-  Babylon's own `ShaderMaterial` takes it. The factory never had it.
+  Babylon's own `ShaderMaterial` took it. The factory never had it.
 
 **The byte layout is computed, never written.** `render/wgsl/layout.ts`
 places each field by WGSL's uniform-address-space rules, from the same data
@@ -6007,12 +6014,12 @@ because it seemed wise.**
 - **Anything emissive.** The glow carries a sub-pixel emitter far past its own
   geometry, and this game's biggest map is a harbour town at night. The test is
   exact rather than a guess at a name: only a light source carries an
-  `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
-  or the fire's `FlameMaterial`, which declares one for exactly this test and the
-  bloom's colour (worn by no mesh since X5.3c deleted the map editor's build, whose fires
+  `emissiveColor` — `CelMaterialFactory.getEmissive`'s unlit key (an unlit
+  `StandardMaterial` until X6.1c), or the fire's `FlameMaterial`, whose one is
+  the bloom's colour (worn by no mesh since X5.3c deleted the map editor's build, whose fires
   alone wore it from X4.4d; every fire is our renderer's, which no size gate
-  drops either) — and every lit surface wears a plain `ShaderMaterial`, which has no
-  such property to read at all. **Our GPU cull keeps the same exemption** for
+  drops either) — and every lit surface's cel key carries null (a plain
+  `ShaderMaterial`, with no such property to read at all, until X6.1c). **Our GPU cull keeps the same exemption** for
   the one emissive it culls, the palette the main pass and the glow's mask
   draw through the main view (`PASS_GLOW`, X3.6d, X3.6e): a cluster carrying
   that bit is never size-gated, and `?cullcheck`'s probe and replay skip it
@@ -6805,8 +6812,8 @@ palette refused an emissive because it was a different SHADER rather than a
 different colour — `getEmissive`'s unlit `StandardMaterial`, its colour a
 uniform with no vertex path — so a 48 m block still held one mesh per lamp
 colour, and every one of them is drawn twice: into the frame and into the
-glow's mask (`FINDINGS.md` 43). `shaders/EmissiveWorld.ts` is that shader as a
-`ShaderMaterial`: the colour a slot in `uv2.x` written by the same
+glow's mask (`FINDINGS.md` 43). `shaders/EmissiveWorld.ts` is that shader (a
+`ShaderMaterial` when it landed, a key of ours since X6.1c): the colour a slot in `uv2.x` written by the same
 `writePaletteIndex`, `MAX_EMISSIVE_PALETTE` (32) entries, slot 0 graceful
 overflow exactly as above. **Two materials, not one**, because `overGlass` is a
 polygon offset and an offset belongs to the material: `MapBuilder`'s block merge
@@ -6815,7 +6822,7 @@ picks by the source's name (`emissive-#rrggbb[-over-glass]`, `plainEmissive` in
 
 **The frame is the same pixel.** With lighting off, the stock material's output
 reduces to `clamp(emissive)` at alpha 1, then `EmissiveFog`'s `mix`; the WGSL
-does that term for term, the fog pair computed on the CPU as the plugin's is.
+does that term for term, the fog pair computed on the CPU as the plugin's was.
 So it writes coverage 1 in the frame and in a probe alike, as that material did
 — a literal, and the one shader where a literal is right, because it is what
 was there. (Its body is `shaders/wgsl/emissiveWorld.ts`, which our renderer
@@ -7436,15 +7443,18 @@ pass that would introduce it.
 
 Three constraints hold it together, and undoing any of them is silent:
 
-- **`DOUBLESIDE` is geometry, never `backFaceCulling`.** `getEmissive` caches
+- **`DOUBLESIDE` is geometry, never a material's culling.** `getEmissive` caches
   one material per colour and this pool shares those materials with the sparks
-  (and, while they were meshes, the tracers), so a flag flipped here flips for
-  every effect in the game.
+  (and, while they were meshes, the tracers), so while they were Babylon's a
+  `backFaceCulling` flipped here flipped for every effect in the game. A key of
+  ours carries no culling at all (X6.1c's review): the pool's draw states its
+  own.
 - **The pool is `noGlow`**, which the glow reads per mesh every frame — without
   it every dust disc blooms like a lamp. It once held only because `CombatSystem`
   was built before a one-shot exclusion scan; there is no scan any more.
 - **The disc gets its fog fade for free from `mats.getEmissive()`**
-  (`EmissiveFog`), which is the whole reason it is an emissive mesh rather than
+  (`EmissiveFog`'s curve, our fade program's since X4.6e, `shaders/wgsl/fade.ts`),
+  which is the whole reason it is an emissive mesh rather than
   a hand-rolled material. A dedicated unlit dust shader would owe the fade
   itself, and the obvious alternative — a particle system — is forbidden
   outright: `docs/grenades.md` names per-shot effects as exactly what that rule

@@ -6,14 +6,17 @@
  * different unit for a float format (`r = 2^(exponent(the primitive's own
  * depth) - 23)`, against a constant for a normalised one). Everything in this
  * renderer that is stated in polygon-offset UNITS is therefore stated in a unit
- * that moves when that flag moves, and there are exactly two:
+ * that moves when that flag moves, and there were exactly two:
  *
  *  - `CelMaterialFactory.GLASS_DEPTH_UNITS` (-16), without which glazing past
  *    the far end of the map is not drawn at all;
- *  - `OutlineRenderer`'s own `setZOffset(-1)` / `setZOffsetUnits(-4)`, which is
- *    Babylon's default and is what both of `docs/rendering.md`'s outline
- *    GEOMETRY rules rest on — a walked surface needing real depth behind its
- *    top face, and nothing being laid on an inked surface.
+ *  - `OutlineRenderer`'s own `setZOffset(-1)` / `setZOffsetUnits(-4)`, which was
+ *    Babylon's default and was what both of `docs/rendering.md`'s outline
+ *    GEOMETRY rules rested on — a walked surface needing real depth behind its
+ *    top face, and nothing being laid on an inked surface. No pass of this
+ *    game draws at those offsets any more (the ink is a full-screen pass over
+ *    the depth buffer, and the scene has not rendered since `BABYLON_EXIT.md`
+ *    X5.4f), so the `zoffset` mode that measured them is RETIRED (below).
  *
  * **Run this after anything that changes the depth format, and nothing else
  * re-derives these.** `bank.mjs` will not: a pane that has quietly stopped
@@ -59,7 +62,13 @@
  * **Both modes are Babylon meshes, and RETIRED with no scene** (X6.1a): the scene
  * is asked of the frame adapter (`harness.mjs`' `babylon()`), and a page with
  * none fails each mode with a sentence saying so; `glass` already owes a port
- * (a round's glazing is our renderer's since X4.6e).
+ * (a round's glazing is our renderer's since X4.6e, `FINDINGS.md` 69).
+ * **`zoffset` is RETIRED outright** (X6.1c's review): its subject, the offsets
+ * Babylon's `OutlineRenderer` drew the ink hull at, is no pass of this game
+ * since the scene stopped rendering (X5.4f), and its rig cloned a cel
+ * material, which is a `MaterialKey` of ours since X6.1c (no `clone`, no
+ * `setColor3`). It throws before it starts anything, naming why; its body is
+ * kept as the record of the ruler the table above was taken with.
  */
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -77,6 +86,11 @@ import {
 
 const argv = process.argv.slice(2);
 const MODE = argv.find((a) => !a.startsWith("--")) ?? "glass";
+if (MODE === "zoffset") {
+  throw new Error(
+    "depth.mjs zoffset: RETIRED (BABYLON_EXIT.md X6.1c's review) — it measured the offsets Babylon's OutlineRenderer drew the ink hull at, which no pass of this game draws since the scene stopped rendering (X5.4f), and its rig clones a Babylon cel material, which is a MaterialKey of ours since X6.1c",
+  );
+}
 const HEADED = argv.includes("--headed");
 const list = (flag, fallback) =>
   argv.includes(flag)
@@ -278,6 +292,7 @@ if (MODE === "glass") {
     console.log(String(u).padStart(5) + row.join(""));
   }
 } else if (MODE === "zoffset") {
+  // RETIRED: the throw at the top stops the mode before this (the header).
   const DELTAS = list("--deltas", [0.002, 0.005, 0.02, 0.05, 0.15, 0.5]);
   const { page } = await bootMap(browser, vite.url, "hollowmere");
   await installRound(page);

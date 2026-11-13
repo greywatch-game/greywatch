@@ -421,9 +421,9 @@ for (const id of MAPS) {
     // with a depth bias (X3.5's roads) — for `oursCheck`'s pipeline states.
     const biased = new Map();
     // Each depth bias a palette material carries, for its two programs —
-    // asked of EVERY material on the page, not the ShaderMaterials above: the
-    // palette's is a plain `Material` since X3.7c (no Babylon program to
-    // compile), so the walk above never meets it.
+    // asked of EVERY material on the page, not the cel keys above: the
+    // palette's has no cel recipe (a plain `Material` from X3.7c, a key of
+    // ours since X6.1c), so the walk above never meets it.
     const paletteBiases = new Set();
     for (const mat of F.materials()) {
       const palette = g.mats.emissiveRecipe(mat);

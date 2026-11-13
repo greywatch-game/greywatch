@@ -8,24 +8,25 @@
  * `celSurface` (the fragment) and `celVertex` (the vertex stage) — and the
  * compile-time literals the bodies are written with.
  * Invariants: **a body DECLARES NOTHING** — no `uniform`, no `varying`, no
- * texture or sampler — because each renderer declares in its own form, and
- * Babylon's dialect is not WGSL; a body reads a uniform as `uniforms.<name>`,
- * an input as `fragmentInputs.<name>` (a vertex body: `vertexInputs.<name>`,
- * writing `vertexOutputs.<name>`) and a texture by its own name, which is
- * the one spelling both sides honour. The directives in a body are
+ * texture or sampler — because the PROGRAM declares, as data
+ * (`render/wgsl/assemble.ts`; it was the rule while Babylon declared the
+ * same bodies in its own dialect too, until X6.1c); a body reads a uniform as
+ * `uniforms.<name>`, an input as `fragmentInputs.<name>` (a vertex body:
+ * `vertexInputs.<name>`, writing `vertexOutputs.<name>`) and a texture by its
+ * own name, the spelling the assembly resolves. The directives in a body are
  * `#include<cel…>` and the `#ifdef` family over a variant's defines, and
  * nothing else — the subset `render/wgsl/preprocess.ts` implements.
  * Never: imports Babylon (`src/render/` imports this, and the build gate
- * walks it); declares a binding; hand-edits a body on one side only — there is
- * no other copy to edit.
+ * walks it); declares a binding; is copied — a program that needs a body
+ * includes this one.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
  *
- * WHY ONE COPY. A body in two copies drifts, and the failure is silent: the
- * second renderer draws a wall a band warmer than the first and nothing
- * anywhere says so. What each side states for itself is only what a body
- * READS, and a name one side forgot is a loud failure there — a WGSL error
- * where Babylon compiles, an assembly error where ours does — rather than a
- * quiet difference in the picture.
+ * WHY ONE COPY. A body in two copies drifts, and the failure is silent: one
+ * program draws a wall a band warmer than another and nothing anywhere says
+ * so. What a program states for itself is only what a body READS, and a name
+ * it forgot is a loud failure — an assembly error (as it was a WGSL error
+ * where Babylon compiled, while it did) — rather than a quiet difference in
+ * the picture.
  */
 import { CONFIG } from "../../config";
 import { DITHER_WGSL } from "../Dither";

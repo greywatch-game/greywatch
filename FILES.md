@@ -2712,7 +2712,7 @@ src/
     MaterialKey.ts      # What a MATERIAL is: a key of ours (X6.1c), minted by
                         #   the factory for every variant, carrying only what
                         #   a reader asks (name, emissiveColor, alpha,
-                        #   backFaceCulling, zOffset/Units, blended) and a
+                        #   zOffsetUnits, blended) and a
                         #   creation `serial` over keys alone (the weapon's
                         #   opaque sort, was Babylon's uniqueId); isCelMaterial
                         #   is the vertex bake's question. Babylon-free
@@ -2736,16 +2736,16 @@ src/
                         #   celBand, celCloud, celShadow, celGi, celProbe,
                         #   celProbeBox, celDither, celSurface, celVertex, as
                         #   WGSL_CHUNKS —
-                        #   the one table both renderers include from. A body
-                        #   declares NOTHING; each side states its own
+                        #   the one table our renderer includes from. A body
+                        #   declares NOTHING; the program states its own
       celSurface.ts     # The cel fragment's BODY as one function,
                         #   celSurface(): every term the cel material lights a
-                        #   pixel with. Babylon-free; shared verbatim with
+                        #   pixel with. Babylon-free; included by
                         #   src/render/. MAX_POINT_LIGHTS and MAX_PALETTE
       celVertex.ts      # The cel VERTEX stage's body, celVertex(): the world
                         #   transform, the wind's ramp and rigged layers, the
-                        #   varyings. Babylon-free; shared verbatim with
-                        #   src/render/; no y flip (each side's main owns it)
+                        #   varyings. Babylon-free; included by
+                        #   src/render/; no y flip (the program's main owns it)
       fade.ts           # THE FADES as plain strings (X4.6e): an unlit
                         #   StandardMaterial's pixel read off its compiled
                         #   effect — the slot's colour, the opacity map, the

@@ -1,6 +1,6 @@
 /**
  * wgsl/celSurface.ts — The cel fragment's BODY: everything the cel material
- * computes for a pixel, as one function both renderers call, `celSurface()`.
+ * computes for a pixel, as one function our cel programs call, `celSurface()`.
  * Owns: `CEL_SURFACE` (the chunk `celSurface` in `WGSL_CHUNKS`) — the key and
  * its wrap, the sky fill and the traced indirect term, the point lights and
  * the lamps' atlas, the albedo and its weathering, the wear, the rim, the
@@ -14,8 +14,8 @@
  * the program's own `main` writes it; the variant defines it reads are exactly
  * `CEL_SMOOTH`, `CEL_GROUND_TEX`, `CEL_BUMP`, `CEL_PALETTE`, `CEL_GLASS` and
  * `CEL_GLASS_BACKED`.
- * Never: imports Babylon; is edited for one renderer — what the two must
- * differ in is a declaration, never a body.
+ * Never: imports Babylon; declares what it reads — a declaration is the
+ * program's (`render/celFragment.ts`), never the body's.
  * Contract: `docs/rendering.md` (the look, and "Hand-written WGSL" for the
  * split); `CelShader.ts`'s header is the material's own.
  */
@@ -67,13 +67,13 @@ export const CEL_SURFACE = `
 #include<celProbeBox>
 #endif
 
-// The count reaches each side's declarations by INTERPOLATION and the loop
-// bound below as a real const, and the split is forced rather than stylistic: a
-// uniform array's size must be a literal or a #define, because Babylon resolves
-// the bound out of the preprocessor table when it lays out the leftover UBO and
-// a WGSL const is not in that table — while a #define is the worse of the two,
-// since the processor implements one as an un-anchored regex over the whole
-// source. The grass's shader settled this; see docs/rendering.md.
+// The count reaches the declarations (render/frame.ts) as a NUMBER and the
+// loop bound below as a real const. The split was forced while Babylon declared
+// this program too: a uniform array's size had to be a literal or a #define,
+// since Babylon resolved the bound out of its preprocessor table when it laid
+// out the leftover UBO and a WGSL const is not in that table, and a #define was
+// the worse of the two (its processor's un-anchored regex over the whole
+// source). The grass's shader settled this; see docs/rendering.md.
 const MAX_POINT_LIGHTS: i32 = ${MAX_POINT_LIGHTS};
 
 // How big a light is in a mirror — the exponent of the lobe the mirrored ray

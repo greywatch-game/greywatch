@@ -20,10 +20,10 @@
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
  *
  * WHY THIS SUBSET AND NO MORE. It is exactly what `shaders/wgsl/chunks.ts`
- * says a shared body may use, which is what Babylon's processor already does
- * with those same lines — so the two renderers read one body the same way,
- * and a body that reaches for `#if` or `#elif` is told so here before it
- * reaches for it on the other side too. Widening it is one more arm below and
+ * says a shared body may use, which is what Babylon's processor did with
+ * those same lines — so while both renderers read one body (until
+ * `BABYLON_EXIT.md` X6.1c) they read it the same way, and a body that reaches
+ * for `#if` or `#elif` is told so here. Widening it is one more arm below and
  * one more line in that rule, together.
  *
  * WHY THE COMMENTS GO FIRST. A directive is a line whose first character is
@@ -34,8 +34,8 @@
  * include** — it strips the top-level source and then pastes includes in
  * whole, so a declaration quoted in an included comment is matched by its
  * declaration regexes as if it were one, and mints a binding with nothing
- * behind it. That is why `includes.ts` registers every chunk through this
- * same function.
+ * behind it. That is why `includes.ts` registered every chunk through this
+ * same function while Babylon read them.
  */
 
 /** What a program is preprocessed against. */

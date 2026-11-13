@@ -125,10 +125,11 @@ export class FlameMaterial extends MaterialKey implements FlameRecipe {
   readonly values: Readonly<Record<FlameField, Float32Array>>;
 
   constructor() {
-    // `emissiveColor` is what `WorldCulling` and the handover read to know
-    // this is a light source — the property an emissive carries, and the
-    // only thing either asks — and the fire's bloom colour (`Game`'s glow
-    // rules).
+    // `emissiveColor` is the fire's bloom colour, which `Game`'s glow rules
+    // read (`bloomColour`). Neither `WorldCulling` nor the handover reads it:
+    // the handover knows a fire by `isFlame` and takes it for the fire draw
+    // (`takeFire`), and the cull answers that draw's fires by their block
+    // (`offersBlock`).
     super("flame", "flame", { emissiveColor: Color3.FromHexString(GLOW) });
     const f = CONFIG.graphics.flame;
     const v = {

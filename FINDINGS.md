@@ -1490,8 +1490,10 @@ exact rather than a name guess — a non-black `emissiveColor` on the material.
 (This entry once said `getEmissive` was the only `StandardMaterial` in the
 tree; it is not — `FlameMaterial` and `BlastShader` declare an
 `emissiveColor`, and the optics, the kit screen's backdrop and the sky all
-make `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
-test as it is.)
+made `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
+test as it is. Since `BABYLON_EXIT.md` X6.1c no material is Babylon's: every
+one is a `MaterialKey`, whose `emissiveColor` is null on everything that is not
+a light source.)
 
 ### The bug this had, which the pixel bank could not catch
 
@@ -3028,7 +3030,11 @@ Delete the entry with Babylon (X6.1).
 reads Babylon's glazing MESHES (`PaneGroup.mesh`, a field gone since X5.3e, `computeWorldMatrix`, its
 bounding box) and hides the world by them; a round's glazing is our renderer's
 since X4.6e (`GlassDraw`, no mesh made of it), so the mode throws "owes a
-port" rather than measure nothing. The other mode, `zoffset`, is untouched.
+port" rather than measure nothing. The other mode, `zoffset`, is RETIRED
+(`BABYLON_EXIT.md` X6.1c's review): its subject, the offsets Babylon's
+`OutlineRenderer` drew the ink hull at, is no pass of this game since the scene
+stopped rendering (X5.4f), and its rig cloned a cel material, a `MaterialKey`
+since X6.1c, so it throws before it starts, naming why. It is not owed a port.
 `plans/webgpu-ref/README.md`, `VERIFYING.md` and `docs/rendering.md` still
 quote the sweep's table, which stands as measured but cannot be re-taken.
 

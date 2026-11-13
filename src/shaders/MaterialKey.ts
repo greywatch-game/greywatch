@@ -12,11 +12,14 @@
  * Invariants: a key carries exactly the fields a reader still asks of a
  * material — its `name` (the merge's readers, `kit:hash`, the ground spec's
  * re-apply), its `emissiveColor` and `alpha` (`Game`'s glow rules: null on
- * everything that is not a light source), `backFaceCulling`, `zOffset` and
- * `zOffsetUnits` (the depth bias a recipe states again as `depthBias`), and
- * whether it draws BLENDED (`blended`, `BlockHandover`'s pass masks) — each
- * the value the Babylon material it replaced held for this game, Babylon's
- * defaults where the factory set none (alpha 1, culling on, no bias); its
+ * everything that is not a light source), `zOffsetUnits` (the depth bias a
+ * recipe states again as `depthBias`, which the weapon's view draw asks of an
+ * unlit segment in a DEV build), and whether it draws BLENDED (`blended`,
+ * `BlockHandover`'s pass masks) — each the value the Babylon material it
+ * replaced held for this game, Babylon's defaults where the factory set none
+ * (alpha 1, no bias). Nothing asks a culling or a bias SLOPE of a key (the
+ * culling is each pipeline's own, and the slope is 0 on every material the
+ * game makes), so a key carries neither (X6.1c's review); its
  * `serial` is a creation counter over KEYS ALONE, in the order they are made,
  * which is what `Game`'s order of the weapon's opaque segments sorts by (it
  * sorted by Babylon's `uniqueId`, a counter every object the scene made
@@ -43,8 +46,6 @@ export type MaterialProgram = "cel" | "emissive" | "emissiveWorld" | "flame" | "
 export interface MaterialKeyOptions {
   readonly emissiveColor?: Color3Like | null;
   readonly alpha?: number;
-  readonly backFaceCulling?: boolean;
-  readonly zOffset?: number;
   readonly zOffsetUnits?: number;
   readonly blended?: boolean;
 }
@@ -58,9 +59,6 @@ export class MaterialKey {
   /** What the glow rules read as a light source's colour; null on a surface that emits nothing. */
   readonly emissiveColor: Color3Like | null;
   readonly alpha: number;
-  readonly backFaceCulling: boolean;
-  /** The depth bias's SLOPE: 0 on every material the game makes. */
-  readonly zOffset: number;
   /** The depth bias in the depth buffer's own units — the recipe's `depthBias`. */
   readonly zOffsetUnits: number;
   /** Whether it draws alpha-BLENDED: a see-through pane, and nothing else. */
@@ -74,8 +72,6 @@ export class MaterialKey {
     this.serial = made++;
     this.emissiveColor = options.emissiveColor ?? null;
     this.alpha = options.alpha ?? 1;
-    this.backFaceCulling = options.backFaceCulling ?? true;
-    this.zOffset = options.zOffset ?? 0;
     this.zOffsetUnits = options.zOffsetUnits ?? 0;
     this.blended = options.blended ?? false;
   }

@@ -1,7 +1,7 @@
 /**
  * wgsl/celVertex.ts — The cel material's VERTEX body: where a vertex lands and
- * what it hands the fragment, as one function both renderers call,
- * `celVertex()`.
+ * what it hands the fragment, as one function every cel program of our
+ * renderer calls, `celVertex()`.
  * Owns: `CEL_VERTEX` (the chunk `celVertex` in `WGSL_CHUNKS`) — the world
  * transform, the wind's sway (the RAMP, and the two RIGGED layers, a palm's
  * frond and an ash's bough), the world normal and the varyings — the
@@ -10,20 +10,21 @@
  * are `render/celVertex.ts` (Babylon's, `CelShader.ts`' `celVertexShader`,
  * went at `BABYLON_EXIT.md` X6.1c); reads its inputs as `vertexInputs.<name>`, its
  * uniforms as `uniforms.<name>` and writes `vertexOutputs.<name>`, the
- * spellings both sides honour; ends with clip space in
- * `vertexOutputs.position` and NO y flip — each side's own `main` owns the
- * flip of a pass that renders to a texture (Babylon's processor appends it;
- * ours, `render/wgsl/assemble.ts`, writes it); the one variant define it
- * reads is `CEL_PALETTE`.
- * Never: imports Babylon; is edited for one renderer — what the two must
- * differ in is a declaration, never a body.
+ * spellings `render/wgsl/assemble.ts` resolves (Babylon's dialect's, kept
+ * from when it had two readers); ends with clip space in
+ * `vertexOutputs.position` and NO y flip — the program's own `main` owns the
+ * flip of a pass that renders to a texture (`render/wgsl/assemble.ts` writes
+ * it, as Babylon's processor appended it); the one variant define it reads
+ * is `CEL_PALETTE`.
+ * Never: imports Babylon; declares what it reads — a declaration is the
+ * program's (`render/celVertex.ts`), never the body's.
  * Contract: `docs/rendering.md` ("Hand-written WGSL", and the wind's rigs);
  * `CelShader.ts`'s header is the material's own.
  */
 
 /**
  * The cel vertex stage, minus its declarations and its entry point. Called
- * by each side's `main` with the inputs already in `vertexInputs`.
+ * by the program's `main` with the inputs already in `vertexInputs`.
  */
 export const CEL_VERTEX = `
 fn celVertex() {

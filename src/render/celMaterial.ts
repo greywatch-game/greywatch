@@ -142,7 +142,8 @@ export interface CelRecipe {
   readonly defines: readonly string[];
   /**
    * The material key's `zOffsetUnits` — the pipeline's `depthBias`, in the
-   * depth buffer's own units. The slope (`zOffset`) is 0 on every cel material.
+   * depth buffer's own units. There is no slope (Babylon's `zOffset`): it was
+   * 0 on every cel material, so neither the key nor the recipe carries one.
    */
   readonly depthBias: number;
   /** The block, filled in place; `CelMaterialFactory.materialEpoch` moves when any is rewritten. */

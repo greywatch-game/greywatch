@@ -1272,8 +1272,9 @@ is one machine's:
   the water came back byte-identical this way.
   **To stand it up again after the scaffold**: restore `glslScaffold.ts` from
   git, and install ONLY `repairTranspiledWGSL` — `forceStandardMaterialGLSL`
-  now throws on boot, because `EmissiveFog.isCompatible` answers WGSL and only
-  WGSL and `MaterialPluginManager._addPlugin` refuses the mismatch. The GLSL
+  threw on boot while `EmissiveFog` stood (until `BABYLON_EXIT.md` X6.1c),
+  because its `isCompatible` answered WGSL and only WGSL and
+  `MaterialPluginManager._addPlugin` refused the mismatch. The GLSL
   original also has to be interpolated by hand: the shared `*_GLSL` constants
   it pastes in are deleted too, so generate the expanded source from
   `git show HEAD~:` and register it as a throwaway module rather than trying to
@@ -1897,8 +1898,9 @@ is one machine's:
   else in the repository re-derives it. It differs from the recipe above in one
   further way worth knowing: the reading is a COUNT of tinted pixels rather than
   a difference of two grabs, which is what makes the far end legible. Its
-  `zoffset` mode is the same instrument pointed at the outline pass's own
-  offsets, and answers what they are worth in metres at a given range.
+  `zoffset` mode was the same instrument pointed at the outline pass's own
+  offsets, answering what they were worth in metres at a given range; it is
+  RETIRED since `BABYLON_EXIT.md` X6.1c's review (`FINDINGS.md` 69).
 - **Placing a camera on Coldharbour by hand lands it inside a building far more
   often than it looks like it should.** The towers sit on a 30 m grid and are 26 m
   across, so the gaps are metres; the four avenues (`x` and `z` at ±40 and ±120)
