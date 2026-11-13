@@ -19,12 +19,14 @@
 //
 // Needs a GPU (see VERIFYING.md). Writes <out>/<view>.jpg.
 //
-// **The `sun` bearing has been the DEFAULT on every run**: it is read off a
-// scene light named "moonShadow", and the scene has held no light since the
-// cel shader carried its own, so it takes (0.7, 0.7) whatever the map's key
-// light is. Kept as it reads (BABYLON_EXIT.md X6.1a, through the frame
-// adapter's `babylon()`, plans/webgpu-ref/harness.mjs) rather than changing
-// which views this shoots; the key light is `g.mats.keyLight.dir`.
+// **The `sun` bearing is the map's KEY LIGHT** (`g.mats.keyLight.dir`, the
+// direction the cel factory lights every surface along, which the map's
+// `EnvironmentSpec.lighting.direction` sets and the shadow maps aim down too),
+// printed with the views. It was read off a scene light named "moonShadow" —
+// the shadow camera's `DirectionalLight`, aimed the same way — until
+// BABYLON_EXIT.md X5.3d deleted that light, after which every run took the
+// default (0.7, 0.7) whatever the map's light; X6.1a's review read it here
+// instead.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -90,12 +92,9 @@ try {
   // The views, resolved in the page because the sun's bearing lives there.
   const views = await page.evaluate(({ R, extra }) => {
     const g = window.__celshock;
-    // The light named "moonShadow" was the scene's; the scene has held no light
-    // since the cel shader carried its own, so this has read null — the
-    // default bearing below — on every run since. The adapter (X6.1a) keeps
-    // that answer rather than change which views this shoots (a change for its
-    // own commit: the key light is `g.mats.keyLight`).
-    const sun = window.__refFrame().babylon()?.scene.getLightByName("moonShadow")?.direction;
+    // The key light (the header): the direction it TRAVELS, as "moonShadow"'s
+    // was, so the bearing it comes FROM is its negation.
+    const sun = g.mats.keyLight.dir;
     // Horizontal bearing the light comes FROM, in world XZ.
     let sx = sun ? -sun.x : 0.7;
     let sz = sun ? -sun.z : 0.7;
@@ -104,6 +103,7 @@ try {
     sz /= l;
     return { sun: [sx, sz], extra };
   }, { R, extra });
+  console.log(`sun bearing (the key light comes FROM, world XZ): ${views.sun.map((v) => v.toFixed(3)).join(", ")}`);
   const c = Math.cos(rot);
   const s = Math.sin(rot);
   // World bearing -> local: MapBuilder turns local +X onto (cos, -sin), +Z onto (sin, cos).
