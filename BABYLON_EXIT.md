@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **S–M**
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6496,6 +6496,497 @@ installed app. **Owed**: the `exit-phase-5` tag.
     also given a mesh of its own" (no collider is a mesh: delete it). Reword the template
     and re-bake every map in one commit whose diff is that text alone — the boxes, the
     groups and the source hashes unchanged, which `check-collision` and parity confirm.
+
+**The split** (a planning agent's read of the code at 5613d1e; the Do, Verify and
+Rewrites above are kept as the step's whole, and each item of the Do is named below by
+the sub-step that lands it). **Re-sized**: **S–M** assumed that what was left of Babylon
+was the package line and a few adapters. The read finds 143 files importing it, a camera,
+the materials' keys, a scene, the loop's `Observable` and four oracles that need the
+package to run, so the step is **L**, as ten sub-steps of S to M.
+
+**What Babylon still is in the tree** (the read, so the order below can be checked
+against it):
+
+- **143 files import `@babylonjs/core`**: 141 under `src/`, plus `scripts/geometry-check.mjs`
+  and `math-check.mjs` (by `*`); `server/` has none. Three more scripts load it through
+  Vite's SSR loader (`kit-hash.mjs`, `bounds-check.mjs`, `sweep-check.mjs`). By name, files
+  with a value import, plus files with a type-only one:
+  - `Scene` 77 + 16, `Vector3` 46 + 7, `Color3` 18 + 1, `Matrix` 10 + 1, `Material` 3 + 8.
+  - `Quaternion` 6, `Vector4` 6, `Camera` 1 + 5, `ShaderMaterial` 3 + 4.
+  - `Color4`, `Observable` and `ShaderLanguage` 3 each; `ShaderStore`, `Vector2`,
+    `VertexData` and `Mesh` (+ 2 type) 2 each; `FreeCamera` 1 + 2.
+  - `AbstractEngine`, `Plane` and `SubMesh` in 2 type-only files each.
+  - One each: `NullEngine`, `StandardMaterial` (+ 1 type), `MaterialPluginBase`,
+    `UniformBuffer`, `Nullable`, `Frustum`, `TargetCamera`, `AbstractMesh`, `Viewport`,
+    `VertexBuffer`, `CreateBoxVertexData` and `CreateIcoSphereVertexData`.
+
+  178 files NAME the package, prose included. The word "Babylon" appears 1,907 times in
+  264 files under `src/`, `server/` and `scripts/`; 471 times in `docs/rendering.md`, 181
+  in `FILES.md`, 59 in `VERIFYING.md` and 43 in `CLAUDE.md`.
+- **62 of the scene's 77 value imports use it only as a cache key.** Every structure
+  builder under `src/world/kit/` and every weapon model under `src/entities/` takes a
+  `Scene` only to hand it to `Build` or `WeaponBuild`. `Build` passes it to
+  `world/textures.ts`' four picture getters (`getCobblestoneTexture` and its kin), whose
+  cache is a `WeakMap<Scene, …>`. Nothing in the kit reads the scene for anything else.
+- **What the scene still does at runtime** (on `SceneEngine`, a `NullEngine`):
+  - It holds the camera (`activeCamera`).
+  - When `SceneFrame` calls `updateTransformMatrix()`, it computes the view, the
+    projection, the transform matrix and `frustumPlanes`.
+  - It answers `getFrameId`.
+  - It holds `clearColor`: `world/environment.ts` writes it and the frame host reads it.
+  - It holds the water foam's decode as PENDING DATA (`WaterSystem`), so `scene.isReady()`
+    waits for it. The harness's readiness arm, `npm run shots` and the skills' scripts all
+    wait on that.
+  - It keeps state that nothing draws with: `setRenderingOrder`, `physicsEnabled`,
+    `imageProcessingConfiguration`, `autoClear`, `particleSystems`.
+  - `ShadowSystem` and `BodyShadows` read `isNDCHalfZRange` off its engine.
+- **The camera is Babylon's `FreeCamera`** (`CameraSystem`, moved by the viewer).
+  - It supplies its view and projection (off `SceneEngine`'s depth range and the surface's
+    aspect), `globalPosition`, and `fovMode` (`Sky` reads `Camera.FOVMODE_HORIZONTAL_FIXED`).
+  - Its readers: `Game` (about 57 lines that read it or the scene's matrices), the post stages and `Volumetrics` (`Camera`),
+    `GrassSystem` (`TargetCamera`, `Frustum`, `Plane`), `ReflectionSystem`, `GlowPass`,
+    `WorldCulling`, and `ParticleDraw` through the frame host.
+  - The gun marker projects through `Vector3.Project` and a Babylon `Viewport`, which read
+    the LAST engine's depth range.
+- **Every material is a Babylon object used as a KEY.** `CelMaterialFactory` hands out
+  `ShaderMaterial`s (the cel variants, the glass, the grounds); `StandardMaterial`s
+  (`getEmissive`, whose `EmissiveFog` plugin has been inert since X5.4h); `FlameMaterial`
+  and `EmissiveWorldMaterial` (Babylon subclasses); and `BlastPaint`. Each one is a key
+  into the factory's `WeakMap`s of recipes, and the recipes are all our renderer reads
+  (`render/celMaterial.ts`).
+  - What still reads a material as Babylon's:
+    - its `name` (`kit:hash`, the merge's keys);
+    - `emissiveColor` and `alpha` (`Game`'s glow rules);
+    - `zOffset`, `zOffsetUnits` and `backFaceCulling`;
+    - `instanceof ShaderMaterial` (`world/vertexShading.ts`);
+    - **`uniqueId`, as a SORT key** (`Game`'s order of the weapon's opaque segments, X4.3c). It is
+      Babylon's counter, which every object the scene makes advances.
+  - Read by nothing: Babylon's declarations of the cel program (`celVertex`/`celFragment`
+    in `ShaderStore`, `wgsl/includes.ts`' registrations), `remember`'s freeze, the
+    per-frame pushes into the materials, and `wgsl/flame.ts`' arms for Babylon's stages.
+    `core/babylonCompiles.ts` counts 0.
+- **Babylon makes no mesh in a round, but `worldMeshes` keeps the arm that would.** That
+  arm is `parts.ts`' `drawnMesh` and `vertexDataOf`, through `VertexData.applyToMesh`. Only
+  a surface the handover refuses reaches it, and a refusal fails the world (X3.7c).
+  `GameMap.visuals` is `Mesh[]` and `paneGroups[].mesh` is `Mesh | null`. `BlockHandover`,
+  `WorldCulling` (`AbstractMesh`, `scene.meshes`) and `Game` (`SubMesh`) still name meshes.
+  Three effects still take their geometry from Babylon's routines: `BlastFx`
+  (`CreateIcoSphereVertexData`), `BlastDebrisSystem` (`CreateBoxVertexData`) and
+  `DebrisSystem` (`VertexData.ComputeNormals`). `src/geometry/` copies each one, and
+  `geometry-check` holds the copies to the bit.
+- **Babylon's math is in about 45 files** of views, systems, `net/`, `shaders/` and
+  `core/`. `src/math/` already has nearly every static they call. It lacks
+  `Vector3.NormalizeToRef`, `Matrix.OrthoLHToRef`, the `Vector2` and `Vector4` classes, and
+  the camera's `Plane` and `Frustum`; the missing instance members are the typecheck's to
+  name. The crossing (`math/babylon.ts`' `toBabylon`) has seven calls, all in `Game`.
+- **`Observable` is Babylon's** in `FrameLoop`, `SceneFrame` and `GlowPass`. The harness's
+  frame adapter and every probe rest on its semantics: `add`, `addOnce`, `insertFirst`,
+  and `remove` during a notify.
+- **The instruments** lean on Babylon:
+  - The harness's Babylon arm is built off `g.scene` EAGERLY (`frameAdapter`).
+  - These read `g.scene` or its engine: `drawlog`, `census`, `surfaces`, `particles`,
+    `shaders`, `readers`, `gate`, `leaks`, `gi`, `pipelines`, `depth`, `merge-hash.mjs`,
+    `capture-map-shots.mjs`, `check-world-parity.mjs` and the skills' scripts.
+  - `kit:hash` builds every kind under a `NullEngine` and a `Scene` with `StandardMaterial`
+    stubs. It hashes a model as the Babylon `Mesh`es and `TransformNode`s it used to
+    become, and it spells a math value by `getClassName()` and `asArray()`.
+  - Four scripts hold our copies to the installed Babylon: `geometry-check`, `math-check`,
+    `bounds-check` and `sweep-check`.
+- **The gates**:
+  - `check-deep-imports.mjs` (`src/` and `main.ts`).
+  - `check-babylon-free.mjs`: `DIRECTORIES` (`server`, `src/sim`, `src/render`,
+    `src/math`), the crossing in `NOT_ROOTS`, its `SIMULATIONS`, and the Node-free walk
+    from the local match's two hosts.
+  - `vite.server.config.ts`' `no-babylon` plugin.
+- **The licence.** Five headers (`math/vector.ts`, `math/color.ts`, `geometry/buffer.ts`,
+  `geometry/primitives.ts`, `world/ellipsoidSweep.ts`) cite
+  `node_modules/@babylonjs/core/license.md` for the Apache-2.0 code they copy. That path
+  goes with the package.
+- **Two items of the Do above are stale.**
+  - `babylonSeam.ts` went at X5.4h, with its last item.
+  - `optimizeDeps.exclude` holds `@babylonjs/havok` alone, which ships and stays: per
+    `docs/build.md`, the dep optimizer separates Havok's glue from its `.wasm`, and a DEV
+    page then 404s. See row "X6.1, `optimizeDeps.exclude`".
+
+**THE ONE RULE FOR EVERY SUB-STEP** (X4.7's, X5.1's, X5.2's, X5.3's and X5.4's, carried
+verbatim):
+**where a byte-exact port is not reached, STOP and report to the owner with the
+numbers** — the rows that moved, their pixels and worst value, what was tried and what
+each attempt moved. Do not choose a draw point, a blend, a sort, a sampler, a clear, a
+target format or a vertex path that "holds the rows", and do not land a workaround as "no
+change to the picture". **A brief from an orchestrating agent that reads otherwise is
+wrong, and this paragraph wins.** No sub-step is meant to change the picture; a
+difference goes in a commit of its own whose subject starts `Picture change:`, only by
+the owner's decision, with the bank's numbers (rule 2). **No sub-step adds a seam item**
+— read since X5.4h, as rule 4 is: no sub-step touches a Babylon internal.
+
+**And four rules of this step's own.**
+
+- **A port of Babylon is a port of what it DID** (X5.4's rule, carried). The camera (its
+  update, its matrices, its caches), the readiness wait, the `Observable`, the materials'
+  order and the animation ratio's constants are restated from Babylon 9.28's source and
+  the logs. A simplification, such as a camera whose matrices are computed straight off
+  the eye, is a later change with its own proof.
+- **An instrument may change and the game may not** (X5.4's, carried).
+- **A member that a move needs is ADDED to `src/math/` (or `src/geometry/`) and to its
+  copy check in the same commit, before any caller moves onto it.** This has to happen
+  while the package is installed, so there is something to compare with: after X6.1i
+  nothing is left to hold a new member to (row "X6.1, the copy checks").
+- **The gate widens as the tree empties.** Each sub-step adds to `check-babylon-free.mjs`'
+  `DIRECTORIES` every directory it leaves with no value path to the package. The ratchet
+  then holds between sub-steps, and X6.1i's whole-tree widening is its last turn, not its
+  first.
+
+**Every sub-step owes** (X5.4's list, with this step's additions):
+
+- **A BYTE comparison of every bank row against a BEFORE at its parent.** Use `exact.mjs`
+  over two `--check --keep` directories, never `--check`'s pass line. Excuse only the
+  known flakes, and follow the Sarab procedure in its header. Repeat under
+  `--query=volumetrics=low` and `--query=volumetrics=high`. The BEFORE worktree needs its
+  own `npm ci` and a copy of the gitignored `plans/webgpu-ref/ref/`.
+- **The probes against their parent's logs:**
+  - `post.mjs --against` at both sizes (`desk` and `phone`);
+  - `gi.mjs --against`, `surfaces.mjs` on the rows, `particles.mjs --against` and
+    `census --against`;
+  - `pipelines.mjs hollowmere` and `pipelines.mjs coldharbour --round`;
+  - the draw log, `readers.mjs` replay and its camera log, and `leaks.mjs`;
+  - every expected difference named (`--ignore`, by path pattern), never read past.
+- **`kit:hash` (every kind, the scatter and `--models`) and `merge:hash` against the
+  parent**, identical, wherever a builder, a model, a material, the merge or the world's
+  build is touched (X6.1c, d, e and g at least). From X6.1a on, its restated fingerprint
+  is the format.
+- **The four copy checks** (`geometry-check`, `math-check`, `bounds-check`, `sweep-check`)
+  until X6.1i. Also `maps:check`, `parity` and `corecheck`, and
+  `npm run simulate -- <map> 1 2 <seed>`'s fight hash wherever anything the core reaches
+  moved.
+- **Live:** a Hollowmere and a Coldharbour round, offline and in a match, and Sarab in a
+  hull of each kind; every post setting toggled; a rung change, a render-scale change and
+  a resize; a teardown and a map change; the kit screen; `F2`, the viewer; a frame cap of
+  30 and of 60 held over a pan.
+- **`?profile&gpu`**, with `render` and `gpu.frame` within 8%.
+- **Typecheck, build, `gate` and `shaders`.**
+- **The census** (X6.1a's), recorded in the sub-step's note: the files and names left,
+  which only shrink, and the bundle's size (every chunk, raw and gzipped).
+- **Each new or moved module's contract header and `FILES.md` line** (rules 7 and 9).
+- **STOP with the numbers** wherever the bytes do not hold.
+
+**The sub-steps, instruments first.** The order follows from four facts:
+
+- A Babylon material's setters take Babylon's types, so the materials leave before the
+  math.
+- Ours reads a Babylon vector safely and Babylon's does not read ours, so every reader
+  moves before the camera, the last object that holds Babylon's vectors.
+- A mesh needs a scene, so the meshes go before the scene.
+- The scene holds the camera, the materials and the meshes, so it goes after all three.
+
+Then the cut, then the sweep.
+
+- **X6.1a — the instruments** (no change to the game) — **M**.
+  - **The census** (`check-babylon-free.mjs --census` or a probe beside it, the
+    implementer's choice). It lists every import of the package under `src/`, `server/`,
+    `main.ts`, `scripts/` and `.claude/skills/` by name, file and kind (value or type),
+    every `ssrLoadModule("@babylonjs/core")`, and the bundle's size. Each later sub-step's
+    note records it.
+  - **The frame adapter answers with no scene** (`harness.mjs`). Its Babylon arm is built
+    only where `g.scene` exists. Every read a probe makes of the scene or its engine gets
+    an arm that answers off the game's own objects, or that states it is retired:
+    - readiness (`scene.isReady()`) and the frame index;
+    - the camera's matrices (`readers.mjs`' camera log) and the particle switch
+      (`scene.particlesEnabled`);
+    - the scene's mesh, geometry and material counts (`census`, `drawlog`, `merge:hash`);
+    - the engine's transpiler fields (`gate.mjs`), Babylon's half of `shaders.mjs`
+      (skipped since X5.4h, so retired) and `babylonCompiles`.
+
+    Each arm is proven equal at the parent to the Babylon read it replaces, on the same
+    frames. Each later sub-step owes the adapter the game-side hook its move needs (a
+    readiness of ours at X6.1h), in its own commit, as at X5.4a. `merge-hash.mjs`,
+    `capture-map-shots.mjs`, `check-world-parity.mjs` and the skills' scripts
+    (`views.mjs`, `shots.mjs`) move onto it.
+  - **The camera log gains the frustum planes and the gun marker's projected point** (as
+    float bits, per frame). This is X6.1f's BEFORE.
+  - **`kit:hash` runs with no Babylon**: no `NullEngine`, `Scene`, `StandardMaterial`,
+    `Mesh`, `TransformNode` or `BoundingInfo`.
+    - Its record is restated off what the drawing IS, not the Babylon mesh it used to
+      become: every part's attributes and indices as exact doubles, its transform, its
+      material's name, its metadata, and the builder's plain data.
+    - The fields the old record took from Babylon's DEFAULTS (picking, rendering group,
+      side orientation, the bounding box Babylon computed) are handled field by field:
+      each is restated off ours (`boundsOf` for the box) or named as dropped.
+    - A math value is spelled by kind and value, whichever library made it
+      (`[class, …asArray()]` today), so moving onto `src/math/` cannot change a
+      fingerprint by spelling alone. A material stub is a plain named object.
+    - Its new fingerprint is taken at the parent (every kind, the scatter, `--models` and
+      `--feet`) and is every later sub-step's baseline. The old instrument's run at the
+      parent is kept beside it, to show that both see the same builds.
+  - **Verify:** every probe equal to itself across two processes; the adapter's answers
+    equal to the reads they replaced, on the same frames; the bank byte-equal; the draw
+    log equal to its parent's; `kit:hash`'s two runs at the parent covering the same
+    builds.
+  - **Rewrites:** `plans/webgpu-ref/README.md`, the probes' and scripts' headers,
+    `docs/build.md`'s `kit:hash` lines, `VERIFYING.md` where it names `__celshock.scene`,
+    `FILES.md`.
+
+- **X6.1b — the collision bake's header, reworded** (no change to the game) — **S**.
+  - The Rewrites' bake item, as written above: the three passages of
+    `scripts/bake-collision.mjs`' `emit` template reworded, then `npm run collision` over
+    every map, in one commit whose diff is that text alone.
+  - It depends on no other sub-step. It comes early so that every later parity run reads
+    the final bakes.
+  - **Verify:** `check-collision`, `parity` and `maps:check`, and the diff read as text
+    only: the boxes, the groups and the source hashes unchanged.
+  - **Rewrites:** the script's header, and its comment pointing here.
+
+- **X6.1c — the material recipe keys are ours, and the cel program's Babylon declarations
+  go** (no change to the picture) — **M**. The Do's "What X5.3 leaves it" and `wgsl/flame.ts`
+  items.
+  - **A material is a key of OUR own** (in `render/` or `shaders/`, the implementer's
+    choice). It is what `CelMaterialFactory` hands out for every variant: cel, glass,
+    ground, emissive, flame, the emissive palette and the blast's paint. It carries
+    exactly the fields a reader still asks of it (`name`, `emissiveColor`, `alpha`,
+    `backFaceCulling`, `zOffset`, `zOffsetUnits`). `instanceof ShaderMaterial` is restated
+    as the factory's own question.
+  - **The sort that read `uniqueId` reads a creation counter of ours, over materials
+    alone.** Babylon's counter is shared by every object the scene makes, and both count
+    in creation order, so ours keeps every comparison between two materials. The draw log
+    and `post.mjs`' command order prove it.
+  - **Deleted**:
+    - Babylon's declarations of the cel program (`ShaderStore`, and `wgsl/includes.ts`'
+      registrations; the chunks our renderer reads stay) and `ShaderLanguage`;
+    - `remember`'s freeze and the per-frame pushes into Babylon materials;
+    - `EmissiveFog.ts`, and `core/babylonCompiles.ts` with its DEV counter (the draw log's
+      arm stated retired);
+    - `wgsl/flame.ts`' arms for Babylon's stages (no `FLAME_INSTANCED`) and
+      `ShadowBindings`' Babylon half;
+    - `MaterialPluginBase`, `UniformBuffer`, `StandardMaterial`, `ShaderMaterial` and
+      `Material` from every file that names them: `parts.ts`, `merge.ts`,
+      `worldGeometry.ts`, `vertexShading.ts`, the props, `floorSurfaces.ts` and
+      `kit/core.ts`.
+  - **Verify:**
+    - `shaders`: our programs' text unchanged, every variant;
+    - `kit:hash` and `--models` (the materials' names) and `merge:hash` (the merge's keys);
+    - the bank byte-equal in all three runs;
+    - `pipelines.mjs`: nothing new built, nothing built in play;
+    - the draw log and `post.mjs` at both sizes: the frame's command order, item for item;
+    - `surfaces.mjs`, `census`, `particles.mjs` and `readers.mjs` replay.
+  - **Rewrites:**
+    - `CLAUDE.md`: the "every cel material is FROZEN" paragraph, its `shaderLanguage` and
+      declared-sampler sentences, and the overview's "the Babylon cel declarations stay
+      WGSL until X6.1";
+    - `docs/rendering.md`'s frozen define set and its emissive fog, and `docs/build.md`'s
+      two WASMs, where it names the declarations;
+    - the headers of `CelShader.ts`, `EmissiveWorld.ts`, `FlameShader.ts`,
+      `BlastShader.ts`, `ShadowBindings.ts`, `wgsl/includes.ts` and `wgsl/flame.ts`;
+    - the Contracts table's frozen-material row, and `FILES.md`.
+
+- **X6.1d — the kit and the models take no scene** (no change to the game) — **S–M**,
+  mechanical over about 65 files.
+  - These lose the `Scene` parameter: `Build`, `WeaponBuild`, every builder in `BUILDERS`
+    and `WEAPON_BUILDERS`, `ViewModel`, `PlayerView`, the terrain builders, and
+    `MapBuilder`'s calls.
+  - `world/textures.ts`' pictures are cached per factory (or per renderer, the
+    implementer's choice) instead of per scene. That is still one cache a session, as
+    today, since a session has one scene.
+  - Order: after X6.1c, since the factory then needs no scene of its own. It could land
+    before it.
+  - **Verify:** `kit:hash` (every kind, the scatter, `--models` and `--feet`) and
+    `merge:hash` identical; the bank byte-equal; `maps:check` and parity.
+  - **Rewrites:**
+    - the headers of `kit/core.ts` and `textures.ts`;
+    - `docs/world.md`, where it shows a builder's signature;
+    - `.claude/skills/model-detail/new-model.md`'s template and `shots.mjs`;
+    - `FILES.md`.
+
+    A builder that arrives from `develop` after this sub-step (the Candy Land branch's)
+    is converted in its merge commit ("The branch").
+
+- **X6.1e — Babylon's math leaves everything but the camera** (no change to the game) —
+  **M**.
+  - **The move.** Every value and type import of `Vector3`, `Color3`, `Color4`, `Matrix`,
+    `Quaternion`, `Vector2` and `Vector4` moves onto `src/math/`, `shadowWindow.ts`' ortho
+    matrix included.
+    - The missing members are ADDED first. Each goes into `math-check.mjs` in the same
+      commit and is held to the bit against the installed Babylon.
+    - The read names `Vector3.NormalizeToRef`, `Matrix.OrthoLHToRef`, `Vector2` and
+      `Vector4`, plus whatever instance member the typecheck names.
+  - **The camera's owners keep Babylon's math until X6.1f.** These are `CameraSystem`, the
+    viewer, and whatever writes into the camera (the typecheck names them).
+    - The reason: a Babylon method handed one of ours reads `_x` and writes NaN
+      (`CLAUDE.md`'s two `Vector3`s). Ours reading one of Babylon's is safe, as
+      `math-check` proves.
+    - Every other `toBabylon` call goes with its reader. The crossing keeps only what the
+      camera still needs.
+  - **Where the bits matter**:
+    - `ProjectToRef`: ours is fixed to WebGPU's 0..1, where Babylon reads the last engine;
+      `SceneEngine` says the same.
+    - A vector spelled into JSON: a Babylon `Vector3` serializes as `_x`, `_y`, `_z`, and
+      ours as `x`, `y`, `z`. Anything that reaches the wire, a capture or a record is
+      searched for and named. One found on the wire is a STOP.
+    - `Color3.FromHexString`'s 59 calls.
+    - The command origins (`readers.mjs` replay, bit for bit).
+    - Everything the core reaches (`simulate`'s fight hash, `corecheck`).
+  - **Verify:**
+    - `math-check` over every member a moved file calls;
+    - `readers.mjs` replay and its camera log, bit for bit;
+    - the bank in all three runs; `post.mjs`, `gi.mjs`, `particles.mjs` and
+      `surfaces.mjs`;
+    - `kit:hash --models` and `merge:hash`;
+    - `simulate`'s fight hash, `corecheck` and parity;
+    - a match on Coldharbour and one on Sarab (the hulls, the wire's vectors).
+  - **Rewrites:** `CLAUDE.md`'s convention "There are TWO `Vector3`s until the exit's
+    X6.1" (now one, plus the camera's owners until X6.1f); the `src/math/` headers;
+    `FILES.md`.
+
+- **X6.1f — the camera is ours** (no change to the picture) — **M**. The viewer's one
+  Babylon type goes here (the Do's `FreeCamera` item).
+  - **Babylon's `FreeCamera` is PORTED as written onto `src/math/`**, with whatever parts of
+    `TargetCamera` and `Camera` this game reaches:
+    - `setTarget`'s rotation, and the view matrix with the roll and the up vector;
+    - `update()`, with its inertia over `cameraDirection` and `cameraRotation` (read off
+      the source);
+    - the projection: `PerspectiveFovLH` at WebGPU's depth range, the surface's aspect
+      ratio, `fovMode`, `minZ` and `maxZ`;
+    - the matrix caches, as far as they change an answer, and `globalPosition`;
+    - `scene.updateTransformMatrix()`'s product, and the frustum planes
+      (`Frustum.GetPlanesToRef`); `Plane` and `Frustum` are added to `src/math/` and to
+      `math-check` first;
+    - `Viewport` and the gun marker's projection, and `Camera.FOVMODE_*`.
+  - **Every reader moves onto it**: `Game`, the post stages, `Volumetrics`, `GrassSystem`,
+    `Sky`, `ReflectionSystem`, `GlowPass`, `WorldCulling`, the frame host, and the
+    viewer's `FreeCamera` type. `SceneFrame` calls our camera's update and transform where
+    it called the scene's.
+  - The camera's owners move onto `src/math/`. **`math/babylon.ts` is deleted** with its
+    last call, and leaves `NOT_ROOTS`.
+  - **Verify:**
+    - The camera log, bit for bit, through every state, a resize, a render-scale change,
+      the kit screen and the viewer. It covers the view, the projection, the transform,
+      `globalPosition`, the frustum planes and the gun marker.
+    - `readers.mjs` replay; the bank in all three runs; `post.mjs` at both sizes (the
+      phone's DPR); `gi.mjs`, `particles.mjs` and `surfaces.mjs`.
+    - Live: the death cam, a chase camera in each vehicle kind (Sarab), the gunner's
+      sight, aiming down every optic, and `F2`.
+  - **Rewrites:** `CameraSystem`'s header; `docs/weapons.md` and `docs/vehicles.md` where
+    they name the camera's class; `docs/rendering.md`'s frame; `CLAUDE.md` (the viewer's
+    one Babylon type); `FILES.md`.
+
+- **X6.1g — Babylon makes no mesh in any build** (no change to the game) — **S–M**.
+  - **`worldMeshes` makes records alone.** Its mesh arm, `drawnMesh`, `vertexDataOf` and
+    `markVisual`'s Babylon half are deleted. A surface the handover refuses still fails
+    the world, as today (`BlockHandover.refuse`, `Game.worldFailed`).
+    - `GameMap.visuals` and `paneGroups[].mesh` are deleted, or restated as records.
+    - The mesh types in `BlockHandover`, `WorldCulling` (`AbstractMesh`, the filing of
+      `scene.meshes`) and `Game` (`SubMesh`) are gone.
+  - **The three effects take their geometry from `src/geometry/`**: `createIcoSphere`
+    (`BlastFx`), `createBox` (`BlastDebrisSystem`) and `computeNormals` (`DebrisSystem`),
+    each held to Babylon's by `geometry-check`. Their arrays' TYPE may change (`number[]`
+    to a typed array), so what is uploaded is restated, and proven by the bank's blast,
+    shard and rubble rows.
+  - **Verify:** `merge:hash` identical (and `--strict-order`); `kit:hash --models`;
+    `geometry-check`; the bank in all three runs, the `fx-*` rows by name; the draw log;
+    `leaks.mjs`; a teardown and a map change; `F2`.
+  - **Rewrites:**
+    - `CLAUDE.md`: the Visual row of the "visual meshes and collider proxies" table ("a
+      mesh only where Babylon draws it"), and the metadata contract's "hands that same
+      object … to a mesh WHERE IT MAKES ONE";
+    - `docs/build.md`'s "the one adapter" paragraph;
+    - the headers of `parts.ts`, `MapBuilder.ts` and `mapTypes.ts`;
+    - `FILES.md`.
+
+- **X6.1h — the scene, its engine and Babylon's `Observable` go** (no change to the
+  picture) — **M**.
+  - **`Observable` is PORTED as written** (into `core/` or `render/`, the implementer's
+    choice). The frame's points, the loop's and `GlowPass`'s hang on it, and the harness's
+    adapter and every probe hang on it unchanged.
+  - **`SceneFrame` runs without a scene.**
+    - Its frame index is its own.
+    - `Scene.MinDeltaTime`, `Scene.MaxDeltaTime` and the non-lock-step branch become
+      constants, as does `renderTargetsEnabled`.
+    - The clear colour is the environment's, and the camera is ours (X6.1f).
+  - **The readiness is ours.** It is the page's PENDING DATA: the foam's decode, and
+    anything else `addPendingData` held (read off the source).
+    - It answers what `scene.isReady()` answered, on every frame. That is proven at a
+      commit where both stand: a DEV comparison, or the adapter's two arms on the same
+      frames.
+    - The adapter's ready arm moves onto it, and so do `npm run shots` and the skills'
+      scripts.
+  - **Deleted**:
+    - the `Scene`, and `core/SceneEngine.ts` (the `NullEngine`);
+    - the reads of its engine in `ShadowSystem` and `BodyShadows` (WebGPU's depth range
+      becomes a constant);
+    - `physicsEnabled`, `imageProcessingConfiguration`, `setRenderingOrder`, `autoClear`
+      and `__celshock.scene`;
+    - every remaining `Scene` parameter: `WaterSystem`, `ReflectionSystem`,
+      `ShadowSystem`, `BodyShadows`, `WorldCulling`, `GlowPass`, `Sky`, `environment.ts`
+      and the factory.
+  - **Verify:**
+    - the bank in all three runs, and every probe against its parent (`post.mjs` at both
+      sizes, `gi.mjs`, `particles.mjs`, `surfaces.mjs`, `census`, `pipelines.mjs`, the
+      draw log, `readers.mjs` replay and camera, `leaks.mjs`);
+    - `lost.mjs --twice --strict` offline and `--match`;
+    - the menu's boot frames, hashed equal;
+    - `npm run shots` running to its end;
+    - live: the frame caps, a resize, teardowns, the kit bay and `F2`;
+    - `?profile&gpu`.
+  - **Rewrites:**
+    - `CLAUDE.md`: the overview (the `NullEngine` until X6.1, "never the scene's engine"),
+      the deaths section's `scene.physicsEnabled` rule, and the frame paragraph ("named
+      for the scene's it replaces", "nothing raises the scene's");
+    - `docs/game.md`, `docs/states.md`, `docs/rendering.md`'s frame and `docs/deaths.md`;
+    - the headers of `SceneFrame.ts` and `FrameLoop.ts`;
+    - `FILES.md`.
+
+- **X6.1i — the cut** (no change to the game) — **S–M** (decision: rows "X6.1, the copy
+  checks", "X6.1, `optimizeDeps.exclude`", "X6.1, the gate's simulations" and "X6.1, the
+  licence").
+  - **First commit, while the package is still installed**: the copy checks, as the owner
+    decides. Under the recommendation, each case's Babylon 9.28 answer is recorded as a
+    committed table and the check is run against it. It is proven to pass, and its
+    `--perturb` to fail.
+  - **The package goes.**
+    - `@babylonjs/core` is dropped from `package.json` and the lockfile. The Babylon loads
+      in `kit:hash`, `bounds-check`, `sweep-check`, `geometry-check` and `math-check` go
+      with it.
+    - `check-babylon-free.mjs` runs over the whole tree (`src/`, `server/`, `main.ts`,
+      `scripts/`, `plans/`, `.claude/skills/`). Its Node-free walk is kept and its
+      `SIMULATIONS` is as the owner decides.
+    - It replaces `check-deep-imports.mjs`, which is deleted and taken out of
+      `npm run build`.
+    - `vite.server.config.ts`' `no-babylon` plugin is deleted, since the gate holds it.
+    - `optimizeDeps.exclude` is as decided, and `@babylonjs/havok` is kept.
+  - **The licence**, as decided, including the path in the five headers.
+  - **Verify:**
+    - `npm ci` from a clean checkout, then `npm run build`;
+    - every oracle once more against the parent: the bank in all three runs and every
+      probe;
+    - a DEV session from a cold `.vite` cache, with a ragdoll and a pane broken, so that
+      Havok's `.wasm` loads;
+    - the bundle's size before (at 5613d1e, X6.1's parent) and after, every chunk, raw and
+      gzipped;
+    - the PWA updating over an installed copy on the desktop, and launching offline.
+  - **Rewrites:**
+    - `CLAUDE.md`'s overview: the deep-import and `optimizeDeps` sentences, and the two
+      WASMs;
+    - this file's rules 3 to 6, read as history;
+    - `docs/build.md`: the deep-import section, the two WASMs, "A Babylon upgrade owes…",
+      and the widening of `check-babylon-free`;
+    - `package.json`'s scripts, and `FILES.md`.
+
+- **X6.1j — the sweep** (no change to the game) — **M** (decision: rows "X6.1, the sweep's
+  reach" and "X6.1, the licence").
+  - The Rewrites' sweep covers `CLAUDE.md`, `docs/*.md` (`rendering.md` first, with its 471
+    mentions), `FILES.md`, `VERIFYING.md`, `plans/webgpu-ref/README.md`, and every
+    contract header under `src/` and `server/`.
+  - Each is rewritten wherever it describes Babylon as PRESENT: an object of Babylon's, or
+    an "until X6.1". Provenance is kept as the owner decides.
+  - A section that passes its cap is split by `CLAUDE.md`'s mechanical rule.
+  - **Verify:** `npm run build` (no code moves); the census reading 0 imports; a grep for
+    "until X6.1", "NullEngine", "the scene's" and `__celshock.scene`, answered line by line.
+  - **Rewrites:** what it sweeps.
+
+**Verify, the whole step:**
+
+- X6.1's Verify above, against a BEFORE at 5613d1e, end to end as well as step by step;
+- the census at 0, and `npm ci` with no `@babylonjs/core` in `node_modules`;
+- the phone, as the owner decides (row "X6.1, the phone and a tag").
 
 ### X6.2 — Merge to `develop` — **S** (decision)
 
@@ -6546,8 +7037,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: `compatibilityMode = false` is load-bearing | X5.4 (deleted at X5.4h with the engine) |
 | `BABYLON_EXIT.md` rule 4, and `CLAUDE.md`: our renderer meets Babylon's engine through ONE seam | X5.4h (the seam deleted with its last item, the device: rule 4 reads "no file touches a Babylon internal" until X6.1; `CLAUDE.md`'s device and canvas paragraph in its place) |
 | `BABYLON_EXIT.md` rule 5: the side that does not own a resource reads a wrapped view of it through the seam | X5.4h (the last wrapped views, the shadow maps', deleted with Babylon's engine, and the seam with its last item: rule 5 reads "a GPU resource lives with whatever produces it, and nothing else holds a view of it" until X6.1) |
-| `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1 |
-| `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted); since the editor's retirement no Babylon material draws in any state (X5.3d, its DEV counter), and the rule goes with the Babylon declarations at X6.1 |
+| `CLAUDE.md`: no deep static import, keep `optimizeDeps.exclude`; the two WASMs that never ship | X6.1i (decision: row "X6.1, `optimizeDeps.exclude`") |
+| `CLAUDE.md`: every cel material is frozen; `remember`; a vertex colour buffer gained after a first draw | end of Phase 4 (deleted); since the editor's retirement no Babylon material draws in any state (X5.3d, its DEV counter), and the rule goes with the Babylon declarations at X6.1c |
 | `CLAUDE.md`: the map editor (dev only), its dynamic-import rule and `docs/editor.md`; the generators' "the editor patches"; the dev write endpoint's map rows; `installMap`'s two callers; the terrain-patch rule's two callers; the two-`Vector3` crossings | X5.3b, X5.3c (the viewer replaces the editor; row "X5.3, retire the editor") |
 | `CLAUDE.md`: visual meshes and collider proxies (a collider is no mesh); breakable glass's one write; mesh metadata's `solid` | X5.3e |
 | `CLAUDE.md`: `shaderLanguage` is load-bearing; a declared sampler must be bound | X3.1, X5.2 (becomes a bind-group-layout rule) |
@@ -6567,8 +7058,8 @@ Each is rewritten by the step that breaks it, in the same commit.
 | `CLAUDE.md`: the indirect light traced in compute (its GPU half ours, the late prepare's registration order; an editor build with no GI until X5.3) | X5.1b and its picture change, X5.3d (the editor clause deleted: the editor is retired) |
 | `CLAUDE.md`: a colour gradient changes a particle system's vertex layout | X4.7d (deleted) |
 | `CLAUDE.md`: measuring a frame, the two roots | X5.4 |
-| `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1 |
-| `docs/rendering.md` | X3.1 onward, swept at X6.1 |
+| `docs/build.md`: the four copied Babylon internals, `merge:hash` owed per upgrade | X1.2, X1.4, X2.1 (adds the sweep and `sweep-check`), X6.1i (decision: row "X6.1, the copy checks") |
+| `docs/rendering.md` | X3.1 onward, swept at X6.1j |
 | `PERF_PLAN.md` Parts B and C | this file (see the note at its top) |
 
 ## Risks
@@ -6710,4 +7201,11 @@ Phase 1 actually took.
 | X5.4 | **The phone** (decided 2026-11-10 by the owner: **(B)**, a preview URL for the branch): X5.4's Verify asks for X0.3 against X0.4's "before" on every device and a phone install from the home screen, offline, and no step since X2.5c's early merge has reached the phone ("Not run: the phone" on every X5 sub-step). The phone takes only a deployed URL (`PERF_PLAN.md` P0). (A) a third early `--no-ff` merge of the branch into `develop` at the Phase 5 gate, after the whole step's desktop Verify (X2.5c's precedent) — `develop` then carries Phases 3 to 5 and X6.2's `revert -m 1` no longer takes them out; (B) the branch deployed at a preview URL of its own, if the hosting allows a second one; (C) the phone deferred to X6.2's "Before". | **Decided** 2026-11-10 by the owner: **(B)**, the branch deployed at a preview URL of its own (the owner sets it up): X5.4g and X5.4h move the loop, the device, the canvas, the DPR and the context the PWA installs over — the phone-shaped risks — and X6.2 is too late to find them. The preview's check owes a `?profile&gpu` capture too (row "X5.4g, the frame timer's passes", 2026-11-11). |
 | X5.4g | **The frame timer's passes** (point A of X5.4g's review): `gpu.frame`'s two stamps are written by two EMPTY compute passes of the timer's own, the frame encoder's first and last commands, rather than on the frame's first and last real passes (which pass is first or last is not known where each is begun). Sound on Vulkan and D3D12, where passes in one encoder run in order; unverified on a backend that may overlap independent passes (Metal, a tiler), where the closing stamp could land before the work it should follow and under-measure. (A) accept them; (B) stamp the real first and last passes. | **Decided** 2026-11-11 by the owner: **(A)**, accept them as they are, with a `?profile&gpu` check booked on the branch's phone preview URL (the whole step's Verify); fixed only if the phone reads implausibly low. No code change. **Read 2026-11-13**: not implausibly low (Sarab's look parts 11.1 / 11.3 ms against 11.1 / 11.5 on 2026-10-31, every fight's mean frame at or over its mean `gpu.frame`; "The phone, read" under X5.4), so no fix. |
 | X5.4c | **The vantages' lamp shadows**: X5.4c's Do retires the warm-up's vantages on a log showing neither pipeline cache creating anything at one (all seven maps, 15 installs, 11 vantages each), but the bank moves on 16 rows of Greyfen, Harrowmead, Kurenai and Sarab (worst `greyfen-treeline`, 473,099 pixels, mean 0.72/255; `harrowmead-menu`, 170,558 pixels, worst 155/255): the vantage frames ran the camera tail at every spawn and flag, so they left the lamps' shadow atlas (`LocalShadows`: which lamps hold tiles, by `keepMargin`'s preference for a holder, at which tile bases, how many static faces baked) part-built for the deploy screen and every bank row after it, and nothing in the page's own `deploy` re-chooses or bakes lamp tiles (`FINDINGS.md` 73). (A) take the picture change: the vantages go, the deploy screen's lamp shadows are what `finishBakeWait`'s one placement leaves; (B) keep the vantages' side effect some deliberate way. | **Decided** 2026-11-10 by the owner: **(A)**, the orchestrating session's recommendation — the state the vantages left behind was accidental and the new one is the honest one. Landed as X5.4c's `Picture change:` commit, with the bank's numbers; the deploy screen's unbaked lamps recorded as `FINDINGS.md` 73, open. |
+| X6.1 | One step or several? | **Instructed by the owner 2026-11-13**: X6.1 is implemented in sub-steps, each implemented, reviewed and fixed by agents. **The ten-way split was proposed by a planning agent's read at 5613d1e** (X6.1): X6.1a the instruments, X6.1b the collision bake's header, X6.1c the materials' keys, X6.1d the kit without a scene, X6.1e the math, X6.1f the camera, X6.1g no mesh, X6.1h the scene and `Observable`, X6.1i the cut, X6.1j the sweep. **Settled by the read, not left to the owner:** the order (the materials before the math, the math before the camera, the meshes and the camera before the scene); the camera, the readiness and the `Observable` PORTED as written; the `uniqueId` sort moved onto a material counter of ours, which keeps the order of any two materials; and `kit:hash` restated off our records, with its baseline taken at the parent. |
+| X6.1i | **OPEN. The copy checks.** `geometry-check`, `math-check`, `bounds-check` and `sweep-check` hold our copies (the primitives and the merge, the vector math, `boundsOf` and `worldMatrixOf`, the body sweep) to the INSTALLED Babylon. Without the package they cannot run. The first two scripts' headers say "deleted with Babylon at X6.1", and X6.1's Do says `boundsOf` "keeps a recorded table". (A) as written: geometry, math and sweep deleted, bounds kept as a table; (B) all four become recorded tables: each case's Babylon 9.28 answer is captured once while the package is installed (seeded cases, float bits), committed, and the check compares ours with it, keeping `--perturb`; (C) all four deleted. | (B). These copies are what every model's geometry, every transform and every body's sweep is made of, and any change to them after the exit (`FINDINGS.md` 55, the GPU work) would otherwise have no bit-level oracle. `kit:hash` and `merge:hash` see a changed answer only where a build happens to reach it. Cost: the tables' size, which X6.1i states before it commits them. |
+| X6.1i | **OPEN. `optimizeDeps.exclude`.** X6.1's Do says to drop it from `vite.config.ts`, and the Contracts table moves `CLAUDE.md`'s "keep `optimizeDeps.exclude`" to X6.1. But the exclusion holds `@babylonjs/havok` alone, which ships and stays: the dep optimizer parts Havok's glue from its `.wasm`, and the DEV page 404s (`docs/build.md`). Keep it, or drop it as written? | Keep it. X6.1i deletes only the deep-import rule and rewrites `CLAUDE.md`'s sentence to name Havok alone, proven by a DEV session from a cold `.vite` cache in which a ragdoll falls. Dropping it as written breaks every DEV session's physics. |
+| X6.1i | **OPEN. The gate's simulations.** Once `check-babylon-free.mjs` bans the package over the whole tree, its `SIMULATIONS` list (each simulation's value graph walked for Babylon) says nothing a whole-tree ban does not. What holds "a simulation never reaches its picture" after that? (A) `SIMULATIONS` deleted, the rule held by review alone; (B) the list re-aimed at what a picture is made of now: no value path from a simulation or `server/` to `src/render/`, `src/ui/` or a view module (a new contract, with exceptions still to find); (C) the list kept walking for `@babylonjs/core` as today (redundant, unchanged), with (B) booked in `FINDINGS.md` for after the exit. | (C) for X6.1: "No new features inside a step", and a new contract is one. (B) is the better gate and should come after X6.2. |
+| X6.1i | **OPEN. The licence.** Five headers cite `node_modules/@babylonjs/core/license.md` for the Apache-2.0 code they copy from Babylon 9.28 (`math/vector.ts`, `math/color.ts`, `geometry/buffer.ts`, `geometry/primitives.ts`, `world/ellipsoidSweep.ts`). More of the tree is a port: the particles' WGSL "as compiled", FXAA, the glow's kernel blur, and from X6.1f and X6.1h the camera and `Observable`. With the package gone, that file is not in a checkout. (A) commit Babylon's licence and NOTICE once (for example `licenses/babylonjs.md`) and have every port's header cite it; (B) cite the upstream URL alone; (C) wording of the owner's own. And does the built bundle carry a notice? This is a licensing question, not an engineering one, and the read gives no legal advice. | (A), with every port named in one list beside the licence so a new port has somewhere to go. Whether the shipped bundle owes the notice too is the owner's to settle. |
+| X6.1j | **OPEN. The sweep's reach.** "Babylon" appears 1,907 times in 264 source files and about 700 times in the docs. Much of it is provenance ("Babylon 9.28's X, ported as written", source citations such as `scene.pure.js` 4573), which stays true once the package goes. (A) rewrite only what describes Babylon as PRESENT (an object of Babylon's, a rule about Babylon's behaviour in this game, an "until X6.1"), keeping provenance and citations as citations of Babylon 9.28's source; (B) also take the exit's history ("since X3.7", "until X5.4") out of contract headers, leaving it in this file and the landed notes. | (A). (B) is a larger rewrite of argued text, and `CLAUDE.md` says a paraphrase loses the reason a rule exists. Its cost and its review would be the size of X6.1j again. |
+| X6.1 | **OPEN. The phone, and a tag.** X6.1i changes the bundle every installed copy updates to. Does X6.1's Verify owe the phone on the branch's preview URL (a `?bench=<map>&gpu` capture, and the home-screen app updating over an installed copy and launching offline), as X5.4's did, or does the desktop's reading suffice, with the phone left to X6.2's "Before"? And does X6.1 end in a tag (for example `exit-babylon-free`), as each phase gate does? | The phone, after X6.1i and before X6.1j, since the cut is the last change to what ships before the merge; and a tag after the whole step's Verify, as a known-good point with no Babylon. |
 | X6.2 | Is it ready to merge to `develop`? | Only when X6.2's "Before" list passes in full. |
