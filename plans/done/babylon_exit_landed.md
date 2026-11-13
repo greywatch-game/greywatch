@@ -13135,12 +13135,12 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
 
-**X6.1a LANDED** (1d13c83; 2026-11-13; no change to the game: instruments, their headers,
+**X6.1a LANDED** (1d13c83, its review f8f6525..1b9e23c; 2026-11-13; no change to the game: instruments, their headers,
 `plans/webgpu-ref/README.md`, `docs/build.md`, `VERIFYING.md` and `FILES.md`; nothing under `src/`
 or `server/`). Measured headless on the Windows box against a BEFORE at 0edc6159, in the worktree
 `greywatch-2-before-x53a` (moved there, detached; its `node_modules` valid, no dependency having
@@ -13265,3 +13265,74 @@ device lost in any run.
 Scripts and logs in the session's scratchpad, `x61a/` (`before.sh`, `after.sh`, `noscene.sh`,
 `probes.sh`, `adaptercheck.mjs`, `partition.cjs`, the BEFORE and AFTER logs and kept frames, the
 fingerprints and the census).
+
+**Its review** (f8f6525, f195683, 916e3aa, 1b9e23c; 2026-11-13; no change to the game: instruments,
+two skills' scripts and their documents; nothing under `src/` or `server/`) found one real issue and four
+NITs, all fixed, and carried out three decisions the owner took on 2026-11-12. Each fix verified, then
+committed in four commits: the adapter (f8f6525: findings 1, 2, 3 and 5 and the owner's move),
+`kit:hash` (f195683: finding 4), the skill's loader (916e3aa) and the sun (1b9e23c).
+
+- **Real (latent), finding 1**: with no scene, `camera()`'s `planes` were re-derived by the harness off
+  the frame host's `viewProjection` (`Frustum.GetPlanesToRef`'s row sums and `Plane.normalize`,
+  restated), not read off the array the game uses (`scene.frustumPlanes`, read by `Game.ts`' four
+  culls and `Sky.ts`), so they proved nothing beyond `transform`, and at X6.1f an AFTER under
+  `REF_NO_SCENE=1` would have passed a wrongly ported `GetPlanesToRef`. **Fixed**: the no-scene arm
+  reads the GAME's own array as `Game.frustumPlanes` (six planes, `{ normal, d }`, Babylon's order),
+  which no tree has before X6.1f — X6.1f's Do now owes the adapter that hook (or moves the arm to
+  wherever the array lives, in the same commit) and its Verify reads the planes off it, a frame
+  `"unproven"` being no pass. Until then the arm answers `null`, `readers.mjs`' camera log spells it
+  `"unproven"` and its summary says so aloud, and a comparison with a scene's log fails on the planes
+  unless `--ignore=log[*].planes` names them. The restated arithmetic is deleted; the adapter's header
+  replaces "the game's arm reads ours then" with this, and its contract says it never re-derives what
+  the game computes.
+- **NITs fixed**: (2) the camera log's hull ran at render scale 1 and the bank's size only; two steps
+  follow the gunner's — the driver at render scale 0.75, the gunner after a resize to 1280x721 at that
+  scale — each posed at an index past every step X6.1a logged (`step`'s `index`, 15 and 16), so no
+  step X6.1a logged moved its pose, then back to size and scale before the hull comes off; (3)
+  `REF_NO_SCENE=1` reached the page through `bootMap` alone: `installFrameAdapter(page)` is now the one
+  door (it adds `window.__refNoScene = true` first under the flag), used by `bootMap`, `pipelines.mjs`,
+  `lost.mjs`, `check-world-parity.mjs`, `capture-map-shots.mjs`, `merge-hash.mjs` and `views.mjs`
+  (`shots.mjs` boots through `bootMap`); (4) `kit:hash` recorded a part's Euler angles beside its
+  quaternion, which `worldMatrixOf` ignores while one is set, so a dead Euler write read as "drawing
+  changed": a part's rotation is now `["quaternion", …]` or `["euler", …]`, whichever decides its
+  matrix, and a joint's the same (`rigJoints.ts`' compose reads the quaternion over the Euler angles);
+  (5) X6.1d's Rewrites name `scripts/kit-hash.mjs` (its `StubScene` handed to every builder and to `new
+  ViewModel(scene, …)`) and the adapter's `pictureKey`.
+- **The owner's decisions (2026-11-12)**: (6) `frameAdapter` moved, its doc verbatim, from
+  `plans/webgpu-ref/harness.mjs` into `scripts/lib/frameAdapter.mjs` under a contract header and a
+  `FILES.md` line, `harness.mjs` re-exporting it, every importer pointed there — so `npm run parity`,
+  `shots` and `merge:hash` and the map-layout skill's `views.mjs` import nothing from `plans/` (the
+  model-detail skill's `shots.mjs`, `perf.mjs` and `reach.mjs` still import the harness for `bootMap`,
+  `installRound`, `waitUntilDrawn` and `settle`, which did not move); (7) every layout's one value
+  import is the directory `../../math` (since X1.1), which Node's loader refuses
+  (`ERR_UNSUPPORTED_DIR_IMPORT`), so the skill's `load.mjs` — and `audit`, `plan` and `views.mjs` with
+  it — had not booted since: a resolve hook (`registerHooks`) answers a relative directory import under
+  `src/` with its `index.ts`, as Vite does; (8) `shots.mjs`' `sun` bearing read the scene light
+  "moonShadow", ShadowSystem's `DirectionalLight`, which X5.3d (8be80ec) deleted — not "since the cel
+  shader carried its own" light as X6.1a's note had it — so every run since took (0.7, 0.7); it reads
+  the key light, `g.mats.keyLight.dir` (`EnvironmentSpec.lighting.direction` normalised, which the
+  shadow maps also aim down), and prints the bearing.
+- **Measured** headless on the Windows box, every GPU run alone: typecheck, build (its gates),
+  corecheck, parity (eight maps; every scene compiles) clean; `merge:hash` identical to X6.1a's BEFORE
+  (0edc6159) on all eight maps. **The camera log**: Hollowmere equal to X6.1a's (104 frames,
+  `--against`); Coldharbour 136 frames, X6.1a's 120 equal field for field matched by step and frame,
+  the 16 new ones each with a marker (render sizes 1440x810 and 960x540), and the run equal to itself
+  across two processes; under `REF_NO_SCENE=1` the planes `"unproven"` on 136 of 136 frames (the
+  comparison failing without `--ignore`) and every other field equal under `--ignore=log[*].planes`.
+  **The door**: a page opened through `installFrameAdapter` alone reads `babylon()` and `counts()`
+  `null` under `REF_NO_SCENE=1` and the scene's without. **`kit:hash`** on the parent's game (nothing
+  under `src/` moved since 0edc6159): 3,722 kit builds and 244 model builds, 0 threw; against X6.1a's
+  restated fingerprints (and its pre-X6.1a ones) the same keys, no error, the same classes — drawing
+  2,420, colliders 1,555, models draw and set 234 each, none split or merged; 3,589 kit draw hashes
+  moved by format and 0 collider hashes; `--feet` identical; each run equal to itself (`--against`).
+  **The baseline for every later sub-step is now f195683's format**, regenerated as X6.1a's note says.
+  **Scripts run**: `views.mjs hollowmere` (25 views) and again under `REF_NO_SCENE=1` (25);
+  `audit.mjs hollowmere`; `shots.mjs --map hollowmere --at 43.6,-10.2,3.14 --views sun,shade --stats
+  cottage` (bearing 0.584, -0.812, Hollowmere's key light); `npm run shots -- hollowmere` (the committed
+  picture put back); `pipelines.mjs hollowmere` (nothing made in play); `lost.mjs hollowmere
+  --at=menu,deploy` (every verdict YES).
+- **Not run**: the bank and the probes beyond those above (no frame of the game's touched, and no
+  adapter answer but the planes changed); the live rounds; the phone.
+
+Scripts and logs in the session's scratchpad, `x61a-fix/` (`verify.sh`, `bystep.cjs`,
+`noscene-door.mjs`, the camera logs, the fingerprints, the views and shots).

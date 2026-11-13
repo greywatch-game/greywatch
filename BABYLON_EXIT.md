@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6726,7 +6726,7 @@ Then the cut, then the sweep.
     `docs/build.md`'s `kit:hash` lines, `VERIFYING.md` where it names `__celshock.scene`,
     `FILES.md`.
 
-  **X6.1a LANDED** (1d13c83; 2026-11-13; no change to the game: instruments, their headers, the
+  **X6.1a LANDED** (1d13c83, its review f8f6525..1b9e23c; 2026-11-13; no change to the game: instruments, their headers, the
   README, `docs/build.md`, `VERIFYING.md` and `FILES.md`; nothing under `src/` or `server/`). The
   full note is in `plans/done/babylon_exit_landed.md`. **The census** is
   `scripts/babylon-census.mjs` (a script beside the gate, not a flag on it); at 1d13c83: 143 files
@@ -6755,6 +6755,33 @@ Then the cut, then the sweep.
   (Node cannot load a layout's `../../math` directory import), so its move onto the adapter is
   untested; `shots.mjs`' `sun` view has read the default bearing on every run (no scene light
   "moonShadow" exists), kept as it reads.
+
+  **Its review** (f8f6525, f195683, 916e3aa, 1b9e23c; 2026-11-13; no change to the game: instruments,
+  two skills' scripts and their documents; the full note is in `plans/done/babylon_exit_landed.md`)
+  found one real issue and four NITs, all fixed, and carried out three owner decisions of 2026-11-12.
+  **The real one**: with no scene the adapter's `camera()` RESTATED the frustum planes off the frame
+  host's transform (`Frustum.GetPlanesToRef`'s arithmetic in the harness), so they proved nothing
+  beyond `transform`, and X6.1f's AFTER under `REF_NO_SCENE=1` would have passed a wrongly ported
+  `GetPlanesToRef`. Now the no-scene arm READS the game's own plane array, `Game.frustumPlanes`, which
+  X6.1f owes (its Do and Verify below say so), and before it answers `null`; the camera log spells
+  such a frame's planes `"unproven"` and says so aloud, so a comparison with a scene's log fails on them
+  unless `--ignore` names them. **NITs**: the camera log's hull gains the driver at render scale 0.75
+  and the gunner after a resize, posed past every step X6.1a logged; `REF_NO_SCENE=1` is honoured by
+  every script that installs the adapter (`installFrameAdapter`, the one door), not `bootMap` alone;
+  `kit:hash` records a rotation as the quaternion OR the Euler angles, whichever decides the matrix
+  (a part's and a joint's), so a dead Euler write is no change — the fingerprint re-taken, the same
+  builds in the same classes as X6.1a's, the colliders' hashes unmoved; X6.1d's Rewrites name
+  `kit-hash.mjs` and the adapter's `pictureKey`. **The owner's three**: the adapter lives in
+  `scripts/lib/frameAdapter.mjs` (`harness.mjs` re-exports it), so parity, shots, `merge:hash` and the
+  skills' `views.mjs` import nothing from `plans/`; the map-layout skill's loader resolves a layout's
+  `../../math` directory import (a resolve hook in `load.mjs`), so `audit`, `plan` and `views.mjs` boot
+  again — `views.mjs` ran, 25 views, and 25 under `REF_NO_SCENE=1`; `shots.mjs`' `sun` view reads the
+  key light (`g.mats.keyLight.dir`), lost since X5.3d deleted the "moonShadow" light. **Measured**:
+  typecheck, build, corecheck, parity; `merge:hash` identical to X6.1a's BEFORE; the camera log on
+  Hollowmere equal to X6.1a's, on Coldharbour X6.1a's 120 frames equal step by step and the 16 new
+  ones marked, equal to itself across two processes; `npm run shots -- hollowmere`, `pipelines.mjs`,
+  `lost.mjs` and `shots.mjs` run. **The `kit:hash` baseline for every later sub-step is the review's
+  format** (f195683), regenerated at any commit whose game is the parent's.
 
 - **X6.1b — the collision bake's header, reworded** (no change to the game) — **S**.
   - The Rewrites' bake item, as written above: the three passages of
