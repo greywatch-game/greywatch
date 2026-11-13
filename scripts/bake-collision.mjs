@@ -6,9 +6,8 @@
  * `public/icons/` — see `docs/multiplayer.md` for why this file exists at all.
  *
  * **Why a bake and not a server-side build.** The server runs the simulation
- * with no Babylon and no canvas, and `MapBuilder` builds
- * meshes and reaches a canvas through `floorMaterial` →
- * `textures.ts`, so the server cannot run a build at all. What it CAN do is
+ * with no Babylon and no canvas, and `MapBuilder` reaches a canvas through
+ * `floorMaterial` → `textures.ts`, so the server cannot run a build at all. What it CAN do is
  * reproduce the solid world from the boxes, because `MapBuilder.collider()` is
  * the only place a collider is made and the `WorldBox` it records (`w/h/d`,
  * `cx/cy/cz`, `rotX/rotY`) is everything a ray or a sweep asks of it. So this
@@ -39,6 +38,13 @@
  * generated module carries a `mark` string that `check-proving.mjs` greps the
  * emitted bundles for, because a 473 kB bake of a map that is not a level must
  * never ship and a doc comment saying so does not survive a build.
+ *
+ * **The emitted text is reviewed as a diff, so its prose is part of the
+ * bake.** A change to `emit`'s template re-bakes every map, in a commit whose
+ * diff is that text alone — the boxes, the groups and the source hashes
+ * unchanged, which `check-collision.mjs` and `npm run parity` confirm
+ * (`BABYLON_EXIT.md` X6.1b is the precedent). No collider is a mesh on either
+ * side (X5.3e), so the text names none.
  *
  * **A trailing argument bakes one map instead of all of them**
  * (`node scripts/bake-collision.mjs proving`). The four levels are re-baked
@@ -122,11 +128,11 @@ async function bakeMap(browser, url, id) {
     // `rayGroups` stays GROUPED: each inner array is one placement's struts —
     // one merged collider mesh until BABYLON_EXIT.md X5.3e, when the server
     // merged the same way. Flattening it would leave the server guessing
-    // where one fence ends and the next begins, and the bake's text (below,
-    // which still says "collider mesh") is held byte for byte across that
-    // change: `npm run collision` after it moved nothing. Its rewording, and
-    // the re-bake of all eight maps it costs, is booked on X6.1's Rewrites
-    // (by X5.3e's review), each sentence to change quoted there.
+    // where one fence ends and the next begins. X5.3e held the bake's text
+    // (below) byte for byte, "collider mesh" and all: `npm run collision`
+    // after it moved nothing. X6.1b reworded the three passages that still
+    // said a collider is a mesh and re-baked all eight maps in one commit
+    // whose diff was that text alone.
     // Panes, in build order — which is what makes the index into this array a
     // name the client and the authority both know a pane by. Seven numbers and
     // an index: no `rotX` (nothing in the kit tilts a sheet), and `box` is the
@@ -177,18 +183,18 @@ function emit(id, constant, baked, hash, mark) {
  *
  * \`rayGroups\` is the other half of that: ${rayBoxes} \`strut\` boxes in
  * ${rayGroups.length} groups — the timber a round DOES stop on, with no body
- * behind it. One group per collider mesh, because the server merges each group
- * the way the client does. They are not in \`boxes\` because nothing derived
- * from geometry may see them: a 0.1 m rail is a shape the nav grid can only get
- * wrong.
+ * behind it. One group per placement, its posts and rails, because the server
+ * keeps them grouped as the client does: \`RayWorld\` indexes them group by group
+ * on both sides, and a flat list could not say where one fence ends and the
+ * next begins. They are not in \`boxes\` because nothing derived from geometry
+ * may see them: a 0.1 m rail is a shape the nav grid can only get wrong.
  *
  * \`boxGroups\` is a third view of the SAME boxes: ${grouped} of them, in
- * ${boxGroups.length} groups, that the client merged into one collider mesh
- * each because they are a scatter region's props. What reads it now is a
- * body's sweep, whose ties go in the order the client made those meshes.
- * Indices into \`boxes\`, not boxes — everything derived from geometry still
- * reads them one at a time. Anything named here is not also given a mesh of
- * its own.
+ * ${boxGroups.length} groups, that the client groups by locality because they
+ * are a scatter region's blocking props. What reads it is a body's sweep, whose
+ * ties go in the groups' own order — \`RayWorld\`'s rank, every box no group
+ * names and then each group's, the same on both sides. Indices into \`boxes\`,
+ * not boxes — everything derived from geometry still reads them one at a time.
  *
  * \`panes\` is the glass a round can take away: ${panes.length} sheets, each with a
  * collider in \`boxes\` (the eighth entry is its index there) holding a body out

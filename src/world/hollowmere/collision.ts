@@ -12,18 +12,18 @@
  *
  * `rayGroups` is the other half of that: 157 `strut` boxes in
  * 13 groups — the timber a round DOES stop on, with no body
- * behind it. One group per collider mesh, because the server merges each group
- * the way the client does. They are not in `boxes` because nothing derived
- * from geometry may see them: a 0.1 m rail is a shape the nav grid can only get
- * wrong.
+ * behind it. One group per placement, its posts and rails, because the server
+ * keeps them grouped as the client does: `RayWorld` indexes them group by group
+ * on both sides, and a flat list could not say where one fence ends and the
+ * next begins. They are not in `boxes` because nothing derived from geometry
+ * may see them: a 0.1 m rail is a shape the nav grid can only get wrong.
  *
  * `boxGroups` is a third view of the SAME boxes: 196 of them, in
- * 97 groups, that the client merged into one collider mesh
- * each because they are a scatter region's props. What reads it now is a
- * body's sweep, whose ties go in the order the client made those meshes.
- * Indices into `boxes`, not boxes — everything derived from geometry still
- * reads them one at a time. Anything named here is not also given a mesh of
- * its own.
+ * 97 groups, that the client groups by locality because they
+ * are a scatter region's blocking props. What reads it is a body's sweep, whose
+ * ties go in the groups' own order — `RayWorld`'s rank, every box no group
+ * names and then each group's, the same on both sides. Indices into `boxes`,
+ * not boxes — everything derived from geometry still reads them one at a time.
  *
  * `panes` is the glass a round can take away: 0 sheets, each with a
  * collider in `boxes` (the eighth entry is its index there) holding a body out
