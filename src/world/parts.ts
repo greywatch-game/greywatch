@@ -83,13 +83,13 @@ import {
   Mesh,
   Quaternion as BabylonQuaternion,
   VertexBuffer,
-  type Material,
   type Scene,
   VertexData,
 } from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";
 import { isEmissiveWorld } from "../shaders/EmissiveWorld";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import { recordOf, releaseArrays, type SurfaceRecord, type WorldSurface } from "./worldGeometry";
 
 /** A mesh's metadata bag, which is what the merge and the bake read flags off. */
@@ -150,7 +150,7 @@ export class PartNode {
  * its builder's frame, and what it is painted with — a `PartNode` that draws.
  */
 export class Part extends PartNode {
-  material: Material | null = null;
+  material: MaterialKey | null = null;
   metadata: PartMetadata | null = null;
   geometry: GeometryBuffer;
 
@@ -492,14 +492,19 @@ export function worldMeshes(
   return { visuals, meshes, records };
 }
 
-/** A part's transform, material and metadata onto the mesh made of it. */
+/**
+ * A part's transform and metadata onto the mesh made of it. Its MATERIAL is
+ * not: a material is a key of ours (`shaders/MaterialKey.ts`, since
+ * `BABYLON_EXIT.md` X6.1c), no Babylon object, and nothing reads a mesh's —
+ * the scene is never rendered, and a mesh made here is one the handover
+ * refused, in a world that fails (X3.7c).
+ */
 function dress(mesh: Mesh, part: Part): Mesh {
   mesh.position.set(part.position.x, part.position.y, part.position.z);
   mesh.rotation.set(part.rotation.x, part.rotation.y, part.rotation.z);
   mesh.scaling.set(part.scaling.x, part.scaling.y, part.scaling.z);
   const q = part.rotationQuaternion;
   if (q) mesh.rotationQuaternion = new BabylonQuaternion(q.x, q.y, q.z, q.w);
-  mesh.material = part.material;
   if (part.metadata) mesh.metadata = part.metadata;
   return mesh;
 }

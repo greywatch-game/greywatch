@@ -39,7 +39,7 @@
  * paletteise anything but a plain matte cel material (`plainCelHex`) or one
  * of `getEmissive`'s unlit colours (`plainEmissive`), each into its own table.
  */
-import type { Material } from "@babylonjs/core";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import { writePaletteIndex } from "../shaders/CelShader";
 import type { WorldPane } from "./mapTypes";
 import { bakePartTransform, mergeParts, Part } from "./parts";
@@ -183,7 +183,7 @@ export class PaneBlocks {
       // Split by material for the reason `mergeByMaterial` does: two materials
       // in one mesh would draw one of them wrong. Glass is one colour today, so
       // this is almost always a single group.
-      const byMaterial = new Map<Material, PaneSurfaceGroup[]>();
+      const byMaterial = new Map<MaterialKey, PaneSurfaceGroup[]>();
       for (const g of group) {
         const mat = g.surface.part.material;
         if (!mat) continue;
@@ -317,7 +317,7 @@ export function mergeByMaterial(
   // Nested rather than keyed on a composed string, because two distinct
   // materials are free to share a name and a merge across them would draw one
   // of them wrong.
-  const groups = new Map<Material, Map<string, Group>>();
+  const groups = new Map<MaterialKey, Map<string, Group>>();
   for (const s of surfaces) {
     const m = s.part;
     const mat0 = m.material;
@@ -449,7 +449,7 @@ export type Palette = {
   /** The 1-based slot for a hex, or 0 for "keep your own material". */
   slot(hex: string): number;
   /** The material every slotted mesh ends up wearing. */
-  material: Material;
+  material: MaterialKey;
   /**
    * The same pair for the map's EMISSIVES, in a table of their own —
    * `CelMaterialFactory.getEmissiveWorld`. The material is asked per mesh
@@ -457,7 +457,7 @@ export type Palette = {
    */
   glow: {
     slot(hex: string): number;
-    material(overGlass: boolean): Material;
+    material(overGlass: boolean): MaterialKey;
   };
 };
 
@@ -466,7 +466,7 @@ export type Palette = {
  * your own material", which is every material neither name test accepts and
  * every colour a table had no room for.
  */
-function paletteFor(name: string, palette: Palette): { slot: number; material: Material } | null {
+function paletteFor(name: string, palette: Palette): { slot: number; material: MaterialKey } | null {
   const hex = plainCelHex(name);
   if (hex) {
     const slot = palette.slot(hex);
@@ -485,7 +485,7 @@ function paletteFor(name: string, palette: Palette): { slot: number; material: M
  * it is the over-glass variant — or null for anything else.
  *
  * **As strict as `plainCelHex` and for its reason.** That factory names its
- * unlit `StandardMaterial`s `emissive-#rrggbb` and `emissive-#rrggbb-over-glass`
+ * unlit emissives `emissive-#rrggbb` and `emissive-#rrggbb-over-glass`
  * and nothing else in the tree is named so; a material with a texture, an
  * alpha or any behaviour the palette material does not reproduce must never
  * match, and none can, because `getEmissive` makes none.

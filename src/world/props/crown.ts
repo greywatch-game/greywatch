@@ -7,7 +7,7 @@
  * Invariants: every leaf is drawn from the billow's own stream, never from the
  * shared scatter stream. Never imports a prop.
  */
-import type { Material } from "@babylonjs/core";
+import type { MaterialKey } from "../../shaders/MaterialKey";
 import { floats, GeometryBuffer } from "../../geometry/buffer";
 import { CONFIG } from "../../config";
 import { Part } from "../parts";
@@ -64,7 +64,7 @@ export function crownPart(
   trunk: Part,
   name: string,
   data: GeometryBuffer[] | Sheet,
-  material: Material,
+  material: MaterialKey,
   sways: boolean,
 ): void {
   const merged = Array.isArray(data)

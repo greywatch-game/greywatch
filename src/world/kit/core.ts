@@ -45,7 +45,8 @@
  * - No Hollowmere special-casing; register new builders in
  *   BuildingKit.ts's BUILDERS.
  */
-import type { Scene, ShaderMaterial } from "@babylonjs/core";
+import type { Scene } from "@babylonjs/core";
+import type { MaterialKey } from "../../shaders/MaterialKey";
 import { CONFIG } from "../../config";
 import type {
   CelMaterialFactory,
@@ -285,7 +286,7 @@ export interface BuildParams {
    *
    * The two are different questions because they cost different things. A lens
    * is `Build.glow` — an emissive box that takes the glow's bloom and
-   * `EmissiveFog`'s per-pixel fade for free and spends NO light slot. A light
+   * unlit draws' per-pixel fog fade for free and spends NO light slot. A light
    * is one of sixteen, uploaded nearest-first, and a street full of them
    * evicts the interior fixtures a lit building is legible by. So a map lights
    * the few columns whose pool of light is somewhere a player stands, and lets
@@ -774,7 +775,7 @@ export const ROOM_GLOW = "#4e3a1f";
  * which is exactly why `buildStreetLight` carried no lens at all until the map
  * moved to an hour that wanted one. Sodium orange survives the bloom as a
  * colour rather than as a hole in the frame, and it holds its hue as
- * `EmissiveFog` takes it into the haze.
+ * the fog takes it into the haze.
  */
 export const LAMP_SODIUM = "#ff9a3c";
 /**
@@ -1021,7 +1022,7 @@ export class Build implements Structure {
    * soil is not wet stone, and Coldharbour's sheen is tuned at 24 degrees of
    * sun on the stated premise that it never reaches an avenue.
    */
-  private groundMaterial(paving: RoadSurface): ShaderMaterial {
+  private groundMaterial(paving: RoadSurface): MaterialKey {
     if (paving === "cobble") {
       return this.mats.getGroundTextured(
         "cobble",

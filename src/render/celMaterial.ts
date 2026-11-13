@@ -28,20 +28,55 @@ import type { Binding, UniformField } from "./wgsl/assemble";
 /** Every member of a cel material's own block, in layout order. */
 export const CEL_MATERIAL_FIELDS = [
   { name: "baseColor", type: "vec3f", when: ["!CEL_GROUND_TEX"] },
+  // World-mapped ground albedo: sampled at vPosW.xz * texScale, so no UVs are
+  // needed and the pattern keeps a constant real-world size across placements.
   { name: "texScale", type: "f32", when: ["CEL_GROUND_TEX"] },
+  // The tile's own weathering — see graphics.groundVariation in the config for
+  // why a ground texture gets a wider cell and a wider swing than a flat colour.
   { name: "groundVariationScale", type: "f32", when: ["CEL_GROUND_TEX"] },
   { name: "groundVariationAmount", type: "f32", when: ["CEL_GROUND_TEX"] },
+  // Metres of fake relief at height value 1.0 (`bumpTex`).
   { name: "bumpScale", type: "f32", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
+  // The relief's DEPTH — see groundRelief. x, y: the distance the parallax fades
+  // out over; z, w: the distance the self-shadow fades out over.
   { name: "reliefFade", type: "vec4f", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
+  // x: how dark the relief's own shadow is (1 = the key gone), y: how much of the
+  // ambient a groove at height 0 loses.
   { name: "reliefShade", type: "vec2f", when: ["CEL_GROUND_TEX", "CEL_BUMP"] },
+  // Toon specular: one hard two-band Blinn highlight from the key light.
+  // specColor is premultiplied by intensity — black (the default) is matte.
   { name: "specColor", type: "vec3f" },
   { name: "specShininess", type: "f32" },
+  // The top rung of the gloss ladder, and the one that is not a highlight: how
+  // much of the ENVIRONMENT a polished surface hands back instead of its own
+  // shaded colour. Zero (the default, and every matte, satin and metal material
+  // in the game) leaves the whole mirror block in celSurface unentered — a uniform
+  // branch, which is the same shape the albedo weathering's mask already is.
   { name: "specMirror", type: "f32" },
+  // Translucency: the key light coming THROUGH a thin surface rather than off
+  // it — a canvas awning or a pine crown with the moon behind it. Premultiplied
+  // by intensity — black (the default) is opaque.
   { name: "transColor", type: "vec3f" },
+  // TranslucencySpec.depth, in metres: 0 is a thin sheet, otherwise how far
+  // behind the solid's lit surface a face may lie and still transmit.
   { name: "transDepth", type: "f32" },
+  // Glazing. x = reflectance face-on, y = the Fresnel falloff's exponent,
+  // z = cosine half-width of the sun's halo in the reflection, w = how much of
+  // the tint a face-on pane keeps. See CelMaterialFactory.getGlass.
   { name: "glassParams", type: "vec4f", when: ["CEL_GLASS"] },
+  // The ALBEDO of the mass this sheet hangs on, named by the builder that hung
+  // it (the backed argument of Build.pane). Unlit, because it is shaded here by
+  // the same light the pane is: they are parallel faces a hand apart, so one
+  // light term is right for both. See the composite in celSurface for why this
+  // is exact rather than an approximation of the blend it replaces.
   { name: "glassBackdrop", type: "vec3f", when: ["CEL_GLASS", "CEL_GLASS_BACKED"] },
+  // Where the cube was baked from, and how much of it this surface returns
+  // against the sky it would otherwise show: reflectProbe.xyz is the bake point
+  // and .w is the strength — 0 where nothing was baked, which is every map with
+  // nothing to bake for (`celProbe`).
   { name: "reflectProbe", type: "vec4f", when: ["CEL_GLASS"] },
+  // The box the mirrored ray is parallax-corrected against — the map's own
+  // extent, floor to roofline (`celProbeBox`).
   { name: "reflectBoxMin", type: "vec3f", when: ["CEL_GLASS"] },
   { name: "reflectBoxMax", type: "vec3f", when: ["CEL_GLASS"] },
   // A palette of the material's OWN, where the frame's is the map's: the
@@ -62,13 +97,20 @@ export const CEL_MATERIAL_BLOCK = {
 
 /** The textures a material binds after its block, in binding order. */
 export const CEL_MATERIAL_TEXTURES = [
+  // The ground's tiling albedo (`texScale`).
   { kind: "sampled", name: "baseColorTex", type: "texture_2d<f32>", when: ["CEL_GROUND_TEX"] },
+  // Height map matching the albedo texel-for-texel (domed setts, dark mortar).
   {
     kind: "sampled",
     name: "bumpTex",
     type: "texture_2d<f32>",
     when: ["CEL_GROUND_TEX", "CEL_BUMP"],
   },
+  // The world as a mirror sees it: one cube baked per map install from the
+  // map's own geometry (systems/ReflectionSystem.ts). Alpha 1 where the bake
+  // drew something and 0 where it saw nothing at all, which is what lets the
+  // sky above stay the analytic gradient and the world below be a picture of
+  // the world. Colour is NOT premultiplied — see each sampler's own mix.
   { kind: "sampled", name: "reflectionCube", type: "texture_cube<f32>", when: ["CEL_GLASS"] },
 ] as const satisfies readonly Binding[];
 
@@ -96,11 +138,11 @@ export function createMaterialUniforms(defines: Iterable<string>): MaterialUnifo
 
 /** What a cel material is drawn with, as the factory that made it states it. */
 export interface CelRecipe {
-  /** The variant: the defines its Babylon twin compiles with, bare (`CEL_PALETTE`). */
+  /** The variant: the defines its program is assembled under, bare (`CEL_PALETTE`). */
   readonly defines: readonly string[];
   /**
-   * Babylon's `zOffsetUnits` — the pipeline's `depthBias`, in the depth
-   * buffer's own units. The slope (`zOffset`) is 0 on every cel material.
+   * The material key's `zOffsetUnits` — the pipeline's `depthBias`, in the
+   * depth buffer's own units. The slope (`zOffset`) is 0 on every cel material.
    */
   readonly depthBias: number;
   /** The block, filled in place; `CelMaterialFactory.materialEpoch` moves when any is rewritten. */

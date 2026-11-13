@@ -53,7 +53,7 @@
  * name the same piece (`assertPieces`, DEV, every build).
  * Must NOT hold a mesh, read a scene, or let a part in by any other door.
  */
-import type { Material } from "@babylonjs/core";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import { GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Vector3 } from "../math";
 import type { Part, PartMetadata } from "./parts";
@@ -167,7 +167,7 @@ export interface SurfaceRecord {
    * necessarily the mesh's for the life of the map: `ReflectionSystem` hands
    * each glazing block a probe material of its own once its cube is baked.
    */
-  material: Material | null;
+  material: MaterialKey | null;
   metadata: PartMetadata | null;
   block: string | null;
   pieces: PieceRange[];

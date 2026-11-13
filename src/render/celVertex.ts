@@ -1,7 +1,8 @@
 /**
  * render/celVertex.ts — The cel material's VERTEX stage as our renderer
- * declares it: the same body Babylon's `ShaderMaterial` runs (`celVertex`),
- * against explicit bind groups, its attributes PULLED out of storage, so one
+ * declares it: the shared body (`celVertex`, the one Babylon's
+ * `ShaderMaterial` ran until `BABYLON_EXIT.md` X6.1c deleted its
+ * declarations), against explicit bind groups, its attributes PULLED out of storage, so one
  * stage draws the world whole — the blocks and the landform at identity and
  * the scatter at its instances (`BABYLON_EXIT.md` X3.5b, the fold).
  * Owns: `CEL_VERTEX_PROGRAM` — the attributes, the frame block (group 0), the
@@ -14,8 +15,8 @@
  * the layout
  * of an instance's transform in `transforms` (`TRANSFORM_WORDS`,
  * `writeTransform`), which the instance cull's records carry the same way.
- * Invariants: declares every name the shared body reads, by Babylon's names
- * because the body reads them by name (`CelShader.ts`'s `celVertexShader`);
+ * Invariants: declares every name the shared body reads, by the names the
+ * body reads them by (Babylon's, which the body was written against);
  * the attributes are Babylon's, under Babylon's guards — `color` and `uv` in
  * every variant, `uv2` under `CEL_PALETTE` — each read out of its own array
  * in group 2 at the vertex the index names (`scatterList.ts`), and a
@@ -86,8 +87,25 @@ export function celGeometry(stride: number | null): readonly Binding[] {
 export const CEL_ATTRIBUTES: readonly Attribute[] = [
   { name: "position", type: "vec3f", from: "positionData" },
   { name: "normal", type: "vec3f", from: "normalData" },
+  // Baked world shading, written by world/vertexShading.ts: alpha is ambient
+  // occlusion, green marks a vertex as WORLD geometry and RED is how much of the
+  // wind's travel this vertex is entitled to. Declared unconditionally and on
+  // purpose — a mesh with no colour buffer reads the generic default
+  // (0, 0, 0, 1): occlusion 1 (none), mask 0 (not world) and sway 0
+  // (planted). Every rig, the viewmodel and every effect is therefore correct
+  // without carrying one (the header: a missing unguarded attribute reads as
+  // Babylon's empty buffer read).
   { name: "color", type: "vec4f", from: "colorData" },
+  // A RIGGED vertex's place on its own frond (world/sway.ts's swayRig): x is how
+  // much of a frond's tip travel it takes, y the edge in its whole part and the
+  // frond's phase in its fraction. Read ONLY when the red channel is negative,
+  // which only a rigged layer's bake writes — every other world part carries
+  // filler here, and a mesh with no uv buffer at all reads the empty one.
   { name: "uv", type: "vec2f", from: "uvData" },
+  // The albedo's 1-based slot in `celPalette`, written per source mesh by
+  // `MapBuilder` before the merge concatenates it (`writePaletteIndex`).
+  // Behind the define — unlike `color` above, which every variant declares —
+  // because a variant without it binds no such buffer.
   { name: "uv2", type: "vec2f", when: ["CEL_PALETTE"], from: "uv2Data" },
 ];
 

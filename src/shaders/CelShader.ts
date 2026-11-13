@@ -1,98 +1,77 @@
 /**
- * CelShader.ts — The look: custom cel ShaderMaterial (banded directional key +
- * up to MAX_POINT_LIGHTS=16 dynamic point lights + ambient, fog, ground mist,
- * rim, hard stepped shadows, opt-in toon specular) and CelMaterialFactory,
- * the cache every lit material comes from. The shadows every material samples
- * are bound by `ShadowBindings` (`mats.shadows`), which this seeds on create.
- * A material's OWN textures (a ground's albedo and height map) are our
- * renderer's, made off their `Picture`s through the renderer's `TextureMaker`
- * and kept in the material's recipe alone (`ownTexture`, `BABYLON_EXIT.md`
- * X5.4d): no Babylon material draws or compiles, so none is handed one.
+ * CelShader.ts — The look's MATERIALS: `CelMaterialFactory`, the cache every
+ * lit material comes from, and what each one is drawn WITH. A material is a
+ * KEY of our own (`MaterialKey.ts`, since `BABYLON_EXIT.md` X6.1c: a Babylon
+ * `ShaderMaterial` or `StandardMaterial` until then, none of which drew or
+ * compiled after X5.3d), and what our renderer draws is the RECIPE the
+ * factory keeps beside the key (`celRecipe`, `render/celMaterial.ts`) under
+ * the FRAME the factory fills off its own fields (`fillFrame`,
+ * `render/frame.ts`): the cel program — banded directional key + up to
+ * MAX_POINT_LIGHTS=16 dynamic point lights + ambient, fog, ground mist, rim,
+ * hard stepped shadows, opt-in toon specular — whose body is
+ * `wgsl/celSurface.ts` and `wgsl/celVertex.ts` and whose declarations are our
+ * renderer's (`render/celFragment.ts`, `render/celVertex.ts`; what each name
+ * means is written beside its declaration there). The shadows every material
+ * samples are the frame's too, published through `ShadowBindings`
+ * (`mats.shadows`). A material's OWN textures (a ground's albedo and height
+ * map) are our renderer's, made off their `Picture`s through the renderer's
+ * `TextureMaker` and kept in the material's recipe alone (`ownTexture`,
+ * `BABYLON_EXIT.md` X5.4d).
  * Invariants: the scene holds NO Babylon light (a map's shadow light is
  * ShadowSystem's `MapLight`, a plain pair since `BABYLON_EXIT.md` X5.3d), and
- * no material ever read one — light arrives via these uniforms, uploaded by LightingSystem once per frame. Flat/faceted shading is
+ * no material ever read one — light arrives via the frame's uniforms, which
+ * LightingSystem publishes into here once per frame. Flat/faceted shading is
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
  * `scene.imageProcessingConfiguration.isEnabled` must stay false (`Game`). Output is also opaque, and
  * an opaque cel fragment writes `opaqueAlpha` rather than 1 — the frame's alpha
  * channel is TRANSLUCENT COVERAGE and a probe's is the cube's own mask, so the
- * two passes want opposite values out of the same line (see that uniform, and
- * CelInk). Every variant but getGlass() writes it; that one, the world's one
- * alpha-blended material, writes a Fresnel alpha, needs no depth write
- * (see there, and MapBuilder's pane rules), carries the one depth bias in
- * the renderer — GLASS_DEPTH_UNITS, without which a pane past ~100 m is not
- * drawn at all — and is the one variant that samples anything the renderer
- * drew for itself (setReflection, whose cube ReflectionSystem bakes and whose
- * strength is 0 until it has). Materials are cached/shared per color — don't create per-mesh
- * materials, and NEVER dispose one: a mesh's paint belongs to the cache and not
- * to the mesh, so `dispose(false, true)` on any rig built through here disposes
- * the world's own materials with it. Nothing removes the dead entry from the
- * cache, and the released effect is shared, so what follows is most of the map
- * silently not drawn: a disposed `ShaderMaterial` never reports ready, and
- * Babylon skips a mesh whose material is not (what a hull's rig did to a map
- * with armour on its second round while its meshes were Babylon's, before
- * `BABYLON_EXIT.md` X4.2b). A mesh painted from here is freed with
- * `dispose(false, false)`. A new material reaches the cache
- * only through `remember`, which files it FROZEN: `ShaderMaterial.isReady`
- * otherwise rebuilds the whole define set for every submesh of every pass and
- * throws it away, a fifth of everything the game allocates, and `isFrozen`
- * skips exactly that while leaving the uniform push alone. It pins ONE
- * SUBMESH's effect in one pass — the effect is stored per submesh — so a mesh
- * must not gain or lose a vertex colour buffer, bones or morph targets after
- * its first draw without `resetDrawCache()` (docs/rendering.md).
- * A NEW material is seeded with
- * every piece of shared state on the spot (applyCamera/applyEnvironment/
- * applyPointLights/applyShadow): the per-frame walks are guarded on change and
- * skip a still frame entirely, so what a material is born with is what it keeps
- * until that state next moves. Effect meshes use getEmissive() (unlit
- * StandardMaterial). **Nothing here registers a mesh for INK any more**: the
- * ink is one full-screen pass over the frame's own depth (`shaders/CelInk.ts`),
- * so it takes no per-mesh bookkeeping, no back-face shell and no second
- * material — `metadata.noInk` survives as a record of INTENT that nothing
- * reads to decide ink, and what actually keeps a part out of the line work is
- * the glow's mask, the near-depth band or being coplanar (CLAUDE.md).
+ * two passes want opposite values out of the same line (see that field in
+ * `render/frame.ts`, and CelInk). Every variant but getGlass() writes it; that
+ * one, the world's one alpha-blended material, writes a Fresnel alpha, needs
+ * no depth write (see there, and MapBuilder's pane rules), carries the one
+ * depth bias in the renderer — GLASS_DEPTH_UNITS, without which a pane past
+ * ~100 m is not drawn at all — and is the one variant that samples anything
+ * the renderer drew for itself (a probe's cube, which ReflectionSystem bakes
+ * and the glazing draw binds, `glassProbeRecipe`). Materials are
+ * cached/shared per colour — don't create per-mesh materials: a key is an
+ * IDENTITY, which every merge groups by, so two keys of one colour are two
+ * merge groups and twice the draws. A new material reaches the cache only
+ * through `remember`, the one door into `cache`, so no creation path files
+ * one by omission. Nothing is PUSHED onto a material: what every cel material
+ * shares (the environment, the eye, the wind, the point lights, every shadow,
+ * the irradiance volume, the map's palette, the relief setting) is held here
+ * and copied into the frame once a frame, and what a material is born with
+ * is written into its recipe as it is made (`own`). Effect meshes use
+ * getEmissive() (an unlit emissive key). **Nothing here registers a mesh for
+ * INK any more**: the ink is one full-screen pass over the frame's own depth
+ * (`shaders/CelInk.ts`), so it takes no per-mesh bookkeeping, no back-face
+ * shell and no second material — `metadata.noInk` survives as a record of
+ * INTENT that nothing reads to decide ink, and what actually keeps a part out
+ * of the line work is the glow's mask, the near-depth band or being coplanar
+ * (CLAUDE.md).
  * Also owns the fog as a published fact: setEnvironment writes it once, the cel
- * materials get it as uniforms, CelInk takes the same band as `fadeBand`,
- * EmissiveFog uploads it to the unlit emissive materials, and fogAmountAt()
- * hands the same curve to the glow's rules. Anything else drawn unshaded owes that
- * fade, or it hangs in front of the fog wall at full strength.
+ * program reads it off the frame, CelInk takes the same band as `fadeBand`,
+ * our renderer's unlit emissive draws take it as `emissiveFogRange`, and
+ * fogAmountAt() hands the same curve to the glow's rules. Anything else drawn
+ * unshaded owes that fade, or it hangs in front of the fog wall at full
+ * strength.
  *
- * Both stages are hand-written WGSL, and `shaderLanguage` on all six materials
- * is load-bearing rather than declarative: a `ShaderMaterial` defaults to GLSL
- * and would look these up in a store nothing writes any more. Two things about
- * the port are worth knowing before editing either stage. **A sampler a
- * variant DECLARES has to be BOUND, used or not** — which is why the sampler
- * declarations below sit under exactly the defines each material's own
- * `samplers` list is built from rather than under a looser one that would let
- * a variant declare what it never binds. And **the defines make SIX UBO
- * LAYOUTS** (CEL_SMOOTH declares nothing of its own), so a uniform moved into or out of an `#ifdef` moves offsets for
- * that variant alone. See `docs/rendering.md` for the rest of what the dialect
- * and Babylon's WGSL processor decide.
- *
- * **The fragment here is DECLARATIONS and a three-line `main`**: its body is
- * `wgsl/celSurface.ts`'s `celSurface()`, which our own renderer
- * (`render/celFragment.ts`) assembles too. A uniform, varying or texture the
- * body reads is declared here AND there; the body itself is edited once.
+ * The program is hand-written WGSL, assembled by our renderer, and **its
+ * defines make the material block's LAYOUTS** (`render/celMaterial.ts`,
+ * CEL_SMOOTH guarding nothing of its own), so a field moved into or out of a
+ * guard moves offsets for that variant alone. See `docs/rendering.md` for the
+ * rest of what the dialect decides.
  */
-import {
-  Color3,
-  Scene,
-  ShaderLanguage,
-  ShaderMaterial,
-  ShaderStore,
-  StandardMaterial,
-  Vector2,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
+import { Color3, Vector2, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GeometryBuffer } from "../geometry/buffer";
-import { attachEmissiveFog, setEmissiveFog } from "./EmissiveFog";
 import { EmissiveWorldMaterial } from "./EmissiveWorld";
 import { MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastPaint } from "./BlastShader";
-import type { Vector3Like } from "../math";
+import { MaterialKey } from "./MaterialKey";
+import type { Color3Like, Vector3Like } from "../math";
 import type { EmissiveRecipe } from "../render/emissiveWorld";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import {
@@ -104,12 +83,8 @@ import {
 import type { OwnTexture } from "../render/HostBindGroup";
 import type { Picture, TextureMaker } from "../render/TextureMaker";
 import { ShadowBindings } from "./ShadowBindings";
-// The shared chunks self-register in the IncludesShadersStoreWGSL; import
-// them for that effect so the #include<cel...> lines below can never be
-// tree-shaken away, and so registration is provably before the first effect
-// COMPILE rather than merely before the first material. The two shader-sized
-// numbers live with the fragment's body, which our own renderer reads too.
-import "./wgsl/includes";
+// The two shader-sized numbers live with the fragment's body, which our own
+// renderer reads.
 import { MAX_PALETTE, MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export { MAX_PALETTE, MAX_POINT_LIGHTS };
@@ -213,119 +188,10 @@ function paletteIndexArray(count: number, slot: number): Float32Array {
 }
 
 /**
- * The parallax box's uniform names, for a material that includes `celProbeBox`.
- *
- * The include itself is in `wgsl/chunks.ts` and so is the argument for it —
- * including why it is separate from `celProbe`, which is the half a reader is
- * most likely to undo. These two names stay here because registering the
- * source is only half the contract: a `ShaderMaterial` builds its bind group
- * from the lists it is CONSTRUCTED with.
+ * The irradiance volume's seven textures, as `GiVolume` publishes them and
+ * the frame binds them (`render/frame.ts`' `FRAME_TEXTURES`).
  */
-const PROBE_BOX_UNIFORM_NAMES = ["reflectBoxMin", "reflectBoxMax"];
-/**
- * The probe uniform a sampling material owes, beside `PROBE_SAMPLER_NAMES`.
- *
- * **One list per INCLUDE, and that is what makes "registering is half the
- * contract" mechanical rather than a thing to remember.** This is `celProbe`'s
- * one uniform; `PROBE_BOX_UNIFORM_NAMES` above is `celProbeBox`'s two, and a
- * material lists exactly the includes it takes. This list used to carry all
- * three, which was harmless under GLSL and read as though the water — which
- * includes `celProbe` and deliberately not `celProbeBox`, a program of ours since
- * `BABYLON_EXIT.md` X4.6d — wanted a parallax box it has never set and must never
- * have.
- */
-export const PROBE_UNIFORM_NAMES = ["reflectProbe"];
-
-/** The cube itself. */
-export const PROBE_SAMPLER_NAMES = ["reflectionCube"];
-
-/**
- * The uniform names `celShadow` declares, for a consumer's uniform list.
- *
- * FOUR now rather than two: the world's map and the bodies' each carry a matrix
- * and a params vector, because they are two windows at two resolutions over two
- * depth volumes and nothing in either pair transfers. See
- * `systems/BodyShadows.ts`.
- */
-export const SHADOW_UNIFORM_NAMES = [
-  "lightMatrix",
-  "shadowParams",
-  // The world's NEAR cascade (`ShadowSystem`): the same casters over a
-  // small window at a fine texel — its matrix, and its bias and facet offset.
-  "nearLightMatrix",
-  "nearShadowParams",
-  "bodyLightMatrix",
-  "bodyShadowParams",
-  // The lamps' atlas (`systems/LocalShadows.ts`): per-slot cone and tiles,
-  // and the atlas's own shape. Every consumer of `celShadow` already declares
-  // the `pointPos`/`pointRange` these index beside.
-  "pointSpot",
-  "pointShade",
-  "localAtlas",
-  "localParams",
-  // The lightning's own key: its direction, its colour (already times the
-  // flash's envelope), its map's view*projection and that map's bias and tap
-  // radius. See `ShadowSystem.flash`.
-  "flashDir",
-  "flashColor",
-  "flashLightMatrix",
-  "flashParams",
-  // The clouds' shadow on the ground (`celCloud`, which `celShadow` includes):
-  // where the field lies and how lit its inside is, and the light's slope and
-  // the crossfade between the field's two halves. See
-  // `ShadowBindings.setCloudShadow`.
-  "cloudShadow",
-  "cloudShadowRay",
-] as const;
-/**
- * The samplers `celShadow` declares, for a consumer's sampler list.
- *
- * **Both must be BOUND on every material that lists them, always** — a declared
- * sampler with nothing behind it is a bind group that fails to build and every
- * draw using it silently lost, which is the whole reason these two lists exist
- * as exported constants. `BodyShadows` therefore publishes its map in its
- * constructor (our renderer's texture, wrapped, or the lit 1x1 on a rung
- * without one), before `MapBuilder` has asked for a single material: there
- * is no state in which this one is absent.
- */
-export const SHADOW_SAMPLER_NAMES = [
-  "shadowMap",
-  "nearShadowMap",
-  "bodyShadowMap",
-  "localAtlasMap",
-  "flashMap",
-  "cloudShadowMap",
-] as const;
-
-/**
- * The uniforms `celGi` declares, for a consumer's uniform list — today the
- * cel materials alone. See `systems/GiVolume.ts` for what each carries and
- * `wgsl/chunks.ts` for how the fragment reads them.
- */
-const GI_UNIFORM_NAMES = [
-  "giGrid",
-  "giWindow",
-  "giShade",
-  "giBand",
-  "giExtra",
-  "giSlotChannel",
-] as const;
-/**
- * The irradiance volume's seven textures, for a consumer's sampler list.
- * **Every one must be BOUND on every material that lists them, always**, for
- * `SHADOW_SAMPLER_NAMES`' reason — which is why `GiVolume` publishes a real
- * set in its constructor, before `MapBuilder` has asked for a material, and
- * keeps one published whatever the setting.
- */
-export const GI_SAMPLER_NAMES = [
-  "giIrr",
-  "giDir",
-  "giAux",
-  "giVis0",
-  "giVis1",
-  "giVis2",
-  "giVis3",
-] as const;
+export type GiTextureName = "giIrr" | "giDir" | "giAux" | "giVis0" | "giVis1" | "giVis2" | "giVis3";
 
 /** The volume's window as the shader reads it: five vectors and the slot table, held by reference. */
 export interface GiWindow {
@@ -345,281 +211,15 @@ export interface GiWindow {
  * their views rewritten in place by a tier change.
  */
 export interface GiBinding extends GiWindow {
-  textures: Record<(typeof GI_SAMPLER_NAMES)[number], OwnTexture>;
+  textures: Record<GiTextureName, OwnTexture>;
 }
-
-ShaderStore.ShadersStoreWGSL["celVertexShader"] = `
-attribute position: vec3f;
-attribute normal: vec3f;
-// Baked world shading, written by world/vertexShading.ts: alpha is ambient
-// occlusion, green marks a vertex as WORLD geometry and RED is how much of the
-// wind's travel this vertex is entitled to. Declared unconditionally and on
-// purpose — a mesh with no colour buffer leaves this attrib array disabled,
-// which reads back as the generic default (0, 0, 0, 1): occlusion 1 (none),
-// mask 0 (not world) and sway 0 (planted). Every rig, the viewmodel and every
-// effect mesh is therefore correct without carrying one.
-attribute color: vec4f;
-// A RIGGED vertex's place on its own frond (world/sway.ts's swayRig): x is how
-// much of a frond's tip travel it takes, y the edge in its whole part and the
-// frond's phase in its fraction. Read ONLY when the red channel is negative,
-// which only a rigged layer's bake writes — every other world part carries
-// filler here, and a mesh with no uv buffer at all reads the empty one.
-attribute uv: vec2f;
-
-#ifdef CEL_PALETTE
-// The albedo's 1-based slot in \`celPalette\`, written per source mesh by
-// \`MapBuilder\` before the merge concatenates it. Behind the define — unlike
-// \`color\` above, which every cel material declares — because a material
-// without the define binds no such buffer, and **an attribute this struct does
-// not declare is a WGSL compile error rather than a disabled attrib reading a
-// default**: \`vertexInputs.uv2\` comes back "struct member uv2 not found" and
-// the module fails, which under \`compatibilityMode = false\` poisons the whole
-// render bundle and takes the entire frame black rather than one mesh.
-attribute uv2: vec2f;
-#endif
-
-// No instances declaration and no bones, and both absences are facts about the
-// game rather than omissions. Nothing here is drawn instanced and
-// there is no rigged asset in the tree at all, so the skinned+textured variant
-// this shader used to carry had no caller left. Deleting it took the two bone
-// includes with it, and with them two of the four grandfathered deep imports
-// into \`@babylonjs/core\` that CLAUDE.md forbids adding to.
-uniform world: mat4x4f;
-uniform viewProjection: mat4x4f;
-
-// The wind, shared with the grass field (CONFIG.wind). windDir is the bearing,
-// normalised; windParams is (travel in metres at full weight, speed, gust
-// wavenumber). windTime is the same clock the grass runs on, pushed by
-// CelMaterialFactory.updateWind — it advances with the world rather than with
-// the frame, so a pause holds the canopy exactly as it holds the field.
-uniform windTime: f32;
-uniform windDir: vec2f;
-uniform windParams: vec3f;
-// A rigged frond's answer to it (CONFIG.wind.frond): windFrond is the tip's
-// (lean, flap, swing, flutter) in metres, windFrondRate is (calm share, flap
-// rad/s, flutter rad/s, flutter wavenumber).
-uniform windFrond: vec4f;
-uniform windFrondRate: vec4f;
-// The ash bough's answer (CONFIG.wind.bough): windBough is the frond's layout
-// with w the leaf's TIP at a cluster's rim, windBoughRate (calm share, flap
-// rad/s, leaf rad/s, swell rad/s), and windBoughFade the (start, end) metres
-// from the eye the leaf's rustle fades over.
-// The red channel picks which pair a rigged vertex reads: -1 a frond, -2 a
-// bough.
-uniform windBough: vec4f;
-uniform windBoughRate: vec4f;
-uniform windBoughFade: vec2f;
-// The eye, for that fade alone. Declared in the fragment stage too; Babylon
-// puts both stages' uniforms in one buffer.
-uniform camPos: vec3f;
-
-varying vNormalW: vec3f;
-varying vPosW: vec3f;
-varying vBaked: vec4f;
-
-#ifdef CEL_PALETTE
-// The 1-based index of this vertex's albedo in \`celPalette\`, carried in uv2's
-// x. **It is 1-based so that 0 can mean "not paletted"**, which is what the
-// disabled attrib's default gives any mesh that never had the buffer written —
-// the same trick \`vBaked\` leans on, and what lets one material serve a
-// merge group that a builder did not paletteise.
-//
-// A vertex attribute is INTERPOLATED and an index cannot be, which is safe here
-// for a structural reason rather than by luck: a merge concatenates whole
-// meshes and never re-triangulates, so all three corners of any triangle come
-// from the same source mesh and carry the same index. The fragment stage still
-// rounds, because "safe" and "guaranteed by the hardware" are different things.
-varying vPalette: f32;
-#endif
-
-// The body: the world transform, the sway and the varyings —
-// wgsl/celVertex.ts, shared verbatim with src/render/, which declares the
-// same names its own way. Babylon's processor appends the y flip of a pass
-// that renders to a texture after it.
-#include<celVertex>
-
-@vertex
-fn main(input: VertexInputs) -> FragmentInputs {
-  celVertex();
-}
-`;
-
-// The derivative users below are what was MEANT — a facet normal is a
-// screen-space difference, band()'s width is how fast its index moves per
-// pixel, and the ground albedo, its height map and the reflection cube are the
-// three fetches in this shader whose textures carry a MIP CHAIN, so an implicit
-// LOD is the filtering rather than an oversight. None of them has an
-// explicit-LOD form to reach for, and every one of them sits behind an #ifdef
-// or a loop WGSL's uniformity analysis cannot prove uniform — hence the define.
-// Every fetch in celShadow is a textureSampleLevel already, because the depth
-// map has no mip chain and an explicit level 0 is what was meant there.
-ShaderStore.ShadersStoreWGSL["celFragmentShader"] = `
-#define DISABLE_UNIFORMITY_ANALYSIS
-
-varying vNormalW: vec3f;
-varying vPosW: vec3f;
-// Baked per-vertex world shading. w is ambient occlusion, 1 = unoccluded;
-// y is 1 on map geometry and 0 on everything else; x is the wind weight the
-// vertex stage has already spent. All three defaults come from the disabled
-// attrib rather than from a uniform — see the vertex stage.
-varying vBaked: vec4f;
-
-uniform lightDir: vec3f;
-uniform lightColor: vec3f;
-// How far the key wraps toward full on anything facing it — see the key term.
-uniform keyWrap: f32;
-uniform ambientColor: vec3f;
-// Hemispheric fill from the sky dome: full strength on up-facing surfaces,
-// nothing underneath. Banded like everything else so the toon look survives.
-uniform skyLightColor: vec3f;
-uniform rimColor: vec3f;
-#ifdef CEL_GROUND_TEX
-// World-mapped ground albedo: sampled at vPosW.xz * texScale, so no UVs are
-// needed and the pattern keeps a constant real-world size across placements.
-var baseColorTexSampler: sampler;
-var baseColorTex: texture_2d<f32>;
-uniform texScale: f32;
-// The tile's own weathering — see graphics.groundVariation in the config for
-// why a ground texture gets a wider cell and a wider swing than a flat colour.
-uniform groundVariationScale: f32;
-uniform groundVariationAmount: f32;
-#ifdef CEL_BUMP
-// Height map matching the albedo texel-for-texel (domed setts, dark mortar).
-var bumpTexSampler: sampler;
-var bumpTex: texture_2d<f32>;
-uniform bumpScale: f32; // metres of fake relief at height value 1.0
-// The relief's DEPTH — see groundRelief. x, y: the distance the parallax fades
-// out over; z, w: the distance the self-shadow fades out over.
-uniform reliefFade: vec4f;
-// x: how dark the relief's own shadow is (1 = the key gone), y: how much of the
-// ambient a groove at height 0 loses.
-uniform reliefShade: vec2f;
-// The Ground relief setting: 1 marches the depth and the self-shadow, 0 skips
-// both and leaves the slope and the cavity — see setGroundRelief.
-uniform reliefMarch: f32;
-#endif
-#else
-uniform baseColor: vec3f;
-#endif
-uniform fogColor: vec3f;
-uniform fogParams: vec2f;  // x = start, y = end
-#ifdef CEL_PALETTE
-// The map's own albedo palette, indexed by \`vPalette - 1\`. This is what lets
-// one material stand for every paint colour in the village, which is what lets
-// \`BlockMerge\` collapse a 48 m block to one mesh instead of ten — see
-// \`getWorldCel\`. Behind a define rather than in the shared uniform list
-// because only two materials in the scene ever read it and it is 2 KB.
-varying vPalette: f32;
-uniform celPalette: array<vec3f, ${MAX_PALETTE}>;
-#endif
-uniform mistColor: vec3f;
-uniform mistParams: vec2f; // x = height falloff, y = strength
-uniform camPos: vec3f;
-
-// WHAT AN OPAQUE FRAGMENT WRITES INTO THE ALPHA CHANNEL, and it is 0 in the
-// frame and 1 in a probe's bake because that channel means two different
-// things in the two passes. In the FRAME it is TRANSLUCENT COVERAGE, which
-// CelInk reads to know how much smoke got between it and the depth it is
-// drawing an edge off — see that file. In a reflection PROBE it is the cube's
-// own coverage mask, which is how the glazing (celSurface) tells the city
-// from the sky above it (city.a), and there it has to be 1 or the bake comes back
-// empty. Babylon draws no bake since X3.7c, so every material it draws holds
-// the frame's 0; our renderer's bake writes 1 into its own frame
-// (CelMaterialFactory.fillBakeFrame).
-uniform opaqueAlpha: f32;
-
-// Albedo weathering: cell size (as 1/metres) and peak-to-peak swing. Uniforms
-// rather than literals so the pair can be judged live against a wall.
-uniform variationScale: f32;
-uniform variationAmount: f32;
-// The map's grime and how much of it. x is the strength of the whole term and
-// 0 is off; y is the cosine edge the vertical fade starts at; z is the ramp's
-// falloff exponent, which is spent HERE rather than in the bake because a curve
-// baked at a wall's two corners is a straight line by the time it is a
-// fragment; w is how far the grain displaces the ramp, peak to peak.
-//
-// \`wearGrain\` is that grain's shape: x is 1/metres of its coarse octave, y is
-// how much the noise cells are squashed vertically — which is what turns
-// blotches into runs down a face — and z is how far the field is stretched
-// about its middle, without which a value noise's own clustering leaves the
-// tide line effectively straight. See the WEAR block in the fragment body, and
-// \`CONFIG.wear\` for what the bake put in the blue channel these are spent on.
-uniform wearColor: vec3f;
-uniform wearParams: vec4f;
-uniform wearGrain: vec3f;
-
-uniform pointPos: array<vec3f, ${MAX_POINT_LIGHTS}>;
-uniform pointColor: array<vec3f, ${MAX_POINT_LIGHTS}>; // rgb premultiplied by intensity
-uniform pointRange: array<f32, ${MAX_POINT_LIGHTS}>;
-uniform pointCount: f32;
-
-// Toon specular: one hard two-band Blinn highlight from the key light.
-// specColor is premultiplied by intensity — black (the default) is matte.
-uniform specColor: vec3f;
-uniform specShininess: f32;
-// The top rung of the gloss ladder, and the one that is not a highlight: how
-// much of the ENVIRONMENT a polished surface hands back instead of its own
-// shaded colour. Zero (the default, and every matte, satin and metal material
-// in the game) leaves the whole mirror block in celSurface unentered — a uniform
-// branch, which is the same shape the albedo weathering's mask already is.
-uniform specMirror: f32;
-
-// Translucency: the key light coming THROUGH a thin surface rather than off
-// it — a canvas awning or a pine crown with the moon behind it. Premultiplied
-// by intensity — black (the default) is opaque.
-uniform transColor: vec3f;
-// TranslucencySpec.depth, in metres: 0 is a thin sheet, otherwise how far
-// behind the solid's lit surface a face may lie and still transmit.
-uniform transDepth: f32;
-// The FOLIAGE's own depth map, front faces of the translucent solids only,
-// owned by ShadowSystem. It exists to measure THICKNESS for the term above,
-// which the two back-face maps cannot: a face turned away from the key is its
-// own recorded surface there. x = tap radius in UV, y = 1 / the volume's depth
-// span in metres, so transDepth converts to that map's normalised depth.
-uniform foliageLightMatrix: mat4x4f;
-uniform foliageParams: vec4f;
-var foliageMapSampler: sampler;
-var foliageMap: texture_2d<f32>;
-
-#ifdef CEL_GLASS
-// Glazing. x = reflectance face-on, y = the Fresnel falloff's exponent,
-// z = cosine half-width of the sun's halo in the reflection, w = how much of
-// the tint a face-on pane keeps. See CelMaterialFactory.getGlass.
-uniform glassParams: vec4f;
-// The top of the sky dome. The HORIZON end of the same gradient is fogColor,
-// which is already here and which SkySpec.horizonColor is required to sit
-// close to — the one place that requirement is load-bearing rather than
-// cosmetic.
-uniform skyZenithColor: vec3f;
-#ifdef CEL_GLASS_BACKED
-// The ALBEDO of the mass this sheet hangs on, named by the builder that hung
-// it (the backed argument of Build.pane). Unlit, because it is shaded here by
-// the same light the pane is: they are parallel faces a hand apart, so one
-// light term is right for both. See the composite in celSurface for why this
-// is exact rather than an approximation of the blend it replaces.
-uniform glassBackdrop: vec3f;
-#endif
-#endif
-
-// The body: every chunk it calls, then celSurface() — wgsl/celSurface.ts,
-// shared verbatim with src/render/, which declares the same names its own way.
-#include<celSurface>
-
-@fragment
-fn main(input: FragmentInputs) -> FragmentOutputs {
-  fragmentOutputs.color = celSurface();
-}
-`;
 
 /** A `CelRecipe` as the factory writes it. */
 interface MutableRecipe extends CelRecipe {
   readonly textures: Partial<Record<CelMaterialTexture, OwnTexture>>;
 }
 
-/**
- * The variants a recipe-keeping getter compiles, bare — one statement each,
- * read by Babylon's `defines` (`babylonDefines`) and by the recipe alike.
- */
+/** The variants a recipe-keeping getter makes, bare — one statement each, the recipe's `defines`. */
 const PLAIN_VARIANT: readonly string[] = [];
 const PALETTE_VARIANT: readonly string[] = ["CEL_PALETTE"];
 const GROUND_VARIANT: readonly string[] = ["CEL_GROUND_TEX"];
@@ -627,11 +227,6 @@ const GROUND_BUMP_VARIANT: readonly string[] = ["CEL_GROUND_TEX", "CEL_BUMP"];
 const CLOTH_VARIANT: readonly string[] = ["CEL_SMOOTH"];
 const GLASS_VARIANT: readonly string[] = ["CEL_GLASS"];
 const GLASS_BACKED_VARIANT: readonly string[] = ["CEL_GLASS", "CEL_GLASS_BACKED"];
-
-/** A variant as a `ShaderMaterial`'s `defines` option spells it. */
-function babylonDefines(variant: readonly string[]): string[] {
-  return variant.map((d) => `#define ${d}`);
-}
 
 /** One dynamic light as uploaded to the cel shader. */
 export interface PointLightData {
@@ -784,105 +379,11 @@ export interface LightingView {
 }
 
 /**
- * Creates and caches one cel ShaderMaterial per color, and keeps the shared
- * environment uniforms (light, fog, mist, camera, dynamic lights) in sync on
- * all of them.
+ * Creates and caches one cel material per colour (a key, and the recipe it is
+ * drawn with), and holds the shared environment (light, fog, mist, camera,
+ * dynamic lights) that our renderer's frame is filled from.
  */
 export class CelMaterialFactory {
-  /** Uniforms every cel material shares, whatever its albedo path. */
-  private static readonly UNIFORMS = [
-    "world",
-    "viewProjection",
-    "lightDir",
-    "lightColor",
-    "keyWrap",
-    "ambientColor",
-    "skyLightColor",
-    "rimColor",
-    "baseColor",
-    "fogColor",
-    "fogParams",
-    "mistColor",
-    "mistParams",
-    "camPos",
-    "opaqueAlpha",
-    "pointPos",
-    "pointColor",
-    "pointRange",
-    "pointCount",
-    "lightMatrix",
-    "shadowParams",
-    "bodyLightMatrix",
-    "bodyShadowParams",
-    "variationScale",
-    "variationAmount",
-    "wearColor",
-    "wearParams",
-    "wearGrain",
-    "specColor",
-    "specShininess",
-    "specMirror",
-    "transColor",
-    "transDepth",
-    "foliageLightMatrix",
-    "foliageParams",
-    "windTime",
-    "windDir",
-    "windParams",
-    "windFrond",
-    "windFrondRate",
-    "windBough",
-    "windBoughRate",
-    "windBoughFade",
-    ...GI_UNIFORM_NAMES,
-  ];
-  /**
-   * Every cel material's vertex attributes.
-   *
-   * `color` is on ALL of them, including the ones nothing ever bakes into. It
-   * has to be: the attribute is declared unconditionally in the vertex shader
-   * (there is no define to gate it, on purpose — see the shader), so leaving it
-   * off a material's list would leave the effect without the location and the
-   * varying would read whatever the driver left there. With it declared and no
-   * buffer bound the attrib array is simply disabled, which is the defined
-   * `(0, 0, 0, 1)` the whole design leans on.
-   *
-   * `uv` is on all of them for the same reason: the vertex stage declares it
-   * unconditionally for the RIGGED sway layer (`world/sway.ts`), and reads it
-   * only behind a negative red channel, which nothing but a rigged layer's
-   * bake writes. It derives no define, so a frozen material is unaffected.
-   */
-  private static readonly ATTRIBUTES = ["position", "normal", "color", "uv"];
-  /**
-   * The same, plus the palette index, for the two materials that read one.
-   *
-   * `uv2` is a SECOND list rather than a member of the one above, which is the
-   * opposite of the call `color` got and for the opposite reason. `color` is
-   * declared unconditionally in the shader, so every material owes it the
-   * location; `uv2` is behind `#define CEL_PALETTE`, so a material without the
-   * define has no such attribute to bind and naming it here would be declaring
-   * a location the effect does not have.
-   */
-  private static readonly PALETTE_ATTRIBUTES = [
-    "position",
-    "normal",
-    "color",
-    "uv",
-    "uv2",
-  ];
-  /**
-   * Every cel material samples the four shadow maps (the moon's, the bodies',
-   * the lamps' atlas and the lightning's), the foliage's depth map and the
-   * irradiance volume's seven textures, whatever its albedo path — and every
-   * one of them owes each a BINDING, translucent or not, because a declared
-   * sampler with nothing behind it is a bind group that fails to build and the
-   * draw silently lost.
-   */
-  private static readonly SAMPLERS = [
-    ...SHADOW_SAMPLER_NAMES,
-    "foliageMap",
-    ...GI_SAMPLER_NAMES,
-  ];
   /**
    * How far toward the eye a pane is biased in the depth test, in polygon
    * offset UNITS — one unit being the depth buffer's own smallest resolvable
@@ -975,8 +476,8 @@ export class CelMaterialFactory {
   private static readonly OVER_GLASS_DEPTH_UNITS =
     CelMaterialFactory.GLASS_DEPTH_UNITS - 8;
 
-  private readonly cache = new Map<string, ShaderMaterial>();
-  private emissiveCache = new Map<string, StandardMaterial>();
+  private readonly cache = new Map<string, MaterialKey>();
+  private emissiveCache = new Map<string, MaterialKey>();
 
   // The key light as every material HOLDS it: these two objects are handed
   // out by reference and never replaced, only written into, so a map's key
@@ -991,7 +492,7 @@ export class CelMaterialFactory {
    * The top of the sky dome, as glazing reflects it — a picture of the sky
    * rather than the light it throws, which is what `skyLightColor` above is
    * and why the two are different values. Falls back to the map's flat
-   * `skyColor` when it states no dome at all; see `applyEnvironment`.
+   * `skyColor` when it states no dome at all (`world/environment.ts`).
    */
   private skyZenithColor = new Color3(0.1, 0.14, 0.22);
   private rimColor = new Color3(0.18, 0.2, 0.26);
@@ -1014,33 +515,24 @@ export class CelMaterialFactory {
   private pointCount = 0;
 
   /**
-   * The eye every material in the cache is currently holding — both what
-   * `updateCamera` compares against and what a material is BORN with. The two
-   * have to be the same value, and that is the whole of why this field exists
-   * rather than a bare "last position walked".
+   * The eye the frame is filled with (`fillFrame`), written by `updateCamera`
+   * every frame. The origin until the first, which is what an unwritten
+   * `vec3` uniform already is.
    *
-   * `updateCamera` skips the walk when the camera has not moved, so a material
-   * minted during a still frame is a material the walk will not visit again
-   * until something moves — and a still frame is not the rare case: a paused
-   * round, a kit screen, a player standing still and the viewer's free-fly
-   * camera resting on its panel are all exactly still, to the bit. Seeded from
-   * anything else, such a material fogs and rims against wherever it was
-   * seeded instead of against the eye; from the origin, and the map editor's
-   * floor-colour field (while it stood) repainted the whole terrain in a
-   * material that thought the viewer was standing in the middle of the map.
-   *
-   * The origin is the seed because the origin is what an unwritten `vec3`
-   * uniform already is, so the invariant "every material in the cache holds
-   * this value" is true before the first frame as well as after it. That is
-   * also why there is no first-upload sentinel: a camera genuinely at the
-   * origin needs no walk, because the cache is already there.
+   * It was also what every Babylon material in the cache HELD, seeded on
+   * create so that a material minted on a still frame — a paused round, a kit
+   * screen, the viewer's camera at rest — fogged against the eye rather than
+   * the origin while the guarded walk skipped it (the map editor's
+   * floor-colour field once repainted the whole terrain in a material that
+   * thought the viewer stood in the middle of the map). The frame is filled
+   * whole every frame, so no material can hold a stale one
+   * (`BABYLON_EXIT.md` X6.1c).
    */
   private readonly camPos = Vector3.Zero();
   /**
    * What an opaque fragment writes into the FRAME's alpha channel (see
-   * `opaqueAlpha` in the fragment source): 0, and nothing flips it — Babylon
-   * draws no reflection bake since X3.7c, and our renderer's bake states its
-   * own 1 (`fillBakeFrame`).
+   * `opaqueAlpha` in `render/frame.ts`): 0, and nothing flips it — our
+   * renderer's bake states its own 1 (`fillBakeFrame`).
    */
   private readonly opaqueAlpha = 0;
 
@@ -1052,12 +544,12 @@ export class CelMaterialFactory {
   private windTime = 0;
 
   /** The materials that state a `TranslucencySpec.depth` — see `isSolid`. */
-  private readonly solids = new Set<ShaderMaterial>();
+  private readonly solids = new Set<MaterialKey>();
   /**
    * The irradiance volume's textures and uniforms, as `GiVolume` last
    * published them — see `setGi`. Null only before `GiVolume` is constructed,
    * which is before the first material is. OUR renderer's frame reads it
-   * (`fillFrame`, `fillFrameTextures`); no Babylon material does.
+   * (`fillFrame`, `fillFrameTextures`).
    */
   private gi: GiBinding | null = null;
   /**
@@ -1078,7 +570,7 @@ export class CelMaterialFactory {
    * no material is minted a slot (`BABYLON_EXIT.md` X4.6e).
    */
   private glassRecipes = new Map<
-    ShaderMaterial,
+    MaterialKey,
     { hex: string; glass: GlassSpec; backed: string | null }
   >();
   /**
@@ -1093,13 +585,12 @@ export class CelMaterialFactory {
 
   /**
    * Every shadow a lit material samples — see `shaders/ShadowBindings.ts`. Published into by the systems
-   * that render the maps; the factory's part is only to seed each material it
-   * mints (`applyShadow` below).
+   * that render the maps; the factory's part is only to copy it into the
+   * frame (`fillFrame`, `fillFrameTextures`).
    */
   readonly shadows: ShadowBindings;
 
   constructor(
-    private scene: Scene,
     /**
      * Our renderer's maker of the textures the game paints: a ground's albedo
      * and height map are made through it (`ownTexture`), and the shadows' lit
@@ -1107,12 +598,12 @@ export class CelMaterialFactory {
      */
     private readonly textures: TextureMaker,
   ) {
-    this.shadows = new ShadowBindings(textures, this.cache);
+    this.shadows = new ShadowBindings(textures);
   }
 
   /**
-   * Publishes the palette `MapBuilder` assembled while it merged, and pushes it
-   * onto every material that reads one.
+   * Publishes the palette `MapBuilder` assembled while it merged, into the
+   * frame every material that reads one is drawn under (`fillFrame`).
    *
    * **Called once per map build, after the merge and before anything draws**,
    * because the palette is DISCOVERED by the merge rather than declared by the
@@ -1126,7 +617,7 @@ export class CelMaterialFactory {
    *
    * **This is the MAP's palette and it never reaches a body**: the soldier
    * kit's is its own (`bodyCelRecipe`), drawn by our renderer alone since
-   * `BABYLON_EXIT.md` X4.1d, so no Babylon material holds any table but this.
+   * `BABYLON_EXIT.md` X4.1d, so the frame holds no table but this.
    */
   setPalette(colors: readonly Color3[]): void {
     this.palette.fill(0);
@@ -1136,51 +627,16 @@ export class CelMaterialFactory {
       this.palette[i * 3 + 1] = colors[i].g;
       this.palette[i * 3 + 2] = colors[i].b;
     }
-    for (const mat of this.cache.values()) this.applyPalette(mat);
   }
 
   /**
-   * Files a freshly built material in the cache, FROZEN — the one door into
-   * `cache`, so that no creation path can file an unfrozen one by omission.
-   *
-   * **What freezing buys is not readiness, it is the WORK OF ASKING.**
-   * `ShaderMaterial.isReady` runs for every submesh of every draw, in the main
-   * pass and again in the shadow pass, and before it can answer it rebuilds the
-   * whole define set from scratch: two arrays, a `#define` string per entry and
-   * a `join` over them — all of it thrown away after being compared to the
-   * string already on the draw wrapper. Measured on the shipped maps that walk
-   * is **a fifth of everything this game allocates** (docs/rendering.md,
-   * "Frozen materials"), and it
-   * is pure churn: the answer is the same string every frame for the life of
-   * the material.
-   *
-   * **`isFrozen` short-circuits exactly that and nothing else.** It is read in
-   * one place that matters here — the top of `isReady`, which returns the
-   * cached verdict when the wrapper already has a ready effect — while what
-   * gates the UNIFORM push is `_mustRebind`, which does not consult it. So the
-   * light array, the fog, the eye, the wind and the palette all keep flowing;
-   * `updateWind` and `updateCamera` above walk this same cache every frame and
-   * are unaffected.
-   *
-   * **What it pins is ONE SUBMESH's effect in ONE pass.** The defines
-   * `isReady` would rebuild vary with the mesh on exactly four counts — a
-   * vertex COLOUR buffer, instancing, bones and morph targets — but
-   * `ShaderMaterial` stores its effect per submesh (`storeEffectOnSubMeshes`
-   * defaults to true and nothing here passes false), so two meshes sharing a
-   * material each compile their own and the width of this cache's key is not
-   * a correctness question for the freeze. What it cannot survive is a mesh
-   * that gains or loses a colour buffer, bones or morph targets AFTER its
-   * first draw: that keeps the effect it compiled first, silently, unless it
-   * is given `resetDrawCache()` (instancing is the one row the fast path
-   * re-checks). Nothing does today.
-   *
-   * Freezing at CREATION rather than once the effect is ready is deliberate and
-   * costs nothing: the fast path also requires the wrapper to have been ready
-   * once, so a material frozen before its first compile simply falls through to
-   * the full path until it has one.
+   * Files a freshly built material in the cache — the one door into `cache`,
+   * so that no creation path can file one by omission. It was also where a
+   * Babylon `ShaderMaterial` was FROZEN, which that class needed to stop
+   * rebuilding its define set on every ask (`docs/rendering.md`); a key of
+   * ours has no define set to rebuild (`BABYLON_EXIT.md` X6.1c).
    */
-  private remember(key: string, mat: ShaderMaterial): void {
-    mat.freeze();
+  private remember(key: string, mat: MaterialKey): void {
     this.cache.set(key, mat);
   }
 
@@ -1194,7 +650,7 @@ export class CelMaterialFactory {
    * probe is `glassProbeRecipe`'s) — and a body has no material at all, only
    * a recipe (`bodyCelRecipe`, X4.1d).
    */
-  private readonly recipes = new Map<ShaderMaterial, MutableRecipe>();
+  private readonly recipes = new Map<MaterialKey, MutableRecipe>();
 
   /**
    * Moves every time a value in any recipe is written, birth included — so a
@@ -1210,11 +666,11 @@ export class CelMaterialFactory {
    * holding one sees every later rewrite (and `materialEpoch` says when).
    */
   celRecipe(mat: unknown): CelRecipe | null {
-    return this.recipes.get(mat as ShaderMaterial) ?? null;
+    return this.recipes.get(mat as MaterialKey) ?? null;
   }
 
   /** Starts `mat`'s recipe — before the first `own`, which is what it keeps. */
-  private bear(mat: ShaderMaterial, variant: readonly string[], depthUnits: number): void {
+  private bear(mat: MaterialKey, variant: readonly string[], depthUnits: number): void {
     this.recipes.set(mat, {
       defines: variant,
       depthBias: depthUnits,
@@ -1224,20 +680,16 @@ export class CelMaterialFactory {
   }
 
   /**
-   * One of a material's OWN uniforms (`render/celMaterial.ts`), set on the
-   * material and — when it keeps a recipe and its variant declares the field
-   * — kept in it: one statement of the value, two readers.
+   * One of a material's OWN uniforms (`render/celMaterial.ts`), kept in its
+   * recipe when its variant declares the field — as a `Float32Array` rounds
+   * it, which is what the Babylon material's uniform held for it until
+   * `BABYLON_EXIT.md` X6.1c.
    */
   private own(
-    mat: ShaderMaterial,
+    mat: MaterialKey,
     name: CelMaterialField,
     value: Color3 | Vector2 | Vector3 | Vector4 | number,
   ): void {
-    if (typeof value === "number") mat.setFloat(name, value);
-    else if (value instanceof Color3) mat.setColor3(name, value);
-    else if (value instanceof Vector2) mat.setVector2(name, value);
-    else if (value instanceof Vector3) mat.setVector3(name, value);
-    else mat.setVector4(name, value);
     const out = this.recipes.get(mat)?.values[name];
     if (!out) return;
     if (typeof value === "number") out[0] = value;
@@ -1248,28 +700,14 @@ export class CelMaterialFactory {
 
   /**
    * `own` for one of a material's own textures — kept in its recipe alone, the
-   * picture made into OUR texture (`TextureMaker.picture`, once per canvas):
-   * no Babylon material draws or compiles (`core/babylonCompiles.ts`), so
-   * none is handed one (`BABYLON_EXIT.md` X5.4d).
+   * picture made into OUR texture (`TextureMaker.picture`, once per canvas,
+   * `BABYLON_EXIT.md` X5.4d).
    */
-  private ownTexture(mat: ShaderMaterial, name: CelMaterialTexture, picture: Picture): void {
+  private ownTexture(mat: MaterialKey, name: CelMaterialTexture, picture: Picture): void {
     const recipe = this.recipes.get(mat);
     if (!recipe) return;
     recipe.textures[name] = this.textures.picture(picture);
     this.materialEpoch++;
-  }
-
-  /**
-   * Pushes the palette onto one material.
-   *
-   * Unconditional, and that is deliberate rather than lazy: a `setArray3` for a
-   * uniform the effect does not declare is dropped when the material binds —
-   * the same no-op `skyZenithColor` already rides on — so this needs no test
-   * for which variant it is looking at, and gaining one would be a second list
-   * to keep in step with `getWorldCel`.
-   */
-  private applyPalette(mat: ShaderMaterial): void {
-    mat.setArray3("celPalette", this.palette as unknown as number[]);
   }
 
   /**
@@ -1290,35 +728,18 @@ export class CelMaterialFactory {
    * is a 2 KB uniform array and there are 217 materials in a Coldharbour round,
    * of which exactly two — this and its ink — ever index it.
    */
-  getWorldCel(): ShaderMaterial {
+  getWorldCel(): MaterialKey {
     const key = `\0world-cel`;
     let mat = this.cache.get(key);
     if (!mat) {
-      mat = new ShaderMaterial(
-        WORLD_CEL_NAME,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.PALETTE_ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS, "celPalette"],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: babylonDefines(PALETTE_VARIANT),
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(WORLD_CEL_NAME, "cel");
       this.bear(mat, PALETTE_VARIANT, 0);
       // `baseColor` is deliberately NOT set. Every vertex this material ever
       // draws carries an index, because `MapBuilder` only hands a mesh to this
       // material when it has one — so the uniform path is unreachable here and
       // seeding it would only invite somebody to rely on it.
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
-      this.applyPalette(mat);
       this.remember(key, mat);
     }
     return mat;
@@ -1448,7 +869,7 @@ export class CelMaterialFactory {
    * `bodyCelRecipe`'s reason; a table longer than `MAX_EMISSIVE_PALETTE` is
    * REFUSED rather than cut, since a slot past it would read black.
    */
-  viewEmissiveRecipe(colors: readonly Color3[]): EmissiveRecipe {
+  viewEmissiveRecipe(colors: readonly Color3Like[]): EmissiveRecipe {
     if (!this.viewEmissive) {
       if (colors.length > MAX_EMISSIVE_PALETTE) {
         throw new Error(`viewEmissiveRecipe: ${colors.length} weapon emissives, past the palette's ${MAX_EMISSIVE_PALETTE}`);
@@ -1542,34 +963,18 @@ export class CelMaterialFactory {
    * asked first to both — a car's underbody lifted off the ground because a
    * road had already minted its colour.
    */
-  get(hex: string, depthUnits = 0): ShaderMaterial {
+  get(hex: string, depthUnits = 0): MaterialKey {
     const cacheKey = depthUnits === 0 ? hex : `\0proud-${hex}-${depthUnits}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
-      mat = new ShaderMaterial(
-        depthUnits === 0 ? `cel-${hex}` : `cel-proud-${hex}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          // A ShaderMaterial defaults to GLSL and would look these up in a
-          // store nothing writes any more; see the header.
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(depthUnits === 0 ? `cel-${hex}` : `cel-proud-${hex}`, "cel", {
+        zOffsetUnits: depthUnits,
+      });
       this.bear(mat, PLAIN_VARIANT, depthUnits);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
-      mat.zOffsetUnits = depthUnits;
       this.remember(cacheKey, mat);
     }
     return mat;
@@ -1593,31 +998,16 @@ export class CelMaterialFactory {
    * decide whether a mesh can join the palette merge — the one reader left now
    * that the hull ink's own `inkColorFor` has gone with it.
    */
-  getGlossy(hex: string, spec: SpecSpec): ShaderMaterial {
+  getGlossy(hex: string, spec: SpecSpec): MaterialKey {
     const cacheKey =
       `\0gloss-${hex}-${spec.color}-${spec.intensity}-${spec.shininess}` +
       `-${spec.mirror ?? 0}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
-      mat = new ShaderMaterial(
-        `cel-gloss-${hex}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(`cel-gloss-${hex}`, "cel");
       this.bear(mat, PLAIN_VARIANT, 0);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, spec);
       this.applyTranslucency(mat, null);
       this.remember(cacheKey, mat);
@@ -1640,29 +1030,14 @@ export class CelMaterialFactory {
    * Cached under its own key and named `cel-trans-#rrggbb`, in the same naming
    * scheme as the other two and for the same reason `getGlossy` gives.
    */
-  getTranslucent(hex: string, trans: TranslucencySpec): ShaderMaterial {
+  getTranslucent(hex: string, trans: TranslucencySpec): MaterialKey {
     const cacheKey = `\0trans-${hex}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
-      mat = new ShaderMaterial(
-        `cel-trans-${hex}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(`cel-trans-${hex}`, "cel");
       this.bear(mat, PLAIN_VARIANT, 0);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       this.albedos.set(mat, Color3.FromHexString(hex));
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, trans);
       this.remember(cacheKey, mat);
@@ -1682,29 +1057,13 @@ export class CelMaterialFactory {
    * wears one. Cached under its own key and named `cel-cloth-#rrggbb`, outside the three
    * names the merge readers parse — cloth is never merged.
    */
-  getCloth(hex: string, trans: TranslucencySpec): ShaderMaterial {
+  getCloth(hex: string, trans: TranslucencySpec): MaterialKey {
     const cacheKey = `\0cloth-${hex}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
-      mat = new ShaderMaterial(
-        `cel-cloth-${hex}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [...CelMaterialFactory.UNIFORMS],
-          samplers: [...CelMaterialFactory.SAMPLERS],
-          defines: babylonDefines(CLOTH_VARIANT),
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(`cel-cloth-${hex}`, "cel");
       this.bear(mat, CLOTH_VARIANT, 0);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, trans);
       this.remember(cacheKey, mat);
@@ -1754,59 +1113,36 @@ export class CelMaterialFactory {
    * MATERIAL, so two variants in one placement fall into two merged meshes
    * without either merge being told that glazing now comes in two kinds.
    */
-  getGlass(hex: string, glass: GlassSpec, backed: string | null = null): ShaderMaterial {
+  getGlass(hex: string, glass: GlassSpec, backed: string | null = null): MaterialKey {
     const kind = backed ? `glass-backed-${backed}` : "glass";
     const cacheKey = `\0${kind}-${hex}`;
     const name = backed ? `cel-glass-${hex}-on-${backed}` : `cel-glass-${hex}`;
     let mat = this.cache.get(cacheKey);
     if (!mat) {
       const variant = backed ? GLASS_BACKED_VARIANT : GLASS_VARIANT;
-      mat = new ShaderMaterial(
-        name,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [
-            ...CelMaterialFactory.UNIFORMS,
-            "glassParams",
-            "skyZenithColor",
-            ...PROBE_UNIFORM_NAMES,
-            ...PROBE_BOX_UNIFORM_NAMES,
-            ...(backed ? ["glassBackdrop"] : []),
-          ],
-          samplers: [...CelMaterialFactory.SAMPLERS, ...PROBE_SAMPLER_NAMES],
-          defines: babylonDefines(variant),
-          // What puts these subMeshes in the transparent pass at all. The
-          // material's own `alpha` stays 1: the alpha that matters is written
-          // per pixel by the shader, and a material-wide one would fade the
-          // reflection along with everything else.
-          //
-          // A `backed` sheet writes 1 for every pixel and belongs in the
-          // OPAQUE queue, which is where its saving comes from — see the
-          // header, and `CEL_GLASS_BACKED` in the fragment shader for why its
-          // colour needs nothing from the framebuffer to be right.
-          needAlphaBlending: !backed,
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
-      // Biased toward the eye by the depth buffer's own step, which is what
-      // keeps a distant window a window — see GLASS_DEPTH_UNITS.
-      mat.zOffsetUnits = CelMaterialFactory.GLASS_DEPTH_UNITS;
+      mat = new MaterialKey(name, "cel", {
+        // Biased toward the eye by the depth buffer's own step, which is what
+        // keeps a distant window a window — see GLASS_DEPTH_UNITS.
+        zOffsetUnits: CelMaterialFactory.GLASS_DEPTH_UNITS,
+        // What puts a see-through pane in the blended run at all
+        // (`BlockHandover`'s pass masks). The material's own `alpha` stays
+        // 1: the alpha that matters is written per pixel by the shader, and
+        // a material-wide one would fade the reflection along with
+        // everything else.
+        //
+        // A `backed` sheet writes 1 for every pixel and belongs with the
+        // OPAQUE draws, which is where its saving comes from — see the
+        // header, and `CEL_GLASS_BACKED` in `wgsl/celSurface.ts` for why its
+        // colour needs nothing from the framebuffer to be right.
+        blended: !backed,
+      });
       // A recipe, as every material our renderer draws keeps one: a round's
-      // glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e), and
-      // this material, which states the same values, is the one the map
-      // editor's build drew until X5.3c — a recipe key since.
+      // glazing is ours (`render/GlassDraw.ts`, `BABYLON_EXIT.md` X4.6e).
       this.bear(mat, variant, CelMaterialFactory.GLASS_DEPTH_UNITS);
       this.own(mat, "baseColor", Color3.FromHexString(hex));
       if (backed) {
         this.own(mat, "glassBackdrop", Color3.FromHexString(backed));
       }
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       this.applySpec(mat, null);
       this.applyTranslucency(mat, null);
       this.applyGlass(mat, glass);
@@ -1849,7 +1185,7 @@ export class CelMaterialFactory {
       bumpScale?: number;
       depthUnits?: number;
     } = {},
-  ): ShaderMaterial {
+  ): MaterialKey {
     const { spec, bump } = opts;
     const depthUnits = opts.depthUnits ?? 0;
     const cacheKey =
@@ -1858,34 +1194,13 @@ export class CelMaterialFactory {
     let mat = this.cache.get(cacheKey);
     if (!mat) {
       const variant = bump ? GROUND_BUMP_VARIANT : GROUND_VARIANT;
-      mat = new ShaderMaterial(
-        `cel-ground-${key}`,
-        this.scene,
-        { vertex: "cel", fragment: "cel" },
-        {
-          attributes: [...CelMaterialFactory.ATTRIBUTES],
-          uniforms: [
-            ...CelMaterialFactory.UNIFORMS,
-            "texScale",
-            "groundVariationScale",
-            "groundVariationAmount",
-            ...(bump ? ["bumpScale", "reliefFade", "reliefShade", "reliefMarch"] : []),
-          ],
-          samplers: [
-            "baseColorTex",
-            ...(bump ? ["bumpTex"] : []),
-            ...CelMaterialFactory.SAMPLERS,
-          ],
-          defines: babylonDefines(variant),
-          shaderLanguage: ShaderLanguage.WGSL,
-        },
-      );
+      mat = new MaterialKey(`cel-ground-${key}`, "cel", { zOffsetUnits: depthUnits });
       this.bear(mat, variant, depthUnits);
       this.ownTexture(mat, "baseColorTex", tex);
       this.own(mat, "texScale", texScale);
-      // Set once here rather than in `applyEnvironment` beside the flat
-      // colours' pair: these two come from CONFIG and not from the map, so
-      // nothing an environment change carries could move them.
+      // Set once here rather than in the frame beside the flat colours' pair:
+      // these two come from CONFIG and not from the map, so nothing an
+      // environment change carries could move them.
       const groundVar = CONFIG.graphics.groundVariation;
       this.own(mat, "groundVariationScale", 1 / Math.max(0.001, groundVar.metersPerCell));
       this.own(mat, "groundVariationAmount", groundVar.amount);
@@ -1905,24 +1220,16 @@ export class CelMaterialFactory {
           ),
         );
         this.own(mat, "reliefShade", new Vector2(relief.shadowStrength, relief.cavity));
-        mat.setFloat("reliefMarch", this.reliefMarch);
-        this.relieved.add(mat);
       }
-      this.applyCamera(mat);
-      this.applyWind(mat);
-      this.applyEnvironment(mat);
-      this.applyPointLights(mat);
-      this.applyShadow(mat);
       // The CALLER decides whether this ground is glossy at all; the installed
       // MAP decides how glossy — see `setGroundSpec`. That split matters here
       // because materials are built during `installMap`, which runs after
-      // `applyEnvironment`: taking the caller's values would hand a freshly
+      // `setEnvironment`: taking the caller's values would hand a freshly
       // built material the shipped night sheen and never revisit it, since the
       // override has already been applied to a cache this material was not yet
       // in.
       this.applySpec(mat, spec ? this.groundSpec : null);
       this.applyTranslucency(mat, null);
-      mat.zOffsetUnits = depthUnits;
       this.remember(cacheKey, mat);
     }
     return mat;
@@ -1934,24 +1241,20 @@ export class CelMaterialFactory {
    * `OVER_GLASS_DEPTH_UNITS` — and is part of the key; `GlowPass`'s mask
    * copies the bias so the two draws still tie.
    */
-  getEmissive(hex: string, overGlass = false): StandardMaterial {
+  getEmissive(hex: string, overGlass = false): MaterialKey {
     const depthUnits = overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0;
     const key = overGlass ? `${hex}-over-glass` : hex;
     let mat = this.emissiveCache.get(key);
     if (!mat) {
-      mat = new StandardMaterial(`emissive-${key}`, this.scene);
-      mat.zOffsetUnits = depthUnits;
-      mat.emissiveColor = Color3.FromHexString(hex);
-      mat.diffuseColor = Color3.Black();
-      mat.specularColor = Color3.Black();
-      mat.disableLighting = true;
-      // Unlit means unfogged, which at village scale means a lit window burning
-      // through the fog wall at full saturation. The plugin had to go on before
-      // anything drew with the material — hence here, not in setEnvironment.
-      // INERT since `BABYLON_EXIT.md` X5.4h (until X6.1 removes it): on the
-      // scene's `NullEngine` its guard returns and nothing is attached — no
-      // Babylon material draws, and our renderer fogs every emissive itself.
-      attachEmissiveFog(mat);
+      // Unlit means unfogged, which at village scale would be a lit window
+      // burning through the fog wall at full saturation: every draw of an
+      // unlit part is our renderer's, and each fogs it on the cel shader's
+      // curve (`emissiveFogRange`), as Babylon's `EmissiveFog` plugin did
+      // until `BABYLON_EXIT.md` X5.4h.
+      mat = new MaterialKey(`emissive-${key}`, "emissive", {
+        emissiveColor: Color3.FromHexString(hex),
+        zOffsetUnits: depthUnits,
+      });
       this.emissiveCache.set(key, mat);
     }
     return mat;
@@ -1973,11 +1276,7 @@ export class CelMaterialFactory {
     let mat = this.emissiveWorld[i];
     if (!mat) {
       const depthUnits = overGlass ? CelMaterialFactory.OVER_GLASS_DEPTH_UNITS : 0;
-      mat = new EmissiveWorldMaterial(
-        this.scene,
-        overGlass ? "emissive-world-over-glass" : "emissive-world",
-        depthUnits,
-      );
+      mat = new EmissiveWorldMaterial(overGlass ? "emissive-world-over-glass" : "emissive-world", depthUnits);
       // What our renderer draws it with in every pass: the table and the fog
       // band, held here and read by reference (`emissiveRecipe`). The
       // material holds none of it (`EmissiveWorld.ts`).
@@ -2047,22 +1346,18 @@ export class CelMaterialFactory {
 
   /**
    * The one material every open fire wears (`FlameShader`), created on first
-   * ask. Held OUTSIDE `cache` because it is not a cel material and declares
-   * none of the uniforms that cache's walks write; what it does share with it
-   * — the world clock, the fog and the frame's opaque alpha — is pushed to it
-   * by the same three methods, beside their walks, so a fire can never keep
-   * different time or weather from the wall behind it. Since
-   * `BABYLON_EXIT.md` X4.4d our renderer draws every fire of a round off its
-   * `values` (the clock among them) and the frame's eye and fog. The
-   * `ShaderMaterial` is a recipe key and draws nothing: its Babylon stages,
-   * which drew the map editor's build's fires alone, were deleted at X5.3d.
+   * ask. Held OUTSIDE `cache` because it is not a cel material; what it does
+   * share with one — the world clock — is written into its `values` beside
+   * the frame's (`updateWind`), and the eye, the fog and the opaque alpha it
+   * is drawn under ARE the frame's, so a fire can never keep different time
+   * or weather from the wall behind it. Since `BABYLON_EXIT.md` X4.4d our
+   * renderer draws every fire of a round off its `values`; the material is a
+   * recipe key and draws nothing.
    */
   getFlame(): FlameMaterial {
     if (!this.flame) {
-      this.flame = new FlameMaterial(this.scene);
+      this.flame = new FlameMaterial();
       this.flame.setClock(this.windTime);
-      this.flame.setFog(fogState.color, fogState.start, fogState.end);
-      this.flame.setEye(this.camPos);
     }
     return this.flame;
   }
@@ -2071,10 +1366,10 @@ export class CelMaterialFactory {
 
   /**
    * What every blast's billows are drawn with (`BlastShader`'s `BlastPaint`),
-   * made on first ask and held outside `cache`: no material since
-   * `BABYLON_EXIT.md` X4.4c — our renderer draws every billow
-   * (`render/BlastDraw.ts`) — but the values one held, the world clock
-   * pushed onto them beside the cel materials'. The light, the eye and the
+   * made on first ask and held outside `cache`: a key and its values, no
+   * Babylon material since `BABYLON_EXIT.md` X4.4c — our renderer draws every
+   * billow (`render/BlastDraw.ts`) — the world clock written into them beside
+   * the frame's (`updateWind`). The light, the eye and the
    * fog it is drawn under are the frame's (`fillFrame`), which this factory
    * pushed onto the billow's material, off these same fields, until then.
    */
@@ -2088,7 +1383,7 @@ export class CelMaterialFactory {
 
   private blast: BlastPaint | null = null;
 
-  /** Applies a theme's lighting/atmosphere to every cel material. */
+  /** Takes a theme's lighting/atmosphere, which the frame is filled from (`fillFrame`). */
   setEnvironment(env: {
     lightDir: Vector3;
     lightColor: Color3;
@@ -2116,116 +1411,49 @@ export class CelMaterialFactory {
     fogState.color.copyFrom(env.fogColor);
     fogState.start = env.fogStart;
     fogState.end = env.fogEnd;
-    // The outline pass takes the same fog baked into its shader; doing it here
-    // is what keeps it from ever describing different weather to the cel
-    // materials this call is about to write. It owns its own invalidation —
-    // notably it must NOT be given `outlineEntries`, which leaves out every
-    // viewmodel mesh.
-    // And the third pass that never runs the cel shader: the unlit emissive
-    // materials behind every window, flame and tracer — no plugin reads it
-    // since X5.4h (`EmissiveFog`'s header: inert until X6.1).
-    setEmissiveFog(fogState.color, fogState.start, fogState.end);
+    // The passes that never run the cel shader read the same band, which is
+    // what keeps them from ever describing different weather to the frame:
+    // the ink (`fogBand`) and the unlit emissive draws behind every window,
+    // flame and tracer, which take it off this pair by reference.
     this.emissiveFogRange[0] = fogState.start;
     this.emissiveFogRange[1] = 1 / Math.max(0.001, fogState.end - fogState.start);
     this.materialEpoch++;
-    this.flame?.setFog(fogState.color, fogState.start, fogState.end);
     this.mistColor = env.mistColor;
     this.mistParams.set(env.mistHeight, env.mistStrength);
     this.wearColor = env.wearColor;
     this.wearAmount = env.wearAmount;
-    this.cache.forEach((mat) => this.applyEnvironment(mat));
   }
 
   /**
-   * Uploads the active dynamic lights (already reduced to the nearest
-   * `MAX_POINT_LIGHTS` by the LightingSystem). Called once per frame.
+   * Takes the active dynamic lights (already reduced to the nearest
+   * `MAX_POINT_LIGHTS` by the LightingSystem) into the packed arrays the frame
+   * is filled from (`fillFrame`). Called once per frame.
    *
-   * **The walk is the expensive half, so it is skipped when the packed arrays
-   * come out unchanged.** Every entry here is four setters on every material in
-   * the cache, and a `ShaderMaterial` setter is a linear scan of the 24-name
-   * uniform list before it stores anything.
-   *
-   * **Measured, and it fires far less often than it reads.** Any fixture with
-   * `flicker > 0` has `flame()` rewriting its intensity every frame, so as long
-   * as one lit lamp is among the winning slots — which in a village is most
-   * places a player stands — the arrays genuinely differ and the walk runs in
-   * full. On Hollowmere at a standstill it saved nothing at all. What it does
-   * cover is the rest: an unlit stretch of map, a map with no flickering
-   * fixtures, a menu, a pause. The comparison is ~112 numbers against 172
-   * setter calls, so losing the bet is far cheaper than not taking it.
-   *
-   * **The comparison is against `Math.fround` of each input and must stay that
-   * way** — see the loop. Reading a `Float32Array` back and testing it against
-   * the float64 that was stored into it is a mismatch for nearly every real
-   * value, and the guard was silently losing every frame, quiet cases
-   * included, until it narrowed both sides.
-   *
-   * What this does NOT save is the GL upload. `setArray3` bypasses Babylon's
-   * own value cache and re-pushes on every material bind regardless, which is
-   * a thing only a uniform buffer can fix.
+   * It walked the cache too, pushing the arrays onto every Babylon material,
+   * and skipped that walk when the arrays came out unchanged — the guard
+   * compared against `Math.fround` of each input, since a `Float32Array`
+   * keeps only that. No material holds a copy since `BABYLON_EXIT.md` X6.1c,
+   * so there is no walk to save and the arrays are simply written.
    */
   setPointLights(lights: PointLightData[]): void {
     const count = Math.min(lights.length, MAX_POINT_LIGHTS);
-    let changed = count !== this.pointCount;
     for (let i = 0; i < count; i++) {
       const l = lights[i];
       const b = i * 3;
-      // **Narrowed BEFORE the comparison, not just on the way in.** The packed
-      // arrays are `Float32Array`s, so what a store keeps is `Math.fround` of
-      // what it was given, and comparing that back against the float64 the
-      // light still holds is a mismatch for every value not exactly
-      // representable in 32 bits — which is nearly all of them: a colour
-      // channel is byte/255 times an intensity, a fixture's position has been
-      // through a `rotateY`. Without the fround the guard reported "changed"
-      // on essentially every frame and never skipped the walk it exists for.
-      const x = Math.fround(l.position.x);
-      const y = Math.fround(l.position.y);
-      const z = Math.fround(l.position.z);
-      const r = Math.fround(l.color.r * l.intensity);
-      const g = Math.fround(l.color.g * l.intensity);
-      const bl = Math.fround(l.color.b * l.intensity);
-      const range = Math.fround(l.range);
-      if (
-        this.pointPos[b] === x &&
-        this.pointPos[b + 1] === y &&
-        this.pointPos[b + 2] === z &&
-        this.pointColor[b] === r &&
-        this.pointColor[b + 1] === g &&
-        this.pointColor[b + 2] === bl &&
-        this.pointRange[i] === range
-      ) {
-        continue;
-      }
-      changed = true;
-      this.pointPos[b] = x;
-      this.pointPos[b + 1] = y;
-      this.pointPos[b + 2] = z;
-      this.pointColor[b] = r;
-      this.pointColor[b + 1] = g;
-      this.pointColor[b + 2] = bl;
-      this.pointRange[i] = range;
+      this.pointPos[b] = l.position.x;
+      this.pointPos[b + 1] = l.position.y;
+      this.pointPos[b + 2] = l.position.z;
+      this.pointColor[b] = l.color.r * l.intensity;
+      this.pointColor[b + 1] = l.color.g * l.intensity;
+      this.pointColor[b + 2] = l.color.b * l.intensity;
+      this.pointRange[i] = l.range;
     }
     this.pointCount = count;
-    if (!changed) return;
-    this.cache.forEach((mat) => this.applyPointLights(mat));
   }
 
   /**
-   * Call once per frame so shader fog/rim track the active camera.
-   *
-   * Guarded on the position for the same reason `setPointLights` is, and unlike
-   * that one it wins cleanly: nothing perturbs a still camera, so a menu, a
-   * pause, the deploy screen and a player standing still all stop re-uploading
-   * `camPos` to 43 materials — measured at 258 setter calls a frame before the
-   * guards and 175 after, on a static Hollowmere view.
-   *
-   * **What pays for the guard is `applyCamera` running on every material as it
-   * is created**, exactly as the environment, the lights and the shadow state
-   * already do. Skipping a walk is only sound while the cache cannot hold a
-   * material the walk has never visited.
-   */
-  /**
-   * Advances the wind and pushes the new clock onto every cel material.
+   * Advances the wind: the clock the frame's sway reads (`fillFrame`), and the
+   * fire's and the blast's own, beside it.
    *
    * **Called from the same place in the frame the grass field's clock is**, and
    * that is the whole of why it is a method rather than a uniform pushed from
@@ -2235,24 +1463,20 @@ export class CelMaterialFactory {
    * canopy still leaning over a frozen field would be the one thing in the
    * valley the pause did not reach.
    *
-   * Unguarded, unlike `updateCamera`: `dt` is never zero on a frame that gets
-   * here, so a comparison would only ever cost.
    */
   updateWind(dt: number): void {
     this.windTime += dt;
-    this.cache.forEach((mat) => mat.setFloat("windTime", this.windTime));
     this.flame?.setClock(this.windTime);
     this.blast?.setClock(this.windTime);
   }
 
+  /**
+   * Call once per frame so the shading's fog and rim track the active camera:
+   * the eye the frame is filled with (`fillFrame`), every cel draw's, the
+   * fire's and the billows' alike.
+   */
   updateCamera(camPos: Vector3): void {
-    if (!camPos.equals(this.camPos)) {
-      this.camPos.copyFrom(camPos);
-      this.cache.forEach((mat) => this.applyCamera(mat));
-      // The material outside the cache fogs against this same eye (the
-      // blast's billows read the frame's, `fillFrame`).
-      this.flame?.setEye(this.camPos);
-    }
+    this.camPos.copyFrom(camPos);
   }
 
   /**
@@ -2262,8 +1486,8 @@ export class CelMaterialFactory {
    * (`render/frame.ts`), once a frame as its main pass begins
    * (`render/Renderer.ts`). Off the FIELDS, never off a material: a material
    * is what this factory writes, and the factory is what holds the values.
-   * The camera's matrix is not here — the factory never had it; Babylon fills
-   * `viewProjection` from the scene's camera, and so does the renderer's host.
+   * The camera's matrix is not here — the factory never had it; the
+   * renderer's host fills `viewProjection` from the scene's camera.
    * With `bake`, the clouds' shadow is held off as a reflection bake holds it
    * (`fillBakeFrame`).
    */
@@ -2282,9 +1506,19 @@ export class CelMaterialFactory {
     out.fogParams[1] = fogState.end;
     this.mistColor.toArray(out.mistColor);
     this.mistParams.toArray(out.mistParams);
+    // Weathering is a property of the LOOK rather than of the map, so it comes
+    // from CONFIG and not from the environment.
     const look = surfaceLook;
     out.variationScale[0] = look.variationScale;
     out.variationAmount[0] = look.variationAmount;
+    // The map's grime, and the AMOUNT is the one piece of state in this block
+    // that IS the map's — see `EnvironmentSpec.wear` for why dirt is a claim
+    // about a place where the albedo variation above is a claim about the
+    // renderer. Everything else here is CONFIG's: the vertical fade's edge, the
+    // ramp's shape and the grain are the physics of splash-back and rising damp
+    // and are the same in every village. The falloff rides here rather than in
+    // the bake because a curve baked at a wall's two corners arrives as a
+    // straight line; see the fragment's WEAR block.
     this.wearColor.toArray(out.wearColor);
     out.wearParams[0] = this.wearAmount;
     out.wearParams[1] = look.wearVertical;
@@ -2371,7 +1605,7 @@ export class CelMaterialFactory {
     base: unknown,
     refl: { readonly at: Vector3Like; readonly strength: number; readonly boxMin: Vector3Like; readonly boxMax: Vector3Like },
   ): CelRecipe | null {
-    const recipe = this.glassRecipes.has(base as ShaderMaterial) ? this.recipes.get(base as ShaderMaterial) : undefined;
+    const recipe = this.glassRecipes.has(base as MaterialKey) ? this.recipes.get(base as MaterialKey) : undefined;
     if (!recipe) return null;
     const values: Partial<Record<CelMaterialField, Float32Array>> = {};
     for (const [name, value] of Object.entries(recipe.values) as [CelMaterialField, Float32Array][]) {
@@ -2452,9 +1686,7 @@ export class CelMaterialFactory {
    * (`fillFrame`, `fillFrameTextures`), which pulls it every frame, so a tier
    * change standing up a new set walks nothing.
    *
-   * **No Babylon cel material is handed it**: none draws (`BABYLON_EXIT.md`
-   * X5.3c), and the GI-`off` set they held for the map editor's build went at
-   * X5.3d.
+   * No material is handed it: the frame is the one holder.
    */
   setGi(binding: GiBinding): void {
     this.gi = binding;
@@ -2475,111 +1707,20 @@ export class CelMaterialFactory {
    * caster, which is how that map stays foliage and nothing else.
    */
   isSolid(mat: unknown): boolean {
-    return this.solids.has(mat as ShaderMaterial);
+    return this.solids.has(mat as MaterialKey);
   }
 
   /**
    * Whether a material is one of `getGlass`'s, and which kind: `"backed"`
-   * (it writes depth, on Babylon's opaque list) or `"seeThrough"` (blended, on
-   * its transparent one); null for any other. `BlockHandover` asks it of each
+   * (it writes depth, with the opaque draws) or `"seeThrough"` (blended, in the
+   * back-to-front run); null for any other. `BlockHandover` asks it of each
    * surface a round builds, which is how the glazing becomes our renderer's
    * (`BABYLON_EXIT.md` X4.6e).
    */
   glassKind(mat: unknown): "backed" | "seeThrough" | null {
-    const recipe = this.glassRecipes.get(mat as ShaderMaterial);
+    const recipe = this.glassRecipes.get(mat as MaterialKey);
     if (!recipe) return null;
     return recipe.backed ? "backed" : "seeThrough";
-  }
-
-  private applyEnvironment(mat: ShaderMaterial): void {
-    mat.setVector3("lightDir", this.lightDir);
-    mat.setColor3("lightColor", this.lightColor);
-    mat.setFloat("keyWrap", this.keyWrap);
-    mat.setColor3("ambientColor", this.ambientColor);
-    mat.setColor3("skyLightColor", this.skyLightColor);
-    // The sky's own colour rather than the light it casts, and only the glass
-    // materials declare it — a `setColor3` for a uniform an effect does not
-    // have is dropped when the material binds, which is what lets this ride
-    // along here instead of needing a second walk over a second list.
-    mat.setColor3("skyZenithColor", this.skyZenithColor);
-    mat.setColor3("rimColor", this.rimColor);
-    mat.setColor3("fogColor", fogState.color);
-    mat.setVector2("fogParams", new Vector2(fogState.start, fogState.end));
-    mat.setColor3("mistColor", this.mistColor);
-    mat.setVector2("mistParams", this.mistParams);
-    // Weathering is a property of the LOOK rather than of the map, so it comes
-    // from CONFIG and not from the environment — but it rides along here
-    // because this is what already runs on every material, on creation and on
-    // every environment change.
-    mat.setFloat("variationScale", surfaceLook.variationScale);
-    mat.setFloat("variationAmount", surfaceLook.variationAmount);
-    // The map's grime, and the AMOUNT is the one piece of state in this method
-    // that IS the map's — see `EnvironmentSpec.wear` for why dirt is a claim
-    // about a place where the albedo variation above is a claim about the
-    // renderer. Everything else here is CONFIG's: the vertical fade's edge, the
-    // ramp's shape and the grain are the physics of splash-back and rising damp
-    // and are the same in every village. The falloff rides here rather than in
-    // the bake because a curve baked at a wall's two corners arrives as a
-    // straight line; see the fragment's WEAR block.
-    mat.setColor3("wearColor", this.wearColor);
-    const look = surfaceLook;
-    mat.setVector4(
-      "wearParams",
-      new Vector4(this.wearAmount, look.wearVertical, look.wearFalloff, look.wearEdgeBreak),
-    );
-    mat.setVector3("wearGrain", Vector3.FromArray(look.wearGrain));
-  }
-
-  /**
-   * The eye a material fogs and rims against, and what it writes into the
-   * frame's alpha channel, seeded on create — see `camPos` for why, and
-   * `opaqueAlpha` in the fragment for the second. Babylon draws the world
-   * from nowhere but the player's head since X3.7c: a probe's eye and its
-   * alpha are our renderer's bake frame's (`fillBakeFrame`).
-   */
-  private applyCamera(mat: ShaderMaterial): void {
-    mat.setVector3("camPos", this.camPos);
-    mat.setFloat("opaqueAlpha", this.opaqueAlpha);
-  }
-
-  /**
-   * The wind's shape and its clock, pushed onto a material as it is created.
-   *
-   * The shape never changes — it is `CONFIG.wind`, read once — so only the
-   * clock is walked per frame (`updateWind`). Seeding on create matters for
-   * the reason `applyCamera` does: `installMap` mints materials mid-round, and
-   * a canopy built from a material holding `windTime` 0 would start its gust
-   * from wherever the rest of the valley is not.
-   */
-  private applyWind(mat: ShaderMaterial): void {
-    const w = windShape;
-    mat.setFloat("windTime", this.windTime);
-    mat.setVector2("windDir", windBearing);
-    mat.setVector3("windParams", Vector3.FromArray(w.params));
-    mat.setVector4("windFrond", Vector4.FromArray(w.frond));
-    mat.setVector4("windFrondRate", Vector4.FromArray(w.frondRate));
-    mat.setVector4("windBough", Vector4.FromArray(w.bough));
-    mat.setVector4("windBoughRate", Vector4.FromArray(w.boughRate));
-    mat.setVector2("windBoughFade", Vector2.FromArray(w.boughFade));
-  }
-
-  /**
-   * Seeds a new cel material with every shadow it samples. Every one of the
-   * six creation paths comes through this one door. (The irradiance volume's
-   * seven are bound to no Babylon material: a GI-`off` set of Babylon's
-   * own, `babylonGi`, stood there for the map editor's build alone until
-   * `BABYLON_EXIT.md` X5.3d. Our renderer's frame binds the volume's own.)
-   */
-  private applyShadow(mat: ShaderMaterial): void {
-    this.shadows.applyShadow(mat);
-  }
-
-  private applyPointLights(mat: ShaderMaterial): void {
-    // Float32Array is accepted by setArray3/setFloats (typed as number[]).
-    mat.setArray3("pointPos", this.pointPos as unknown as number[]);
-    mat.setArray3("pointColor", this.pointColor as unknown as number[]);
-    mat.setFloats("pointRange", this.pointRange as unknown as number[]);
-    mat.setFloat("pointCount", this.pointCount);
   }
 
   /**
@@ -2594,10 +1735,10 @@ export class CelMaterialFactory {
    * doing it that way rather than widening the key keeps one material per
    * colour instead of one per colour per map ever loaded.
    */
-  private readonly specs = new Map<ShaderMaterial, SpecSpec>();
+  private readonly specs = new Map<MaterialKey, SpecSpec>();
 
   /** Specular is per-material, never theme-wide: null keeps a material matte. */
-  private applySpec(mat: ShaderMaterial, spec: SpecSpec | null): void {
+  private applySpec(mat: MaterialKey, spec: SpecSpec | null): void {
     if (!spec) {
       this.own(mat, "specColor", Color3.Black());
       // Shininess 1 is a no-op exponent — the zero specColor wins anyway.
@@ -2636,10 +1777,8 @@ export class CelMaterialFactory {
     });
   }
 
-  /** 1 with the Ground relief setting on, 0 off — what a bumped ground is built with. */
+  /** 1 with the Ground relief setting on, 0 off — the frame's, so every bumped ground reads it. */
   private reliefMarch = 1;
-  /** Every bumped ground material, which is every reader of `reliefMarch`. */
-  private readonly relieved = new Set<ShaderMaterial>();
 
   /**
    * The Ground relief setting. Off zeroes both marches' fade amounts, so
@@ -2650,9 +1789,7 @@ export class CelMaterialFactory {
    */
   setGroundRelief(on: boolean): void {
     const march = on ? 1 : 0;
-    if (march === this.reliefMarch) return;
     this.reliefMarch = march;
-    for (const mat of this.relieved) mat.setFloat("reliefMarch", march);
   }
 
   /**
@@ -2661,7 +1798,7 @@ export class CelMaterialFactory {
    * multiplies out to nothing against.
    */
   private applyTranslucency(
-    mat: ShaderMaterial,
+    mat: MaterialKey,
     trans: TranslucencySpec | null,
   ): void {
     this.own(
@@ -2681,7 +1818,7 @@ export class CelMaterialFactory {
    * is ever called on is one built to be glass and there is no "off" value to
    * push onto the rest of the cache.
    */
-  private applyGlass(mat: ShaderMaterial, glass: GlassSpec): void {
+  private applyGlass(mat: MaterialKey, glass: GlassSpec): void {
     this.own(mat, "glassParams", new Vector4(glass.reflectance, glass.falloff, glass.halo, glass.tint));
   }
 
@@ -2696,7 +1833,7 @@ export class CelMaterialFactory {
    * cube a Babylon glazing material was bound to went with the map editor's
    * build that sampled it, at `BABYLON_EXIT.md` X5.3d.
    */
-  private applyReflection(mat: ShaderMaterial): void {
+  private applyReflection(mat: MaterialKey): void {
     this.own(mat, "reflectBoxMin", Vector3.Zero());
     this.own(mat, "reflectBoxMax", Vector3.Zero());
     this.own(mat, "reflectProbe", new Vector4(0, 0, 0, 0));
@@ -2705,8 +1842,8 @@ export class CelMaterialFactory {
 
 /**
  * The installed map's fog, as the passes that are NOT the cel shader see it.
- * Written by `CelMaterialFactory.setEnvironment`, which is also what pushes it
- * onto the cel materials as uniforms — one fact, one writer, so the ink and
+ * Written by `CelMaterialFactory.setEnvironment`, which is also what the
+ * frame's fog is filled from (`fillFrame`) — one fact, one writer, so the ink and
  * the wall it hangs in front of cannot disagree.
  *
  * It is module state rather than a factory field because the passes that need
@@ -2765,9 +1902,8 @@ const windBearing = new Vector2(
 ).normalize();
 
 /**
- * The wind's SHAPE, read once from `CONFIG.wind` — what `applyWind` pushes
- * onto a material and `fillFrame` copies into our renderer's frame, so the
- * two are one statement. `params.z` is the gust's wavenumber: a wavelength in
+ * The wind's SHAPE, read once from `CONFIG.wind` — what `fillFrame` copies
+ * into our renderer's frame, one statement of it. `params.z` is the gust's wavenumber: a wavelength in
  * metres is what the config states, because that is the number anyone tuning
  * it can pace out.
  */
@@ -2788,7 +1924,7 @@ const windShape = (() => {
 /**
  * The renderer's own share of the surface — the albedo variation and the
  * wear ramp's shape and grain, all `CONFIG`'s — read once, for the reason
- * `windShape` is: `applyEnvironment` and `fillFrame` read one copy. The wear
+ * `windShape` is: `fillFrame` reads one copy. The wear
  * AMOUNT is the map's and is not here (`EnvironmentSpec.wear`).
  */
 const surfaceLook = (() => {

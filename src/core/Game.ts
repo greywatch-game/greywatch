@@ -109,7 +109,7 @@ import {
   Viewport,
 } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { Vector3 as MathVector3, type Vector3Like } from "../math";
+import { type Color3Like, Vector3 as MathVector3, type Vector3Like } from "../math";
 import { toBabylon } from "../math/babylon";
 import {
   CelMaterialFactory,
@@ -343,7 +343,6 @@ import { setViewerTeam, teamLook } from "./teamView";
 import { RenderId } from "./renderId";
 import { SceneFrame } from "./SceneFrame";
 import { SceneEngine } from "./SceneEngine";
-import { type BabylonCompiles, watchBabylonCompiles } from "./babylonCompiles";
 
 /**
  * The bodies in the round when there is no round — the menu and the building
@@ -940,13 +939,6 @@ export class Game {
    * (`systems/LightningStrikes.ts`) and spent in `pushLightning`.
    */
   private readonly lightning = new LightningStrikes();
-  /**
-   * The DEV counter of Babylon effect compiles, which must read 0 in every
-   * state (`core/babylonCompiles.ts`); null in a production build. Public for
-   * the draw log (`plans/webgpu-ref/drawlog.mjs`), which fails a run where it
-   * moved.
-   */
-  readonly babylonCompiles: BabylonCompiles | null = null;
   private shadows: ShadowSystem;
   /** The world's directional maps as our renderer owns them: every round's. */
   private readonly worldShadows: WorldShadows;
@@ -2001,9 +1993,6 @@ export class Game {
     // The engine the scene stands on (`core/SceneEngine.ts`): a `NullEngine`,
     // the last engine built, so `Vector3.ProjectToRef` reads its depth range.
     this.sceneEngine = new SceneEngine(surface);
-    // Before anything of the game's can make a Babylon effect: every one made
-    // from here on is counted, and must not be (`core/babylonCompiles.ts`).
-    if (import.meta.env.DEV) this.babylonCompiles = watchBabylonCompiles(this.sceneEngine);
     // **The page's own match host** — in a Worker or on a channel in this
     // thread (`src/net/matchHost.ts`), chosen by
     // the boot and handed in as `havok` and the device are. Every round that is
@@ -2071,19 +2060,18 @@ export class Game {
       // for `timestamp-query`, and the renderer builds no timer without it.
       { timePasses: urlFlag("gpu") },
     );
-    this.mats = new CelMaterialFactory(this.scene, this.renderer.textureMaker);
+    this.mats = new CelMaterialFactory(this.renderer.textureMaker);
     this.prof.setCullTimer(this.renderer.timer);
     // The world's four directional maps as our renderer draws them, in every
     // round (`BABYLON_EXIT.md` X3.6a, X3.7b).
     this.worldShadows = new WorldShadows(this.renderer);
-    // Stepped moon shadows + contact blobs. Must exist before any cel
-    // material is created so the shadow map binds on creation.
+    // Stepped moon shadows + contact blobs. Must exist before the first frame,
+    // so the frame's shadow map is bound from the first.
     this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality, this.worldShadows, this.renderer.textureMaker);
-    // Same rule as the line above, and it binds a sampler every cel material
-    // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
-    // sampler with nothing behind it is a bind group that fails to build and
-    // every draw using it silently lost. So this exists before the first
-    // material does, and there is no state in which it does not. Its map is
+    // Same rule as the line above, and it binds a texture every cel program
+    // DECLARES: the frame's textures list `bodyShadowMap`, and a frame with
+    // one unbound draws nothing. So this exists before the first frame does,
+    // and there is no state in which it does not. Its map is
     // our renderer's in every state, a pass of its own (`BABYLON_EXIT.md`
     // X4.1c), and its pipeline is asked here, once for the session.
     this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
@@ -2155,9 +2143,9 @@ export class Game {
       const { drawn, masked, instances } = this.bodyDraw.stats;
       return { drawn, masked, instances };
     });
-    // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
-    // it is bound before the first material exists — the lit 1x1 on a rung
-    // that has none.
+    // The lamps' atlas, for the same rule: the frame's textures list it, so
+    // it is bound before the first frame — the lit 1x1 on a rung that has
+    // none.
     // Its atlas is our renderer's in every round, as the world's maps are
     // (`BABYLON_EXIT.md` X3.6b, X3.7b).
     this.lampAtlas = new LampAtlas(
@@ -2273,7 +2261,7 @@ export class Game {
     // when everything around it has gone to fog: Greyfen's chapel windows are
     // 0.08 m slivers whose whole read at 60 m is bloom, and they sat on a wall
     // faded almost to white as three saturated cyan bars. Fogging the emissive
-    // MATERIAL cannot fix it — `EmissiveFog` fades the base colour toward the
+    // MATERIAL cannot fix it — the unlit draws fade the base colour toward the
     // FOG, and a bloom drawn from that would be a pale haze round every far
     // lamp — so the base pass and the bloom are attenuated separately, and the
     // bloom is by far the larger term. It does NOT reproduce an emissive
@@ -2987,13 +2975,14 @@ export class Game {
    * which fades per pixel and passes 1.
    */
   private bloomColour(
-    material: { readonly emissiveColor: Color3; readonly alpha: number },
+    material: { readonly emissiveColor: Color3Like; readonly alpha: number },
     fade: number,
     out: Color4,
   ): void {
     const emissive = material.emissiveColor;
-    // Read off the base Material: only PBR declares it.
-    const k = ((material as { emissiveIntensity?: number }).emissiveIntensity ?? 1) * fade;
+    // No material of ours states an intensity (Babylon's PBR alone declared
+    // one), so the scale is the fade.
+    const k = fade;
     out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
   }
 
@@ -6812,8 +6801,8 @@ export class Game {
    */
   private buildViewDraw(): ViewDraw {
     const segments = this.playerView.model.tree.segments();
-    const colours: Color3[] = [];
-    const slotOf = (c: Color3): number => {
+    const colours: Color3Like[] = [];
+    const slotOf = (c: Color3Like): number => {
       let i = colours.findIndex((o) => o.r === c.r && o.g === c.g && o.b === c.b);
       if (i < 0) i = colours.push(c) - 1;
       return i + 1;
@@ -6848,7 +6837,7 @@ export class Game {
       }
       const recipe = this.mats.celRecipe(seg.material);
       if (recipe) cels.add(recipe);
-      const emissive = recipe ? null : (seg.material as { emissiveColor?: Color3 } | null)?.emissiveColor ?? null;
+      const emissive = recipe ? null : (seg.material?.emissiveColor ?? null);
       if (import.meta.env.DEV) {
         // A material our renderer cannot read would draw nothing, silently.
         if (!recipe && !emissive) {
@@ -6856,7 +6845,7 @@ export class Game {
         }
         // The weapon's emissive table carries no depth bias: an unlit part
         // biased off its surface would lose it here.
-        const units = (seg.material as { zOffsetUnits?: number } | null)?.zOffsetUnits ?? 0;
+        const units = seg.material?.zOffsetUnits ?? 0;
         if (emissive && units !== 0) {
           throw new Error(`buildViewDraw: "${seg.name}" is unlit at a depth bias of ${units}, which the weapon's emissive draw does not carry`);
         }
@@ -6960,8 +6949,10 @@ export class Game {
         continue;
       }
       const material = segment.material;
-      keys[i] = material ? material.uniqueId : Number.POSITIVE_INFINITY;
-      // An insertion sort by the material's id, a tie going to the segment
+      keys[i] = material ? material.serial : Number.POSITIVE_INFINITY;
+      // An insertion sort by the material's creation order — its key's
+      // `serial`, which keeps the order Babylon's `uniqueId` gave any two
+      // materials (`shaders/MaterialKey.ts`) — a tie going to the segment
       // MADE first (its slot: the kit is numbered in the order made) — the
       // order Babylon dispatched the meshes in, not the order the evaluation
       // walked them, which follows the joints (X4.3c's review).
@@ -7018,12 +7009,12 @@ export class Game {
     for (let k = 0; k < n; k++) {
       const v = this.viewDrawn[k];
       if (v.segment.role !== "opaque") continue;
-      const material = v.segment.material as { emissiveColor?: Color3; alpha: number } | null;
+      const material = v.segment.material;
       if (!material?.emissiveColor) continue;
       const s = v.slot * 3;
       MathVector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
       const fade = 1 - fogAmountAt(MathVector3.Distance(at, eye));
-      this.bloomColour(material as { emissiveColor: Color3; alpha: number }, fade, this.viewBloom);
+      this.bloomColour(material as { readonly emissiveColor: Color3Like; readonly alpha: number }, fade, this.viewBloom);
       glow[k * 4] = this.viewBloom.r;
       glow[k * 4 + 1] = this.viewBloom.g;
       glow[k * 4 + 2] = this.viewBloom.b;

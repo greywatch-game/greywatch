@@ -40,7 +40,7 @@
  *
  * The cloth is two-sided by construction: every vertex exists twice, the back
  * copy with its normal negated and its triangles wound the other way, so the
- * frozen cel material needs no culling change and each face is lit from the
+ * cel recipe needs no culling change and each face is lit from the
  * side it is seen from.
  *
  * Never disposes a recipe: all of them are the factory's cache. Its geometry

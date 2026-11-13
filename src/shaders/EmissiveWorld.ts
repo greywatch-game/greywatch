@@ -2,16 +2,15 @@
  * EmissiveWorld.ts — The one material every lit window, lamp lens, ember and
  * sign in a map's MERGED world wears, whatever colour it emits: the emissive
  * palette, `getWorldCel`'s twin for the light sources. Since X3.7c it is a
- * MATERIAL OBJECT and no program: our renderer draws the palette in every
+ * MATERIAL KEY and no program: our renderer draws the palette in every
  * pass of a round — the main pass (`render/WorldBlocks.ts`), a probe's bake
  * (`render/ProbeBake.ts`) and the glow's mask (`render/WorldGlow.ts`), off
  * the one body in `wgsl/emissiveWorld.ts` (`render/emissiveWorld.ts`
- * assembles it) — and Babylon is made no mesh of it (`BlockHandover`), so
- * no Babylon draw of it is left anywhere and
- * its Babylon stages and its glow-mask twin went with X3.7c
- * (`BABYLON_EXIT.md`). The object stays (X3.7, Keeps): the merge keys on it
- * and the factory hangs the recipe our renderer draws it with off it
- * (`CelMaterialFactory.emissiveRecipe`).
+ * assembles it) — and Babylon is made no mesh of it (`BlockHandover`). The
+ * key stays: the merge keys on it and the factory hangs the recipe our
+ * renderer draws it with off it (`CelMaterialFactory.emissiveRecipe`). A
+ * Babylon `Material` until `BABYLON_EXIT.md` X6.1c, one of OUR keys since
+ * (`MaterialKey.ts`), carrying what a reader asks of it.
  * Owns: `EmissiveWorldMaterial` and `isEmissiveWorld`
  * (`MAX_EMISSIVE_PALETTE` is the bodies' module's).
  * Is made by `CelMaterialFactory` alone (`getEmissiveWorld`), and the palette
@@ -22,11 +21,8 @@
  * stated for a reader of the material, never read by a draw. Never given a
  * vertex colour buffer (`vertexShading` skips it). Never worn by anything but
  * a merge: every vertex it draws carries a slot. Never on a Babylon mesh
- * (`worldMeshes` makes none of it: X3.7c's review): a plain `Material` is
- * never ready for a draw, so the frame would draw nothing where one stood,
- * while `GlowPass`, which admits a mesh by its emissive colour and masks it
- * with a stock mask material, would bloom its WHITE `emissiveColor` there —
- * a white bloom over a hole.
+ * (`worldMeshes` makes none of it: X3.7c's review) — a refused palette fails
+ * the world instead, since nothing else could draw it.
  *
  * WHY IT EXISTS. `docs/rendering.md`, "The paint palette": the block merge
  * splits once per MATERIAL, and the albedo palette took a matte surface's
@@ -57,26 +53,24 @@
  * rule's own scale (the kit screen's admission, an intensity) and the palette
  * supplies the colour.
  */
-import { Color3, Material, type Scene } from "@babylonjs/core";
+import type { Color3Like } from "../math";
+import { MaterialKey } from "./MaterialKey";
 
-export class EmissiveWorldMaterial extends Material {
-  /** What `GlowRules` reads to know this is a light source — see the header. */
-  readonly emissiveColor = Color3.White();
+/** WHITE, as `emissiveColor` (the header): the rule's own scale, the palette the colour. */
+const WHITE = { r: 1, g: 1, b: 1 } as const;
+
+export class EmissiveWorldMaterial extends MaterialKey {
+  /** Never null: the palette is a light source (the header). */
+  declare readonly emissiveColor: Color3Like;
 
   /** `depthUnits` is the polygon offset its recipe is drawn at (`overGlass`'s). */
-  constructor(scene: Scene, name: string, depthUnits: number) {
-    super(name, scene);
-    this.backFaceCulling = true;
-    this.zOffsetUnits = depthUnits;
-    this.freeze();
-  }
-
-  override getClassName(): string {
-    return "EmissiveWorldMaterial";
+  constructor(name: string, depthUnits: number) {
+    // What `GlowRules` reads to know this is a light source — see the header.
+    super(name, "emissiveWorld", { emissiveColor: WHITE, zOffsetUnits: depthUnits });
   }
 }
 
 /** Whether a material is the emissive palette — `vertexShading` asks, to leave it unbaked. */
-export function isEmissiveWorld(material: Material | null): material is EmissiveWorldMaterial {
+export function isEmissiveWorld(material: MaterialKey | null): material is EmissiveWorldMaterial {
   return material instanceof EmissiveWorldMaterial;
 }

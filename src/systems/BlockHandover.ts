@@ -103,7 +103,7 @@
  * `BABYLON_EXIT.md` X3.3a, X3.3b, X3.3c, X3.4, X3.4b, X3.5, X3.5b, X3.6a,
  * X3.6b, X3.6c, X3.6d, X3.6e, X3.7a, X3.7b, X3.7c, X4.4d.
  */
-import { Material, type Mesh } from "@babylonjs/core";
+import type { Mesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { type BlockBox, type CullDiagnostics, NO_DIAGNOSTICS } from "../render/ClusterCull";
 import type { FlameDraw, FlameShapeArrays } from "../render/FlameDraw";
@@ -128,6 +128,7 @@ import type { WorldGlow } from "../render/WorldGlow";
 import type { WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { isFlame } from "../shaders/FlameShader";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import { Matrix } from "../math";
 import { worldMatrixOf } from "../world/parts";
 import type { ScatterField } from "../world/scatterVariants";
@@ -135,21 +136,17 @@ import type { WorldGeometry, WorldSurface } from "../world/worldGeometry";
 import { blockOf, type WorldCulling } from "./WorldCulling";
 
 /**
- * Whether `material` draws BLENDED, as `Material.needAlphaBlendingForMesh`
- * answers for every world mesh `worldMeshes` makes — `visibility` 1 and no
- * vertex alpha (it clears `hasVertexAlpha` on every surface the bake gave
- * colours): the material's `transparencyMode` when it states one, else its
- * own `needAlphaBlending`. Asked of the material alone, so a surface's
- * shadow passes are decided off its record (`BABYLON_EXIT.md` X3.7a), and a
- * scatter part's — which has no mesh at all — by the same words.
+ * Whether `material` draws BLENDED — its key's `blended`, which the factory
+ * states as it makes it: a see-through pane, and nothing else. It answers
+ * what `Material.needAlphaBlendingForMesh` answered for every world mesh
+ * `worldMeshes` made while a material was Babylon's (no material stated a
+ * `transparencyMode`, and a `ShaderMaterial`'s `needAlphaBlending` option was
+ * set on that pane alone; `BABYLON_EXIT.md` X6.1c). Asked of the material
+ * alone, so a surface's shadow passes are decided off its record (X3.7a),
+ * and a scatter part's — which has no mesh at all — by the same words.
  */
-function blends(material: Material | null): boolean {
-  if (!material) return false;
-  const mode = material.transparencyMode;
-  if (mode !== null && mode !== undefined) {
-    return mode === Material.MATERIAL_ALPHABLEND || mode === Material.MATERIAL_ALPHATESTANDBLEND;
-  }
-  return material.needAlphaBlending();
+function blends(material: MaterialKey | null): boolean {
+  return material?.blended ?? false;
 }
 
 /** What the build hands `install`: its records and the meshes Babylon was given (none, on every shipped map). */
@@ -492,7 +489,7 @@ export class BlockHandover {
    * is the material's (`blends`), for a
    * surface and a scatter part alike.
    */
-  private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: Material | null): number {
+  private passesOf(metadata: { noShadowCaster?: boolean } | null | undefined, material: MaterialKey | null): number {
     if (metadata?.noShadowCaster) return 0;
     if (blends(material)) return PASS_LAMPS;
     return PASS_LAMPS | PASS_CASTS | (this.mats.isSolid(material) ? PASS_SOLID : 0);

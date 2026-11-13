@@ -67,7 +67,8 @@
  *
  * THE MASK WAS DRAWN WITH AN OVERRIDE MATERIAL, NOT WITH THE MESH'S OWN, and
  * every draw of ours there keeps the rule: a glowing surface's own unlit
- * colour is already faded by `EmissiveFog` TOWARD THE FOG, and a bloom of the
+ * colour is already faded TOWARD THE FOG (the unlit draws' fade, on the cel
+ * shader's curve — `EmissiveFog`'s while a Babylon plugin did it), and a bloom of the
  * fog colour is a white haze round every distant lamp on a bright map — so
  * the mask is handed each surface's colour faded toward black instead
  * (`Game.bloomColour`, the rules `Game` holds). It writes NO depth: every

@@ -17,8 +17,11 @@
  * `BABYLON_EXIT.md` X5.4h the scene stands on a `NullEngine`
  * (`src/core/SceneEngine.ts`): there is no Babylon backend to compile a
  * material against, so Babylon's half is SKIPPED (each material's define set is
- * still read off it, which is what our half is asked to build) and said so;
- * at a parent it runs as below. Both bodies,
+ * still read, which is what our half is asked to build) and said so; and since
+ * X6.1c there is no Babylon material at all — a material is a key of ours
+ * (`shaders/MaterialKey.ts`) and its define set is its RECIPE's
+ * (`CelMaterialFactory.celRecipe`), so Babylon's half is RETIRED and its
+ * stand-in mesh with it. At a parent before X5.4h it runs as below. Both bodies,
  * the vertex stage's and the fragment's, are one text each
  * (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our own
  * `src/render/`, and each declares what the bodies read its own way — so a
@@ -56,9 +59,7 @@
  *
  * **The page's materials and Babylon's half are asked of the frame adapter since
  * X6.1a** (`harness.mjs`): every material on the page (`materials()`, the
- * scene's, or the factory's with no scene), the pictures' cache key
- * (`pictureKey()`), and the scene itself (`babylon()`): with none, Babylon's half
- * — its stand-in mesh and its compiles, skipped since X5.4h — is RETIRED.
+ * factory's) and the pictures' cache key (`pictureKey()`).
  */
 import {
   assertNoTranspiler,
@@ -373,41 +374,14 @@ for (const id of MAPS) {
     const g = window.__celshock;
     // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
     const F = window.__refFrame();
-    const frame = () => F.drawn();
-    // Babylon's scene, through the adapter (X6.1a): with none, Babylon's half
-    // of this check is RETIRED (no Babylon program to compile, as since X5.4h).
-    const B = F.babylon();
     // Everything that carries no vertex colour buffer is built by PLAYING:
     // the viewmodel, the rigs, the ink twins and the effect meshes.
     g.spawnPlayer();
     await new Promise((res) => setTimeout(res, 2500));
 
-    // A mesh of our own stands in for all of them, hidden, on positions and
-    // normals as a ring's batch had them. Every cel variant is built from the
-    // same attribute list, so one mesh is enough to ASK any of them to compile
-    // — which is the whole point: the factory outlives a mesh, and a pooled rig
-    // that never deployed leaves its paint in the cache with no draw behind it
-    // to have compiled it. It took any mesh on a cel material until
-    // `BABYLON_EXIT.md` X4.6b, whose rings and flags were the last of those on a
-    // map with no glazing: our renderer draws the rest and Babylon is made none.
-    const { drawnMesh } = await import("/src/world/parts.ts");
-    const { GeometryBuffer } = await import("/src/geometry/buffer.ts");
-    const probe = B
-      ? drawnMesh(
-          "shaders-probe",
-          new GeometryBuffer({
-            positions: [0, 0, 0, 1, 0, 0, 0, 1, 0],
-            normals: [0, 0, 1, 0, 0, 1, 0, 0, 1],
-            indices: [0, 1, 2],
-          }),
-          B.scene,
-        )
-      : null;
-    if (probe) {
-      probe.material = [...g.mats.cache.values()].find((m) => m.name.startsWith("cel-"));
-      probe.isVisible = false;
-      if (!probe.material) throw new Error("no cel material to compile against");
-    }
+    // (A hidden mesh of Babylon's stood here as the thing each Babylon cel
+    // variant was asked to compile against, until `BABYLON_EXIT.md` X6.1c: no
+    // material is Babylon's since, and Babylon's half was skipped since X5.4h.)
 
     // The one variant no shipped map mints: a ground albedo with no height map
     // beside it. Both call sites pass a bump today, so `CEL_GROUND_TEX` alone
@@ -426,28 +400,20 @@ for (const id of MAPS) {
       g.mats.getGroundTextured("smoke-flat", getCobblestoneTexture(F.pictureKey()), 1);
     }
 
-    // Every `ShaderMaterial` but the fire's: `FlameMaterial` is a recipe key
-    // whose Babylon stages were deleted at `BABYLON_EXIT.md` X5.3d (our
-    // renderer draws every fire, `render/flameProgram.ts`, whose modules are
-    // on the round's declared list), so there is no Babylon program of it
-    // left to compile. Told apart by IDENTITY, the factory's one fire
-    // (`getFlame`, which mints it if no map has yet — harmless on a page about
-    // to be thrown away), never by a class name a minifier may rename.
-    const flame = g.mats.getFlame();
-    // Every material on the page, through the adapter (X6.1a): the scene's, or the factory's.
-    const shaders = F.materials().filter(
-      (m) => m._options && Array.isArray(m._options.defines) && m !== flame,
-    );
-    // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
-    // than read: `isReady` is what ASKS for the compile as well as what reports
-    // it, and the first call on a variant nothing has drawn always says no.
-    // Not asked at all with no Babylon backend (X5.4h: a `NullEngine`).
-    const babylonGpu = Boolean(B?.engine.isWebGPU);
-    let pending = babylonGpu ? shaders : [];
-    for (let i = 0; i < 240 && pending.length > 0; i++) {
-      pending = pending.filter((m) => !m.isReady(probe));
-      if (pending.length > 0) await frame();
-    }
+    // Every cel material — every key the factory keeps a cel RECIPE for: its
+    // variant is the recipe's `defines` (`BABYLON_EXIT.md` X6.1c, when the
+    // Babylon `ShaderMaterial`s, whose `_options.defines` this read, became
+    // keys of ours; the same set, since the factory built both from one
+    // variant list). The fire was always left out (`FlameMaterial`, no
+    // Babylon program since X5.3d), and has no cel recipe.
+    // Every material on the page, through the adapter (X6.1a): the factory's.
+    const variantOf = (m) => g.mats.celRecipe(m)?.defines ?? null;
+    const shaders = F.materials().filter((m) => variantOf(m) !== null);
+    // Babylon's half — each Babylon material asked `isReady` until its effect
+    // compiled — is RETIRED: skipped since X5.4h (a `NullEngine`), and no
+    // material is Babylon's since X6.1c. What compiles is ours (`oursCheck`).
+    const babylonGpu = false;
+    const pending = [];
 
     const materials = [];
     const cel = new Set();
@@ -478,11 +444,7 @@ for (const id of MAPS) {
       for (const recipe of groups.keys()) cutBiases.add(recipe.depthBias);
     }
     for (const mat of shaders) {
-      const effect = mat.getEffect?.();
-      const defines = mat._options.defines
-        .map((d) => String(d).replace("#define ", "").trim())
-        .filter(Boolean)
-        .sort();
+      const defines = [...variantOf(mat)].sort();
       const isCel = mat.name.startsWith("cel-");
       if (isCel) cel.add(defines.join("+"));
       const recipe = g.mats.celRecipe(mat);
@@ -496,7 +458,7 @@ for (const id of MAPS) {
         defines: defines.join("+"),
         cel: isCel,
         ready: !pending.includes(mat),
-        error: babylonGpu ? effect?.getCompilationError?.() || "" : "",
+        error: "",
       });
     }
 

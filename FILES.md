@@ -745,15 +745,6 @@ src/
                         #   BodyShadows and LocalShadows so a body throws one
                         #   silhouette under every light. No Babylon (a root
                         #   of check-babylon-free)
-    babylonCompiles.ts  # The DEV counter of BABYLON EFFECT COMPILES, which
-                        #   must read 0 in every state (X5.3d): createEffect
-                        #   and createComputeEffect wrapped on the scene's
-                        #   engine from Game's construction (a NullEngine
-                        #   since X5.4h, compiling nothing of its own; the
-                        #   WebGPUEngine's clearQuad, made before it, was not
-                        #   counted), each compile said as
-                        #   a console warning. The draw log asserts it. Until
-                        #   X6.1 deletes the cel program's Babylon declarations
     renderId.ts         # The RENDER ID as a counter of ours with Babylon's
                         #   meaning (X5.4b): what the viewmodel's RenderCache
                         #   is keyed on, moved at the two points a frame
@@ -2668,25 +2659,25 @@ src/
                         #   Network-first for the navigation, cache-first for
                         #   the content-hashed rest
   shaders/
-    CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
-                        #   defines, six UBO layouts. Each stage is Babylon's
-                        #   DECLARATIONS and a one-line main over a shared body
-                        #   (wgsl/celVertex.ts, wgsl/celSurface.ts). Every
-                        #   per-material value is set through own(), which
-                        #   keeps it in the material's RECIPE (celRecipe) for
-                        #   src/render/, and the palette material's recipe is
-                        #   emissiveRecipe (emissiveMaterialOf the other way,
-                        #   for the glow's rules); fillFrame and fillFrameTextures are
-                        #   the frame's pulls, fillBakeFrame a reflection
-                        #   bake's frame (the clouds held off, alpha 1, the
-                        #   probe's eye) — Babylon draws no bake since X3.7c,
-                        #   so its materials hold the frame's alpha 0. writePaletteIndex stamps
+    CelShader.ts        # CelMaterialFactory: every lit material, as a KEY of
+                        #   ours (MaterialKey.ts, X6.1c) and the RECIPE it is
+                        #   drawn with (celRecipe); the program's body is
+                        #   wgsl/celVertex.ts and wgsl/celSurface.ts, its
+                        #   declarations src/render/'s. Every per-material
+                        #   value is written through own() into the recipe;
+                        #   nothing is pushed onto a material. The palette
+                        #   material's recipe is emissiveRecipe
+                        #   (emissiveMaterialOf the other way, for the glow's
+                        #   rules); fillFrame and fillFrameTextures are the
+                        #   frame's pulls off the factory's fields,
+                        #   fillBakeFrame a reflection bake's frame (the
+                        #   clouds held off, alpha 1, the probe's eye). writePaletteIndex stamps
                         #   a part's palette slot into its buffer's uv2 for
                         #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
-                        #   lamps' atlas, lightning, clouds, foliage) bound
-                        #   onto the factory's cache and the grass/water
-                        #   consumers. `mats.shadows`; GI stays in the factory.
+                        #   lamps' atlas, lightning, clouds, foliage), held and
+                        #   PULLED into the frame (no material walked since
+                        #   X6.1c). `mats.shadows`; GI stays in the factory.
                         #   Every texture our frame binds of it is ours: a map's
                         #   own, the lit texel where it is off, the clouds'
                         #   field (X5.4d)
@@ -2718,19 +2709,19 @@ src/
                         #   (wgsl/fxaa.ts): Babylon's shader with
                         #   CONFIG.graphics.fxaa's three constants (sub-pixel
                         #   blend 0.25 where Babylon's 1.0 blurred the frame)
-    EmissiveFog.ts      # The same fog as a material plugin for every unlit
-                        #   emissive material — windows, flames, tracers. WGSL
-                        #   only, which is what isCompatible states. INERT
-                        #   since X5.4h (the scene's NullEngine is no WebGPU
-                        #   engine: its guard attaches nothing, and the fog
-                        #   setEmissiveFog writes is read by nothing) until
-                        #   X6.1 removes it
+    MaterialKey.ts      # What a MATERIAL is: a key of ours (X6.1c), minted by
+                        #   the factory for every variant, carrying only what
+                        #   a reader asks (name, emissiveColor, alpha,
+                        #   backFaceCulling, zOffset/Units, blended) and a
+                        #   creation `serial` over keys alone (the weapon's
+                        #   opaque sort, was Babylon's uniqueId); isCelMaterial
+                        #   is the vertex bake's question. Babylon-free
     EmissiveWorld.ts    # THE EMISSIVE PALETTE: the one material a map's merged
                         #   windows, lenses and embers wear, the colour a slot
-                        #   in uv2.x — since X3.7c a material OBJECT and no
-                        #   program (a plain Material: the merge keys on it,
-                        #   the factory hangs its recipe off it, GlowRules
-                        #   reads its white emissiveColor). Our renderer draws
+                        #   in uv2.x — since X3.7c a material KEY and no
+                        #   program (a MaterialKey since X6.1c: the merge keys
+                        #   on it, the factory hangs its recipe off it,
+                        #   GlowRules reads its white emissiveColor). Our renderer draws
                         #   the palette in every pass; no Babylon draw of it
                         #   is left, and
                         #   no mesh is made of it (worldMeshes: one would draw
@@ -2777,9 +2768,9 @@ src/
                         #   (X4.4d): the noise and drawn clock, the vertex
                         #   stage (tongue, ember, bounds marker) and the
                         #   banded pixel, its bloom under GLOW_MASK (off the
-                        #   instance under FLAME_INSTANCED). Babylon-free:
-                        #   render/flameProgram.ts declares them (FlameShader's
-                        #   Babylon stages did too, until X5.3d)
+                        #   instance). Babylon-free: render/flameProgram.ts
+                        #   declares them (FlameShader's Babylon stages did
+                        #   too, until X5.3d; their arm went at X6.1c)
       blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
                         #   noise, the lumped vertex stage and the pixel — fire,
                         #   lit smoke, dissolve — and its bloom under GLOW_MASK,
@@ -2813,12 +2804,6 @@ src/
                         #   them for the main pass, a probe's bake and the
                         #   glow's mask — one vertex text (the mask's LEQUAL
                         #   tie); Babylon's declarations went at X3.7c
-      includes.ts       # Babylon's half of chunks.ts: its DECLARATIONS for
-                        #   each chunk, and every chunk registered as an
-                        #   include (declarations + body, comments stripped:
-                        #   Babylon never strips an include), plus our own
-                        #   celInstances pair. Registered at import, so a
-                        #   consumer imports it for the side effect
       giTrace.ts        # The irradiance volume's three COMPUTE passes (trace,
                         #   compose, vis) and the params layout they share
                         #   with GiVolume. RayWorld's box and floor queries,
@@ -2868,12 +2853,12 @@ src/
                         #   volumetricStages declares them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
-                        #   smooth clock. A recipe key with no Babylon stage
-                        #   or mask twin since X5.3d: its `values` are what
+                        #   smooth clock. A recipe key (a MaterialKey since
+                        #   X6.1c; no Babylon stage since X5.3d): its `values` are what
                         #   our renderer draws every fire with
                         #   (render/FlameDraw.ts, its bloom too), the bodies
                         #   shaders/wgsl/flame.ts. The inks
-    BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint,
+    BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint (a MaterialKey),
                         #   the drawing, the flame's inks, the soot and the
                         #   dust, and the clock (no material since X4.4c: our
                         #   renderer draws every billow, render/BlastDraw.ts;
@@ -3494,8 +3479,8 @@ src/
     wgsl/
       preprocess.ts     # #include and the #ifdef family over a define set —
                         #   the subset a shared body may use; anything else is
-                        #   REFUSED by name. stripComments, which includes.ts
-                        #   runs over every entry it hands Babylon
+                        #   REFUSED by name. stripComments, which runs first
+                        #   (includes.ts ran it over Babylon's, until X6.1c)
       assemble.ts       # Declarations as DATA, and assembleFragment and
                         #   assembleVertex: plain WGSL with explicit
                         #   @group/@binding, uniforms.<name> routed to its

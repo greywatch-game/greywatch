@@ -175,14 +175,18 @@
  *   its own.
  * - `counts()`: what the scene holds — `{ meshes, geometries, materials,
  *   activeMeshes }` — and `null` with no scene: Babylon holds nothing.
- * - `materials()`: every material on the page — the scene's list, or with no
- *   scene every one the FACTORY holds (`CelMaterialFactory`: its cache, its
- *   emissives, its palette, its fire and its blast's paint).
+ * - `materials()`: every material on the page — every one the FACTORY holds
+ *   (`CelMaterialFactory`: its cache, its emissives, its palette, its fire and
+ *   its blast's paint), on both arms since `BABYLON_EXIT.md` X6.1c, when a
+ *   material became a key of ours that the scene's list never holds (the
+ *   scene's list until then, on a page with a scene).
  * - `transpilers()`: the scene engine's two GLSL fields (`_glslang`,
  *   `_tintWASM`; `assertNoTranspiler`), and `null` with no scene: no GLSL can
  *   reach a backend that does not exist. `compiles()`: the game's DEV counter
  *   of Babylon effect compiles (`Game.babylonCompiles`), `null` where the game
- *   has none (a production build, a tree before X5.3d, and after X6.1c).
+ *   has none (a production build, a tree before X5.3d, and every tree from
+ *   X6.1c on, which deleted it with the cel program's Babylon declarations —
+ *   RETIRED there, and a probe that reads it logs nothing of it).
  * - `clearColor()`: the frame's clear colour `{ r, g, b, a }` — the scene's
  *   (`world/environment.ts` writes it), or with no scene the frame host's
  *   (`SceneFrame.host.clearColor`, what our passes clear to).
@@ -361,7 +365,8 @@ export function frameAdapter() {
               activeMeshes: scene.getActiveMeshes().length,
             }
           : null,
-      materials: () => (scene ? [...scene.materials] : factoryMaterials()),
+      // The factory's on both arms: no material is the scene's since X6.1c (the header).
+      materials: () => factoryMaterials(),
       transpilers: () => (e ? { _glslang: e._glslang, _tintWASM: e._tintWASM } : null),
       compiles: () => (g.babylonCompiles ? g.babylonCompiles.count : null),
       babylon: () => (scene ? { scene, engine: e } : null),

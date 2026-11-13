@@ -788,8 +788,8 @@ export const graphics = {
    *
    * **A zero is OFF, not a tiny map**, and off is a bound 1x1 texture that
    * reads fully lit rather than a generator with nothing in it — every
-   * material that declares a shadow sampler must still have one BOUND
-   * (`SHADOW_SAMPLER_NAMES`), and a depth pass with nothing to draw is still a
+   * program that declares a shadow map must still have one BOUND
+   * (the frame's `FRAME_TEXTURES`), and a depth pass with nothing to draw is still a
    * pass. What each map's absence costs the picture:
    * - `sun` 0: the moon casts nothing inside the window. Past it the volume's
    *   own sun test still answers (`giFarShadow`) when bounce light is on.

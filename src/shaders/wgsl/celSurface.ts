@@ -8,10 +8,10 @@
  * fog, and the coverage alpha (`opaqueAlpha`) — and the two shader-sized
  * numbers every declaration of it is sized by, `MAX_POINT_LIGHTS` and
  * `MAX_PALETTE`.
- * Invariants: declares nothing (`wgsl/chunks.ts`'s rule): Babylon's
- * declarations for it are `CelShader.ts`'s `celFragmentShader`, ours are
- * `render/celFragment.ts`; returns the pixel's colour and alpha, and each
- * side's own `main` writes it; the variant defines it reads are exactly
+ * Invariants: declares nothing (`wgsl/chunks.ts`'s rule): its declarations
+ * are `render/celFragment.ts` (Babylon's, `CelShader.ts`' `celFragmentShader`,
+ * went at `BABYLON_EXIT.md` X6.1c); returns the pixel's colour and alpha, and
+ * the program's own `main` writes it; the variant defines it reads are exactly
  * `CEL_SMOOTH`, `CEL_GROUND_TEX`, `CEL_BUMP`, `CEL_PALETTE`, `CEL_GLASS` and
  * `CEL_GLASS_BACKED`.
  * Never: imports Babylon; is edited for one renderer — what the two must

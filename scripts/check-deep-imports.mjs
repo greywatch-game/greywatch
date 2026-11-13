@@ -14,8 +14,9 @@
  * The tree had four of these, all in `src/shaders/` and all grandfathered
  * because the WebGL2 cel and grass shaders genuinely needed Babylon's own
  * `bones*` and `instances*` includes. The WGSL port ended with none: the
- * instances pair became `celInstances*` in `wgsl/includes.ts`, and the bone
- * pair left with the skinned cel variant, which had no caller. So the rule is
+ * instances pair became `celInstances*` in `wgsl/includes.ts` (deleted with
+ * the cel program's Babylon declarations at `BABYLON_EXIT.md` X6.1c), and the
+ * bone pair left with the skinned cel variant, which had no caller. So the rule is
  * now enforceable rather than merely stated, and this is the moment to enforce
  * it — an empty allow-list is the only kind that stays empty.
  *

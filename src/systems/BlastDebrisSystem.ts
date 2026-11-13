@@ -73,7 +73,7 @@ import { Quaternion as MathQuaternion } from "../math";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { ShaderMaterial } from "@babylonjs/core";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import type { EnvironmentSpec } from "../world/environment";
 import type { BlastGround } from "./GrenadeSystem";
 import {
@@ -218,7 +218,7 @@ export class BlastDebrisSystem implements PhysicsClient {
    * `installMap` would be in — there is no such state in the game, and the
    * check is what makes that true rather than assumed.
    */
-  private mats: Record<BlastGround["surface"], ShaderMaterial> | null = null;
+  private mats: Record<BlastGround["surface"], MaterialKey> | null = null;
 
   /**
    * The burst's own jitter stream, re-seeded by `reset` — so per round, and per

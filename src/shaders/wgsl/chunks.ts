@@ -1,7 +1,8 @@
 /**
- * wgsl/chunks.ts — The WGSL BODIES every surface shares, as plain strings both
- * renderers include: Babylon's (`wgsl/includes.ts` registers each under its
- * name) and ours (`src/render/`, which assembles them by the same names).
+ * wgsl/chunks.ts — The WGSL BODIES every surface shares, as plain strings our
+ * renderer includes (`src/render/`, which assembles them by name). Babylon's
+ * did too (`wgsl/includes.ts` registered each under its name) until
+ * `BABYLON_EXIT.md` X6.1c deleted the cel program's Babylon declarations.
  * Owns: `WGSL_CHUNKS`, the one table of shared shader text — `celBand`,
  * `celCloud`, `celShadow`, `celGi`, `celProbe`, `celProbeBox`, `celDither`,
  * `celSurface` (the fragment) and `celVertex` (the vertex stage) — and the
@@ -37,9 +38,9 @@ import { CEL_VERTEX } from "./celVertex";
  *
  * **`shadowParams` is a vec4 with all four slots spoken for** (bias, darkness,
  * normal offset, tap radius), and widening it is not the small change it
- * looks like: three consumers list those uniforms by name and the WebGPU
- * `LeftOver` UBO is built from those lists, which is the layout hazard
- * `wgsl/includes.ts`'s header exists to describe. This number never varies — not per map,
+ * looks like: every consumer's frame block lays it out (`render/frame.ts`),
+ * and a field that moves moves the offsets of everything after it. This
+ * number never varies — not per map,
  * not per frame, not per material — so a compile-time literal is what it
  * actually is, and it costs no binding at all.
  *
@@ -103,8 +104,8 @@ fn band(ndl: f32, steps: f32) -> f32 {
 /**
  * `celCloud` — the CLOUDS' shadow on the ground: the field `Sky` writes
  * (`systems/cloudShadow.ts`) and the two ways of reading it. Included by
- * `celShadow`, so every consumer of that owes its names too — they are in
- * `SHADOW_UNIFORM_NAMES` and `SHADOW_SAMPLER_NAMES` — and by `Volumetrics`,
+ * `celShadow`, so every consumer of that owes its names too — they are in the
+ * frame's block and textures (`render/frame.ts`) — and by `Volumetrics`,
  * which lists them itself.
  *
  * **A lookup and not a shadow map**, because a cloud is kilometres away and
@@ -195,10 +196,9 @@ fn cloudLitAir(p: vec3f) -> f32 {
  * `mix(dark, 1, mix(1, S, E))` for the single-map case. The picture is
  * unchanged on a frame with nobody in it.
  *
- * A consumer owes every name in `SHADOW_UNIFORM_NAMES` and
- * `SHADOW_SAMPLER_NAMES`: a cel material through `ShadowBindings`, which pushes
- * them, and a program of ours off the frame's block and textures (the water binds
- * only those, `render/waterProgram.ts`).
+ * A consumer owes every name it reads: a program of ours off the frame's block
+ * and textures (`render/frame.ts`, which `ShadowBindings` fills; the water
+ * binds only those, `render/waterProgram.ts`).
  */
 export const CEL_SHADOW = `
 #include<celCloud>
@@ -353,9 +353,9 @@ fn shadowCubic(tex: texture_2d<f32>, smp: sampler, uv: vec2f, size: vec2f, depth
 // parameter list it never touched. The alternative was a second copy of the
 // tap, which is the exact failure mode this file's header exists to describe.
 //
-// Babylon's rewrite of those declarations is a regex over the whole shader
-// source, comments included, which is why wgsl/includes.ts strips every
-// entry's comments before registering it (its header has the rest).
+// Babylon's rewrite of those declarations was a regex over the whole shader
+// source, comments included, which is why wgsl/includes.ts stripped every
+// entry's comments before registering it (until BABYLON_EXIT.md X6.1c).
 fn shadowTapW(
   m: mat4x4f,
   tex: texture_2d<f32>,
@@ -599,9 +599,9 @@ const GI_EDGE_FADE = Math.min(Math.max(CONFIG.gi.edgeFade, 1e-3), 0.95);
  * owns the textures, the trace and every uniform named here.
  *
  * **Seven textures and five uniforms, and a consumer owes all of them**:
- * `GI_UNIFORM_NAMES` and `GI_SAMPLER_NAMES` in `CelShader.ts`, pushed onto every
- * cel material by `CelMaterialFactory` from the moment it exists. `GiVolume` is
- * constructed before the first material is, and stands a real texture up on
+ * the frame's (`render/frame.ts`), filled by `CelMaterialFactory` off what
+ * `GiVolume` published. `GiVolume` is constructed before the first frame,
+ * and stands a real texture up on
  * every one of the seven even when the setting is off, for the reason
  * `BodyShadows` does: a declared sampler with nothing behind it is a bind group
  * that fails to build and every draw using it lost.
@@ -760,8 +760,9 @@ fn giBandOpen(x: f32, steps: f32) -> f32 {
  * the glazing (`CEL_GLASS`) and the water — because both sample cubes
  * `ReflectionSystem` bakes the same way, and both subtleties in the function
  * are exactly the kind that get fixed in one copy and left standing in the
- * other. A material that includes this owes `PROBE_UNIFORM_NAMES` and
- * `PROBE_SAMPLER_NAMES` in its own lists.
+ * other. A program that includes this owes `reflectProbe` and `reflectionCube`
+ * in its own declarations (the glazing's are the cel material's,
+ * `render/celMaterial.ts`; the water's its own).
  */
 export const CEL_PROBE = `
 // The Y flip, which every sampler of one of these cubes owes.
@@ -844,9 +845,10 @@ const CEL_DITHER = DITHER_WGSL;
 /**
  * Every shared chunk, by the name a body or a program `#include`s it under.
  *
- * **The names are Babylon's store keys as well as ours**, so the `cel`
- * prefix is `wgsl/includes.ts`'s collision guard rather than a style, and a
- * chunk added here is registered there with no second line to write.
+ * The `cel` prefix was `wgsl/includes.ts`'s collision guard against Babylon's
+ * own include store, while the names were that store's keys as well as ours
+ * (until `BABYLON_EXIT.md` X6.1c); it is kept, since every program names a
+ * chunk by it.
  */
 export const WGSL_CHUNKS = {
   celBand: CEL_BAND,

@@ -9,7 +9,9 @@
  * Owns: `BlastPaint` — the billow's own values (`BlastRecipe`: the drawing,
  * the fire's five inks from `FlameShader`, the soot, the dust, the clock and
  * the mesh's identity `world`) — the soot's colour, and the colour the glow
- * reads as the billow's (`emissiveColor`, the fire's body). Made only by
+ * reads as the billow's (`emissiveColor`, the fire's body) — a material KEY
+ * like every paint the factory hands out (`MaterialKey.ts`, since
+ * `BABYLON_EXIT.md` X6.1c), named `blast`. Made only by
  * `CelMaterialFactory` (`getBlast`), which pushes the world clock onto it;
  * the light, the eye, the fog and the opaque alpha the billow is drawn under
  * are the FRAME's (`render/frame.ts`), the very fields the factory pushed onto
@@ -64,6 +66,7 @@ import { Color3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { BlastField, BlastRecipe } from "../render/blastProgram";
 import { FIRE_INKS } from "./FlameShader";
+import { MaterialKey } from "./MaterialKey";
 
 /**
  * Soot: the albedo of a blast's smoke, which the key light then paints. Warm
@@ -82,13 +85,13 @@ const DUST = "#8a7d68";
  * The billow's paint. One per `CelMaterialFactory`, shared by every blast in
  * the game.
  */
-export class BlastPaint implements BlastRecipe {
+export class BlastPaint extends MaterialKey implements BlastRecipe {
   /** What `Game`'s glow rules read as the billow's bloom: the fire's body, at an alpha of 1. */
-  readonly emissiveColor = Color3.FromHexString(GLOW);
-  readonly alpha = 1;
+  declare readonly emissiveColor: Color3;
   readonly values: Record<BlastField, Float32Array>;
 
   constructor() {
+    super("blast", "blast", { emissiveColor: Color3.FromHexString(GLOW) });
     const b = CONFIG.graphics.blast;
     const rgb = (hex: string): Float32Array => {
       const c = Color3.FromHexString(hex);

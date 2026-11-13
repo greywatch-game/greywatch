@@ -1,8 +1,8 @@
 /**
- * ShadowBindings.ts — Every shadow a lit material samples, bound onto it: the
- * world's map, the bodies', the lamps' atlas, the lightning's key and its map,
- * the clouds' field and the foliage's front-face map.
- * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
+ * ShadowBindings.ts — Every shadow a lit material samples, as our renderer's
+ * frame binds it: the world's map, the bodies', the lamps' atlas, the
+ * lightning's key and its map, the clouds' field and the foliage's front-face
+ * map. `CelMaterialFactory` owns one (`mats.shadows`). The
  * maps are published by the systems that render them (`ShadowSystem`,
  * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
  * also pushes the clouds and the lightning each frame; a reflection bake's frame
@@ -14,25 +14,20 @@
  * — `Sky`'s, or until it is handed over a no-cloud texel of this object's own —
  * the last two `TextureMaker`'s since `BABYLON_EXIT.md` X5.4d, made as Babylon's
  * `RawTexture`s were; a frame texture is null only before its owner first
- * publishes it (a frame with one null draws nothing). The Babylon cel
- * materials, which neither draw nor compile in any state
- * (`core/babylonCompiles.ts`) and stay declared until X6.1, are handed no
- * texture at all: the maps' wrapped views went with Babylon's engine
- * (`BABYLON_EXIT.md` X5.4h), and no Babylon texture is left to hand them. So
- * a new material is seeded on the spot
- * (`applyShadow`, called by every creation path in the factory), each map is published before the first material
- * is asked for, and the clouds start on a texel of their own. The per-frame
- * pushes (the clouds, the lightning, the lamp slots) write into objects every
- * material already holds BY REFERENCE and walk nothing; the other setters
- * walk every reader.
+ * publishes it (a frame with one null draws nothing). Every value here is
+ * PULLED into the frame once a frame (`fillFrame`, `fillFrameTextures`) off
+ * these fields, and nothing is pushed onto a material: a material is a key of
+ * ours with no uniform to hold (`MaterialKey.ts`), so a setter stores and
+ * walks nothing (it walked the Babylon cel materials until `BABYLON_EXIT.md`
+ * X6.1c, none of which drew). Each map is published before the first frame,
+ * and the clouds start on a texel of their own.
  * Never: adds, removes or reorders a binding — the bumped ground variant is at
  * 16 of WebGPU's 16 sampled textures per stage since the near cascade
  * (CLAUDE.md), so a seventeenth is a packing first; creates or caches
- * a material. The irradiance
- * volume is NOT here: it is bound only on cel materials and stays with the
- * factory (`setGi`), which binds it straight after this on creation.
+ * a material. The irradiance volume is NOT here: it stays with the factory
+ * (`setGi`), which copies it into the frame beside this.
  */
-import { Color3, Matrix, type ShaderMaterial, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Matrix, Vector3, Vector4 } from "@babylonjs/core";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { type MadeTexture, SAMPLING, type TextureMaker } from "../render/TextureMaker";
@@ -61,8 +56,7 @@ export class ShadowBindings {
     foliageMap: null,
     localAtlasMap: null,
   };
-  // Shadow-map state, pushed onto every cel material as it is created (the
-  // maps themselves are `own`'s, our frame's alone).
+  // Shadow-map state, copied into the frame (the maps themselves are `own`'s).
   private shadowMatrix = Matrix.Identity();
   private shadowParams = new Vector4(0.0025, 0.15, 0.06, 0);
   // The world's NEAR cascade: the same casters over a small window around
@@ -71,7 +65,7 @@ export class ShadowBindings {
   private nearShadowMatrix = Matrix.Identity();
   private readonly nearShadowParams = new Vector4(0, 0, 0, 0);
   // The bodies' map, the same three things over again — see
-  // `SHADOW_UNIFORM_NAMES` for why none of it is shared with the pair above.
+  // the frame's `bodyLightMatrix` for why none of it is shared with the pair above.
   private bodyShadowMatrix = Matrix.Identity();
   private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
   // The clouds' shadow — see `setCloudShadow`. The texture is this object's
@@ -85,18 +79,16 @@ export class ShadowBindings {
   readonly lit: OwnTexture;
   private readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
   private readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
-  // What the materials actually hold, by reference: the area as last
-  // pushed (`setCloudShadow`). No Babylon draw holds it off since X3.7c —
-  // a bake's frame is our renderer's, and holds it off itself (`fillFrame`).
+  // What the frame holds: the area as last pushed (`setCloudShadow`). A
+  // bake's frame holds it off itself (`fillFrame`).
   private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
   // the water has no translucency and does not declare it.
   private foliageMatrix = Matrix.Identity();
   private foliageParams = new Vector4(0, 0, 0, 0);
-  // The lamps' atlas — see `setLocalShadowMap`. The per-slot arrays are handed
-  // to every consumer BY REFERENCE and rewritten in place, so a frame's
-  // assignment reaches every material without a walk: a `ShaderMaterial`
-  // keeps the array it was given and re-reads it on every bind.
+  // The lamps' atlas — see `setLocalShadowMap`. The per-slot arrays are this
+  // object's own, rewritten in place by `LocalShadows` (`localSlots`) and
+  // copied into the frame.
   private readonly pointSpot = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 3 ? -2 : 0),
   );
@@ -113,18 +105,7 @@ export class ShadowBindings {
   private flashMatrix = Matrix.Identity();
   private readonly flashParams = new Vector4(0, 0, 0, 0);
 
-  /**
-   * The materials the CACHE holds — `CelMaterialFactory`'s own map, lent by
-   * reference so a material it mints later is walked by the next push without
-   * being told. Read, never written: the factory is the one door into it.
-   */
-  private readonly cels: ReadonlyMap<string, ShaderMaterial>;
-
-  constructor(
-    private readonly textures: TextureMaker,
-    cels: ReadonlyMap<string, ShaderMaterial>,
-  ) {
-    this.cels = cels;
+  constructor(private readonly textures: TextureMaker) {
     this.lit = textures.lit;
     // **Bound from the first frame, and it has to be**: the rigs, the capture
     // rings and the viewmodel are all built before `Sky`, and a declared
@@ -135,16 +116,10 @@ export class ShadowBindings {
     this.cloudShadowMap = this.noCloudShadow;
   }
 
-  /** Every material that samples the depth map: the cel materials, the glazing among them. */
-  private eachShadowReader(fn: (mat: ShaderMaterial) => void): void {
-    this.cels.forEach(fn);
-  }
-
   /**
    * The maps our renderer's frame binds — off the same fields, so a map
    * replaced here is replaced there on the next frame; one never published is
-   * null, which draws nothing, as a Babylon material with that sampler unbound
-   * drew nothing. Every one is OUR renderer's texture (`own`): a map's own, the
+   * null, which draws nothing. Every one is OUR renderer's texture (`own`): a map's own, the
    * lit texel where it is off, the clouds' field.
    */
   fillFrameTextures(out: FrameTextures): void {
@@ -159,12 +134,12 @@ export class ShadowBindings {
   }
 
   /**
-   * Copies every shadow value a cel material holds into our renderer's frame
+   * Copies every shadow value a cel draw reads into our renderer's frame
    * (`CelMaterialFactory.fillFrame`, which calls this). A pull rather than a
    * push because half of what is here is never pushed: the matrices are the
-   * generators' own and Babylon rewrites them in place, and the clouds, the
-   * flash and the lamps' slots are rewritten in place by their owners — so the
-   * only copy that cannot miss a change is one taken off the fields.
+   * generators' own and are rewritten in place, and the clouds, the flash and
+   * the lamps' slots are rewritten in place by their owners — so the only
+   * copy that cannot miss a change is one taken off the fields.
    */
   fillFrame(out: FrameUniforms, bake = false): void {
     out.lightMatrix.set(this.shadowMatrix.m);
@@ -175,7 +150,7 @@ export class ShadowBindings {
     this.bodyShadowParams.toArray(out.bodyShadowParams);
     out.foliageLightMatrix.set(this.foliageMatrix.m);
     this.foliageParams.toArray(out.foliageParams);
-    // What the materials HOLD…
+    // What the frame HOLDS…
     this.cloudShadowPushed.toArray(out.cloudShadow);
     // …held off for a reflection bake (`w` 1): a cube is baked ONCE and the
     // shadow moves, so a cloud's shadow caught in a bake would stay painted
@@ -213,13 +188,7 @@ export class ShadowBindings {
    * after `Sky.update`, because the crossfade moves with the drift and the
    * drift does not stop for a menu.
    *
-   * **It walks no material**: `applyShadow` hands every reader
-   * `cloudShadowPushed` and `cloudShadowRay` BY REFERENCE, as `pointSpot` is
-   * handed, and a `ShaderMaterial` re-reads the object it was given on every
-   * bind, so rewriting the two in place is the whole of the push. The crossfade
-   * moves every frame the clouds drift, so a walk here was a walk every frame —
-   * two uniform-list scans a material across the whole cache, to hand each one
-   * the object it already held.
+   * It walks no material: the frame copies the two off these fields.
    */
   setCloudShadow(area: Vector4, ray: Vector4): void {
     this.cloudShadowArea.copyFrom(area);
@@ -227,7 +196,7 @@ export class ShadowBindings {
     this.pushCloudShadow();
   }
 
-  /** Rewrites what every reader holds by reference — see `setCloudShadow`. */
+  /** Rewrites what the frame copies — see `setCloudShadow`. */
   private pushCloudShadow(): void {
     this.cloudShadowPushed.copyFrom(this.cloudShadowArea);
   }
@@ -246,7 +215,6 @@ export class ShadowBindings {
   /** The light's view*projection; re-uploaded when the shadow camera moves. */
   setShadowMatrix(matrix: Matrix): void {
     this.shadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("lightMatrix", matrix));
   }
 
   /**
@@ -261,7 +229,6 @@ export class ShadowBindings {
   /** The near light's view*projection; re-uploaded when its window moves. */
   setNearShadowMatrix(matrix: Matrix): void {
     this.nearShadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("nearLightMatrix", matrix));
   }
 
   /**
@@ -270,7 +237,6 @@ export class ShadowBindings {
    */
   setNearShadowParams(bias: number, normalBias: number): void {
     this.nearShadowParams.set(bias, normalBias, 0, 0);
-    this.eachShadowReader((mat) => mat.setVector4("nearShadowParams", this.nearShadowParams));
   }
 
   /**
@@ -281,8 +247,8 @@ export class ShadowBindings {
    *
    * Unlike the world's it re-renders EVERY frame, and nothing here has to know
    * that — a texture is a texture. What does change is that this one can never
-   * be skipped: it is in `SHADOW_SAMPLER_NAMES`, so a material that lists it and
-   * never receives it loses every draw.
+   * be skipped: it is in the frame's textures (`FRAME_TEXTURES`), so a frame
+   * that never receives it draws nothing.
    */
   setBodyShadowMap(own: OwnTexture | null): void {
     this.own.bodyShadowMap = own ?? this.lit;
@@ -291,7 +257,6 @@ export class ShadowBindings {
   /** The bodies' light view*projection; re-uploaded when THAT window moves. */
   setBodyShadowMatrix(matrix: Matrix): void {
     this.bodyShadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("bodyLightMatrix", matrix));
   }
 
   /**
@@ -301,15 +266,11 @@ export class ShadowBindings {
    */
   setBodyShadowParams(bias: number): void {
     this.bodyShadowParams.set(bias, 0, 0, 0);
-    this.eachShadowReader((mat) =>
-      mat.setVector4("bodyShadowParams", this.bodyShadowParams),
-    );
   }
 
   /**
    * This frame's lightning: where it comes from and how bright it is now, or
-   * `amount` 0 for none. Written into the objects every material holds, so
-   * nothing is walked.
+   * `amount` 0 for none. Written into the objects the frame copies.
    *
    * **A SECOND key rather than the moon's, and that is the fix, not a
    * refinement.** The flash used to take the key's direction for its length
@@ -332,7 +293,6 @@ export class ShadowBindings {
   /** That map's view*projection, re-uploaded when a strike re-aims it. */
   setFlashMatrix(matrix: Matrix): void {
     this.flashMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("flashLightMatrix", matrix));
   }
 
   /** Its depth bias (normalised). */
@@ -342,9 +302,7 @@ export class ShadowBindings {
 
   /**
    * The lamps' atlas and its shape (`systems/LocalShadows.ts`), and `own` as
-   * `setShadowMap`'s. Walks the shadow readers only when the TEXTURE changes,
-   * which is a rung change or the atlas changing hands; the two vectors are
-   * held by reference and are rewritten in place.
+   * `setShadowMap`'s; the two vectors are rewritten in place.
    */
   setLocalShadowMap(own: OwnTexture | null): void {
     this.own.localAtlasMap = own ?? this.lit;
@@ -379,12 +337,9 @@ export class ShadowBindings {
   /**
    * The FOLIAGE's depth map: front faces of the translucent solids, and
    * nothing else, which is what gives the translucency term a thickness to
-   * measure (see `TranslucencySpec.depth`). Bound once at startup, before any
-   * material exists, for `setBodyShadowMap`'s reason — every cel material
-   * declares the sampler, so there is no state in which it may be absent.
-   *
-   * Pushed over the CACHE, as every setter here is at bottom: the water carried
-   * no translucency and declared none, while it had a material.
+   * measure (see `TranslucencySpec.depth`). Bound once at startup, before the
+   * first frame, for `setBodyShadowMap`'s reason — every cel program declares
+   * it, so there is no state in which it may be absent.
    */
   setFoliageMap(own: OwnTexture | null): void {
     this.own.foliageMap = own ?? this.lit;
@@ -393,7 +348,6 @@ export class ShadowBindings {
   /** The foliage light's view*projection; re-uploaded when its window moves. */
   setFoliageMatrix(matrix: Matrix): void {
     this.foliageMatrix = matrix;
-    this.cels.forEach((mat) => mat.setMatrix("foliageLightMatrix", matrix));
   }
 
   /**
@@ -403,7 +357,6 @@ export class ShadowBindings {
    */
   setFoliageParams(perMetre: number): void {
     this.foliageParams.set(0, perMetre, 0, 0);
-    this.cels.forEach((mat) => mat.setVector4("foliageParams", this.foliageParams));
   }
 
   /**
@@ -413,9 +366,6 @@ export class ShadowBindings {
    */
   setShadowParams(bias: number, darkness: number, normalBias: number): void {
     this.shadowParams.set(bias, darkness, normalBias, 0);
-    this.eachShadowReader((mat) =>
-      mat.setVector4("shadowParams", this.shadowParams),
-    );
   }
 
   /**
@@ -430,31 +380,5 @@ export class ShadowBindings {
   }
   get cloudRay(): Vector4 {
     return this.cloudShadowRay;
-  }
-
-  /**
-   * Seeds a material with every shadow it samples: a cel material from every one of the
-   * factory's creation paths, which binds the irradiance volume straight
-   * after it.
-   */
-  applyShadow(mat: ShaderMaterial): void {
-    mat.setVector4("cloudShadow", this.cloudShadowPushed);
-    mat.setVector4("cloudShadowRay", this.cloudShadowRay);
-    mat.setMatrix("lightMatrix", this.shadowMatrix);
-    mat.setVector4("shadowParams", this.shadowParams);
-    mat.setMatrix("nearLightMatrix", this.nearShadowMatrix);
-    mat.setVector4("nearShadowParams", this.nearShadowParams);
-    mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
-    mat.setVector4("bodyShadowParams", this.bodyShadowParams);
-    mat.setArray4("pointSpot", this.pointSpot as unknown as number[]);
-    mat.setArray4("pointShade", this.pointShade as unknown as number[]);
-    mat.setVector4("localAtlas", this.localAtlas);
-    mat.setVector4("localParams", this.localParams);
-    mat.setMatrix("flashLightMatrix", this.flashMatrix);
-    mat.setVector4("flashParams", this.flashParams);
-    mat.setVector3("flashDir", this.flashDir);
-    mat.setColor3("flashColor", this.flashColor);
-    mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
-    mat.setVector4("foliageParams", this.foliageParams);
   }
 }

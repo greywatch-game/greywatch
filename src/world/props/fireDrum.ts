@@ -2,7 +2,7 @@
  * props/fireDrum.ts — buildFireDrum: the open burn barrel. Part of the scatter
  * set: follows the contract in `./index.ts`.
  */
-import type { Material } from "@babylonjs/core";
+import type { MaterialKey } from "../../shaders/MaterialKey";
 import { GeometryBuffer } from "../../geometry/buffer";
 import { createBox, createCylinder, createTorus, CAP_START, NO_CAP, BACKSIDE } from "../../geometry/primitives";
 import { Matrix, Vector3 } from "../../math";
@@ -290,7 +290,7 @@ export function buildFireDrum(
   const merged = (list: GeometryBuffer[]): GeometryBuffer => list[0].merge(list.slice(1));
   const drum = new Part("drum", merged(rust));
   drum.material = mats.get(RUST);
-  const parts: [string, GeometryBuffer[], Material, PartMetadata?][] = [
+  const parts: [string, GeometryBuffer[], MaterialKey, PartMetadata?][] = [
     ["drum-scale", dark, mats.get(DARK_METAL)],
     ["drum-char", char, mats.get(DEAD_BARK)],
     ["drum-wood", wood, mats.get(BARK)],

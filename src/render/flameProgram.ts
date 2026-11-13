@@ -14,14 +14,14 @@
  * and `flamePrograms`, the two pipelines' modules.
  * Invariants: the vertex stage is ONE module for the main pass and the mask —
  * which is what the mask's LEQUAL tie rests on — and the pixel is the body's
- * (`FLAME_SURFACE`, under `FLAME_INSTANCED`: the bloom off the instance); a
+ * (`FLAME_SURFACE`: the bloom off the instance); a
  * vertex is the index the draw's `firstVertex` steps into (`indexData`), and
  * an instance is one fire surface, its matrix read WHOLE — the four columns
  * Babylon's `world` uniform held for its mesh, as `computeWorldMatrix`
  * composed it — into the private block the body reads as `uniforms.world`;
  * the frame's eye, wind bearing, fog and opaque alpha are the FRAME's
  * (`render/frame.ts`: the very fields `CelMaterialFactory` pushed onto the
- * material) and the rest the block's, so no name is declared twice; group 0
+ * Babylon material until X4.4d) and the rest the block's, so no name is declared twice; group 0
  * is the cel FRAGMENT's whole group, so the frame's one bind group serves
  * these pipelines as it serves every cel one; the bloom is the instance's
  * (`vGlow`, flat) — the colour `GlowRules` gave its mesh, as the mask
@@ -103,11 +103,14 @@ export interface FlameRecipe {
 
 /**
  * The frame's palette is declared, so group 0 is laid out as every cel
- * program's is; and the bloom is the instance's (`FLAME_INSTANCED`).
+ * program's is. (`FLAME_INSTANCED` stood here beside it while the body had a
+ * Babylon arm without it — the bloom off a uniform — until `BABYLON_EXIT.md`
+ * X6.1c: the body reads the instance's bloom alone, so nothing is guarded by
+ * it and the modules' text is the same without it.)
  */
-const DEFINES = ["CEL_PALETTE", "FLAME_INSTANCED"];
+const DEFINES = ["CEL_PALETTE"];
 /** The mask's fragment: the same, and the body's `GLOW_MASK` arm. */
-const GLOW_DEFINES = ["CEL_PALETTE", "FLAME_INSTANCED", "GLOW_MASK"];
+const GLOW_DEFINES = ["CEL_PALETTE", "GLOW_MASK"];
 
 /** The two pipelines' modules: the main pass's, and the mask's (the SAME vertex module). */
 export interface FlamePrograms {

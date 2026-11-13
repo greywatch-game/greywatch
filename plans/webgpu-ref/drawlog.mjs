@@ -46,7 +46,11 @@
  * every class fails (exit 1), whatever `--against` says. It counts from the
  * game's construction, so what the engine compiled for itself while it was
  * built (`clearQuad`, the engine's own and in `compiledAtBoot`) is not in it;
- * a tree before X5.3d has no counter, which the report says.
+ * a tree before X5.3d has no counter, which the report says — and neither
+ * has a tree from X6.1c on, which deleted the counter with the cel program's
+ * Babylon declarations (nothing is left that could compile): RETIRED, the
+ * record's `babylonCompiles` `null`, which a comparison with a parent's log
+ * names (`--ignore=babylonCompiles`).
  *
  * **And the scene's RENDERS** (`BABYLON_EXIT.md` X5.4f): every call of
  * `scene.render`, counted per frame, and the counts each class took kept
@@ -795,7 +799,7 @@ function report(r) {
   console.log(
     bc
       ? `  the game's counter of Babylon effect compiles: ${bc.count}${bc.names.length ? ` (${bc.names.join(", ")})` : ""}; by class ${JSON.stringify(bc.byClass)}`
-      : "  the game's counter of Babylon effect compiles: none in this tree (before BABYLON_EXIT.md X5.3d)",
+      : "  the game's counter of Babylon effect compiles: none in this tree (before BABYLON_EXIT.md X5.3d, or from X6.1c, which deleted it: RETIRED)",
   );
   console.log(`  scene.render calls a frame, by class (${r.renders.ours ? "our frame" : "Babylon's render"}): ${JSON.stringify(r.renders.byClass)}`);
   if (r.begins) console.log(`  engine.beginFrame calls a frame outside a resize, by class (${r.begins.ours ? "our loop" : "Babylon's loop"}): ${JSON.stringify(r.begins.byClass)}; inside a resize ${r.begins.resize}`);

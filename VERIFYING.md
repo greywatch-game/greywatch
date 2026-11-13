@@ -749,7 +749,11 @@ is one machine's:
   nothing is being measured. Measured with the push in, the shadowed share is
   32.7% / 40.0% / 7.2% / 26.8% on the four maps at their committed vantages.
 - **To measure a shader change without editing the tree, edit the registered
-  INCLUDE and then push a dummy define onto every cached material.** Rewriting
+  INCLUDE and then push a dummy define onto every cached material.** (History:
+  this was a Babylon material's technique, and no Babylon material draws since
+  `BABYLON_EXIT.md` X5.3d or exists since X6.1c, which deleted the registered
+  includes with the cel program's Babylon declarations — a shader change is
+  measured on our renderer's programs now.) Rewriting
   `ShaderStore.IncludesShadersStoreWGSL.celBand` alone changes nothing — Babylon
   keys its effect cache on the shader name and the defines, not on the include's
   contents, so every material hands back the effect it already has. Pushing

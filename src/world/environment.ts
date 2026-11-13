@@ -1,7 +1,8 @@
 /**
  * environment.ts — EnvironmentSpec: the declarative shape of a map's look
  * (palette, lighting direction, fog, mist, sky, water, particles) plus
- * applyEnvironment(), which pushes it into the cel materials and scene.
+ * applyEnvironment(), which hands it to the material factory (whose fields
+ * our renderer's frame is filled from) and the scene.
  * Pure data in, uniforms out — a second map adds one new spec, no code here.
  */
 import { Color3, Color4, Scene, Vector3 } from "@babylonjs/core";

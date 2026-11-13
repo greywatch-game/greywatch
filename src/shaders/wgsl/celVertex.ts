@@ -6,9 +6,9 @@
  * transform, the wind's sway (the RAMP, and the two RIGGED layers, a palm's
  * frond and an ash's bough), the world normal and the varyings — the
  * vertex-stage half of what `celSurface` is to the fragment.
- * Invariants: declares nothing (`wgsl/chunks.ts`'s rule): Babylon's
- * declarations for it are `CelShader.ts`'s `celVertexShader`, ours are
- * `render/celVertex.ts`; reads its inputs as `vertexInputs.<name>`, its
+ * Invariants: declares nothing (`wgsl/chunks.ts`'s rule): its declarations
+ * are `render/celVertex.ts` (Babylon's, `CelShader.ts`' `celVertexShader`,
+ * went at `BABYLON_EXIT.md` X6.1c); reads its inputs as `vertexInputs.<name>`, its
  * uniforms as `uniforms.<name>` and writes `vertexOutputs.<name>`, the
  * spellings both sides honour; ends with clip space in
  * `vertexOutputs.position` and NO y flip — each side's own `main` owns the

@@ -30,6 +30,12 @@
  *     same walk.
  *   - `src/math/`, every file in it but the crossing (`NOT_ROOTS`): the
  *     game's own vectors, which a layout and the world's data are made of.
+ *   - `src/shaders/wgsl/`, every file in it: the shader BODIES as plain
+ *     strings, which `src/render/` reaches anyway — a root since
+ *     `BABYLON_EXIT.md` X6.1c deleted its one Babylon importer
+ *     (`includes.ts`, the cel program's Babylon declarations), so a body no
+ *     program of ours assembles yet is held too (X6.1's ratchet: a sub-step
+ *     adds every directory it leaves with no value path to the package).
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -43,7 +49,8 @@
  * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
  * in the commit that made the directory, X3.2 added `src/math/` to
  * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
- * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree. **An entry in
+ * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree, a directory at
+ * a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`). **An entry in
  * `NOT_ROOTS` is exempt from being a root, never from being REACHED**: a
  * simulation that imports the crossing still fails, which is the point of
  * having one door.
@@ -101,7 +108,7 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /** Every source file under these is a root. */
-const DIRECTORIES = ["server", "src/sim", "src/render", "src/math"];
+const DIRECTORIES = ["server", "src/sim", "src/render", "src/math", "src/shaders/wgsl"];
 
 /**
  * The simulation modules, one by one.

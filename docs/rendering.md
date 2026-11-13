@@ -76,16 +76,19 @@ granularities, and the difference is forced**:
   `WorldGlow`'s rule hands its colour over at a fade of 1 — and the mask
   evaluates `fogAmountAt`'s curve at each pixel instead — see "The emissive
   palette" below.
-- **The emissive material fades per PIXEL**, through a `MaterialPluginBase` in
-  `src/shaders/EmissiveFog.ts` that injects the same curve at
-  `CUSTOM_FRAGMENT_MAIN_END`. A plugin *can* declare real uniforms, so
-  `setEmissiveFog` is a buffer write and needs no cache invalidation.
-  Distance is `vPositionW` against `vEyePosition`, both unconditional in
-  `default.fragment`.
-  A map's MERGED emissives no longer wear it: they draw through the emissive
-  palette, whose own WGSL carries this plugin's arithmetic term for term (the
-  same `(d - start) * (1 / span)` pair, the same `mix`), so the frame is the
-  same pixel either way.
+- **The emissive material fades per PIXEL.** While an unlit emissive was a
+  Babylon `StandardMaterial`, it did so through a `MaterialPluginBase` in
+  `src/shaders/EmissiveFog.ts` that injected the same curve at
+  `CUSTOM_FRAGMENT_MAIN_END` (a plugin *can* declare real uniforms, so a fog
+  change was a buffer write; distance was `vPositionW` against
+  `vEyePosition`, both unconditional in `default.fragment`). It was inert from
+  `BABYLON_EXIT.md` X5.4h and deleted at X6.1c, when every material became a
+  key of ours: **every unlit draw is our renderer's**, and each one's WGSL
+  carries that plugin's arithmetic term for term (the same `(d - start) *
+  (1 / span)` pair, `CelMaterialFactory.emissiveFogRange`, the same `mix`) —
+  the map's MERGED emissives through the emissive palette, the rest through
+  the weapon's, the pools' and the visors' emissive programs — so the frame is
+  the same pixel it was.
 
 That this was invisible for a whole map is the point: on Hollowmere unfogged ink
 is near-black against near-black fog and an unfogged glow reads as a lamp doing
@@ -258,9 +261,18 @@ world-keyed term on a *moving* mesh makes it shimmer as it walks.
 
 ### Frozen materials: the define set is pinned per submesh, per pass
 
-**Every material `CelMaterialFactory` hands out is frozen, and `remember` is
-the one door into the cache** — the six creation paths all file through it, so
-no future seventh can leave one unfrozen by omission. The water's factory
+**RETIRED at `BABYLON_EXIT.md` X6.1c, and kept for its argument.** Since then
+no material the factory hands out is a Babylon object: a material is a KEY of
+ours (`shaders/MaterialKey.ts`) and what draws is the recipe beside it, so
+there is no define set to rebuild, no `isReady` to ask and nothing to freeze.
+`remember` stays as the one door into the cache — so no creation path files
+one by omission — and freezes nothing. What follows is what the freeze was,
+and what it bought, while the cel materials were `ShaderMaterial`s: a future
+material layer that rebuilds anything per ask owes the same question.
+
+**Every material `CelMaterialFactory` handed out was frozen, and `remember`
+was the one door into the cache** — the six creation paths all filed through it, so
+no future seventh could leave one unfrozen by omission. The water's factory
 freezes on the same argument at its single return (the grass's two materials did
 until `BABYLON_EXIT.md` X4.6c took them out of Babylon).
 
@@ -3166,6 +3178,17 @@ light:
 
 ## Hand-written WGSL: what the dialect and the processor decide
 
+**Since `BABYLON_EXIT.md` X6.1c Babylon declares none of the cel program**:
+`CelShader.ts`' two stages (`celVertexShader`, `celFragmentShader`) and
+`wgsl/includes.ts`' registrations went with the Babylon materials, so a shared
+body has ONE reader, our renderer, and the meaning of every name it reads is
+written beside our declaration of it (`render/frame.ts`,
+`render/celMaterial.ts`, `render/celVertex.ts`, `render/celFragment.ts`).
+What follows about Babylon's dialect, its stores, its include stripping and its
+declaration lists is the history of WHY a body declares nothing — and the
+dialect is still the one the bodies are written against (`uniforms.<name>`,
+`fragmentInputs.<name>`), which our assembler honours.
+
 **Babylon's WGSL is preprocessed and is not raw WGSL**, which is what makes a
 shader in this tree readable at all: declarations are `varying vUV: vec2f;`,
 `attribute position: vec3f;` and `uniform time: f32;`, and the bodies reach
@@ -3222,13 +3245,12 @@ transform, the wind's ramp and both rigged layers, the varyings — is
 `celVertex()` (`wgsl/celVertex.ts`, `BABYLON_EXIT.md` X3.3a). Each side
 declares for itself:
 
-- **Babylon's declarations** are text in its dialect. Each chunk's are in
-  `includes.ts`'s `DECLARATIONS`, and every registered entry is those
-  declarations followed by the body, verbatim, so grass, water and the air
-  include `celShadow` exactly as they did. The cel material's own are
-  `CelShader.ts`'s `celFragmentShader`, which ends in `#include<celSurface>`
-  and a `main` that writes `celSurface()`, and its `celVertexShader`, whose
-  `main` is one call of `celVertex()`.
+- **Babylon's declarations** were text in its dialect (until X6.1c). Each
+  chunk's were in `includes.ts`'s `DECLARATIONS`, and every registered entry
+  was those declarations followed by the body, verbatim. The cel material's
+  own were `CelShader.ts`'s `celFragmentShader`, which ended in
+  `#include<celSurface>` and a `main` that wrote `celSurface()`, and its
+  `celVertexShader`, whose `main` was one call of `celVertex()`.
 - **Ours are DATA** (`render/celFragment.ts`, `render/celVertex.ts`, the
   blocks they bind in `render/frame.ts` and `render/celMaterial.ts`).
   `render/wgsl/assemble.ts` turns them into a module. It emits the structs and every `@group`/`@binding`, runs
@@ -3254,7 +3276,8 @@ carries the render height, which the engine rewrites into its internals on
 every resize; nothing of ours draws onto the canvas before X5. X3.1 recorded
 this owed the other way round; it was the processor's code that settled it.
 
-**Babylon never strips an include's comments, so `includes.ts` does.** Its
+**Babylon never strips an include's comments, so `includes.ts` did** (until
+X6.1c deleted it with the registrations). Its
 processor removes comments from the top-level source and THEN pastes includes
 in whole. An included comment that quoted a texture or uniform declaration
 would therefore be matched by Babylon's declaration regexes, and would mint a
@@ -3265,7 +3288,8 @@ on either side. The review of the split found this: the cel fragment's ~700
 lines of comments had been top-level, and stripped, until they became an
 include.
 
-**Two declaration lists are the price, and they are the cheap copy.** A name
+**Two declaration lists were the price, and they were the cheap copy** (one
+since X6.1c). A name
 one side forgot is LOUD: a WGSL error on Babylon's side, an assembly error or
 a driver error on ours. `plans/webgpu-ref/shaders.mjs` builds our module for
 every shape each map's factory compiled, into a real pipeline against an
@@ -3293,13 +3317,13 @@ those or be silently shadowed BY one, depending on which module the bundler
 evaluated first, and the failure is a shader that compiles and draws the wrong
 thing.
 
-**Registering the source is still only half the contract.** A `ShaderMaterial`
-builds its bind group from the lists it is CONSTRUCTED with, so an include that
-declares a sampler nobody listed is a binding with nothing behind it — see the
+**Registering the source was only half the contract.** A `ShaderMaterial`
+built its bind group from the lists it was CONSTRUCTED with, so an include that
+declared a sampler nobody listed was a binding with nothing behind it — see the
 sampler rule in the constraints below. `SHADOW_UNIFORM_NAMES`,
-`SHADOW_SAMPLER_NAMES`, `PROBE_UNIFORM_NAMES` and `PROBE_SAMPLER_NAMES` stay in
-TypeScript in `CelShader.ts` for exactly that reason, and the two halves have to
-be edited together.
+`SHADOW_SAMPLER_NAMES`, `PROBE_UNIFORM_NAMES` and `PROBE_SAMPLER_NAMES` stood in
+TypeScript in `CelShader.ts` for exactly that reason, until X6.1c deleted them
+with the materials; ours bind exactly what their layout declares.
 
 **Sample with `textureSampleLevel` wherever the texture has no MIP CHAIN, and
 that is most of them.** WGSL's uniformity analysis rejects an implicit-LOD
@@ -3828,8 +3852,11 @@ sky's draws asking whether a map stands (see "The sky") —
 while the next frame that has something does all of it afresh, so nothing
 binds a value a skipped frame left stale.
 
-**Babylon draws NOTHING in the frame, and a DEV counter holds it there**
-(`core/babylonCompiles.ts`, `BABYLON_EXIT.md` X5.3d): `Game` wraps the engine's
+**Babylon draws NOTHING in the frame, and since `BABYLON_EXIT.md` X6.1c nothing
+COULD**: no material is a Babylon object (`shaders/MaterialKey.ts`) and no
+Babylon declaration of a shader of ours is left, so the DEV counter that held
+it there went with them (`core/babylonCompiles.ts`, the draw log's arm of it
+RETIRED). From X5.3d until then: `Game` wrapped the engine's
 `createEffect` and `createComputeEffect` from its construction, and every
 effect compiled after that — a Babylon draw cannot happen without one — is
 counted and said as a console WARNING; the draw log reads the count in every
@@ -3839,9 +3866,9 @@ warning and not an error because an instrument compiles on purpose:
 `shaders.mjs` compiles every cel variant. (The harness's readiness wait,
 `scene.isReady()`, compiled Babylon's `default` material for the collider
 meshes, which wore none — one a page — until X5.3e took the meshes away.)
-It is what lets the cel program's Babylon declarations (`celVertex`,
+It is what let the cel program's Babylon declarations (`celVertex`,
 `celFragment`) and the factory's per-frame pushes into Babylon materials stand
-until X6.1 as recipe keys and nothing more. While Babylon still drew in the
+as recipe keys and nothing more, until X6.1c deleted both. While Babylon still drew in the
 group, the rule was: every opaque draw of Babylon's in the group landed BEFORE
 an opaque draw of ours, and of the rest, **between two draws that both WRITE depth** that changes only which of
 two surfaces at EXACTLY the same depth wins under `less-equal` — in the
@@ -4000,12 +4027,13 @@ bind group a frame rather than one per material.
 (`render/celMaterial.ts`, `CelMaterialFactory.celRecipe`): its variant, its
 depth bias (`zOffsetUnits`) and its own block and textures — group 1, what a
 material is born with from its own spec. **Every per-material value is set
-through the factory's `own`** (`ownTexture` for a texture), which sets it on
-the material AND writes it into the material's recipe in one statement. So
-a value our side lacks cannot be one Babylon's has. A TEXTURE is the one
-exception since `BABYLON_EXIT.md` X5.4d: `ownTexture` makes the picture our
-texture (`TextureMaker.picture`) and keeps it in the recipe ALONE — no Babylon
-material draws or compiles (`core/babylonCompiles.ts`), so none is handed one. The recipe is kept only
+through the factory's `own`** (`ownTexture` for a texture), which writes it
+into the material's recipe — and, until `BABYLON_EXIT.md` X6.1c, set it on
+the Babylon material in the same statement, so a value our side lacked could
+not be one Babylon's had. Since X6.1c the recipe is the ONE holder: a
+material is a key of ours (`shaders/MaterialKey.ts`) and holds no value at
+all. A TEXTURE has been kept in the recipe alone since X5.4d (`ownTexture`
+makes the picture our texture, `TextureMaker.picture`). The recipe is kept only
 by the getters whose meshes our side takes: `getWorldCel`, `get`,
 `getGlossy`, `getTranslucent` and `getGroundTextured`. A rewrite after birth
 moves `materialEpoch` (`setGroundSpec` re-applies the ground's sheen), and a

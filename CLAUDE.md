@@ -134,9 +134,9 @@ thing** (`ReportVoice.mix`, `EngineKind.mix`, `AmbienceKind.mix`).
 and never also hand-placed in `public/`. **It is REQUIRED**: `main.ts` awaits
 `loadHavok()` before it constructs `Game`, so nothing downstream asks whether
 physics has arrived. **No shader in `src/` may be GLSL** — Babylon's
-`WebGPUEngine` fetched two more WASMs the moment one was, and though no Babylon
-engine compiles anything since X5.4h, the Babylon cel declarations stay WGSL
-until X6.1 removes them. **Never add a deep static import into
+`WebGPUEngine` fetched two more WASMs the moment one was — and since X6.1c
+every shader is our renderer's own, no Babylon declaration of one being left
+in the tree. **Never add a deep static import into
 `@babylonjs/core`, and never drop `optimizeDeps.exclude` from `vite.config.ts`**
 — both break a DEV session only; `npm run build` fails on the first. **There is
 no rigged character asset in the tree**: do not reintroduce a GLB body, and do
@@ -546,18 +546,18 @@ fallback, and the touch controls — with [`docs/pwa.md`](docs/pwa.md) for them
 as a phone.
 ### The scene has (almost) no Babylon lights
 
-**Every shader in the tree is hand-written WGSL** (on a Babylon material
-`shaderLanguage` is load-bearing; the default is GLSL), and **a sampler a
-Babylon material DECLARES must be BOUND, used or not** (ours bind exactly what
-their layout declares), or the draw is silently lost. **A shared body declares
-NOTHING** (`wgsl/chunks.ts`): `src/render/` includes it, so both sides declare.
+**Every shader in the tree is hand-written WGSL**, and **a texture a program's
+layout DECLARES must be BOUND, used or not** (ours bind exactly what their
+layout declares), or the draw is silently lost. **A shared body declares
+NOTHING** (`wgsl/chunks.ts`): the program of ours that includes it declares.
 
-**Every cel material is FROZEN, and `CelMaterialFactory.remember` is the one
-door into the cache** — a RECIPE our renderer reads: **no Babylon material
-compiles in any state**, which a DEV counter the draw log asserts holds there
-(`core/babylonCompiles.ts`, until X6.1 deletes the cel program's declarations).
+**A material is a KEY of our own and the RECIPE beside it is what draws**
+(`shaders/MaterialKey.ts`, `CelMaterialFactory.celRecipe`, X6.1c): nothing the
+factory hands out is a Babylon object, **`CelMaterialFactory.remember` is the
+one door into its cache**, and **nothing is pushed onto a material** — what
+every cel material shares is the FRAME's, filled off the factory's fields.
 
-Cel materials carry their own light as uniforms (key, ambient, sky fill, up to
+The cel program carries its own light as uniforms (key, ambient, sky fill, up to
 16 point lights) and `LightingSystem` is the sole owner of dynamic light: **a
 `PointLight` or `HemisphericLight` added to the scene lights no cel mesh**.
 

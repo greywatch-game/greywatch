@@ -3,8 +3,8 @@
  * written with, resolved into text with neither left in it.
  * Owns: `preprocess` — `#include<name>` against a table, and `#ifdef`,
  * `#ifndef`, `#else`, `#endif` over a variant's define set; and
- * `stripComments`, which runs first here and which `shaders/wgsl/includes.ts`
- * runs over everything it hands Babylon.
+ * `stripComments`, which runs first here (and which `shaders/wgsl/includes.ts`
+ * ran over everything it handed Babylon, until `BABYLON_EXIT.md` X6.1c).
  * Invariants: the output carries no directive and no comment; every directive
  * it does not implement is REFUSED, by name and line, rather than passed
  * through — a line Babylon's processor would have read and ours dropped is a

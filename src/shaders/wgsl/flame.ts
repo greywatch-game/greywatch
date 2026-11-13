@@ -3,34 +3,31 @@
  * (`render/flameProgram.ts`, which draws every fire since `BABYLON_EXIT.md`
  * X4.4d — the world's and the molotov's). Babylon's assembled them too, in
  * `shaders/FlameShader.ts`' stages and its glow-mask twin, which the map
- * editor drew its fires with; those were deleted at X5.3d, and the arms below
- * written for them (`uniforms.world` a uniform, the bloom
- * `uniforms.glowColor`: no `FLAME_INSTANCED`) are assembled by nothing since
- * (X6.1 deletes them with `FlameMaterial`'s recipe key).
+ * editor drew its fires with; those were deleted at X5.3d, and the arm
+ * written for them (the bloom `uniforms.glowColor`, with no
+ * `FLAME_INSTANCED`) went at `BABYLON_EXIT.md` X6.1c, with `FlameMaterial`'s
+ * Babylon class.
  * The vertex stage that writhes, leans, licks and
  * hooks a tongue and carries an ember up out of the bed, and the pixel that
  * bands it in the fire's five inks — and, under `GLOW_MASK`, that pixel's
  * bloom, drawn by the same vertex stage, so its LEQUAL test ties against the
  * depth the main pass's fire wrote. The arithmetic is the one `FlameShader.ts`
  * held whole until X4.4d, statement for statement: what moved is only the
- * wrapper — a body is a function here, each renderer's `main` calling it.
+ * wrapper — a body is a function here, the program's `main` calling it.
  * Owns: `FLAME_SHARED` (the hash, the value noise and the drawn clock both
  * stages call), `FLAME_VERTEX` (`flameVertex`) and `FLAME_SURFACE`
  * (`flameSurface`: the frame's pixel and, under `GLOW_MASK`, the bloom's).
  * Invariants: a body DECLARES NOTHING (`wgsl/chunks.ts`' rule): it reads
  * `uniforms.<name>`, `vertexInputs.<name>` and `fragmentInputs.<name>` and
- * writes `vertexOutputs.<name>`, and each renderer declares those; the
- * vertex's `uniforms.world` is a uniform on Babylon's side and an instance's
- * matrix on ours (a private block its assembler fills), and the bloom is
- * `uniforms.glowColor` on Babylon's side and, under `FLAME_INSTANCED`, the
- * instance's flat `vGlow` on ours — the two names a body may read two ways;
- * every derivative is taken before the first branch on the layer (WGSL
+ * writes `vertexOutputs.<name>`, and our renderer declares those; the
+ * vertex's `uniforms.world` is an instance's matrix (a private block its
+ * assembler fills), and the bloom is the instance's flat `vGlow`; every
+ * derivative is taken before the first branch on the layer (WGSL
  * defines one only in uniform control flow, and the layer is a varying); it
  * writes the frame's opaque alpha (`uniforms.opaqueAlpha`, 0 in the main
  * pass — no bake draws a fire, `FINDINGS.md` 51).
  * Never: imports Babylon (`src/render/` imports this, and the build gate walks
- * it); declares a binding; is edited on one side only — there is no other
- * copy.
+ * it); declares a binding — there is no other copy.
  * Contract: `docs/rendering.md`, "The fire", and `docs/grenades.md`.
  */
 
@@ -214,14 +211,10 @@ fn flameSurface() -> vec4f {
   // The bloom's colour is GlowRules' (faded toward black with distance, not
   // toward the fog), scaled by the band — so the heart of the fire blooms
   // hardest and a red lick barely at all.
-#ifdef FLAME_INSTANCED
   let glowColor = fragmentInputs.vGlow;
-#else
-  let glowColor = uniforms.glowColor;
-#endif
   return vec4f(glowColor.rgb * glow, glowColor.a);
 #else
-  // The same fog, curve and radial distance as the cel shader and EmissiveFog.
+  // The same fog, curve and radial distance as the cel shader and the unlit emissives.
   let dist = distance(fragmentInputs.vPosW, uniforms.camPos);
   let f = clamp((dist - uniforms.fogParams.x) / max(0.001, uniforms.fogParams.y - uniforms.fogParams.x), 0.0, 1.0);
   col = mix(col, uniforms.fogColor, f * f);

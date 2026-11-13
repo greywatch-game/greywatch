@@ -666,18 +666,18 @@ export class ShadowSystem {
       this.redraw(far);
       // Inside the guard, where it belongs: this is the branch that just
       // decided the shadow camera moved, and the matrix is a function of
-      // nothing else. Outside it, every frame paid a `setMatrix` on every cel
-      // material to re-hand them a matrix that
-      // had not changed — and the contract line above already claimed
-      // otherwise.
+      // nothing else. Outside it, every frame paid a `setMatrix` on every
+      // Babylon cel material (until `BABYLON_EXIT.md` X6.1c) to re-hand them
+      // a matrix that had not changed — and the contract line above already
+      // claimed otherwise.
       //
       // It is cheap even when it does run, and cheaper than it looks to skip:
       // the matrix is mutated in place (`lightTransform`) and
-      // `ShaderMaterial.setMatrix` stores the
-      // REFERENCE, so what the materials hold tracks it whether or not this
-      // line runs again. That is an implementation detail rather than a
-      // promise, which is why this stays a real re-upload on the frames the
-      // window moves instead of being deleted outright.
+      // `ShadowBindings` stores the REFERENCE, which the frame copies off
+      // every frame, so what is drawn tracks it whether or not this line runs
+      // again. That is an implementation detail rather than a promise, which
+      // is why this stays a real publish on the frames the window moves
+      // instead of being deleted outright.
       mats.shadows.setShadowMatrix(this.lightMatrix);
     }
     // The near cascade, off the same held focus on its own (finer) grid.

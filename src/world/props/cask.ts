@@ -3,7 +3,7 @@
  * structure kit's crate stack borrows (`kit/structures/small.ts`). Part of the
  * scatter set: follows the contract in `./index.ts`.
  */
-import type { Material } from "@babylonjs/core";
+import type { MaterialKey } from "../../shaders/MaterialKey";
 import { GeometryBuffer } from "../../geometry/buffer";
 import { createBox, createCylinder } from "../../geometry/primitives";
 import { Matrix } from "../../math";
@@ -85,7 +85,7 @@ export function buildBarrel(
   const parts = caskData(sub);
   const cask = new Part("barrel", parts.wood);
   cask.material = mats.get(CASK_WOOD);
-  const rest: [string, GeometryBuffer, Material][] = [
+  const rest: [string, GeometryBuffer, MaterialKey][] = [
     ["barrel-iron", parts.iron, mats.get(DARK_METAL)],
     ["barrel-head", parts.head, mats.get(BARK)],
   ];

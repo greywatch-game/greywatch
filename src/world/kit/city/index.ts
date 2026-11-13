@@ -163,7 +163,7 @@
  *
  * **A LENS is free and a LIGHT is one of sixteen, and almost everything in this
  * file follows from that.** `Build.glow` is an emissive box: it takes the
- * glow's bloom and `EmissiveFog`'s per-pixel fade for nothing and spends
+ * glow's bloom and the unlit draws' per-pixel fog fade for nothing and spends
  * no shader slot at all. `Build.light` spends one, `LightingSystem` uploads the
  * sixteen nearest, and there is no arbitration beyond distance — so an
  * unbudgeted fixture is not a fixture that costs a little, it is an interior

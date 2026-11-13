@@ -23,9 +23,10 @@
  *   over these, as it was over the `WebGPUEngine`'s.
  * - It is the scene's and the camera's alone: the game asks the SURFACE
  *   (`core/CanvasSurface.ts`) for every size, never this.
- * Never: draws, compiles or holds a GPU resource — a Babylon effect compiled
- * on it is counted by the DEV watch (`core/babylonCompiles.ts`), which must
- * read 0; reaches a Babylon internal.
+ * Never: draws, compiles or holds a GPU resource — nothing of the game's is a
+ * Babylon material since `BABYLON_EXIT.md` X6.1c, so nothing could compile
+ * on it (the DEV watch that held it to 0, `core/babylonCompiles.ts`, went
+ * then); reaches a Babylon internal.
  * Contract: `docs/rendering.md` ("Our renderer's frame").
  */
 import { NullEngine } from "@babylonjs/core";

@@ -2,23 +2,20 @@
  * FlameShader.ts — The one material every open fire in the world wears: a
  * vertex-animated, hard-banded flame drawn as if by hand — what our renderer
  * draws every fire with, as data (`FlameRecipe`, `render/FlameDraw.ts`, since
- * `BABYLON_EXIT.md` X4.4d), the fire's bloom included. No Babylon mesh wears
- * this material: it is a RECIPE KEY (the merge keys a fire's surfaces by it,
- * `isFlame`), and its Babylon stages and its glow-mask twin, which drew the
- * map editor's build's fires alone after X4.4d, were deleted at X5.3d — so
- * the `ShaderMaterial` names a program nothing declares, and a compile of it
- * is what the DEV counter of Babylon effect compiles exists to catch
- * (`core/babylonCompiles.ts`).
+ * `BABYLON_EXIT.md` X4.4d), the fire's bloom included. No mesh wears this
+ * material: it is a RECIPE KEY (the merge keys a fire's surfaces by it,
+ * `isFlame`) — a Babylon `ShaderMaterial` until X6.1c, which drew nothing
+ * after its Babylon stages went at X5.3d, and one of OUR keys since
+ * (`MaterialKey.ts`).
  * Owns: the inks a fire is painted in, the `FlameMaterial` class, and its own
  * values as our renderer reads them (`values`: the motion, the paint and the
  * clock — the eye, the wind's bearing, the fog and the opaque alpha being the
- * FRAME's there, `render/frame.ts`, the very numbers the factory pushes onto
- * this material). The program's body is `wgsl/flame.ts`'s, which our
- * renderer assembles (`render/flameProgram.ts`). Reads its motion from
- * `CONFIG.graphics.flame`; is fed the world clock, the fog and the eye by
- * `CelMaterialFactory`, which is the only thing that makes one (`getFlame`),
- * and writes the frame's opaque alpha, 0 (no bake draws a fire, `FINDINGS.md`
- * 51).
+ * FRAME's there, `render/frame.ts`). The program's body is `wgsl/flame.ts`'s,
+ * which our renderer assembles (`render/flameProgram.ts`). Reads its motion
+ * from `CONFIG.graphics.flame`; is fed the world clock by
+ * `CelMaterialFactory`, which is the only thing that makes one (`getFlame`);
+ * the frame's opaque alpha it is drawn under is 0 (no bake draws a fire,
+ * `FINDINGS.md` 51).
  * Invariants: the geometry it draws is `world/flame.ts`'s, whose UV channel is
  * the whole of its per-vertex vocabulary (below) — nothing else may wear it.
  * It never casts a shadow (the world's map re-renders only when its focus moves, so an
@@ -27,13 +24,13 @@
  * stage takes is taken before its first branch on the layer — WGSL defines
  * one only in uniform control flow, and the layer is a varying. Every value
  * in `values` is written in place, as `Float32Array` rounds it — what the
- * material's uniform buffer holds, number for number — off the same objects
- * the material is handed.
- * Never: restates a body (`wgsl/flame.ts`).
+ * material's uniform buffer held, number for number.
+ * Never: restates a body (`wgsl/flame.ts`); imports anything of Babylon's but
+ * its colour and vector maths (X6.1e's to move).
  * Contract: `docs/rendering.md`, "The fire".
  *
  * WHY IT IS NOT `getEmissive`. A fire was a static glowing cone, and nothing
- * about an unlit `StandardMaterial` can move a vertex. The look it keeps is the
+ * about an unlit emissive can move a vertex. The look it keeps is the
  * one the rest of the frame is in: no gradient anywhere, just flat bands with
  * hard edges, and a pen line in the fire's own darkest ink where the flame is
  * eaten, in place of the ink pass, which a glowing surface cannot carry
@@ -80,18 +77,10 @@
  * The clock is the WORLD's (`CelMaterialFactory.updateWind`'s), so a pause that
  * holds the canopy holds the fire.
  */
-import {
-  Color3,
-  ShaderLanguage,
-  ShaderMaterial,
-  Vector2,
-  Vector3,
-  Vector4,
-  type Material,
-  type Scene,
-} from "@babylonjs/core";
+import { Color3, Vector2, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { FlameField, FlameRecipe } from "../render/flameProgram";
+import { MaterialKey } from "./MaterialKey";
 
 /**
  * The inks a fire is painted in, coolest first. Art, not tuning — and
@@ -117,61 +106,32 @@ const CORE = FIRE_INKS.core;
  */
 const GLOW = "#ff8a2a";
 
-const COMMON_UNIFORMS = [
-  "world",
-  "viewProjection",
-  "camPos",
-  "time",
-  "windDir",
-  "motion",
-  "curl",
-  "embers",
-  "boil",
-  "charColor",
-  "deepColor",
-  "midColor",
-  "hotColor",
-  "coreColor",
-];
-
 /**
  * The fire. One per `CelMaterialFactory`, shared by every flame in the world,
  * which is what lets a block's fires merge into one draw.
  */
-export class FlameMaterial extends ShaderMaterial implements FlameRecipe {
-  /**
-   * What `WorldCulling` and the handover read to know this is a light source —
-   * the same property an emissive `StandardMaterial` carries, and the only
-   * thing either asks — and the fire's bloom colour (`Game`'s glow rules).
-   */
-  readonly emissiveColor = Color3.FromHexString(GLOW);
+export class FlameMaterial extends MaterialKey implements FlameRecipe {
+  /** The fire's bloom colour, never null (the constructor's comment). */
+  declare readonly emissiveColor: Color3;
 
   /**
    * What our renderer draws a fire of a round with (`render/FlameDraw.ts`):
-   * this material's own values, each the `Float32Array` its uniform buffer
-   * rounds the same number to — written in place, so a reader holding the
-   * record sees every later write (the clock). The eye, the wind's bearing,
-   * the fog and the opaque alpha are not here: they are the FRAME's
-   * (`CelMaterialFactory.fillFrame`), off the very fields the factory pushes
-   * onto this material (`windBearing` is the same `normalize` of the same
-   * numbers as `configure`'s).
+   * the fire's own values, each the `Float32Array` its uniform block rounds
+   * the same number to — written in place, so a reader holding the record
+   * sees every later write (the clock). The eye, the wind's bearing, the fog
+   * and the opaque alpha are not here: they are the FRAME's
+   * (`CelMaterialFactory.fillFrame`).
    */
   readonly values: Readonly<Record<FlameField, Float32Array>>;
 
-  private readonly eye = Vector3.Zero();
-
-  constructor(scene: Scene) {
-    super(
-      "flame",
-      scene,
-      { vertex: "flame", fragment: "flame" },
-      {
-        attributes: ["position", "normal", "uv"],
-        uniforms: [...COMMON_UNIFORMS, "fogColor", "fogParams", "opaqueAlpha"],
-        shaderLanguage: ShaderLanguage.WGSL,
-      },
-    );
-    this.values = {
+  constructor() {
+    // `emissiveColor` is what `WorldCulling` and the handover read to know
+    // this is a light source — the property an emissive carries, and the
+    // only thing either asks — and the fire's bloom colour (`Game`'s glow
+    // rules).
+    super("flame", "flame", { emissiveColor: Color3.FromHexString(GLOW) });
+    const f = CONFIG.graphics.flame;
+    const v = {
       time: new Float32Array(1),
       motion: new Float32Array(4),
       curl: new Float32Array(2),
@@ -183,80 +143,27 @@ export class FlameMaterial extends ShaderMaterial implements FlameRecipe {
       hotColor: new Float32Array(3),
       coreColor: new Float32Array(3),
     };
-    this.backFaceCulling = true;
-    this.configure(this);
-    this.setFloat("opaqueAlpha", 0);
-    this.setColor3("fogColor", Color3.Black());
-    this.setVector2("fogParams", new Vector2(24, 78));
-    this.freeze();
+    // The motion and the paint, each through the Babylon type the material's
+    // setter took, so every number rounds as its uniform held it.
+    new Vector4(f.fps, f.writhe, f.lean, f.lick).toArray(v.motion);
+    new Vector2(f.hook, f.embers.stretch).toArray(v.curl);
+    new Vector4(f.embers.rise, f.embers.rate, f.embers.drift, f.embers.radius).toArray(v.embers);
+    new Vector3(f.ragged, f.climb, f.bite).toArray(v.boil);
+    Color3.FromHexString(CHAR).toArray(v.charColor);
+    Color3.FromHexString(DEEP).toArray(v.deepColor);
+    Color3.FromHexString(MID).toArray(v.midColor);
+    Color3.FromHexString(HOT).toArray(v.hotColor);
+    Color3.FromHexString(CORE).toArray(v.coreColor);
+    this.values = v;
   }
 
-  /** The world clock, into `values` and onto this material. */
+  /** The world clock, into `values`. */
   setClock(seconds: number): void {
     this.values.time[0] = seconds;
-    this.setFloat("time", seconds);
-  }
-
-  /**
-   * The eye the fire fogs against and turns its silhouette from — the cel
-   * materials' own (`CelMaterialFactory.updateCamera`), onto this material.
-   * Never `ShaderMaterial`'s `cameraPosition`: Babylon writes that
-   * from `scene.activeCamera`, which Babylon's reflection probe never
-   * changed, so its bake drew every fire it captured as seen from wherever
-   * the player stood — the reason the palette took the same eye, when
-   * Babylon still drew one.
-   */
-  setEye(pos: Vector3): void {
-    this.eye.copyFrom(pos);
-    this.setVector3("camPos", this.eye);
-  }
-
-  setFog(color: Color3, start: number, end: number): void {
-    this.setColor3("fogColor", color);
-    this.setVector2("fogParams", new Vector2(start, end));
-  }
-
-  /** The motion and the paint, onto this material and into `values`, off the same objects. */
-  private configure(mat: ShaderMaterial): void {
-    const f = CONFIG.graphics.flame;
-    const w = CONFIG.wind.dir;
-    const motion = new Vector4(f.fps, f.writhe, f.lean, f.lick);
-    const curl = new Vector2(f.hook, f.embers.stretch);
-    const embers = new Vector4(f.embers.rise, f.embers.rate, f.embers.drift, f.embers.radius);
-    const boil = new Vector3(f.ragged, f.climb, f.bite);
-    const char = Color3.FromHexString(CHAR);
-    const deep = Color3.FromHexString(DEEP);
-    const mid = Color3.FromHexString(MID);
-    const hot = Color3.FromHexString(HOT);
-    const core = Color3.FromHexString(CORE);
-    mat.setFloat("time", 0);
-    mat.setVector2("windDir", new Vector2(w[0], w[1]).normalize());
-    mat.setVector4("motion", motion);
-    mat.setVector2("curl", curl);
-    mat.setVector4("embers", embers);
-    mat.setVector3("boil", boil);
-    mat.setColor3("charColor", char);
-    mat.setColor3("deepColor", deep);
-    mat.setColor3("midColor", mid);
-    mat.setColor3("hotColor", hot);
-    mat.setColor3("coreColor", core);
-    mat.setVector3("camPos", this.eye);
-    if (mat !== this) return;
-    const v = this.values;
-    v.time[0] = 0;
-    motion.toArray(v.motion);
-    curl.toArray(v.curl);
-    embers.toArray(v.embers);
-    boil.toArray(v.boil);
-    char.toArray(v.charColor);
-    deep.toArray(v.deepColor);
-    mid.toArray(v.midColor);
-    hot.toArray(v.hotColor);
-    core.toArray(v.coreColor);
   }
 }
 
 /** Whether a material is the fire — `vertexShading` asks, to leave it unbaked. */
-export function isFlame(material: Material | null): material is FlameMaterial {
+export function isFlame(material: MaterialKey | null): material is FlameMaterial {
   return material instanceof FlameMaterial;
 }

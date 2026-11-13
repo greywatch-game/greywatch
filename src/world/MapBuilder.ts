@@ -46,7 +46,6 @@
  */
 import {
   Color3,
-  Material,
   Mesh,
   Scene,
   Vector3,
@@ -54,6 +53,7 @@ import {
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import { MAX_EMISSIVE_PALETTE } from "../shaders/wgsl/emissiveWorld";
 import { bakeVertexShading, shadeVertices, shadingContext, takesShading } from "./vertexShading";
 import { swayLayerOf } from "./sway";
@@ -2254,7 +2254,7 @@ export class MapBuilder {
     // the vertex ranges below are read off that order and nothing else records
     // it. Panes carry no exemptions, so unlike `mergeByMaterial` there is no
     // second key — a pane that ever needs one owes this method the same nesting.
-    const groups = new Map<Material, number[]>();
+    const groups = new Map<MaterialKey, number[]>();
     for (const [j, surface] of paneSurfaces.entries()) {
       const mat = surface.part.material;
       // As in `mergeByMaterial`: a part with no material draws nothing, and

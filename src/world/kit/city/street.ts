@@ -398,7 +398,7 @@ export function buildStreetLight(
   b.box(0.9, 0.18, 0.42, reach, h - 0.24, 0, ALLOY);
   // The lens, and it is `glow` rather than a flat tone for the reason the whole
   // fixture argument turns on: an emissive box costs no light slot, takes the
-  // glow's bloom, and is faded per pixel by `EmissiveFog` like everything
+  // glow's bloom, and is fogged per pixel like everything
   // else `getEmissive` hands out. Sodium orange rather than a pale white — a
   // pale lens against a lit sky blooms to a hard white disc, which is why the
   // lens was left off this model in the first place; a saturated one reads as a

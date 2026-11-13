@@ -216,8 +216,9 @@ GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under
 the new engine for five milestones before the sources were rewritten. **Since
 `BABYLON_EXIT.md` X5.4h no `WebGPUEngine` is built** — the scene stands on a
 `NullEngine`, which compiles for no backend — so nothing of Babylon's can
-reach the CDN; the gates below stand until X6.1 removes the Babylon
-declarations they guard, and `assertNoTranspiler` reads the scene's engine.
+reach the CDN; and since X6.1c no Babylon declaration of a shader is left
+to compile (the cel program's went with the Babylon materials). The gates
+below stand until X6.1i, and `assertNoTranspiler` reads the scene's engine.
 
 **Every shader in the tree is WGSL now, so a fetch is a regression and what it
 costs is the offline promise.** They are not in the bundle, they are not
@@ -277,11 +278,12 @@ directly.
 **The WebGPU port ended with NONE of them rather than six, and the grass is the
 worked example of how.** It used to deep-import `ShadersInclude/instances*` for
 the GLSL includes its vertex stage pastes in; the WGSL twins would have been two
-NEW subpaths, so `src/shaders/wgsl/includes.ts` registers our own
-`celInstancesDeclaration` / `celInstancesVertex` instead. They are fifteen lines
-mirroring `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js` minus
-the branches this game never compiles, and the header names the file and the
-version so an upgrade has something to diff. That is the shape any future need
+NEW subpaths, so `src/shaders/wgsl/includes.ts` registered our own
+`celInstancesDeclaration` / `celInstancesVertex` instead (deleted with the cel
+program's Babylon declarations at `BABYLON_EXIT.md` X6.1c). They were fifteen
+lines mirroring `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js`
+minus the branches this game never compiled, and the header named the file
+and the version so an upgrade had something to diff. That is the shape any future need
 for a Babylon include should take. The other pair, `ShadersInclude/bones*`, left
 with the skinned cel variant — there is no rigged asset in the tree, so nothing
 had called it for a long time.
@@ -336,7 +338,9 @@ and the shortest chain from a root to it.
 adds `src/render/` and `src/math/` to its `DIRECTORIES`, naming
 `src/math/babylon.ts` — the crossing X1.1 made — in `NOT_ROOTS`, which exempts a
 file from being a root and never from being REACHED; X6.1 widens it to the
-whole tree, the day the package goes.
+whole tree, the day the package goes — a directory at a time as each of its
+sub-steps empties one (`src/shaders/wgsl/` at X6.1c, whose one Babylon importer,
+the cel program's Babylon declarations, went then).
 
 ## A map reproduces from its generator: `check-maps.mjs`
 

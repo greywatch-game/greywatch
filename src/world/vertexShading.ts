@@ -148,10 +148,8 @@
  * is the honest limit of the technique on geometry this coarse, and tessellating
  * the world to sharpen it would cost far more than the effect is worth.
  */
-import { type Material, ShaderMaterial } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { isEmissiveWorld } from "../shaders/EmissiveWorld";
-import { isFlame } from "../shaders/FlameShader";
+import { isCelMaterial, type MaterialKey } from "../shaders/MaterialKey";
 import { halfDepth, slabThickness, turnX, turnZ } from "./boxGeometry";
 import { type BoxIndex, boxesNear, buildBoxIndex } from "./boxIndex";
 import type { WorldBox } from "./MapBuilder";
@@ -494,9 +492,12 @@ export function shadingContext(
  * Whether a surface painted with `material` is given the buffer at all.
  *
  * **Only the cel shader may be given this buffer.** It is a lighting term
- * dressed as a vertex colour, and the one material in the tree that reads it
- * as a lighting term is the cel shader; `StandardMaterial` reads a colour
- * buffer as a COLOUR and multiplies its output by it, with
+ * dressed as a vertex colour, and the one program in the tree that reads it
+ * as a lighting term is the cel shader's (`isCelMaterial`, the factory's
+ * answer for the key it made — `instanceof ShaderMaterial`, the fire and the
+ * emissive palette excepted, until `BABYLON_EXIT.md` X6.1c). An unlit
+ * emissive read a colour buffer as a COLOUR while it was a Babylon
+ * `StandardMaterial`, multiplying its output by it, with
  * `Mesh.useVertexColors` defaulting to true and nothing to turn the
  * VERTEXCOLOR define off but the buffer's absence.
  *
@@ -509,17 +510,11 @@ export function shadingContext(
  * correctly-coloured bloom, since the glow builds its halo from
  * `material.emissiveColor` and never saw the vertex buffer.
  */
-export function takesShading(material: Material | null): boolean {
-  if (!(material instanceof ShaderMaterial)) return false;
-  // The fire is a ShaderMaterial and not a cel one: it reads no lighting
-  // term, and a colour buffer it does not declare is an attribute Babylon
-  // would bind to it anyway.
-  if (isFlame(material)) return false;
-  // Nor is the emissive palette (`EmissiveWorld.ts`): it is the same unlit
-  // colour the `StandardMaterial` above was, read per vertex, and the first
-  // reason here is still the reason.
-  if (isEmissiveWorld(material)) return false;
-  return true;
+export function takesShading(material: MaterialKey | null): boolean {
+  // Not the fire: it reads no lighting term. Nor the emissive palette
+  // (`EmissiveWorld.ts`): it is the same unlit colour an emissive is, read
+  // per vertex, and the first reason here is still the reason.
+  return isCelMaterial(material);
 }
 
 /**
