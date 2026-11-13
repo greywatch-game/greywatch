@@ -50,7 +50,7 @@
 import { spawn } from "node:child_process";
 import { existsSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { frameAdapter, hardLimit, launchClient, MAP_KEY, root, startDevServer } from "./harness.mjs";
+import { hardLimit, installFrameAdapter, launchClient, MAP_KEY, root, startDevServer } from "./harness.mjs";
 
 const args = process.argv.slice(2);
 const opt = (k, d) => args.find((a) => a.startsWith(`--${k}=`))?.slice(k.length + 3) ?? d;
@@ -243,7 +243,7 @@ for (const at of AT) {
     if (f === page.mainFrame()) navs.push(stamp());
   });
   await page.addInitScript(([k, v]) => window.localStorage.setItem(k, v), [MAP_KEY, MAP]);
-  await page.addInitScript(frameAdapter);
+  await installFrameAdapter(page);
   await page.addInitScript(watchPage);
   const query = MATCH ? `?server=ws://localhost:${PORT}/ws&seed=${SEED}` : `?seed=${SEED}`;
   await page.goto(`${vite.url}${sep}${query}`, { waitUntil: "domcontentloaded" });

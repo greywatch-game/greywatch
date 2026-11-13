@@ -87,20 +87,32 @@
  * across processes and trees (`--against`).
  *
  * **Since X6.1a it is X6.1f's BEFORE too**: the camera is read through the
- * frame adapter (`harness.mjs`' `camera()`, which answers with no scene), and
+ * frame adapter (`camera()`, `scripts/lib/frameAdapter.mjs`, which answers
+ * with no scene), and
  * each frame also logs the six FRUSTUM PLANES (`planes`, float64 bits, in
  * `Frustum.GetPlanesToRef`'s order) and the GUN MARKER (`marker`): what the
  * frame pushed to the HUD — `"unpushed"` where nothing updated it, `null` for
  * no marker, else the point it projected (`Game.markerAt`), the projection's
  * output (`Game.markerOut`) and the fractions `HUD.setGunMarker` was handed, as
- * float64 bits. On a map with a gunned hull (`--map=coldharbour`) two steps
- * follow `resumed`: the hull BOARDED BY HAND (`Game.mount`, a picture of
- * boarding, which is all a marker needs) as the driver and then the gunner,
+ * float64 bits. **The planes are READ off the game's own array, never restated
+ * off the transform** (X6.1a's review): where the adapter has none to read
+ * (with no scene, before X6.1f gives the game `Game.frustumPlanes`) a frame's
+ * `planes` is `"unproven"`, the summary says so aloud, and a comparison with a
+ * scene's log differs on it unless `--ignore` names `log[*].planes`. On a map
+ * with a gunned hull (`--map=coldharbour`) four steps follow `resumed`: the
+ * hull BOARDED BY HAND (`Game.mount`, a picture of boarding, which is all a
+ * marker needs) as the driver and then the gunner, then (X6.1a's review, for
+ * X6.1f's Verify) the driver at render scale 0.75 and the gunner after a
+ * resize at that scale — those two posed past every step X6.1a logged
+ * (`step`'s `index`), so its log's frames all stand unmoved in this one (a
+ * log taken before them holds two steps fewer on such a map, so it is
+ * compared step by step rather than by `log[k]`) —
  * with the chase camera's place (its eye and look the pose's, roll 0, so the
  * camera's focal distance is a constant), both guns' muzzles (a few metres
  * ahead of the eye) and both bearings (the pose's own) pinned as functions of
  * the pose — so the marker is the camera's arithmetic and nothing of the
- * drive's — and taken off after (`Game.clearVehicle`). The marker projects
+ * drive's — and taken off after (`Game.clearVehicle`), back at size and
+ * scale. The marker projects
  * through the PREVIOUS frame's transform, so between steps the pose holds the
  * step's last frame (`n`) rather than counting on past it by however many
  * frames the round trip to Node took; no logged frame's pose moved by that.
@@ -758,7 +770,10 @@ async function cameraLog(page) {
           projection: Array.from(c.projection, b32).join(""),
           transform: Array.from(c.transform, b32).join(""),
           globalPosition: c.globalPosition.map(b64),
-          planes: c.planes.map((q) => q.map(b64)),
+          // `"unproven"` where the adapter has no plane array of the game's
+          // to read (`scripts/lib/frameAdapter.mjs`: with no scene before
+          // X6.1f) — never planes restated off the transform.
+          planes: c.planes ? c.planes.map((q) => q.map(b64)) : "unproven",
           marker: C.marker,
         });
       }
@@ -771,7 +786,12 @@ async function cameraLog(page) {
   // a render scale or a lid that lands a frame or two late on one run is
   // logged settled on every run.
   const SETTLE = 20;
-  const step = async (name, want, act, settle = SETTLE) => {
+  // `index` is the step's place in the POSE (`poseOf`): by default the next
+  // of the steps X6.1a logged, in order. A step added after X6.1a's review
+  // names one past all of them and takes none of their places, so no step
+  // X6.1a logged moved its pose and its frames still compare with that log's.
+  let nextIndex = 0;
+  const step = async (name, want, act, settle = SETTLE, index = nextIndex++) => {
     if (act) await act();
     if (settle > 0) {
       await page.evaluate(
@@ -799,7 +819,7 @@ async function cameraLog(page) {
       C.want = want;
       C.stepIndex = i;
       C.k = 0;
-    }, [name, want, steps.length]);
+    }, [name, want, index]);
     const reached = await page.evaluate(
       (want) =>
         new Promise((res) => {
@@ -844,6 +864,21 @@ async function cameraLog(page) {
   if (hull >= 0) {
     await step("a hull, the driver", "playing", () => g((i) => window.__camHull(i, 0), hull));
     await step("a hull, the gunner", "playing", () => g((i) => window.__camHull(i, 1), hull));
+    // The marker at another render scale and another size (X6.1a's review, for
+    // X6.1f's Verify): the driver at render scale 0.75, then the gunner after
+    // a resize at that scale — posed one and two past X6.1a's last step (its
+    // 15 on a map with a hull, 0 to 14), so every step it logged keeps its
+    // pose and its frames — then back to size.
+    await step("a hull at render scale 0.75, the driver", "playing", async () => {
+      await g(() => window.__celshock.setSetting("renderScale", 0.75));
+      await g((i) => window.__camHull(i, 0), hull);
+    }, SETTLE, 15);
+    await step("a hull after a resize, the gunner", "playing", async () => {
+      await page.setViewportSize({ width: 1280, height: 721 });
+      await g((i) => window.__camHull(i, 1), hull);
+    }, SETTLE, 16);
+    await page.setViewportSize({ width: WIDTH, height: HEIGHT });
+    await g(() => window.__celshock.setSetting("renderScale", 1));
     await g(() => window.__camHullOff());
   }
   await step("the round over", "roundover", () => g(() => window.__celshock.endRound(0)));
@@ -881,6 +916,10 @@ function summarise(r) {
   if (r.mode === "camera") {
     for (const s of r.steps) console.log(`  ${s}`);
     console.log(`  ${r.log.length} frames logged`);
+    const unproven = r.log.filter((x) => x.planes === "unproven").length;
+    if (unproven) {
+      console.log(`  FRUSTUM PLANES UNPROVEN on ${unproven} of ${r.log.length} frames: no plane array of the game's to read (no scene, and no Game.frustumPlanes before X6.1f) — a comparison with a scene's log differs on them unless --ignore names log[*].planes`);
+    }
   }
   if (r.errors.page.length || r.errors.console.length) {
     console.log(`  ${r.errors.page.length} page errors, ${r.errors.console.length} console errors`);

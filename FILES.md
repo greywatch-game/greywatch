@@ -372,6 +372,18 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   skill. MEASURED off the builder by
                               #   `npm run kit:hash -- --feet`, and an edit
                               #   re-seeds every map it moves
+  lib/frameAdapter.mjs        # The ONE frame adapter (window.__refFrame()):
+                              #   every question a browser-driven script asks
+                              #   of the page's frame — its draws, readiness,
+                              #   camera, device, encoders — answered off
+                              #   whichever host the page has, with or
+                              #   without a scene; installFrameAdapter, the
+                              #   one door, carries REF_NO_SCENE=1 in. Here
+                              #   (X6.1a's review) so parity, shots,
+                              #   merge:hash and the skills import nothing
+                              #   from plans/; harness.mjs re-exports it. It
+                              #   READS the game and never re-derives what
+                              #   the game computes
 plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   its own README.md rather than here, bar four:
   drawlog.mjs         # The DRAW LOG (BABYLON_EXIT.md X5.3a): Babylon's
@@ -392,7 +404,9 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   site; and `camera`, the camera's matrices, frustum
                       #   planes and gun marker per frame through every state
                       #   (a hull boarded as driver and gunner on a map with
-                      #   one, X6.1a) with the pose pinned
+                      #   one, X6.1a, and at render scale 0.75 and after a
+                      #   resize, its review) with the pose pinned; planes
+                      #   READ off the game's array, "unproven" without one
   leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
                       #   released and cached bind groups made after the boot,
                       #   live GPUBuffers (and their MB) and the heap, over

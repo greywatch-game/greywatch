@@ -56,8 +56,10 @@ node scripts/babylon-census.mjs [--files] [--out f.json] [--against f.json]
 ```
 
 **Every question a script here asks about the FRAME goes through ONE adapter**
-(`harness.mjs`' `frameAdapter`, `window.__refFrame()`, `BABYLON_EXIT.md` X5.4a;
-`postAdapter`'s precedent): "the frame was drawn" (`drawn`, `onDrawn`), "its
+(`frameAdapter`, `window.__refFrame()`, `BABYLON_EXIT.md` X5.4a; `postAdapter`'s
+precedent — in `scripts/lib/frameAdapter.mjs` since X6.1a's review, so the
+permanent scripts that drive a page import nothing from `plans/`, and re-exported
+by `harness.mjs`): "the frame was drawn" (`drawn`, `onDrawn`), "its
 draw is about to run" (`beforeDraw`, `onBeforeDraw`: after the frame's camera
 updates and before any of its matrices is computed), "it was submitted"
 (`submitted`, `onSubmitted`, and `onBegin` for its opening), its index, whether
@@ -139,8 +141,10 @@ readiness (`ready`, with no scene the game's pending data — the water's foam
 mask while it decodes — until X6.1h gives the game a readiness of its own);
 the camera (`camera()`: its view, projection and transform as float32s, the
 six frustum planes, `globalPosition`, the render size and the aspect — off the
-frame host's `viewProjection`, `Frustum.GetPlanesToRef`'s arithmetic restated
-and the surface with no scene); the particle fields and their switch
+frame host's `viewProjection` and the surface with no scene, and the planes
+READ off the game's own array, never restated off the transform: with no scene
+that is `Game.frustumPlanes`, which X6.1f owes, so before it they answer `null`,
+UNPROVEN, X6.1a's review); the particle fields and their switch
 (`fields`, `particles`) and the frame's constant delta (`constantDelta`, which
 THROWS with no scene until X6.1h); the frame's clear colour (`clearColor`);
 every material on the page (`materials`, the factory's with no scene); the
@@ -156,7 +160,9 @@ adapter as a page with no scene would have it, and every arm off the game's
 objects answered what the scene's read answered on every frame of a session
 (X6.1a's note). `scripts/capture-map-shots.mjs`, `merge-hash.mjs`,
 `check-world-parity.mjs` and the skills' `views.mjs` and `shots.mjs` install it
-(an init script) and moved onto it. **Its census** is `scripts/babylon-census.mjs`
+(an init script) and moved onto it — every script through
+`installFrameAdapter`, which carries `REF_NO_SCENE=1` into the page for each of
+them (X6.1a's review: `bootMap` alone did). **Its census** is `scripts/babylon-census.mjs`
 (every import of the package by name, file and kind, every
 `ssrLoadModule("@babylonjs/core")`, every page-side load of Babylon's chunk,
 and the bundle, every chunk raw and gzipped; `--against` fails if anything
@@ -566,10 +572,13 @@ grew), which every later sub-step of X6.1 records in its note.
   frame pushed to the HUD: `"unpushed"`, `null`, or the point projected
   (`Game.markerAt`), the projection's output (`Game.markerOut`) and the HUD's
   fractions as float64 bits — and on a map with a gunned hull (`--map=coldharbour`)
-  two steps more after `resumed`: the hull boarded by hand as the driver and then
-  the gunner, the chase camera's place, both muzzles and both bearings pinned as
-  functions of the pose (so the marker is the camera's arithmetic and nothing of
-  the drive's). Between steps the pose holds the step's last frame (`n`), since
+  four steps more after `resumed`: the hull boarded by hand as the driver and then
+  the gunner, then (X6.1a's review) the driver at render scale 0.75 and the gunner
+  after a resize, those two posed past every step X6.1a logged; the chase camera's
+  place, both muzzles and both bearings pinned as functions of the pose (so the
+  marker is the camera's arithmetic and nothing of the drive's). A frame's planes
+  are READ off the game's own array, `"unproven"` where there is none (no scene,
+  before X6.1f), and said aloud. Between steps the pose holds the step's last frame (`n`), since
   the marker reads the PREVIOUS frame's matrices. Its default map stays
   Hollowmere, whose log is the old one's with the two new fields.
 - **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; the proof X5.4b deleted

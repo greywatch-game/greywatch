@@ -6824,6 +6824,12 @@ Then the cut, then the sweep.
     - the headers of `kit/core.ts` and `textures.ts`;
     - `docs/world.md`, where it shows a builder's signature;
     - `.claude/skills/model-detail/new-model.md`'s template and `shots.mjs`;
+    - `scripts/kit-hash.mjs`, which calls every builder `(scene, mats, …)` with its
+      `StubScene` and builds `new ViewModel(scene, …)` and the models' kits the same
+      way (its header's stand-in scene with them), and the frame adapter's
+      `pictureKey` (`scripts/lib/frameAdapter.mjs`, which `shots.mjs` hands a builder
+      as its scene): both move onto whatever the pictures are cached under, in the
+      same commit (X6.1a's review);
     - `FILES.md`.
 
     A builder that arrives from `develop` after this sub-step (the Candy Land branch's)
@@ -6879,6 +6885,13 @@ Then the cut, then the sweep.
     - `scene.updateTransformMatrix()`'s product, and the frustum planes
       (`Frustum.GetPlanesToRef`); `Plane` and `Frustum` are added to `src/math/` and to
       `math-check` first;
+    - **the frame adapter's hook for the planes**, in its own commit as at X5.4a: the
+      game's own plane array, the one its culls and `Sky` read, reachable as
+      `Game.frustumPlanes` (`scripts/lib/frameAdapter.mjs`' `camera()`, which reads it
+      with no scene and NEVER re-derives the planes off the transform — a restatement
+      there would pass a wrongly ported `GetPlanesToRef`; X6.1a's review). Until it
+      exists the no-scene arm answers `planes: null` and the camera log `"unproven"`;
+      if the array lives elsewhere, the adapter is moved onto it in the same commit;
     - `Viewport` and the gun marker's projection, and `Camera.FOVMODE_*`.
   - **Every reader moves onto it**: `Game`, the post stages, `Volumetrics`, `GrassSystem`,
     `Sky`, `ReflectionSystem`, `GlowPass`, `WorldCulling`, the frame host, and the
@@ -6889,7 +6902,10 @@ Then the cut, then the sweep.
   - **Verify:**
     - The camera log, bit for bit, through every state, a resize, a render-scale change,
       the kit screen and the viewer. It covers the view, the projection, the transform,
-      `globalPosition`, the frustum planes and the gun marker.
+      `globalPosition`, the frustum planes and the gun marker — the planes READ off the
+      game's own array on the AFTER (no frame of it `"unproven"`, which is not a pass),
+      and the marker as driver and gunner at render scale 1 and 0.75 and after a resize
+      (`--map=coldharbour`'s four hull steps, X6.1a's review).
     - `readers.mjs` replay; the bank in all three runs; `post.mjs` at both sizes (the
       phone's DPR); `gi.mjs`, `particles.mjs` and `surfaces.mjs`.
     - Live: the death cam, a chase camera in each vehicle kind (Sarab), the gunner's

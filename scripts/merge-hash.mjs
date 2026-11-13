@@ -139,18 +139,19 @@
  * use (`dev-server.mjs`, `browser.mjs`) — read `VERIFYING.md` first if it
  * times out at the boot gate.
  *
- * **What the scene holds is asked of the reference harness's frame adapter since
- * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
- * script): a mesh's rank in `scene.meshes` (every one -1 with no scene, which
+ * **What the scene holds is asked of the ONE frame adapter since
+ * `BABYLON_EXIT.md` X6.1a** (`scripts/lib/frameAdapter.mjs` since its review,
+ * installed as an init script through `installFrameAdapter`, which honours
+ * `REF_NO_SCENE=1`): a mesh's rank in `scene.meshes` (every one -1 with no scene, which
  * holds no mesh) and the `info` counts (`null` with none).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { launchClient } from "./browser.mjs";
 import { DEV_MAPS, MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
-// What the scene holds, through the reference harness's ONE frame adapter
+// What the scene holds, through the ONE frame adapter
 // (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
-import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
+import { installFrameAdapter } from "./lib/frameAdapter.mjs";
 
 const MAP_KEY = "greywatch.map";
 
@@ -232,7 +233,7 @@ function fingerprintMap() {
   // Where each mesh stands in the scene's list — its creation order, since
   // `removeMesh` splices and so keeps the survivors' order. A Map, because an
   // `indexOf` per mesh is quadratic over a list of thousands.
-  // Babylon's meshes through the frame adapter (`harness.mjs`, X6.1a): none
+  // Babylon's meshes through the frame adapter (`lib/frameAdapter.mjs`, X6.1a): none
   // with no scene, where every mesh's rank is -1 (there is no mesh to rank).
   const sceneIndex = new Map();
   (window.__refFrame().babylon()?.scene.meshes ?? []).forEach((m, i) => sceneIndex.set(m, i));
@@ -480,7 +481,7 @@ async function buildOne(browser, url, id) {
       );
     });
     await page.addInitScript(installSink);
-    await page.addInitScript(frameAdapter);
+    await installFrameAdapter(page);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
     await page.evaluate(async (deadlineMs) => {

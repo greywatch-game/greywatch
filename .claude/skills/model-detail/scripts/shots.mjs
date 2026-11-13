@@ -70,7 +70,7 @@ try {
       const out = [];
       for (const p of variants) {
         // A builder's scene is only its pictures' cache key: the frame
-        // adapter's (`plans/webgpu-ref/harness.mjs`, BABYLON_EXIT.md X6.1a) —
+        // adapter's (`scripts/lib/frameAdapter.mjs`, BABYLON_EXIT.md X6.1a) —
         // the scene, or the factory with none.
         const s = kit.BUILDERS[kind](window.__refFrame().pictureKey(), g.mats, p);
         let verts = 0;

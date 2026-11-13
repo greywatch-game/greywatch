@@ -74,9 +74,9 @@
  * where the sixth is the only one anybody meant. With no ids it does the lot,
  * which is what a fresh checkout and a palette change both want.
  *
- * **The frame is asked of the reference harness's frame adapter since
- * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
- * script): its draws (`onDrawn`), its readiness (`ready`, the scene's while there
+ * **The frame is asked of the ONE frame adapter since `BABYLON_EXIT.md`
+ * X6.1a** (`scripts/lib/frameAdapter.mjs` since its review, installed as an
+ * init script through `installFrameAdapter`, which honours `REF_NO_SCENE=1`): its draws (`onDrawn`), its readiness (`ready`, the scene's while there
  * is one, the game's pending data after) and the render size (`camera()`), so
  * nothing here names `g.scene`.
  */
@@ -86,9 +86,9 @@ import sharp from "sharp";
 import { launchClient } from "./browser.mjs";
 import { root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
-// The frame — its draws, its readiness — through the reference harness's ONE
-// adapter (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
-import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
+// The frame — its draws, its readiness — through the ONE frame adapter
+// (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+import { installFrameAdapter } from "./lib/frameAdapter.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
 const MAP_KEY = "greywatch.map";
@@ -199,7 +199,7 @@ async function captureMap(browser, url, id, vantage) {
       [RENDER_SCALE_KEY, "1"],
     ],
   );
-  await page.addInitScript(frameAdapter);
+  await installFrameAdapter(page);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // The whole window is what a page screenshot takes, so the interface has to
   // go — the round below leaves the deploy screen up over the view.
@@ -253,7 +253,7 @@ async function captureMap(browser, url, id, vantage) {
       // Readiness first and the settle after it, for the reason in the header:
       // a frame count cannot stand in for a map having compiled its shaders,
       // and the frame that answers that question is `scene.isReady()` — the
-      // frame adapter's `ready` and `onDrawn` (`harness.mjs`, X6.1a): the
+      // frame adapter's `ready` and `onDrawn` (`lib/frameAdapter.mjs`, X6.1a): the
       // scene's readiness while there is one, the game's after, and OUR
       // frame's draw since X5.4f.
       const F = window.__refFrame();
@@ -293,7 +293,7 @@ async function captureMap(browser, url, id, vantage) {
   // than trusted.
   const backing = await page.evaluate(() => {
     // The render size the camera is handed, through the frame adapter
-    // (`harness.mjs`, X6.1a): the scene engine's, which reads the game's
+    // (`lib/frameAdapter.mjs`, X6.1a): the scene engine's, which reads the game's
     // surface since X5.4h (`core/CanvasSurface.ts`), or the surface's own.
     const c = window.__refFrame().camera();
     return [c.renderWidth, c.renderHeight];

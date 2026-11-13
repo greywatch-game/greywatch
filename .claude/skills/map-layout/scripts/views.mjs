@@ -14,9 +14,10 @@
 // at 1280x720. Needs a GPU (see VERIFYING.md for this machine). The capture
 // rings stay drawn on purpose: they are where the fight is.
 //
-// The frame — its draws and its readiness — is asked of the reference
-// harness's frame adapter (plans/webgpu-ref/harness.mjs, BABYLON_EXIT.md
-// X6.1a), which answers with or without a scene.
+// The frame — its draws and its readiness — is asked of the ONE frame
+// adapter (scripts/lib/frameAdapter.mjs, BABYLON_EXIT.md X6.1a and
+// its review), which answers with or without a scene; REF_NO_SCENE=1 in the
+// environment makes it the no-scene one.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -52,16 +53,17 @@ const only = opt("only") ? new Set(opt("only").split(",")) : null;
 
 const { launchClient } = await import(pathToFileURL(join(ROOT, "scripts/browser.mjs")).href);
 const { startDevServer } = await import(pathToFileURL(join(ROOT, "scripts/dev-server.mjs")).href);
-// The frame — its draws, its readiness — through the reference harness's ONE
-// adapter (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
-const { frameAdapter } = await import(pathToFileURL(join(ROOT, "plans/webgpu-ref/harness.mjs")).href);
+// The frame — its draws, its readiness — through the ONE frame adapter
+// (`scripts/lib/frameAdapter.mjs`, `BABYLON_EXIT.md` X6.1a), which answers
+// with or without a scene.
+const { installFrameAdapter } = await import(pathToFileURL(join(ROOT, "scripts/lib/frameAdapter.mjs")).href);
 const vite = await startDevServer(ROOT);
 const browser = await launchClient({ headed: false });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
   await page.addInitScript((m) => window.localStorage.setItem("greywatch.map", m), id);
-  await page.addInitScript(frameAdapter);
+  await installFrameAdapter(page);
   await page.goto(vite.url, { waitUntil: "domcontentloaded" });
   await page.addStyleTag({ content: "#hud{display:none!important}#boot{display:none!important}" });
   await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 120_000 });
@@ -101,7 +103,7 @@ try {
       // until they exist), then a few frames for the shadow map and the post
       // chain to settle — capture-map-shots.mjs has the measurement.
       // The frame drawn and the readiness through the frame adapter
-      // (`plans/webgpu-ref/harness.mjs`, BABYLON_EXIT.md X6.1a): OUR frame's
+      // (`scripts/lib/frameAdapter.mjs`, BABYLON_EXIT.md X6.1a): OUR frame's
       // point since X5.4f (the scene is never rendered), and the scene's
       // readiness while there is one, the game's after.
       // The deadline is a TIMER as well as a test read from a frame, so a page

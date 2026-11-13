@@ -392,7 +392,8 @@ you are on before you believe anything else in this section.
   was three wall-clock seconds on the Chromebook and 45 ms here, and running
   `npm run shots` would have overwritten Hollowmere's and Harrowmead's
   committed backdrops with blank frames. **Ask it through the frame adapter**
-  (`plans/webgpu-ref/harness.mjs`' `frameAdapter`, installed as an init script:
+  (`scripts/lib/frameAdapter.mjs`, installed as an init script through its
+  `installFrameAdapter`, which honours `REF_NO_SCENE=1`:
   `window.__refFrame().ready()`, beside its `drawn`/`onDrawn`), never as
   `g.scene.isReady()`: since `BABYLON_EXIT.md` X6.1a it answers with no scene
   too (the game's pending data, the water's foam mask while it decodes), and

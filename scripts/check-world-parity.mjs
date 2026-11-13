@@ -24,9 +24,9 @@
  * number taken on it a measurement of the wrong thing. See `DEV_MAPS` in
  * `collision-hash.mjs`.
  *
- * **The frame is asked of the reference harness's frame adapter since
- * `BABYLON_EXIT.md` X6.1a** (`plans/webgpu-ref/harness.mjs`, installed as an init
- * script): its index, its draws and its readiness, and the scene's meshes only
+ * **The frame is asked of the ONE frame adapter since `BABYLON_EXIT.md`
+ * X6.1a** (`scripts/lib/frameAdapter.mjs` since its review, installed as an
+ * init script through `installFrameAdapter`, which honours `REF_NO_SCENE=1`): its index, its draws and its readiness, and the scene's meshes only
  * to name an offender while there is a scene.
  */
 import { spawnSync } from "node:child_process";
@@ -34,9 +34,9 @@ import { join } from "node:path";
 import { launchClient } from "./browser.mjs";
 import { DEV_MAPS, MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
-// The frame — its index, its draws, its readiness — through the reference
-// harness's ONE adapter (`BABYLON_EXIT.md` X6.1a), with or without a scene.
-import { frameAdapter } from "../plans/webgpu-ref/harness.mjs";
+// The frame — its index, its draws, its readiness — through the ONE frame
+// adapter (`BABYLON_EXIT.md` X6.1a), with or without a scene.
+import { installFrameAdapter } from "./lib/frameAdapter.mjs";
 
 const MAP_KEY = "greywatch.map";
 
@@ -151,7 +151,7 @@ async function inspectClient(browser, url, id) {
       ([key, value]) => window.localStorage.setItem(key, value),
       [MAP_KEY, id],
     );
-    await page.addInitScript(frameAdapter);
+    await installFrameAdapter(page);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
 
@@ -185,7 +185,7 @@ async function inspectClient(browser, url, id) {
       (deadlineMs) =>
         new Promise((resolve) => {
           // The frame drawn and the readiness through the frame adapter
-          // (`harness.mjs`, X6.1a): OUR frame's point since BABYLON_EXIT.md
+          // (`lib/frameAdapter.mjs`, X6.1a): OUR frame's point since BABYLON_EXIT.md
           // X5.4f (the scene is never rendered), and the scene's readiness
           // while there is one, the game's after.
           const F = window.__refFrame();

@@ -63,7 +63,7 @@
  * which read it on all seven shipped maps — nothing created at any vantage by
  * either cache — and retired the vantages; the warm-up is now a wait for our
  * renderer's pipelines alone. Frames are counted through the frame adapter
- * (`harness.mjs`' `frameAdapter`, X5.4a).
+ * (`frameAdapter`, `scripts/lib/frameAdapter.mjs`, X5.4a).
  *
  * **A lost device ends it** (`harness.mjs`'s header, exit 4), and so does a hard
  * limit (exit 3, `--limit=<seconds>`): `--round`'s `until` counts FRAMES, so
@@ -75,7 +75,7 @@
  * (no Babylon mesh to file a pipeline under).
  */
 import {
-  frameAdapter,
+  installFrameAdapter,
   hardLimit,
   startDevServer,
   root,
@@ -133,8 +133,9 @@ await page.addInitScript((mapId) => {
     };
   }
 }, MAP);
-// The frame adapter (`harness.mjs`, X5.4a), which `bootMap` would install.
-await page.addInitScript(frameAdapter);
+// The frame adapter (`scripts/lib/frameAdapter.mjs`, X5.4a), installed as
+// `bootMap` installs it (`REF_NO_SCENE=1` honoured).
+await installFrameAdapter(page);
 await page.goto(vite.url, { waitUntil: "domcontentloaded" });
 await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 180_000 });
 await hookWarmup(page);
