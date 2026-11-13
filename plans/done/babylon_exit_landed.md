@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13511,3 +13511,50 @@ equivalences the note above claims (`blended` against `needAlphaBlending`, `isCe
   clean; `depth.mjs zoffset` throws its sentence.
 - **Not run**: the bank and the other probes — no program's text, frame, material value or merge moved
   (the dropped fields had no reader).
+
+**X6.1d LANDED** (40c058a; 2026-11-13; no change to the game). Measured headless on the Windows box against
+a BEFORE at ac96836e in the worktree `greywatch-2-before-x53a` (moved there, detached; its `node_modules`
+valid, the lockfile unchanged), every GPU run alone on the GPU. No device lost.
+
+- **The move**: `Build`'s and `WeaponBuild`'s constructors, every builder in `BUILDERS` (81 kinds) and
+  `WEAPON_BUILDERS` (the nine model builders), `ViewModel`'s and `PlayerView`'s constructors and
+  `floorMaterial` lose the `Scene` parameter; `MapBuilder`'s builder call and `floorMaterial` call and
+  `Game`'s `PlayerView` pass the factory alone. `MapBuilder` keeps its scene for `worldMeshes` alone
+  (X6.1g's). Mechanical over 74 files of the kit and the models, and four around them (`Game`, `MapBuilder`, `floorSurfaces.ts`, `textures.ts`).
+- **The pictures' cache** (`world/textures.ts`): keyed on the material FACTORY (a `WeakMap` on the
+  `CelMaterialFactory` the caller already holds — `Build`'s own `mats`, `floorMaterial`'s) where it was
+  keyed on the scene. The factory over the renderer because it is what makes a texture of a picture
+  (`getGroundTextured`) and what every caller holds; one a session, as the scene was (`Game` makes one
+  of each), and nothing is read off it.
+- **Instruments, in the same commit** (X6.1a's review): `scripts/kit-hash.mjs` builds every builder
+  `(mats, …)` and `ViewModel`/`PlayerView` without a scene — its `StubScene` and the record's `scene`
+  spelling gone; its pictures, keyed on the one stub factory a worker, are painted once a worker where a
+  fresh stand-in scene a build painted them per build, and a picture is spelled by its label, so no hash
+  can tell; `scripts/bounds-check.mjs` calls `BUILDERS[kind](mats)`; the frame adapter's `pictureKey`
+  answers the factory on both arms; the model-detail skill's `shots.mjs` hands a builder `g.mats` (run:
+  a cobble road built in the page and shot) and `new-model.md`'s template drops the scene;
+  `plans/webgpu-ref/shaders.mjs`' comments.
+- **The gate**: no directory is left with no value path to the package — `src/world/kit` reaches it
+  through `world/parts.ts` (X6.1g's), `src/ui` through `entities/weaponKit.ts`' `Vector3` (X6.1e's) —
+  so `DIRECTORIES` is unchanged. **Flagged**: `src/world/props`, `src/bench` and `src/config` pass the
+  gate today (tried by hand, not landed); no sub-step names them, and adding them is the owner's or
+  a later sub-step's.
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default and `volumetrics=low` **147
+  of 147 byte-equal**; `volumetrics=high` 146 byte-equal and `harrowmead-view-pistol-reload` within its
+  known flake (2 pixels, 1/255).
+- **The probes against the parent's**: `kit:hash` (3,722 builds of 105 kinds, the scatter among them, 0
+  threw) and `--models` (244) identical; `--feet`'s report byte-identical; `merge:hash` identical on all
+  eight maps; parity (eight maps, 17 fields each), `maps:check`, `geometry-check`, `math-check`,
+  `bounds-check`, `sweep-check`, typecheck, build (its gates, `check-babylon-free`, `check-proving`) and
+  corecheck clean.
+- **The census** (`scripts/babylon-census.mjs --against` the parent's): 133 files to 69 (57 with a value
+  import), 76 shrank, 0 grew; `Scene` 76 + 13 to 6 + 7 (`CameraSystem`, `Game`, `SceneFrame`, `Sky`,
+  `environment.ts`, `MapBuilder`; seven by type); the bundle 102 files, 16,817.7 kB raw and 6,018.1 kB
+  gzipped (from 16,818.7 and 6,018.3), the JS 12,186.3 and 3,087.4 kB.
+- **Not run**: the live rounds, `?profile&gpu`, `F2`, the other probes (`post.mjs`, `gi.mjs`,
+  `surfaces.mjs`, `particles.mjs`, the draw log, `readers.mjs`, `pipelines.mjs`, `leaks.mjs`, `gate`,
+  `shaders`) — the sub-step's Verify names `kit:hash`, `merge:hash`, the bank, `maps:check` and parity;
+  nothing a frame draws moved (the bank byte-equal, the merge identical).
+
+Scripts and logs in the session's scratchpad, `x61d/` (`before.sh`, `after.sh`, the logs, kept frames,
+fingerprints and the census JSON).

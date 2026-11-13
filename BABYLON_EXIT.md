@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -6926,6 +6926,22 @@ Then the cut, then the sweep.
 
     A builder that arrives from `develop` after this sub-step (the Candy Land branch's)
     is converted in its merge commit ("The branch").
+
+  **X6.1d LANDED** (40c058a; 2026-11-13; no change to the game; the full note is in
+  `plans/done/babylon_exit_landed.md`). `Build`, `WeaponBuild`, every builder in `BUILDERS` (81
+  kinds) and `WEAPON_BUILDERS`, `ViewModel` and `PlayerView` take no `Scene`; `MapBuilder`'s two
+  calls and `Game`'s `PlayerView` pass the factory alone (`MapBuilder` keeps its scene for
+  `worldMeshes`, X6.1g's). `world/textures.ts`' pictures are cached per material FACTORY (a
+  `WeakMap` on the `CelMaterialFactory` the caller holds), one cache a session as the scene's was.
+  `kit-hash.mjs` (its `StubScene` gone), `bounds-check.mjs`, the adapter's `pictureKey` (the factory
+  on both arms), the skill's `shots.mjs` and `new-model.md` moved in the same commit. No directory
+  is left with no value path to the package (`src/world/kit` reaches it through `parts.ts`), so
+  `DIRECTORIES` is unchanged. **Measured** against a BEFORE at ac96836e: `kit:hash` (3,722 builds)
+  and `--models` (244) identical, `--feet` byte-identical; `merge:hash` identical on eight maps;
+  the bank by `exact.mjs` 147 of 147 byte-equal by default and under `volumetrics=low`, 146 and
+  the pistol flake under `volumetrics=high`; `maps:check`, parity, corecheck, typecheck, build and
+  the four copy checks clean. **The census**: 133 files to 69, 76 shrank, 0 grew (`Scene` 76 + 13
+  to 6 + 7); the bundle 16,817.7 kB raw and 6,018.1 kB gzipped (from 16,818.7 and 6,018.3).
 
 - **X6.1e — Babylon's math leaves everything but the camera** (no change to the game) —
   **M**.
