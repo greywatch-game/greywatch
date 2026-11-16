@@ -3204,3 +3204,37 @@ bone table, the hull frames, `proxyBoxes.ts`, whatever `SIMULATIONS` already hol
   list what it reaches; each hit is either an exception to name or a leak to fix.
 - Land it as the gate's ban for `SIMULATIONS` and `server/`, the exceptions named
   in the gate as `NOT_ROOTS` is, never as a silent skip.
+
+## 76. `CLAUDE.md`'s rendering section is over its cap, and the file over its total: split it after the exit
+
+**Recorded by `BABYLON_EXIT.md` X6.1j's review** (the owner's decision of
+2026-11-16: book it, and do not trim it inside the exit). Measured; nothing
+built.
+
+### What is measured
+
+At 591863b7, counting each `###` section from its heading to the line before
+the next: "The scene has no Babylon lights" is **196 lines** (195 without its
+heading, the figure X6.1j's review gave) against the ~135 that `CLAUDE.md`'s
+preamble allows a section carrying a contract two subsystems both read (~85 for
+any other companion-backed one), and `CLAUDE.md` is **1,665 lines** against its
+~1,500. **It was over before X6.1**: 189 lines in a 1,650-line file at X5.4i
+(a4ca4466, the last commit before X6.1 touched the file), and continuously over
+135 since X4.5c (a3773c9a, 136); X6.1 added seven (X6.1h) and X6.1j none.
+
+The split alone does not bring the file under its total: the section at 135
+gives back ~61 of the ~165 lines over. The rest is spread: the four sections
+the preamble lets stay long ("Ownership and wiring" 125, "Visual meshes and
+collider proxies" 102, "Mesh metadata" 70, "Conventions" 113) are 410 lines
+against the ~340 it states for them, and of the others only "The map is data"
+(112, a reference table) and "Multiplayer" (111) pass ~85.
+
+### How to settle it
+
+`CLAUDE.md`'s own mechanical rule, a separate step after the exit and no part
+of it: move the section's prose **verbatim** into `docs/rendering.md`, the
+companion it already points to, demote its headings one level, and leave
+behind a summary carrying only what a reader who is NOT editing rendering must
+not violate, plus the pointer — the TRIM the move owes, every measurement,
+worked number and piece of history going to the companion or here. Then
+re-measure the file, and book what is still over it.
