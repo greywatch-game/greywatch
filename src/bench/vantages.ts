@@ -380,7 +380,7 @@ export const DIFF_VANTAGES: Readonly<Record<string, readonly Vantage[]>> = {
       id: "sky-motes",
       of: "the same moon closed up, ash in the air all round and in front of it (the map's mote field gathered into 24 m on the eye and held)",
       proves:
-        "the moon's ORDER against the particles (X4.5c): Babylon draws a group's particles BEFORE its blended meshes, so a mote in front of the disc is painted over by it and one beside it is not — the order X4.5c must keep from a point after the particles, or take as a recorded change",
+        "the moon's ORDER against the particles (X4.5c): the order was Babylon's, a group's particles drawn BEFORE its blended meshes, and ours keeps it — every field at `particles`, ahead of the moon's `beforeBlended` — so a mote in front of the disc is painted over by it and one beside it is not",
       pos: [52, 0.35, 62],
       target: [98, 62.35, -2],
       fov: 24,
