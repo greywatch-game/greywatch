@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7142,6 +7142,41 @@ Then the cut, then the sweep.
     - `docs/build.md`'s "the one adapter" paragraph;
     - the headers of `parts.ts`, `MapBuilder.ts` and `mapTypes.ts`;
     - `FILES.md`.
+
+  **X6.1g LANDED** (236c0e8 the instrument, b5e176a the step; 2026-11-16; no change to the game; the full
+  note is in `plans/done/babylon_exit_landed.md`). **The instrument first**: `merge-hash.mjs` fingerprints a
+  build with no `GameMap.visuals` and no `SurfaceRecord.visual` as it did a shipped one, every surface
+  `mesh: false`. **The step**: `worldMeshes` is `worldRecords` and makes records alone, walked in birth order,
+  handed to `onSurface` and released as before; `drawnMesh`, `vertexDataOf`, `dress` (the mesh-arm Babylon
+  `Quaternion` with it), the `PlainArrays` memo and `markVisual` are deleted, and `parts.ts`, `MapBuilder.ts`
+  (its scene gone) and `mapTypes.ts` import nothing from Babylon. `GameMap.visuals`, `SurfaceRecord.visual`
+  and the stray `paneGroups[].mesh` property are deleted. **A refused surface still fails the world**: the
+  handover's last arm, a surface ours can hold in no way, which until now was made a Babylon mesh and refused
+  at the install by `strayMesh`, is refused in `onSurface` there and then (`strayMesh` and
+  `InstalledWorld.visuals` gone). **Readers the bullet did not name, decided as records**: `WorldCulling`
+  loses its filing of block-keyed meshes, `stats.scene`/`stats.blocked`, its scene parameter (its last read)
+  and `setMap`'s mesh-and-record refusals (nothing left to disagree), so `Game`'s "cull refused the build" arm
+  goes; `Game`'s `eyeDistanceSq` takes a structural sphere type in place of `SubMesh` (the comparator itself
+  is X6.1h's, with `setRenderingOrder`). **The effects** take `createIcoSphere`, `createBox` and
+  `computeNormalsInto` (now accepting a `Float32Array`, rounding each store as Babylon's does into the
+  shard's own array), each call in `geometry-check` first (8,224 comparisons; a perturbed sum or
+  subdivision fails it). **The gate** adds `src/entities`, `src/net`, `src/systems`, `src/ui`,
+  `src/world/kit` and `src/world/props` (dirty at 3af4776f, clean now). **Measured** against a BEFORE at
+  3af4776f: `merge:hash` identical on eight maps; `kit:hash` (3,722), `--models --strict-order` and `--feet`
+  identical; the bank by `exact.mjs` 147 of 147 byte-equal by default and at `high` (every `fx-*` row among
+  them), and at `low` 146 plus `sarab-ground` (98 pixels by 2/255, the known cross-process residue: Sarab
+  alone at the step draws the parent's frame byte for byte); the draw log, `census` (168), `gi.mjs`,
+  `particles.mjs`, `surfaces.mjs` (5,719), `post.mjs` at both sizes, `readers.mjs` replay and camera equal;
+  `pipelines.mjs` nothing in play, `leaks.mjs` 0, `gate` clean, `shaders` identical; the fight hash equal
+  on four maps; live 47 of 47, Sarab 19 of 19 and `cams.mjs` 7 of 7 at both trees; `?profile&gpu`:
+  `gpu.frame` within 0.4% in every group; `render` within 3.0% on the Coldharbour pair run back to back, and
+  0.5–10.4% slower in the one two-map AFTER run that finished (Coldharbour's three groups 7.3–10.4%), whose
+  numbers are outside every BEFORE run's spread (three, ±6% among themselves) and the other AFTER run's —
+  read as that run's, not the step's, which touches nothing a frame runs. **Flagged**: the device hung nine times
+  (`DXGI_ERROR_DEVICE_HUNG`, the box's known hang) — three on the BEFORE, six on the AFTER, five of those in
+  the capped bench — so the `low` bank's BEFORE took three runs and the bench's second pair was taken on
+  Coldharbour alone. **The census**: 19 files to 11, 15 shrank, 0 grew; the bundle 16,824.9 kB raw and
+  6,019.5 kB gzipped (from 16,827.4 and 6,020.3).
 
 - **X6.1h — the scene, its engine and Babylon's `Observable` go** (no change to the
   picture) — **M**.

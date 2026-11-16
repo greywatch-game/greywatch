@@ -13864,3 +13864,104 @@ asks the frame, and no Babylon code is handed our camera or a vector of ours. ty
   hit is left in `plans/`, `scripts/` or `.claude/skills/`.
 
 Logs in the session's scratchpad, `x61f-fix/`.
+
+**X6.1g LANDED** (236c0e8 the instrument, b5e176a the step; 2026-11-16; no change to the game). Measured headless on
+the Windows box against a BEFORE at 3af4776f in the worktree `greywatch-2-before-x53a` (moved there from 8a69f093,
+detached, and moved back after; the lockfile unchanged, so its `node_modules` stood), every GPU run alone on the GPU.
+
+- **The instrument, its own commit (236c0e8)**: `scripts/merge-hash.mjs` fingerprints a map with no
+  `GameMap.visuals` and no `SurfaceRecord.visual` as it fingerprinted a shipped build, every surface on its record
+  alone (`mesh: false`), the scene ranks over an empty list. On a tree that has the field nothing moves (every
+  shipped surface's `visual` was -1 since X4.6e). The AFTER's run of it against the BEFORE's own run of the old
+  script is identical on all eight maps.
+- **The step (b5e176a)**:
+  - `world/parts.ts`' `worldMeshes` is `worldRecords(surfaces, onSurface?)`: the DEV birth check, the walk in birth
+    order, `recordOf` under `worldMatrixOf`, `onSurface` at the surface's turn, `releaseArrays` — and no mesh.
+    Deleted: the mesh arm, `drawnMesh`, `vertexDataOf`, `dress` (with the Babylon `Quaternion` X6.1e left for the
+    mesh's own rotation), the `PlainArrays` memo and the DEV throw for a palette surface handed no `onSurface`.
+    `plainGeometryOf(buffer)` keeps the floor's arrays for `PhysicsWorld` in the types they had, with no memo (it
+    only shared them with a floor mesh). `parts.ts` imports nothing from Babylon.
+  - `MapBuilder` loses its scene, `BuildRun.visuals` and `plain`, `markVisual` (unpickable, no collisions, frozen —
+    on meshes no build made), the dispose loop, and `paneGroups[].mesh`, a property `PaneGroup` had dropped at
+    X5.3e that the object literal still wrote. `GameMap.visuals` and `SurfaceRecord.visual` are deleted;
+    `mapTypes.ts` names no Babylon type; `simWorld` drops its empty `visuals`.
+  - **A refused surface still fails the world.** `BlockHandover.onSurface`'s last arm — a surface nothing of ours
+    can hold that casts nothing — was made a Babylon mesh and refused at the install by `strayMesh`. It now refuses
+    there and then (`refuse`, held to the install, thrown after it in DEV, `Game.worldFailed`). `strayMesh` and
+    `InstalledWorld.visuals` go. The first refusal's message still wins, so a map reaching this arm (none does since
+    X4.6e) would read this arm's message rather than `strayMesh`'s.
+- **Readers the bullet did not name, decided as records** (named in the step's commit):
+  - `WorldCulling`: the filing of block-keyed meshes (`filed`, `stats.blocked`) and `setMap`'s refusals of meshes
+    and records that disagree go with the meshes, so `setMap` returns nothing and `Game`'s "the cull refused the
+    build" arm goes; a block no cell was grown for is still the handover's refusal. `stats.scene`
+    (`scene.meshes.length`, read by nothing in the game or the instruments) goes, and with it the constructor's
+    scene, whose last read it was — X6.1h's list names that parameter; this step removed the read.
+  - `Game`'s `eyeDistanceSq` takes anything answering a world bounding sphere instead of `SubMesh`. The scene's
+    rendering-order comparator it serves, which orders nothing, is X6.1h's, with `setRenderingOrder`.
+- **The effects take their geometry from `src/geometry/`**: `BlastFx` `createIcoSphere({ radius: 1, subdivisions
+  8 or 4, flat: false })`, `BlastDebrisSystem` `createBox` over the chunk's three extents, and `DebrisSystem`
+  `computeNormalsInto(pos, shardIndices, shard.nrm)`. `computeNormalsInto` now takes a `Float32Array`: Babylon's
+  `ComputeNormals` was handed the shard's own float32 array and rounded each `+=` as it stored, and the same
+  operations into the same array do the same. The arrays' types moved (`number[]` to `Float64Array`/`Uint32Array`):
+  `BlastDraw` and `PoolDraw` copy them by value into float32 and uint32 buffers and `poseView.setLocal` reads by
+  index, so the device gets the same numbers — the bank's blast, shard and rubble rows byte-equal.
+- **`geometry-check` gains the effects' own calls**, against the installed Babylon: the billow's two icospheres,
+  a rubble chunk's box (three jittered extents in the rubble's band) and a shard's normals into a float32 array from
+  float32 positions, stale values first. 8,224 comparisons over 16 cases. A perturbed copy (summing into doubles
+  then storing, and subdivisions one lower) fails all three, 268 answers.
+- **The gate** (rule 6's ratchet): by its own diagnostic over every directory under `src/`, `src/entities`,
+  `src/net`, `src/systems`, `src/ui`, `src/world/kit` (every set under it) and `src/world/props` were dirty at
+  3af4776f and are clean now, and join `DIRECTORIES` (480 modules walked). Left dirty: `src/core`, `src/shaders`,
+  `src/world` (`environment.ts`) and `src` itself.
+- **Contracts**: `CLAUDE.md` (the overview's geometry sentence, the world-draws-whole paragraph, the Visual row, the
+  metadata contract's record sentence, the `block` value's `WorldCulling` reader, the one-math convention's last
+  exception); `docs/build.md` ("the one adapter": nothing is left; the gate's widening; `geometry-check`'s cases);
+  `docs/rendering.md`, `docs/world.md`, `docs/game.md`, `VERIFYING.md` and `FINDINGS.md` 26 where they said the
+  adapter makes meshes, `strayMesh` refuses, a record names its visual or a plain-array conversion remains;
+  `FILES.md`; the headers of `parts.ts`, `MapBuilder.ts`, `mapTypes.ts`, `worldGeometry.ts`, `BlockHandover.ts`,
+  `WorldCulling.ts` and the gate; and the comments the change made false.
+- **Measured**:
+  - `merge:hash` identical on eight maps (every surface `mesh: false` at both trees).
+  - `kit:hash` (3,722 builds) identical, `--models --strict-order` identical, `--feet` byte-identical.
+  - The bank by `exact.mjs`: default 147 of 147 byte-equal and `high` 147 of 147, every `fx-*` row among them (34 by
+    default: the blast's billows, fireball and smoke on both grounds and at power 2, the glass and its shards, the
+    brass, the marks, the scorch, the rocket, the mine, the molotov). `low`: 146 byte-equal and `sarab-ground`
+    moved 98 pixels by 2/255, the known cross-process residue (`exact.mjs`' header). By its procedure, Sarab alone
+    under `volumetrics=low`: the parent's two processes both draw the parent's frame, and the step's one completed
+    process (its other lost the device) draws that same frame byte for byte, so the moved frame is one process's.
+  - The draw log (Coldharbour), `census` (168), `gi.mjs` (914,604 and 254,724 values), `particles.mjs` (45,120
+    numbers), `surfaces.mjs` (5,719), `post.mjs` at `desk` and `phone` (31,837 each), `readers.mjs` replay (the
+    origins IDENTICAL) and its camera log: equal. `shaders` identical.
+  - `pipelines.mjs` nothing built in play on either tree (rounds fired 5 against 3, the wall clock's); `leaks.mjs`
+    0 released and 0 cached in every state; `gate` all seven clean (boot and install times the wall clock's).
+  - `simulate`'s fight hash equal on four maps (`e57084dd…`, `380fdf6b…`, `8e839848…`, `772a08d5…`); corecheck,
+    parity (eight maps, 17 fields), `maps:check`, the four copy checks (`math-check` 1,920,000, `bounds-check`
+    25,518 matrices, `sweep-check` 7 maps), typecheck and build clean.
+  - **Live** at both trees: `live.mjs` 47 of 47 (Hollowmere then a map change to Coldharbour offline, the kit lid,
+    `F2`, lives fired and thrown, a match on each map, all 18 settings, the rungs, render scale, a resize and the
+    window moves, caps of 30 and 60 at 29.95–30.03 and 60.02–60.11 fps, the pause, the teardowns; every frame
+    `0/0/1/1/1/2`, 0 errors), `sarab.mjs` 19 of 19 (the tank, the truck and the heli), `cams.mjs` 7 of 7 (every
+    optic, `F2` flown, the death cam, the gunner's sight).
+  - **`?profile&gpu`**: `gpu.frame` within 0.4% in every group of every run. `render`: on Coldharbour alone, back to
+    back, within 3.0% (vantages 0.0%, path -3.0%, fight +1.3%). The one two-map AFTER run that finished read 0.5–5.4%
+    slower on Hollowmere and 7.3–10.4% on Coldharbour against the first BEFORE, outside both the three BEFORE runs'
+    spread among themselves (±6%) and the other AFTER run, read as that run's rather than the step's, which changes
+    nothing a frame runs (the per-frame work it touched is one dropped read of `scene.meshes.length` in the cull's
+    rebuild). The fights were `549487ba93bceefe` and `de5622634abca6e7` on every run.
+  - The first map a page builds is ~2 s slower on the AFTER tree at every probe (`gate`'s boot, `merge:hash`'s first
+    map, the bench's first install) and at no later map. X6.1d, X6.1e and X6.1f show the same against this worktree
+    (gate boot 2,456 to 4,066, 2,466 to 4,072, 2,506 to 4,235), so it is the main tree's cold load, not a step's.
+- **Flagged**: the device hung nine times (`DXGI_ERROR_DEVICE_HUNG`, `nvlddmkm` 153 — the box's known hang,
+  `reference-gpu-hangs`), three on the BEFORE (the `low` bank twice, a capped bench) and six on the AFTER (the capped
+  bench five times, a Sarab-alone bank). Each was re-run: the `low` bank's BEFORE took three runs, and the bench's
+  second pair could not be taken on two maps (four AFTER attempts lost the device on Coldharbour's first run), so it
+  was taken on Coldharbour alone. The rate is higher than X6.1f's two; the slight underclock that cured it on
+  2026-11-09 may want checking.
+- **The census** (`scripts/babylon-census.mjs --against` the parent's): 19 files to 11 (8 with a value import), 15
+  shrank, 0 grew; left are `Scene` (3 + 3), `Observable` (3), `NullEngine` (1) and the two copy checks' `*`. The
+  bundle is 102 files, 16,824.9 kB raw and 6,019.5 kB gzipped (from 16,827.4 and 6,020.3); the JS 12,193.5 and
+  3,088.8 kB.
+
+Scripts and logs in the session's scratchpad, `x61g/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `retry*.sh`,
+`sarabproc.sh`, `cold.sh`, `probes.sh`, `live.mjs`, `sarab.mjs`, `cams.mjs`, `cmp*.cjs`, every log, JSON and kept bank
+directory).
