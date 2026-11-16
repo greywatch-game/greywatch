@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7001,7 +7001,7 @@ Then the cut, then the sweep.
     X6.1" (now one, plus the camera's owners until X6.1f); the `src/math/` headers;
     `FILES.md`.
 
-  **X6.1e LANDED** (91fbd70; 2026-11-13; no change to the game; the full note is in
+  **X6.1e LANDED** (91fbd70, its review f92038f; 2026-11-13; no change to the game; the full note is in
   `plans/done/babylon_exit_landed.md`). Every value and type import of the seven math names moves
   onto `src/math/` (54 files) but the camera's: `CameraSystem` (its `FreeCamera`, its eye, a new
   `lookDirection` holding `getDirection`'s `FORWARD_Z`), the viewer's camera, `GrassSystem`'s
@@ -7027,6 +7027,10 @@ Then the cut, then the sweep.
   4.2% and `gpu.frame` within 0.4%, the fights equal; parity, `maps:check`, corecheck, the four
   copy checks, typecheck and build clean. **The census**: 69 files to 30, 94 shrank, 0 grew; the
   bundle 16,820.3 kB raw and 6,018.7 kB gzipped (from 16,817.7 and 6,018.1).
+  **Its review** (f92038f): clean, two comment NITs fixed (the translation members' misplaced
+  JSDoc, `ViewerCamera.ts`' retired convention name); no value of ours handed to Babylon, each
+  new member matching Babylon 9.28's source. **Observed for X6.1f**: the gun marker's projection
+  this bullet's successor names is already ours (X6.1e, `ProjectToRef`); X6.1f is left `Viewport`.
 
 - **X6.1f — the camera is ours** (no change to the picture) — **M**. The viewer's one
   Babylon type goes here (the Do's `FreeCamera` item).

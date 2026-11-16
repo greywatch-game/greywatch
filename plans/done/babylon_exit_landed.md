@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13621,7 +13621,7 @@ four copy checks, the live list and `?profile&gpu`. Every GPU run was alone on t
 Scripts and logs in the session's scratchpad, `x61d-fix/` (`probes.sh`, `after.sh`, `live.mjs`,
 `sarab.mjs`, the BEFORE and AFTER logs and JSON, and the bench captures).
 
-**X6.1e LANDED** (91fbd70; 2026-11-13; no change to the game). Measured headless on the Windows box against a
+**X6.1e LANDED** (91fbd70, its review f92038f; 2026-11-13; no change to the game). Measured headless on the Windows box against a
 BEFORE at dc527d4b in the worktree `greywatch-2-before-x53a` (moved there, detached; the lockfile unchanged
 since ac96836e, so its `node_modules` stood), every GPU run alone on the GPU. No device lost.
 
@@ -13731,3 +13731,22 @@ since ac96836e, so its `node_modules` stood), every GPU run alone on the GPU. No
 
 Scripts and logs in the session's scratchpad, `x61e/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`,
 `probes.sh`, `edit/move-imports.cjs`, every log, JSON and kept bank directory).
+
+**X6.1e's review** (f92038f; 2026-11-15): **clean, two NITs fixed.** The reviewer re-ran typecheck and
+`math-check` (92 cases, 1,840,000 comparisons) and read every remaining `@babylonjs/core` import,
+multi-line ones included: the math left is exactly the declared — `CameraSystem` (`FreeCamera`,
+`Vector3`), `GrassSystem` (`Frustum`, `Matrix`), `math/babylon.ts`, and `parts.ts`' one `Quaternion`,
+built from numbers so nothing of ours crosses. No Babylon method is handed a value of ours (the calls on
+Babylon vectors are Babylon to Babylon, `copyFromFloats`, or `setTarget` through `toBabylon`, which keeps
+no reference to its argument); no `as any` crossing was added; `Sky`'s written-out `dotCoordinate`
+keeps Babylon's addition order. Each new member matches Babylon 9.28's `math.vector.pure.js`
+(`OrthoLHToRef` with its half-Z and identity flag, `NormalizeToRef`, the translation members, `Vector2`'s
+`normalizeFromLength`, the `toArray`s, `Color3#toArray`); the gun marker's `ProjectToRef` is fixed at
+[0,1] depth and `SceneEngine` sets `isNDCHalfZRange`, so they agree; the in-place clear colour writes a
+per-instance `Color4`, the bypassed `onClearColorChangedObservable` subscribed by nothing; `CelShader.own`'s
+`instanceof Color3` calls `toArray` on both branches; no vector reaches JSON, `postMessage` or the local
+match, and every holder of `camera.position` held a live reference before the step. The NITs: the
+three translation members had been inserted between `addTranslationFromFloats`' JSDoc and that method
+(the doc moved back); `ViewerCamera.ts` cited the retired "two `Vector3`s" convention (now the new one).
+Observed: X6.1f's bullet still lists the gun marker's projection, which X6.1e already moved onto our
+`ProjectToRef` — X6.1f is left `Viewport` alone there.
