@@ -269,23 +269,22 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   `--profile` prints the build's phases. Same
                               #   machine and Babylon only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
-                              #   generator in src/geometry/ and Babylon's of
-                              #   the same name over seeded options, and runs
-                              #   merge (with and without each member's
-                              #   matrix), transform, bake and computeNormals
-                              #   against Babylon's — and the three effects' own
+                              #   generator in src/geometry/ over seeded
+                              #   options, and runs merge (with and without
+                              #   each member's matrix), transform, bake and
+                              #   computeNormals — and the three effects' own
                               #   calls (X6.1g: the blast's icospheres, a rubble
                               #   chunk's box, a shard's float32 normals) —
-                              #   comparing every number BIT for
-                              #   bit; fails on an export no case covers.
-                              #   Deleted with Babylon (X6.1). Not a gate
+                              #   holding every number BIT for bit to Babylon
+                              #   9.28's, RECORDED in tables/ (X6.1i); fails on
+                              #   an export no case covers. `--perturb` is its
+                              #   negative test. Not a gate
   math-check.mjs              # `node scripts/math-check.mjs`: runs every
-                              #   method in src/math/ and Babylon's of the
-                              #   same name on seeded inputs and compares the
-                              #   answers BIT for bit; fails on a member no
-                              #   case covers. Owed by every method added
-                              #   there. Deleted with Babylon (X6.1). Not a
-                              #   gate
+                              #   method in src/math/ on seeded inputs and
+                              #   holds the answers BIT for bit to Babylon
+                              #   9.28's, RECORDED in tables/ (X6.1i); fails on
+                              #   a member no case covers, which nothing can
+                              #   record any more. `--perturb`. Not a gate
   bounds-check.mjs            # `node scripts/bounds-check.mjs`: world/
                               #   worldGeometry.ts' boundsOf against a Babylon
                               #   Mesh's BoundingInfo, BIT for bit, over every
@@ -295,8 +294,11 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   the editor went (X5.3c) — and parts.ts'
                               #   worldMatrixOf against TransformNode's
                               #   computeWorldMatrix over those parts and
-                              #   seeded parent chains (`--chains`). `--perturb`
-                              #   is the negative test of both. Until X6.1.
+                              #   seeded parent chains (`--chains`), and both
+                              #   over seeded synthetic parts no rework can
+                              #   move; Babylon's answers RECORDED in tables/
+                              #   (X6.1i), a kind reworked since read STALE.
+                              #   `--perturb` is the negative test of both.
                               #   Not a gate
   sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
                               #   the player and every hull kind's ellipsoid by
@@ -312,9 +314,11 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   fixed-step trajectories and reports drift.
                               #   `--tight` forces the re-gathers, `--reference
                               #   server` the authority's pre-X2.3 scene,
-                              #   rebuilt here (clusters first). Owed by a
-                              #   Babylon upgrade (docs/build.md). Deleted with
-                              #   Babylon (X6.1). Not a gate
+                              #   rebuilt here (clusters first). `exact` is
+                              #   held to Babylon 9.28's answers RECORDED in
+                              #   tables/ (X6.1i), a re-laid map read STALE,
+                              #   plus a seeded `synthetic` world no map moves;
+                              #   `--perturb` its negative test. Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map
@@ -376,6 +380,18 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   `--roads`
   generate-kurenai.mjs        # `npm run kurenai`: SEEDS the temple valley,
                               #   240 m. `--probe`, `--plan`, `--refusals`
+  lib/babylonTable.mjs        # The four copy checks' recorded answers: the
+                              #   table format, a comparison's bit-exact
+                              #   encoding, one 64-bit SHA-256 digest per GROUP
+                              #   (a case over a block, a kind, a map's body),
+                              #   input digests that read a group STALE rather
+                              #   than wrong, and the verdict. Never loads
+                              #   Babylon
+  tables/                     # <check>.json: Babylon 9.28's answers to the
+                              #   four copy checks as digests, recorded by each
+                              #   check's `--record` while the package was
+                              #   installed (X6.1i) and never re-recordable.
+                              #   ~85 kB in all
   lib/mapgen.mjs              # What the seven generators share: the seeded
                               #   stream (world/rng.ts's mulberry32), the
                               #   floor's noise, the placement arithmetic, the

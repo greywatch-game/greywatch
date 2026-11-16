@@ -1,0 +1,112 @@
+{
+ "check": "sweep-check",
+ "babylon": "9.28.0",
+ "knobs": {
+  "seed": 1,
+  "samples": 2000,
+  "block": 250
+ },
+ "frozen": {
+  "bodies": {
+   "player": {
+    "radius": 0.45,
+    "height": 1.8
+   },
+   "tank": {
+    "collideRadius": 2.2,
+    "climbHeight": 1.25,
+    "hull": {
+     "width": 3.4,
+     "height": 2.9,
+     "length": 7.2
+    }
+   },
+   "truck": {
+    "collideRadius": 1.6,
+    "climbHeight": 0.55,
+    "hull": {
+     "width": 2.5,
+     "height": 2.5,
+     "length": 5.4
+    }
+   },
+   "heli": {
+    "collideRadius": 5.2,
+    "climbHeight": 0.3,
+    "hull": {
+     "width": 2.6,
+     "height": 3,
+     "length": 11.4
+    }
+   }
+  }
+ },
+ "groups": {
+  "hollowmere player": ["8d354d5e8cf7d7ad","18f5ab511f8de156","b5c415cabea85b48","2a904cc0e2242c9c","78a55f623a59d2c3","da53f40e1bcb6934","1bc5f17a823206ec","32afcbb183d4650b"],
+  "hollowmere tank": ["77f0be689248e6ef","ef0978ddfb9cd087","0bc26358510297b8","95d860d7ae11e5ff","5f00d8996e9b1299","f30bdc07f4e7268d","95c61d2827f2866e","31f37e5665fc15c7"],
+  "hollowmere truck": ["702fda621dc4ef3b","a8df3fea44b107fb","378d2f3090c1c75d","0622a2947075d3ec","63d12bb6c785f51e","0e9a33888dfdbff0","76603722a3faff59","e6dd3ecf1312ee75"],
+  "hollowmere heli": ["0ea0acacd14caf47","634052690e6f34a0","4df522f50f6c147f","eeea27985b951dc6","472ccab84e16c1d4","5fc2102938355b25","720f9a152b5404ba","802c75cbcc646795"],
+  "greyfen player": ["f91a57182c824aff","acb82a72db765711","d371f35fa450c8a3","fd9099be4571a9ac","5491482efb2484a8","8354f78c9f425e9c","1ae4aae949e2b2d2","cf5390025f2833ef"],
+  "greyfen tank": ["0784695b6942240a","44eab1fe9b3fe68a","77e8216fdec92575","be1edbf57bcc9011","0bc174ecb5b45350","0ca7eba74b53af99","81fcf42b1e166532","dfe9f9006f63bc57"],
+  "greyfen truck": ["2db861512fd81c93","22015c6e0f841959","6731cb3b0fa7150b","c946061178e47bdd","b2629d5037b7dbbf","b647c8a92c1e4e12","c1e32699e8593d9d","9810899b836c74ef"],
+  "greyfen heli": ["1061fb8624e89453","a5b62983773a7372","7a275b43e4588721","4fe0d911327d82c5","2be4da7f9c2631f1","ceb73ab8eb01a4fa","fc28e6c06c2f32e0","e0c82f33f627cc56"],
+  "coldharbour player": ["f9fd2e6a5f30e93d","bcb6f403e255997e","0a89e7ee6371f029","a0ad6b82597d9672","f786f8a49cbb5117","c58e6ee964d71b8c","1f23345857449bce","081262e61f6f3145"],
+  "coldharbour tank": ["6052a32c960081a1","99ca07ad61a1283e","97e539011fb86863","adaf61f19fbea3a4","2f2c97de62730f7c","907ff971de2a1b7f","7a297fe686e0a662","5788757b5cf41b2a"],
+  "coldharbour truck": ["40eb44ea2acf3c96","2d1951d625488eaa","5d44f922a3c2279b","1fc9c475d3d53667","f6dc8e7a770d35da","ea98cf957b8cb23b","aaaf7728aeff1f2d","f78dcd611e694a3a"],
+  "coldharbour heli": ["48c9502c69e203c9","abfec65500ba41f3","e1c7481c0e4e82bb","c5ec48e4e9a03048","c869d9f2ecb3959a","dad74b2140a07dc3","bb9b8bc8f6c08a12","9dd19e36cb4346e2"],
+  "harrowmead player": ["d212bb04305f3fb1","b2a9351eb4180eda","5c2fd30b264cd9aa","ab1c65e8d1d3592d","19d29f0aa48dfd05","0df540c9b2ab533b","5600f43960f4a47c","968436505550e71a"],
+  "harrowmead tank": ["b5ab1c95aeeffd9a","557a38dd12e4fcdf","b85309fb6693831c","7e7d133f435b2ede","6fa0116dcd0aabda","3c5592dbe0cfb46f","40549b80328a84e8","9826845e661a0274"],
+  "harrowmead truck": ["fd473b829fd76015","7c17ed1ea45ba3ea","ce48904a3ee139b4","cc4fa1bb41991a7d","9e46a889634d8bdb","5693adbea0cebeed","86da79da7f699767","3f07a5e7e5e5cca0"],
+  "harrowmead heli": ["60cbffeafecb214f","63fee52a6bc8d677","0d92d755f12d2a69","e2689a8ce6fd0260","cb39ae50b1728341","1b7d8ed473bb93cb","27be0a8e08bab3a8","18248a3ff1ace974"],
+  "sarab player": ["b47807440ad2aa65","637ee40a8cf10efa","16e280d99a8b73c9","c82ce252deb7dc3c","a6de3fb90a892460","4944a60d1379051c","337e9a49c2fe28c3","70d5710b5c59961c"],
+  "sarab tank": ["529eeefb9db66f71","638757afff5f787c","b1612367ccb9a078","df314104ccc131f7","0968fb5cce6384b7","cec3a7d675fec88c","f9ebb2a06980a4bc","3bd6620ac7381c6a"],
+  "sarab truck": ["39016c4f9ea94bab","a29ddbe4d8720a6a","4c30bc1b671eede9","aa48711727f42ef5","1e41c8dbb7da030e","dffa4f0423d283fa","94302254ec6fa389","a285fce77fa8ce42"],
+  "sarab heli": ["9b2b908da0e2df6e","a0e3b020b74482fd","7fa34d7cbcfbd382","67ca7ec38c0cfa9b","0ae004c2917dfcc9","6fee4dc139185339","5934afa4be9cc8cd","4e0ddfb71e09bde0"],
+  "cinderhaven player": ["9650be4e6cfd90c8","01aec017223bb915","ff3c9a9e2470d272","fcd8940aaeb9357f","5f4037accaf3d7a6","6b8d06c795132f5d","3751b8de2bda5e2a","48298cff5cd4d298"],
+  "cinderhaven tank": ["6384baeadfc4fd56","ed69c1e57a141802","6ea893e01ffbba46","ea2c278c8ca2e5a9","11bab9f833fb5d52","631e864b311622dc","79afda9f578423e4","4d5fcf3586ea3ada"],
+  "cinderhaven truck": ["51375c9c7587a03b","201c6998e31778ec","4bead701dbd0a74e","f6916f07dd3e5b38","43eb87f05d471f5f","d80746a2fd71a6e9","c1413361c450c31e","480fa6e6ff37ba77"],
+  "cinderhaven heli": ["11547fb524efd362","8437d534dd838f6c","3b6522830e3898c1","42fe07ecd30bd97d","832416c7c62814d9","4affb5ca72f1e601","75f31f37a960b915","02718ef237d690c3"],
+  "kurenai player": ["80a32b021124282d","89510b3cd1c6cb24","38ddaf7c55a1dbd9","ef8d9446be8a137b","ff73f9b73fd0ab85","b23d69d9c783d4d3","2065bc6634fe85eb","a6a47c34753ee6a8"],
+  "kurenai tank": ["7b6e61263fc5958c","b4abbd3d6585a290","ca43faed0d7157a2","9733f4f38d5ee5cc","349837d9ffa85e1c","9387dc1793682bc8","f17a7197a27e505e","65821e418f25eaa9"],
+  "kurenai truck": ["bba71ac91c37c8a6","76103fcf767d0f32","d003fc6b0a582b39","e1079f800dc58df8","e82fdfa3b4057d94","0351d3d0aa1ce517","f03fe629953c2d60","576b64988cc329f5"],
+  "kurenai heli": ["71eeacb194ae083f","9ebffdd1246b18b5","ae29b9181136ad31","71ecf46401713d60","22177879f1cbdad6","51049caedb6aadd9","7fc176a6d7c5d83c","935186fefadffd38"],
+  "synthetic player": ["ae73435ccc214481","92398ea0b2a4a86c","db0f4dd5537f674a","a1f6ebdbad1b3dd1","82184fb2739fe6dd","ca460c4d201f9307","885f215e3665636b","e99dd5a0a2ffe600"],
+  "synthetic tank": ["412df427e838528b","0bf3fe32a5b8668c","810c4bf567f26ce7","19457b63ee1e29e0","eca2ea530ee7c4cd","06d912b8a3c8d655","012acb613e750180","40d91ea8e470c876"],
+  "synthetic truck": ["656c2fb147f86bd1","c0b1487d2b6e5b2c","4e932ae8581cfb67","716adf08c215d4e3","d66197697502be15","e452390d5d561fc0","0127441ae4ca56ac","1572c79e3481c0e1"],
+  "synthetic heli": ["a508e24044546e61","808bda76ba9fd708","e1be2fc62df8e5b0","81b85792dacac83e","4e609f7b88579e39","dd9bdc9036e14b62","1c7fc4a3bdddcb14","26b556ddb06e287d"]
+ },
+ "inputs": {
+  "hollowmere player": ["663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11"],
+  "hollowmere tank": ["663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11"],
+  "hollowmere truck": ["663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11"],
+  "hollowmere heli": ["663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11","663f117048499e11"],
+  "greyfen player": ["094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9"],
+  "greyfen tank": ["094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9"],
+  "greyfen truck": ["094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9"],
+  "greyfen heli": ["094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9","094a4f3d3bb1e2f9"],
+  "coldharbour player": ["89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb"],
+  "coldharbour tank": ["89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb"],
+  "coldharbour truck": ["89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb"],
+  "coldharbour heli": ["89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb","89633d7eee5e21cb"],
+  "harrowmead player": ["86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a"],
+  "harrowmead tank": ["86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a"],
+  "harrowmead truck": ["86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a"],
+  "harrowmead heli": ["86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a","86f169df6f86f25a"],
+  "sarab player": ["6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864"],
+  "sarab tank": ["6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864"],
+  "sarab truck": ["6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864"],
+  "sarab heli": ["6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864","6a18a776a312d864"],
+  "cinderhaven player": ["24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea"],
+  "cinderhaven tank": ["24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea"],
+  "cinderhaven truck": ["24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea"],
+  "cinderhaven heli": ["24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea","24adf5229d3aafea"],
+  "kurenai player": ["e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733"],
+  "kurenai tank": ["e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733"],
+  "kurenai truck": ["e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733"],
+  "kurenai heli": ["e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733","e9a9788011d2e733"],
+  "synthetic player": ["ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108"],
+  "synthetic tank": ["ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108"],
+  "synthetic truck": ["ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108"],
+  "synthetic heli": ["ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108","ab96480e28b42108"]
+ }
+}

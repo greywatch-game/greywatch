@@ -2,8 +2,8 @@
  * bounds-check.mjs — proves `boundsOf`'s TRANSFORMED path gives Babylon's
  * `BoundingInfo` BIT FOR BIT, over every kind the world is built from.
  *
- *   node scripts/bounds-check.mjs [--transforms 6] [--chains 500] [--seed 1]
- *     [--perturb]
+ *   node scripts/bounds-check.mjs [--perturb]
+ *   node scripts/bounds-check.mjs --record   (only where Babylon 9.28 is installed)
  *
  * `world/worldGeometry.ts`' `boundsOf` is what `WorldCulling` grows its cells
  * from and size-gates a candidate by, in place of a mesh's bounding info, and
@@ -16,24 +16,29 @@
  * `merge:hash --editor` alone did until the editor was retired (row "X5.3,
  * `merge:hash --editor`", the owner's of 2026-11-08). This is its replacement.
  *
- * How: under a NullEngine, every kit builder (`BUILDERS`, built bare at its
- * default params) and every scatter kind (`SCATTER_BUILDERS`, at one seed and
- * every foliage rung) is built, and each of its parts' positions is taken as
- * the Float32Array a mesh holds. Each part is placed under `--transforms`
- * seeded OFF-IDENTITY world matrices — its own (`worldMatrixOf`) times a
+ * How: every kit builder (`BUILDERS`, built bare at its default params) and
+ * every scatter kind (`SCATTER_BUILDERS`, at one seed and every foliage rung)
+ * is built, and each of its parts' positions is taken as the Float32Array a
+ * mesh held. Each part is placed under `--transforms` seeded OFF-IDENTITY
+ * world matrices, drawn from a stream of the KIND's own (so a kind reworked
+ * moves no other kind's draws) — its own (`worldMatrixOf`) times a
  * placement (a turn about Y and a translation, as `MapBuilder` places a
  * structure), and seeded `Compose`s of a scale (negative and zero axes among
- * them), a rotation and a translation — and its bounds are taken twice:
- * `boundsOf` over `src/math`'s matrix, and a Babylon `Mesh` holding the same
- * positions with the same sixteen floats frozen as its world matrix
+ * them), a rotation and a translation — and its bounds are taken by
+ * `boundsOf` over `src/math`'s matrix and held to a Babylon `Mesh` holding
+ * the same positions with the same sixteen floats frozen as its world matrix
  * (`freezeWorldMatrix`, then `refreshBoundingInfo`: the mesh path itself,
  * `extractMinAndMax` and `BoundingInfo.update`). The box (`minimumWorld`,
  * `maximumWorld`) and the sphere (`centerWorld`, `radiusWorld`) are compared
- * with `Object.is`, so a -0 against a +0 fails.
+ * by their bits, so a -0 against a +0 fails.
  *
  * The matrix is built ONCE, on our side, and copied to Babylon's float for
  * float, so the bounds half proves what `boundsOf` does with a matrix it is
- * handed. Both sides read the same positions array.
+ * handed. Both sides read the same positions array. **And a SEEDED section
+ * built from nothing in the game** (`--synthetic` parts, X6.1i): float32
+ * positions with zeros of both signs and the odd exact value among them, each
+ * under a seeded chain one to three nodes deep and the same transforms — both
+ * halves again, on inputs no rework can move.
  *
  * **And the MATRIX half: `worldMatrixOf` against Babylon's
  * `TransformNode.computeWorldMatrix`**, which `merge:hash --editor` checked by
@@ -46,20 +51,33 @@
  * scales, zero and negative axes among them), each node of a chain compared,
  * all sixteen floats by `Object.is`.
  *
+ * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/bounds-check.json`,
+ * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+ * checks"), captured by `--record` while the package was installed (X6.1i's
+ * first commit, which compared every answer live as well): per kind, one
+ * digest of its bounds and one of its world matrices; the chains and the
+ * synthetic parts in blocks. **A kind's input is the game's** — its parts'
+ * positions and transform chains — so beside each kind's answers the table
+ * holds a digest of that input, and a kind reworked since is reported STALE
+ * and not compared (nothing can ask Babylon about its new drawing). The
+ * chains and the synthetic parts are seeded and never stale, so the oracle
+ * holds `boundsOf` and `worldMatrixOf` whatever the art does. The knobs (the
+ * seed and the counts) are part of what was recorded.
+ *
  * `--perturb` is the negative test: our side's matrix has its X translation
- * moved by a millimetre (`NUDGE`) and Babylon's does not, and in the matrix
- * half our chain's ROOT position is moved the same millimetre — which reaches
- * every node's world translation unscaled — so every comparison of both halves
- * should fail, and the run exits 0 only if it does, saying how many it caught.
+ * moved by a millimetre (`NUDGE`), and in the matrix half our chain's ROOT
+ * position is moved the same millimetre — which reaches every node's world
+ * translation unscaled — so every group of both halves should differ from the
+ * table, and the run exits 0 only if each does.
  *
  * In `math-check.mjs`'s style: a Node script, no GPU, no browser, exit 1 on
  * any differing answer. The game's modules are loaded through Vite's SSR loader
  * (as `kit-hash.mjs` loads them), because they import without extensions and
- * read `import.meta.env`. Kept until X6.1, which removes Babylon and keeps a
- * recorded table in place of it.
+ * read `import.meta.env`.
  */
 import { createServer } from "vite";
 import { fileURLToPath } from "node:url";
+import { Ledger } from "./lib/babylonTable.mjs";
 import { mulberry32 } from "../src/world/rng.ts";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
@@ -70,10 +88,28 @@ const arg = (name, dflt) => {
 };
 const TRANSFORMS = arg("--transforms", 6);
 const CHAINS = arg("--chains", 500);
+const SYNTHETIC = arg("--synthetic", 2000);
+const SEED = arg("--seed", 1);
 const PERTURB = args.includes("--perturb");
-const rand = mulberry32(arg("--seed", 1));
+const RECORD = args.includes("--record");
+/** The chains and the synthetic parts are filed this many to a group. */
+const BLOCK = 100;
+const ledger = new Ledger(
+  "bounds-check",
+  { seed: SEED, transforms: TRANSFORMS, chains: CHAINS, synthetic: SYNTHETIC, block: BLOCK },
+  { record: RECORD, perturb: PERTURB && "input" },
+);
 /** The synthetic chains' own stream, so adding them moved no transform above. */
-const chainRand = mulberry32(arg("--seed", 1) ^ 0x9e3779b9);
+const chainRand = mulberry32(SEED ^ 0x9e3779b9);
+/** The synthetic parts', apart from both. */
+const synthRand = mulberry32(SEED ^ 0x7f4a7c15);
+
+/** A small stable hash, so a kind's stream is its own. */
+function hashOf(text) {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return h >>> 0;
+}
 
 /** As `kit-hash.mjs`: the road paints on a canvas, and Node has none. */
 function stubCanvas() {
@@ -94,14 +130,14 @@ function stubCanvas() {
 }
 
 /** A material per factory call, named for it — the bounds read none of them. */
-function stubMats(B, scene) {
+function stubMats() {
   const cache = new Map();
   return new Proxy(
     {},
     {
       get: (_t, prop) => () => {
         const key = String(prop);
-        if (!cache.has(key)) cache.set(key, new B.StandardMaterial(key, scene));
+        if (!cache.has(key)) cache.set(key, { name: key });
         return cache.get(key);
       },
     },
@@ -109,11 +145,11 @@ function stubMats(B, scene) {
 }
 
 const SPECIAL_SCALES = [1, -1, 0, 0.5, 2, 1e-3];
-const scaleAxis = () => (rand() < 0.25 ? SPECIAL_SCALES[Math.floor(rand() * SPECIAL_SCALES.length)] : 0.1 + rand() * 3);
-const coord = () => (rand() * 2 - 1) * 400;
 
 /** The seeded world matrices one part is placed under, all off identity. */
-function transformsFor(M, own) {
+function transformsFor(M, own, rand) {
+  const scaleAxis = () => (rand() < 0.25 ? SPECIAL_SCALES[Math.floor(rand() * SPECIAL_SCALES.length)] : 0.1 + rand() * 3);
+  const coord = () => (rand() * 2 - 1) * 400;
   const out = [];
   // Its own transform, under a placement: a turn about Y and a translation.
   const turn = M.Quaternion.RotationYawPitchRoll(rand() * 2 * Math.PI, 0, 0);
@@ -137,6 +173,21 @@ function transformsFor(M, own) {
  */
 const NUDGE = 2 ** -10;
 
+/** What a node chain IS to `worldMatrixOf`: every node's fields, leaf to root. */
+function chainInput(node) {
+  const out = [];
+  for (let n = node; n; n = n.parent) {
+    const q = n.rotationQuaternion;
+    out.push(
+      n.position.x, n.position.y, n.position.z,
+      n.rotation.x, n.rotation.y, n.rotation.z,
+      q ? q.x : null, q ? q.y : null, q ? q.z : null, q ? q.w : null,
+      n.scaling.x, n.scaling.y, n.scaling.z,
+    );
+  }
+  return out;
+}
+
 const server = await createServer({
   root: ROOT,
   configFile: false,
@@ -152,30 +203,41 @@ let matrixChecks = 0;
 let matrixFailures = 0;
 let chainNodes = 0;
 let parts = 0;
+let synthParts = 0;
 let kinds = 0;
 const failedKinds = new Map();
 const buildErrors = [];
 try {
   stubCanvas();
-  const B = await server.ssrLoadModule("@babylonjs/core");
-  B.Logger.LogLevels = B.Logger.NoneLogLevel;
+  /** Babylon, when recording: the reference the table is taken from. */
+  const B = RECORD ? await server.ssrLoadModule("@babylonjs/core") : null;
+  if (B) B.Logger.LogLevels = B.Logger.NoneLogLevel;
   const M = await server.ssrLoadModule("/src/math/index.ts");
   const { boundsOf } = await server.ssrLoadModule("/src/world/worldGeometry.ts");
   const { BUILDERS } = await server.ssrLoadModule("/src/world/BuildingKit.ts");
   const { SCATTER_BUILDERS } = await server.ssrLoadModule("/src/world/MapBuilder.ts");
   const { PartNode, flattenParts, worldMatrixOf } = await server.ssrLoadModule("/src/world/parts.ts");
   const { CONFIG } = await server.ssrLoadModule("/src/config/index.ts");
-  const engine = new B.NullEngine();
-  const scene = new B.Scene(engine);
-  const mats = stubMats(B, scene);
-  const mesh = new B.Mesh("bounds-check", scene);
+  const mats = stubMats();
+  const scene = B ? new B.Scene(new B.NullEngine()) : null;
+  const mesh = B ? new B.Mesh("bounds-check", scene) : null;
 
-  /** Both sides' bounds of one part under one matrix. */
-  function compare(kind, partName, positions, world) {
+  /** One part's bounds under one matrix, filed under `group`. */
+  function compare(kind, group, partName, positions, world) {
     const ours = PERTURB
       ? M.Matrix.FromValues(...Array.from(world.m, (v, i) => (i === 12 ? v + NUDGE : v)))
       : world;
     const mine = boundsOf(positions, ours);
+    const got = [
+      mine.minX, mine.minY, mine.minZ, mine.maxX, mine.maxY, mine.maxZ,
+      mine.centerX, mine.centerY, mine.centerZ, mine.radius,
+    ];
+    checks++;
+    if (!B) {
+      ledger.answer(group, got);
+      return;
+    }
+    mesh.setVerticesData(B.VertexBuffer.PositionKind, positions, false);
     mesh.freezeWorldMatrix(B.Matrix.FromArray(Array.from(world.m)));
     mesh.refreshBoundingInfo();
     const info = mesh.getBoundingInfo();
@@ -186,32 +248,34 @@ try {
       box.maximumWorld.x, box.maximumWorld.y, box.maximumWorld.z,
       sphere.centerWorld.x, sphere.centerWorld.y, sphere.centerWorld.z, sphere.radiusWorld,
     ];
-    const got = [
-      mine.minX, mine.minY, mine.minZ, mine.maxX, mine.maxY, mine.maxZ,
-      mine.centerX, mine.centerY, mine.centerZ, mine.radius,
-    ];
-    checks++;
+    ledger.answer(group, theirs);
     if (got.every((v, i) => Object.is(v, theirs[i]))) return;
     failures++;
     failedKinds.set(kind, (failedKinds.get(kind) ?? 0) + 1);
-    if (failures <= 5 && !PERTURB) {
+    if (failures <= 5) {
       console.log(`DIFF ${kind} / ${partName}\n  matrix ${JSON.stringify(Array.from(world.m))}\n  babylon ${JSON.stringify(theirs)}\n  ours    ${JSON.stringify(got)}`);
     }
   }
 
   /**
-   * One node's `worldMatrixOf` against a Babylon `TransformNode` chain built to
-   * mirror its node chain (position, rotation, rotation quaternion, scaling,
-   * parent), all sixteen floats by `Object.is`. Under `--perturb` the ROOT's
-   * position is a millimetre off in X on our side, for the computation alone.
+   * One node's `worldMatrixOf`, filed under `group`, and (recording) a Babylon
+   * `TransformNode` chain built to mirror its node chain (position, rotation,
+   * rotation quaternion, scaling, parent), all sixteen floats by `Object.is`.
+   * Under `--perturb` the ROOT's position is a millimetre off in X on our
+   * side, for the computation alone.
    */
-  function compareMatrix(kind, node) {
+  function compareMatrix(kind, group, node) {
     let root = node;
     while (root.parent) root = root.parent;
     const x = root.position.x;
     if (PERTURB) root.position.x = x + NUDGE;
     const ours = worldMatrixOf(node, new M.Matrix());
     root.position.x = x;
+    matrixChecks++;
+    if (!B) {
+      ledger.answer(group, Array.from(ours.m));
+      return;
+    }
     const made = [];
     const mirror = (n) => {
       const tn = new B.TransformNode(`mirror-${made.length}`, scene);
@@ -230,53 +294,88 @@ try {
     // Root first, so each node multiplies a parent matrix computed this call.
     for (let i = made.length - 1; i >= 0; i--) made[i].computeWorldMatrix(true);
     const m = theirs.getWorldMatrix().m;
-    matrixChecks++;
-    const same = Array.from(ours.m).every((v, i) => Object.is(v, m[i]));
     const theirsArray = Array.from(m);
     for (const tn of made) tn.dispose();
-    if (same) return;
+    ledger.answer(group, theirsArray);
+    if (Array.from(ours.m).every((v, i) => Object.is(v, theirsArray[i]))) return;
     matrixFailures++;
     failedKinds.set(`${kind} (matrix)`, (failedKinds.get(`${kind} (matrix)`) ?? 0) + 1);
-    if (matrixFailures <= 5 && !PERTURB) {
+    if (matrixFailures <= 5) {
       console.log(`DIFF matrix ${kind} / ${node.name}\n  babylon ${JSON.stringify(theirsArray)}\n  ours    ${JSON.stringify(Array.from(ours.m))}`);
     }
+  }
+
+  /** A seeded node: a position, Euler angles or a quaternion, and a scaling. */
+  function seededNode(name, rand, parent) {
+    const axis = () =>
+      rand() < 0.25 ? SPECIAL_SCALES[Math.floor(rand() * SPECIAL_SCALES.length)] : 0.1 + rand() * 3;
+    const signed = () => rand() * 2 - 1;
+    const node = new PartNode(name);
+    node.position.set(signed() * 40, signed() * 10, signed() * 40);
+    if (rand() < 0.3) {
+      const q = new M.Quaternion(signed(), signed(), signed(), signed());
+      q.normalize();
+      node.rotationQuaternion = q;
+    } else {
+      node.rotation.set(signed() * Math.PI, signed() * Math.PI, signed() * Math.PI);
+    }
+    node.scaling.set(axis(), axis(), axis());
+    node.parent = parent;
+    return node;
   }
 
   /** A seeded chain one to four nodes deep; every node of it is compared. */
   function checkChain(i) {
     const depth = 1 + Math.floor(chainRand() * 4);
-    const axis = () =>
-      chainRand() < 0.25 ? SPECIAL_SCALES[Math.floor(chainRand() * SPECIAL_SCALES.length)] : 0.1 + chainRand() * 3;
-    const signed = () => chainRand() * 2 - 1;
     let parent = null;
     for (let d = 0; d < depth; d++) {
-      const node = new PartNode(`chain${i}.${d}`);
-      node.position.set(signed() * 40, signed() * 10, signed() * 40);
-      if (chainRand() < 0.3) {
-        const q = new M.Quaternion(signed(), signed(), signed(), signed());
-        q.normalize();
-        node.rotationQuaternion = q;
-      } else {
-        node.rotation.set(signed() * Math.PI, signed() * Math.PI, signed() * Math.PI);
-      }
-      node.scaling.set(axis(), axis(), axis());
-      node.parent = parent;
+      const node = seededNode(`chain${i}.${d}`, chainRand, parent);
       parent = node;
       chainNodes++;
-      compareMatrix("chains", node);
+      compareMatrix("chains", `chains @${Math.floor(i / BLOCK)}`, node);
     }
   }
 
+  /**
+   * A seeded part built from nothing in the game: up to two dozen float32
+   * vertices (zeros of both signs, ones and the odd large or tiny value among
+   * them, at one of four scales) under a seeded chain one to three deep.
+   */
+  function checkSynthetic(i) {
+    const block = Math.floor(i / BLOCK);
+    const r = synthRand;
+    const SPECIAL = [0, -0, 1, -1, 1e-3, 1e3];
+    const scale = [0.01, 1, 10, 100][Math.floor(r() * 4)];
+    const n = 1 + Math.floor(r() * 24);
+    const positions = new Float32Array(n * 3);
+    for (let k = 0; k < positions.length; k++) {
+      positions[k] = r() < 0.1 ? SPECIAL[Math.floor(r() * SPECIAL.length)] : (r() * 2 - 1) * scale;
+    }
+    const depth = 1 + Math.floor(r() * 3);
+    let part = null;
+    for (let d = 0; d < depth; d++) part = seededNode(`synthetic${i}.${d}`, r, part);
+    synthParts++;
+    compareMatrix("synthetic", `synthetic (matrix) @${block}`, part);
+    const own = worldMatrixOf(part, new M.Matrix());
+    for (const world of transformsFor(M, own, r)) compare("synthetic", `synthetic @${block}`, part.name, positions, world);
+  }
+
+  /** A kind's parts: its input digest, then both halves under its own stream. */
   function checkParts(kind, list) {
     kinds++;
-    for (const part of list) {
+    const rand = mulberry32((SEED ^ hashOf(kind)) >>> 0);
+    const kept = list.filter((part) => part.geometry.positions.length > 0);
+    for (const part of kept) {
+      const input = [...Float32Array.from(part.geometry.positions), ...chainInput(part)];
+      ledger.input(kind, input);
+      ledger.input(`${kind} (matrix)`, input);
+    }
+    for (const part of kept) {
       const positions = Float32Array.from(part.geometry.positions);
-      if (positions.length === 0) continue;
       parts++;
-      mesh.setVerticesData(B.VertexBuffer.PositionKind, positions, false);
-      compareMatrix(kind, part);
+      compareMatrix(kind, `${kind} (matrix)`, part);
       const own = worldMatrixOf(part, new M.Matrix());
-      for (const world of transformsFor(M, own)) compare(kind, part.name, positions, world);
+      for (const world of transformsFor(M, own, rand)) compare(kind, kind, part.name, positions, world);
     }
   }
 
@@ -304,24 +403,21 @@ try {
     }
   }
   for (let i = 0; i < CHAINS; i++) checkChain(i);
+  for (let i = 0; i < SYNTHETIC; i++) checkSynthetic(i);
 } finally {
   await server.close();
 }
 
 console.log(
-  `bounds-check: ${checks} comparisons over ${parts} parts of ${kinds} kinds, ${TRANSFORMS} off-identity transforms a part` +
+  `bounds-check: ${checks} bounds over ${parts} parts of ${kinds} kinds and ${synthParts} synthetic parts, ${TRANSFORMS} off-identity transforms a part` +
     (PERTURB ? " (--perturb: our matrix a millimetre off in X)" : ""),
 );
 console.log(
-  `bounds-check: ${matrixChecks} world matrices against TransformNode.computeWorldMatrix (${parts} parts, ${chainNodes} nodes of ${CHAINS} seeded chains)`,
+  `bounds-check: ${matrixChecks} world matrices (${parts} parts, ${synthParts} synthetic parts, ${chainNodes} nodes of ${CHAINS} seeded chains)` +
+    (RECORD ? `; against Babylon live, ${failures + matrixFailures} differ` : ""),
 );
 if (buildErrors.length) console.log(`BUILD FAILED: ${buildErrors.join("; ")}`);
-if (PERTURB) {
-  // The negative test: every comparison of both halves must have been caught.
-  console.log(`perturbed: ${failures} of ${checks} bounds and ${matrixFailures} of ${matrixChecks} matrices differ`);
-  const caught = failures === checks && checks > 0 && matrixFailures === matrixChecks && matrixChecks > 0;
-  process.exit(caught && !buildErrors.length ? 0 : 1);
-}
 const total = failures + matrixFailures;
 if (total) console.log(`FAILED: ${total} differing answers in ${[...failedKinds.keys()].join(", ")}`);
-process.exit(total || buildErrors.length || checks === 0 || matrixChecks === 0 ? 1 : 0);
+const failed = ledger.finish();
+process.exit(failed || total || buildErrors.length || checks === 0 || matrixChecks === 0 ? 1 : 0);

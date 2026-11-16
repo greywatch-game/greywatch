@@ -2,7 +2,8 @@
  * geometry-check.mjs — proves `src/geometry/` builds Babylon's surfaces BIT
  * FOR BIT.
  *
- *   node scripts/geometry-check.mjs [--trials 400] [--seed 1]
+ *   node scripts/geometry-check.mjs [--perturb]
+ *   node scripts/geometry-check.mjs --record   (only where Babylon 9.28 is installed)
  *
  * `src/geometry/` is a port of the eight primitive generators the tree builds
  * from and of what the kit and the models do to vertex data — merge it (with
@@ -11,9 +12,9 @@
  * compute its normals — and its whole
  * claim is that a surface built through it is the surface Babylon built: one
  * vertex out of place moves every building made of it, and `kit:hash` and
- * `merge:hash` compare bits. This builds each one both ways over seeded
- * options and compares every number, every index and the attribute set with
- * `Object.is`, so a -0 against a +0 fails. It is `math-check.mjs`'s twin, and
+ * `merge:hash` compare bits. This builds each one over seeded options and
+ * compares every number, every index and the attribute set with Babylon's by
+ * its bits, so a -0 against a +0 fails. It is `math-check.mjs`'s twin, and
  * like it, it fails on an export of `primitives.ts` no case names
  * (`COVERED`), so it cannot quietly fall behind.
  *
@@ -30,17 +31,24 @@
  * type is what the merge cases check separately — a `Float32Array` first
  * member must give a `Float32Array` back, as Babylon's does.
  *
- * `--trials` past about 3,000 runs Node out of heap, and the leak is
- * BABYLON's: its `CreateSphereVertexData` holds on to ~0.5 MB a call, which
- * ours does not (measured over 3,000 calls each, after a forced GC: 67 MB
- * against 1,588). 3,000 is 33,000 comparisons and every option arm many times.
- *
- * Deleted with Babylon at X6.1, when there is nothing left to compare with.
+ * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/geometry-check.json`,
+ * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+ * checks"): each case over a block of twenty trials is one digest of Babylon
+ * 9.28's answers, captured by `--record` while the package was installed
+ * (X6.1i's first commit, which compared every answer live as well), and a run
+ * now holds ours to them — so the seed, the trial count and every draw below
+ * are part of what was recorded and may not change. A generator Babylon threw
+ * on must throw here too (the throw is recorded, not its message). Two cases
+ * compare ours with ours and need no table: a merge leaves its members alone,
+ * and refuses members whose attributes differ. `--perturb` is the negative
+ * test: one value in the first answer of every recorded group moved one ULP,
+ * and every group must then fail. A new export owes a case and has nothing to
+ * record it against since the package left (X6.1i).
  */
-import * as B from "@babylonjs/core";
 import * as G from "../src/geometry/primitives.ts";
 import { GeometryBuffer, computeNormals, computeNormalsInto, mergeTransformed } from "../src/geometry/buffer.ts";
 import { Matrix as OurMatrix, Quaternion as OurQuaternion, Vector3 as OurVector3 } from "../src/math/index.ts";
+import { Ledger } from "./lib/babylonTable.mjs";
 import { mulberry32 } from "../src/world/rng.ts";
 
 const args = process.argv.slice(2);
@@ -49,7 +57,21 @@ const arg = (name, dflt) => {
   return i >= 0 ? Number(args[i + 1]) : dflt;
 };
 const TRIALS = arg("--trials", 400);
-const rand = mulberry32(arg("--seed", 1));
+const SEED = arg("--seed", 1);
+const RECORD = args.includes("--record");
+/** A table group is one case over this many trials. */
+const BLOCK = 20;
+const ledger = new Ledger("geometry-check", { seed: SEED, trials: TRIALS, block: BLOCK }, {
+  record: RECORD,
+  perturb: args.includes("--perturb") && "output",
+});
+/** Babylon, when recording: the reference the table is taken from. */
+const B = RECORD ? await import("@babylonjs/core") : null;
+const rand = mulberry32(SEED);
+
+/** The trial being run, which names the block a comparison is filed under. */
+let trial = 0;
+const group = (name) => `${name} @${Math.floor(trial / BLOCK)}`;
 
 const pick = (list) => list[Math.floor(rand() * list.length)];
 /** Sometimes absent, sometimes zero, mostly a positive size. */
@@ -66,6 +88,20 @@ let checks = 0;
 const failedNames = new Map();
 const KINDS = ["positions", "normals", "uvs", "uvs2", "colors", "indices"];
 
+/** A surface as the flat list its comparison is: per kind, whether, how long, what. */
+function flatData(x) {
+  const out = [];
+  for (const k of KINDS) {
+    const a = x[k] ?? null;
+    out.push(!!a);
+    if (!a) continue;
+    out.push(a.length);
+    for (let i = 0; i < a.length; i++) out.push(a[i]);
+  }
+  return out;
+}
+
+/** Live: ours against the other, every value by `Object.is` (ours with ours, or Babylon's when recording). */
 function sameData(name, ours, theirs, input) {
   checks++;
   let why = null;
@@ -103,17 +139,43 @@ function sameValue(name, ok, input, why) {
   if (failedNames.get(name) <= 3) console.log(`DIFF ${name}\n  input ${JSON.stringify(input)}\n  ${why}`);
 }
 
+/**
+ * A surface against Babylon's: compared live when recording (and Babylon's
+ * filed), ours filed against the table otherwise. `key` is the group.
+ */
+function againstBabylon(name, key, ours, theirs, input) {
+  if (B) {
+    sameData(name, ours, theirs, input);
+    ledger.answer(key, flatData(theirs));
+  } else {
+    ledger.answer(key, flatData(ours));
+  }
+}
+
+/** A merge's precision (whether its positions are a `Float32Array`), the same way. */
+function precisionAgainstBabylon(name, ours, theirs, input) {
+  const mine = ours.positions instanceof Float32Array;
+  if (B) {
+    const theirs32 = theirs.positions instanceof Float32Array;
+    sameValue(name, mine === theirs32, input, `ours ${ours.positions.constructor.name}, Babylon's ${theirs.positions.constructor.name}`);
+    ledger.answer(group(name), [theirs32]);
+  } else {
+    ledger.answer(group(name), [mine]);
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The generators. Each case draws options and names the export it covers.
 
 const COVERED = new Set(["FRONTSIDE", "BACKSIDE", "DOUBLESIDE", "NO_CAP", "CAP_START", "CAP_END", "CAP_ALL"]);
 const CASES = [];
+/** `theirs` is the Babylon generator's NAME, asked only when recording. */
 function caseOf(name, ours, theirs, draw) {
   COVERED.add(name);
-  CASES.push({ name, ours, theirs, draw });
+  CASES.push({ name, ours, theirs: B ? B[theirs] : null, draw });
 }
 
-caseOf("createBox", G.createBox, B.CreateBoxVertexData, () =>
+caseOf("createBox", G.createBox, "CreateBoxVertexData", () =>
   rand() < 0.6
     ? clean({ width: dim(), height: dim(), depth: dim() })
     : clean({
@@ -127,7 +189,7 @@ caseOf("createBox", G.createBox, B.CreateBoxVertexData, () =>
         sideOrientation: side(),
       }),
 );
-caseOf("createCylinder", G.createCylinder, B.CreateCylinderVertexData, () =>
+caseOf("createCylinder", G.createCylinder, "CreateCylinderVertexData", () =>
   clean({
     height: maybe(dim()),
     diameterTop: maybe(pick([0, dim()])),
@@ -142,10 +204,10 @@ caseOf("createCylinder", G.createCylinder, B.CreateCylinderVertexData, () =>
     sideOrientation: side(),
   }),
 );
-caseOf("createTorus", G.createTorus, B.CreateTorusVertexData, () =>
+caseOf("createTorus", G.createTorus, "CreateTorusVertexData", () =>
   clean({ diameter: maybe(dim()), thickness: maybe(dim()), tessellation: maybe(pick([3, 8, 16, 18])), sideOrientation: side() }),
 );
-caseOf("createIcoSphere", G.createIcoSphere, B.CreateIcoSphereVertexData, () =>
+caseOf("createIcoSphere", G.createIcoSphere, "CreateIcoSphereVertexData", () =>
   clean({
     radius: maybe(dim()),
     radiusX: maybe(dim()),
@@ -156,7 +218,7 @@ caseOf("createIcoSphere", G.createIcoSphere, B.CreateIcoSphereVertexData, () =>
     sideOrientation: side(),
   }),
 );
-caseOf("createSphere", G.createSphere, B.CreateSphereVertexData, () =>
+caseOf("createSphere", G.createSphere, "CreateSphereVertexData", () =>
   clean({
     segments: maybe(pick([1, 2, 4, 8, 16])),
     diameter: maybe(dim()),
@@ -169,7 +231,7 @@ caseOf("createSphere", G.createSphere, B.CreateSphereVertexData, () =>
     sideOrientation: side(),
   }),
 );
-caseOf("createPolyhedron", G.createPolyhedron, B.CreatePolyhedronVertexData, () =>
+caseOf("createPolyhedron", G.createPolyhedron, "CreatePolyhedronVertexData", () =>
   clean({
     type: maybe(Math.floor(rand() * 17) - 1),
     size: maybe(dim()),
@@ -181,10 +243,10 @@ caseOf("createPolyhedron", G.createPolyhedron, B.CreatePolyhedronVertexData, () 
   }),
 );
 
-caseOf("createPlane", G.createPlane, B.CreatePlaneVertexData, () =>
+caseOf("createPlane", G.createPlane, "CreatePlaneVertexData", () =>
   clean({ size: maybe(dim()), width: maybe(dim()), height: maybe(dim()), sideOrientation: side() }),
 );
-caseOf("createDisc", G.createDisc, B.CreateDiscVertexData, () =>
+caseOf("createDisc", G.createDisc, "CreateDiscVertexData", () =>
   clean({
     radius: maybe(dim()),
     tessellation: maybe(pick([3, 6, 12, 24, 64])),
@@ -224,9 +286,15 @@ function oursOf(arrays, f32) {
     uvs: arrays.uvs ? (f32 ? new Float32Array(arrays.uvs) : arrays.uvs) : null,
   });
 }
+/**
+ * A soup with its normals: Babylon's `ComputeNormals` when recording, and
+ * since the package left ours, which `computeNormals` below holds to it (an
+ * input made by a broken copy moves the answers it feeds, so it fails too).
+ */
 function withNormals(a) {
   const normals = [];
-  B.VertexData.ComputeNormals(a.positions, a.indices, normals);
+  if (B) B.VertexData.ComputeNormals(a.positions, a.indices, normals);
+  else normals.push(...computeNormals(a.positions, a.indices));
   return { ...a, normals };
 }
 
@@ -239,41 +307,41 @@ function drawMatrix() {
   };
 }
 
-/** The one scene the bake case builds its meshes in: a mesh needs one. */
-const bakeScene = new B.Scene(new B.NullEngine());
+/** The one scene the bake case builds its meshes in, recording: a mesh needs one. */
+const bakeScene = B ? new B.Scene(new B.NullEngine()) : null;
+const theirMatrix = (m) => (m ? B.Matrix.Compose(new B.Vector3(...m.s), new B.Quaternion(...m.q), new B.Vector3(...m.t)) : undefined);
+const ourMatrix = (m) => (m ? OurMatrix.Compose(new OurVector3(...m.s), new OurQuaternion(...m.q), new OurVector3(...m.t)) : null);
 
 const BUFFER_CASES = {
   computeNormals() {
     const a = soup();
-    const theirs = [];
-    B.VertexData.ComputeNormals(a.positions, a.indices, theirs);
-    sameData("computeNormals", { normals: computeNormals(a.positions, a.indices) }, { normals: theirs }, a);
+    let theirs = null;
+    if (B) {
+      theirs = [];
+      B.VertexData.ComputeNormals(a.positions, a.indices, theirs);
+    }
+    againstBabylon("computeNormals", group("computeNormals"), { normals: computeNormals(a.positions, a.indices) }, { normals: theirs }, a);
   },
   transform() {
     const a = withNormals(soup());
-    const s = [rand() < 0.3 ? -1 : 1, 1 + rand(), rand() < 0.2 ? 1 : 0.5 + rand()];
-    const q = [rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1];
-    const t = [rand() * 10, rand() * 10, rand() < 0.2 ? -0 : rand() * 10];
+    const m = drawMatrix();
     const f32 = rand() < 0.3;
-    const theirs = theirsOf(a, f32).transform(B.Matrix.Compose(new B.Vector3(...s), new B.Quaternion(...q), new B.Vector3(...t)));
-    const ours = oursOf(a, f32).transform(OurMatrix.Compose(new OurVector3(...s), new OurQuaternion(...q), new OurVector3(...t)));
-    sameData("transform", ours, theirs, { a, s, q, t, f32 });
+    const theirs = B ? theirsOf(a, f32).transform(theirMatrix(m)) : null;
+    const ours = oursOf(a, f32).transform(ourMatrix(m));
+    againstBabylon("transform", group("transform"), ours, theirs, { a, ...m, f32 });
   },
   merge() {
     const count = 1 + Math.floor(rand() * 4);
     const uv = rand() < 0.8;
     const parts = Array.from({ length: count }, () => ({ a: withNormals(soup(uv)), f32: rand() < 0.3 }));
     const [first, ...rest] = parts;
-    const theirs = theirsOf(first.a, first.f32).merge(rest.map((p) => theirsOf(p.a, p.f32)), rand() < 0.5);
+    // Babylon's `use32BitsIndices`, drawn whether or not it is asked.
+    const wide = rand() < 0.5;
+    const theirs = B ? theirsOf(first.a, first.f32).merge(rest.map((p) => theirsOf(p.a, p.f32)), wide) : null;
     const ours = oursOf(first.a, first.f32).merge(rest.map((p) => oursOf(p.a, p.f32)));
-    sameData("merge", ours, theirs, parts);
+    againstBabylon("merge", group("merge"), ours, theirs, parts);
     // The FIRST member's precision is the merge's (see `buffer.ts`).
-    sameValue(
-      "merge keeps the first member's precision",
-      (ours.positions instanceof Float32Array) === (theirs.positions instanceof Float32Array),
-      parts.map((p) => p.f32),
-      `ours ${ours.positions.constructor.name}, Babylon's ${theirs.positions.constructor.name}`,
-    );
+    precisionAgainstBabylon("merge keeps the first member's precision", ours, theirs, parts.map((p) => p.f32));
   },
   mergeTransformed() {
     // What `Mesh.MergeMeshes` runs: every member under its own world matrix,
@@ -286,28 +354,24 @@ const BUFFER_CASES = {
       m: rand() < 0.15 ? null : drawMatrix(),
     }));
     const [first, ...rest] = parts;
-    const theirMatrix = (m) => (m ? B.Matrix.Compose(new B.Vector3(...m.s), new B.Quaternion(...m.q), new B.Vector3(...m.t)) : undefined);
-    const ourMatrix = (m) => (m ? OurMatrix.Compose(new OurVector3(...m.s), new OurQuaternion(...m.q), new OurVector3(...m.t)) : null);
-    const steps = theirsOf(first.a, first.f32)._mergeCoroutine(
-      theirMatrix(first.m),
-      rest.map((p) => ({ vertexData: theirsOf(p.a, p.f32), transform: theirMatrix(p.m) })),
-      true,
-      false,
-      false,
-    );
-    let step = steps.next();
-    while (!step.done) step = steps.next();
-    const theirs = step.value;
+    let theirs = null;
+    if (B) {
+      const steps = theirsOf(first.a, first.f32)._mergeCoroutine(
+        theirMatrix(first.m),
+        rest.map((p) => ({ vertexData: theirsOf(p.a, p.f32), transform: theirMatrix(p.m) })),
+        true,
+        false,
+        false,
+      );
+      let step = steps.next();
+      while (!step.done) step = steps.next();
+      theirs = step.value;
+    }
     const members = parts.map((p) => ({ buffer: oursOf(p.a, p.f32), transform: ourMatrix(p.m) }));
     const before = members.map((m) => m.buffer.clone());
     const ours = mergeTransformed(members[0], members.slice(1));
-    sameData("mergeTransformed", ours, theirs, parts);
-    sameValue(
-      "mergeTransformed keeps the first member's precision",
-      (ours.positions instanceof Float32Array) === (theirs.positions instanceof Float32Array),
-      parts.map((p) => p.f32),
-      `ours ${ours.positions.constructor.name}, Babylon's ${theirs.positions.constructor.name}`,
-    );
+    againstBabylon("mergeTransformed", group("mergeTransformed"), ours, theirs, parts);
+    precisionAgainstBabylon("mergeTransformed keeps the first member's precision", ours, theirs, parts.map((p) => p.f32));
     // Babylon writes the merge onto its first member; ours must not touch any.
     members.forEach((m, i) =>
       sameData("mergeTransformed leaves its members alone", m.buffer, before[i], parts[i]),
@@ -319,18 +383,21 @@ const BUFFER_CASES = {
     const a = withNormals(soup());
     const f32 = rand() < 0.3;
     const m = drawMatrix();
-    const mesh = new B.Mesh("bake", bakeScene);
-    theirsOf(a, f32).applyToMesh(mesh);
-    mesh.bakeTransformIntoVertices(B.Matrix.Compose(new B.Vector3(...m.s), new B.Quaternion(...m.q), new B.Vector3(...m.t)));
-    const theirs = {
-      positions: mesh.getVerticesData("position"),
-      normals: mesh.getVerticesData("normal"),
-      uvs: mesh.getVerticesData("uv"),
-      indices: mesh.getIndices(),
-    };
-    const ours = oursOf(a, f32).bake(OurMatrix.Compose(new OurVector3(...m.s), new OurQuaternion(...m.q), new OurVector3(...m.t)));
-    sameData("bake", ours, theirs, { a, f32, m });
-    mesh.dispose();
+    let theirs = null;
+    if (B) {
+      const mesh = new B.Mesh("bake", bakeScene);
+      theirsOf(a, f32).applyToMesh(mesh);
+      mesh.bakeTransformIntoVertices(theirMatrix(m));
+      theirs = {
+        positions: mesh.getVerticesData("position"),
+        normals: mesh.getVerticesData("normal"),
+        uvs: mesh.getVerticesData("uv"),
+        indices: mesh.getIndices(),
+      };
+      mesh.dispose();
+    }
+    const ours = oursOf(a, f32).bake(ourMatrix(m));
+    againstBabylon("bake", group("bake"), ours, theirs, { a, f32, m });
   },
   computeNormalsIntoFloat32() {
     // `DebrisSystem`'s call: a shard's float32 positions, its normals summed
@@ -338,11 +405,15 @@ const BUFFER_CASES = {
     // degenerate faces and all — the soup repeats indices.
     const a = soup(false);
     const positions = new Float32Array(a.positions);
-    const theirs = new Float32Array(positions.length).fill(7);
     const ours = new Float32Array(positions.length).fill(7);
-    B.VertexData.ComputeNormals(positions, a.indices, theirs);
+    let theirs = null;
+    if (B) {
+      theirs = new Float32Array(positions.length).fill(7);
+      B.VertexData.ComputeNormals(positions, a.indices, theirs);
+    }
     computeNormalsInto(positions, a.indices, ours);
-    sameData("computeNormalsInto (float32, a shard's)", { normals: ours }, { normals: theirs }, a);
+    const name = "computeNormalsInto (float32, a shard's)";
+    againstBabylon(name, group(name), { normals: ours }, { normals: theirs }, a);
   },
   chunkBox() {
     // `BlastDebrisSystem`'s call: a base size in the rubble's band, three
@@ -352,7 +423,8 @@ const BUFFER_CASES = {
     const hy = base * (0.55 + 0.5 * rand());
     const hz = base * (0.7 + 0.6 * rand());
     const o = { width: hx * 2, height: hy * 2, depth: hz * 2 };
-    sameData("createBox (a rubble chunk's)", G.createBox({ ...o }), B.CreateBoxVertexData({ ...o }), o);
+    const name = "createBox (a rubble chunk's)";
+    againstBabylon(name, group(name), G.createBox({ ...o }), B ? B.CreateBoxVertexData({ ...o }) : null, o);
   },
   mergeRefusesMismatch() {
     const a = withNormals(soup(true));
@@ -375,14 +447,15 @@ const missing = Object.keys(G).filter((k) => !COVERED.has(k));
 // each, since nothing about them is drawn.
 for (const subdivisions of [8, 4]) {
   const o = { radius: 1, subdivisions, flat: false };
-  sameData(`createIcoSphere (the billow's, ${subdivisions})`, G.createIcoSphere({ ...o }), B.CreateIcoSphereVertexData({ ...o }), o);
+  const name = `createIcoSphere (the billow's, ${subdivisions})`;
+  againstBabylon(name, name, G.createIcoSphere({ ...o }), B ? B.CreateIcoSphereVertexData({ ...o }) : null, o);
 }
 
-for (let t = 0; t < TRIALS; t++) {
+for (trial = 0; trial < TRIALS; trial++) {
   for (const c of CASES) {
     const options = c.draw();
-    // An option set Babylon throws on must throw here too, and the message
-    // says which way round it went.
+    // An option set Babylon throws on must throw here too (the throw is what
+    // is recorded, not its message).
     const attempt = (f) => {
       try {
         return f({ ...options });
@@ -391,19 +464,26 @@ for (let t = 0; t < TRIALS; t++) {
       }
     };
     const ours = attempt(c.ours);
-    const theirs = attempt(c.theirs);
-    if (ours.threw || theirs.threw) {
-      sameValue(c.name, !!ours.threw === !!theirs.threw, options, `ours ${ours.threw ?? "built"}, Babylon's ${theirs.threw ?? "built"}`);
+    const answer = (x) => (x.threw ? [true] : [false, ...flatData(x)]);
+    if (B) {
+      const theirs = attempt(c.theirs);
+      if (ours.threw || theirs.threw) {
+        sameValue(c.name, !!ours.threw === !!theirs.threw, options, `ours ${ours.threw ?? "built"}, Babylon's ${theirs.threw ?? "built"}`);
+      } else {
+        sameData(c.name, ours, theirs, options);
+      }
+      ledger.answer(group(c.name), answer(theirs));
     } else {
-      sameData(c.name, ours, theirs, options);
+      ledger.answer(group(c.name), answer(ours));
     }
   }
   for (const run of Object.values(BUFFER_CASES)) run();
 }
 
 console.log(
-  `geometry-check: ${checks} comparisons over ${CASES.length + Object.keys(BUFFER_CASES).length} cases, ${TRIALS} trials each`,
+  `geometry-check: ${checks} comparisons ${B ? "against Babylon live and " : ""}of ours with ours, over ${CASES.length + Object.keys(BUFFER_CASES).length} cases, ${TRIALS} trials each`,
 );
 if (missing.length) console.log(`UNCOVERED (an export with no case): ${missing.join(", ")}`);
 if (failures) console.log(`FAILED: ${failures} differing answers in ${[...failedNames.keys()].join(", ")}`);
-process.exit(failures || missing.length ? 1 : 0);
+const failed = ledger.finish();
+process.exit(failures || missing.length || failed ? 1 : 0);

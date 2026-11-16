@@ -8,6 +8,7 @@
  *                                [--samples N] [--seed S] [--tight]
  *                                [--body player|tank|truck|heli] [--seq I]
  *                                [--trace] [--reference client|server]
+ *                                [--perturb] [--record]
  *
  * The three body sweeps — the player on foot, a hull driving, a wreck coasting
  * — left Babylon's collider for a port of it that runs on plain numbers
@@ -25,11 +26,29 @@
  * `RayWorld` whose `bodyNear` every sweep gathers from and the
  * `CollisionField` over it (`map.collidables`). Every Babylon scene a mode
  * compares against is built HERE, from those boxes, on a `NullEngine` of this
- * script's own — the authority has no scene to borrow, and this file is a
- * dev oracle that keeps Babylon until X6.1 deletes it.
+ * script's own — the authority has no scene to borrow.
  * The bodies are the player and the three vehicle kinds, their
  * ellipsoids and offsets DERIVED from `CONFIG` as `Player` and `Vehicle`
- * derive them, so a retune is checked without anybody telling this file.
+ * derive them (`bodyParams`) — and in `exact` against its table, the numbers
+ * the table was recorded with, which it FROZE beside its answers.
+ *
+ * **`exact`'s answers are a RECORDED TABLE** (`scripts/tables/sweep-check.json`,
+ * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+ * checks"): each map's body over a block of 250 samples is one digest of
+ * Babylon 9.28's answers (the whole reference scene's), captured by `--record`
+ * while the package was installed (X6.1i's first commit, which compared every
+ * answer live as well, narrowed and whole), and a run now holds ours to them.
+ * **A map is the game's**, so beside its answers the table holds a digest of
+ * what the map is to a sweep (its boxes, their groups, its floor, its
+ * square), and a map re-laid since is reported STALE and not compared. So
+ * that the oracle does not fade as the maps move, `exact` also runs a SEEDED
+ * world built from nothing in the game (`synthetic`, after the maps: see
+ * `syntheticWorld`), which is never stale. Each body's samples are a stream
+ * of their own, so a map or a body named alone draws what the table's run
+ * drew and is held to its groups; the seed and the sample count are part of
+ * what was recorded. `--perturb` is the negative test: our start moved a
+ * millimetre in x, so every group must differ from the table. `--tight` is
+ * held to the same table (every gather must give the first one's answer).
  *
  * ## The modes
  *
@@ -143,11 +162,14 @@
  * which with the map and `--seed` is everything needed to replay a case the
  * summary printed; `--trace` then prints every frame of a `walk` where a
  * drift moved by more than 0.1 mm, with all three bodies' positions. Exits 1 on a failure as each mode defines it, or a
- * reference that cannot be trusted. Deleted with Babylon at X6.1, when there
- * is nothing left to compare with.
+ * reference that cannot be trusted. `shipped` and `walk` measure against
+ * Babylon live and go with the package (X6.1i): they were the account of how
+ * far the world that shipped was from the port, and a table cannot answer a
+ * question asked from a start nudged at run time.
  */
 import { fileURLToPath } from "node:url";
 import { createServer } from "vite";
+import { Ledger } from "./lib/babylonTable.mjs";
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const args = process.argv.slice(2);
@@ -165,6 +187,17 @@ const TRACE = args.includes("--trace");
 /** `shipped` and `walk`'s Babylon world: the client's collider scene, or the authority's. */
 const REFERENCE = opt("--reference", "client");
 const named = args.filter((a, i) => !a.startsWith("--") && !VALUED.has(args[i - 1]));
+const RECORD = args.includes("--record");
+const PERTURB = args.includes("--perturb");
+/** `exact`'s table groups a map's body over this many samples. */
+const BLOCK = 250;
+/**
+ * `--perturb`'s nudge: a millimetre on our start's X, so every sample moves
+ * (a start is never so deep in a corner that the answer cannot move with it).
+ */
+const NUDGE = 2 ** -10;
+/** `exact`'s recorded answers (`scripts/lib/babylonTable.mjs`); null in the other modes. */
+let ledger = null;
 
 /** How many failing samples are printed in full before the rest are only counted. */
 const SHOW = 6;
@@ -211,12 +244,33 @@ function vite() {
 // The bodies, off CONFIG as their owners derive them.
 
 /**
+ * The numbers the bodies are made of, read off CONFIG — and FROZEN in
+ * `exact`'s table when it is recorded, so that a retune of a radius or a hull
+ * is not taken for a change to the sweep: `exact` runs from the table's.
+ */
+function bodyParams(CONFIG) {
+  const p = CONFIG.player;
+  const out = { player: { radius: p.radius, height: p.height } };
+  for (const kind of ["tank", "truck", "heli"]) {
+    const t = CONFIG.vehicles[kind];
+    out[kind] = {
+      collideRadius: t.drive.collideRadius,
+      climbHeight: t.drive.climbHeight,
+      hull: { width: t.hull.width, height: t.hull.height, length: t.hull.length },
+      // `walk`'s alone, never frozen: it drives the hull.
+      drive: t.drive,
+    };
+  }
+  return out;
+}
+
+/**
  * The player's body (`Player.ellipsoid`, its `sweepBody`): no offset. The hull's sphere
  * (`Vehicle`'s constructor and `aimCollider`): lifted half the climb band and
  * carried `bias` along the yaw to whichever end leads.
  */
-function bodiesOf(CONFIG) {
-  const p = CONFIG.player;
+function bodiesOf(params) {
+  const p = params.player;
   const list = [
     {
       name: "player",
@@ -226,14 +280,14 @@ function bodiesOf(CONFIG) {
     },
   ];
   for (const kind of ["tank", "truck", "heli"]) {
-    const t = CONFIG.vehicles[kind];
-    const r = t.drive.collideRadius;
+    const t = params[kind];
+    const r = t.collideRadius;
     const bias = t.hull.length / 2 - r;
     list.push({
       name: kind,
       spec: t,
-      radii: { x: r, y: (t.hull.height - t.drive.climbHeight) / 2, z: r },
-      offsetAt: (yaw, lead) => [Math.sin(yaw) * bias * lead, t.drive.climbHeight / 2, Math.cos(yaw) * bias * lead],
+      radii: { x: r, y: (t.hull.height - t.climbHeight) / 2, z: r },
+      offsetAt: (yaw, lead) => [Math.sin(yaw) * bias * lead, t.climbHeight / 2, Math.cos(yaw) * bias * lead],
       step: [0.05, 0.2],
     });
   }
@@ -312,13 +366,84 @@ const same = (a, b) => Object.is(a.x, b.x) && Object.is(a.y, b.y) && Object.is(a
 // The worlds.
 
 async function buildWorld(env, def) {
-  const engine = new env.B.NullEngine();
+  if (def.id === SYNTHETIC) return syntheticWorld(env);
+  const engine = env.B ? new env.B.NullEngine() : null;
   const map = await env.buildServerWorld(def);
   if (map.rays.hulls.length !== 0) {
     throw new Error(`${def.id}: the server world arrived with ${map.rays.hulls.length} hulls; the reference has none`);
   }
   const anchors = map.colliderBoxes.filter((b) => !(b.w > 200 || b.d > 200));
-  return { engine, map, anchors };
+  return { engine, map, anchors, input: worldInput(map, def.layout.size ?? env.CONFIG.map.size) };
+}
+
+/**
+ * What a map IS to a sweep, before any copy under test runs: every box's
+ * fields, the groups that rank them, the floor a hull is stood on and the
+ * square — the INPUT digest `exact`'s table keeps beside each map's answers,
+ * so a re-laid map reads STALE rather than wrong.
+ */
+function worldInput(map, size) {
+  const out = [size];
+  for (const b of map.colliderBoxes) out.push(b.w, b.h, b.d, b.cx, b.cy, b.cz, b.rotX, b.rotY, !!b.porous, !!b.glass);
+  for (const g of map.boxGroups) out.push("group", ...g);
+  const t = map.terrain;
+  out.push("floor", t.margin, t.roll, t.ease);
+  if (t.field) out.push(t.field.size, t.field.cell, ...t.field.heights);
+  return out;
+}
+
+/** The seeded world's name, beside the maps': it is never one of them. */
+const SYNTHETIC = "synthetic";
+
+/**
+ * `exact`'s SEEDED world, built from nothing in the game (X6.1i), so the
+ * table holds the port whatever the maps become: six hundred boxes on a flat
+ * floor in a 160 m square — slabs and walls from a hand's breadth to a house,
+ * on the ground or lifted, square to the axes, at right angles or at any yaw,
+ * one in ten pitched, one in twenty porous — and some fifty scatter-like
+ * CLUSTERS of two to six small boxes, so the rank `boxGroups` gives the
+ * sweep's ties is exercised as a map's scatter exercises it. Built through
+ * the same `RayWorld` and `CollisionField` as a map.
+ */
+function syntheticWorld(env) {
+  const { RayWorld, TerrainField, CollisionField, mulberry32 } = env;
+  const rand = mulberry32(streamSeed(SYNTHETIC) ^ 0x51ed270b);
+  const SIZE = 160;
+  const boxes = [];
+  const span = () => (rand() * 2 - 1) * 70;
+  for (let i = 0; i < 600; i++) {
+    const small = i >= 400;
+    const w = small ? 0.2 + rand() * 1.5 : 0.1 + rand() * 14;
+    const d = small ? 0.2 + rand() * 1.5 : 0.1 + rand() * 14;
+    const h = small ? 0.2 + rand() * 2 : 0.2 + rand() * 8;
+    const yaw = rand();
+    const rotY = yaw < 0.4 ? 0 : yaw < 0.6 ? Math.floor(rand() * 4) * (Math.PI / 2) : rand() * Math.PI * 2;
+    const rotX = rand() < 0.1 ? (rand() * 2 - 1) * 0.6 : 0;
+    const box = { w, h, d, cx: span(), cy: h / 2 + (rand() < 0.3 ? rand() * 6 : 0), cz: span(), rotX, rotY };
+    if (rand() < 0.05) box.porous = true;
+    boxes.push(box);
+  }
+  // The clusters: runs of the small boxes, moved together as a prop's are.
+  const boxGroups = [];
+  for (let i = 400; i < 600; ) {
+    const n = 2 + Math.floor(rand() * 5);
+    if (i + n > 600) break;
+    const x = span();
+    const z = span();
+    const group = [];
+    for (let j = i; j < i + n; j++) {
+      boxes[j].cx = x + (rand() * 2 - 1) * 2;
+      boxes[j].cz = z + (rand() * 2 - 1) * 2;
+      group.push(j);
+    }
+    boxGroups.push(group);
+    i += n;
+  }
+  const terrain = new TerrainField();
+  const rays = new RayWorld(SIZE, boxes, [], terrain, boxGroups);
+  const map = { colliderBoxes: boxes, boxGroups, rays, terrain, collidables: new CollisionField(rays) };
+  const engine = env.B ? new env.B.NullEngine() : null;
+  return { engine, map, anchors: boxes, input: worldInput(map, SIZE) };
 }
 
 /**
@@ -456,10 +581,10 @@ function shippedReference(env, engine, map) {
  * ours as `RayHull`s in `rays.hulls`, which `bodyNear` hands over last.
  */
 function addHulls(env, scene, map, rand, anchors, meshOf) {
-  const { B, CONFIG } = env;
+  const { B } = env;
   const hulls = [];
   for (const kind of ["tank", "truck", "heli", "tank", "truck", "heli"]) {
-    const h = CONFIG.vehicles[kind].hull;
+    const h = env.params[kind].hull;
     const a = anchors[Math.floor(rand() * anchors.length)];
     const dir = rand() * Math.PI * 2;
     const far = Math.max(a.w, a.d) / 2 + Math.max(h.width, h.length) / 2 + 0.5 + rand() * 2;
@@ -475,13 +600,15 @@ function addHulls(env, scene, map, rand, anchors, meshOf) {
       rotX: 0,
       rotY: rand() * Math.PI * 2,
     };
-    const mesh = B.MeshBuilder.CreateBox(`hull${hulls.length}`, { width: box.w, height: box.h, depth: box.d }, scene);
-    mesh.position.set(box.cx, box.cy, box.cz);
-    mesh.rotation.y = box.rotY;
-    mesh.checkCollisions = true;
-    mesh.computeWorldMatrix(true);
+    if (B) {
+      const mesh = B.MeshBuilder.CreateBox(`hull${hulls.length}`, { width: box.w, height: box.h, depth: box.d }, scene);
+      mesh.position.set(box.cx, box.cy, box.cz);
+      mesh.rotation.y = box.rotY;
+      mesh.checkCollisions = true;
+      mesh.computeWorldMatrix(true);
+      meshOf?.set(box, mesh);
+    }
     map.rays.hulls.push({ rayBox: () => box });
-    meshOf?.set(box, mesh);
     hulls.push(box);
   }
   return hulls;
@@ -621,13 +748,14 @@ const fmt = (v) => (v === 0 ? "0" : v.toExponential(2));
 // `exact`
 
 async function runExact(env, def, state) {
-  const { B, CONFIG, CollisionField, mulberry32 } = env;
-  const { engine, map, anchors } = await buildWorld(env, def);
-  const { scene, meshOf } = oneMeshPerBox(env, engine, map, clientOrder(map));
+  const { B, CollisionField, mulberry32 } = env;
+  const { engine, map, anchors, input } = await buildWorld(env, def);
+  // Babylon's world, recording: one collider mesh per box in the client's order.
+  const { scene, meshOf } = B ? oneMeshPerBox(env, engine, map, clientOrder(map)) : { scene: null, meshOf: null };
   const rand = mulberry32(streamSeed(def.id));
   const hulls = addHulls(env, scene, map, rand, anchors, meshOf);
-  checkMaterials(scene, def.id);
-  const probe = new B.Mesh("probe", scene);
+  if (B) checkMaterials(scene, def.id);
+  const probe = B ? new B.Mesh("probe", scene) : null;
   const fields = (TIGHT ? TIGHT_KNOBS : [{}]).map((knobs) => {
     const counting = countingRays(map.rays);
     return { counting, field: new CollisionField(counting, knobs), ours: { x: 0, y: 0, z: 0 } };
@@ -638,36 +766,61 @@ async function runExact(env, def, state) {
   const scratch = [];
   const theirs = { x: 0, y: 0, z: 0 };
   const narrowed = { x: 0, y: 0, z: 0 };
-  for (const body of bodiesOf(CONFIG)) {
+  for (const body of bodiesOf(env.params)) {
     const row = {
       map: def.id, body: body.name, samples: 0, blocked: 0, embedded: 0, inAnchor: 0,
       regathered: 0, whole: 0, identical: 0, oursMs: 0, narrowMs: 0, wholeMs: 0,
     };
     const regathered0 = regathers();
     const whole0 = wholes();
+    const groupOf = (n) => `${def.id} ${body.name} @${Math.floor(n / BLOCK)}`;
+    // Each body's samples are a stream of their own (the hulls are the map's),
+    // so a run naming one body (`--body`) draws what the table's run drew.
+    const draw = mulberry32(streamSeed(`${def.id}/${body.name}`));
+    for (let n = 0; n < state.samples; n += BLOCK) ledger.input(groupOf(n), input);
     for (let n = 0; n < state.samples; n++) {
-      const anchor = anchorOf(rand, hulls, anchors);
-      const smp = drawSample(rand, anchor, body);
+      const anchor = anchorOf(draw, hulls, anchors);
+      const smp = drawSample(draw, anchor, body);
+      // `--perturb`: our start a millimetre off in x, Babylon's (the table's) not.
+      const start = PERTURB ? [smp.position[0] + NUDGE, smp.position[1], smp.position[2]] : smp.position;
       let t = performance.now();
-      oursFromFloat32(env, fields[0].field, smp.position, body.radii, smp.offset, smp.step, fields[0].ours);
+      oursFromFloat32(env, fields[0].field, start, body.radii, smp.offset, smp.step, fields[0].ours);
       row.oursMs += performance.now() - t;
+      for (let i = 1; i < fields.length; i++) {
+        oursFromFloat32(env, fields[i].field, start, body.radii, smp.offset, smp.step, fields[i].ours);
+      }
+      row.samples++;
+      const emb = embedding(map, smp, body, anchor, scratch);
+      if (emb.any) row.embedded++;
+      if (emb.anchor) row.inAnchor++;
+      const first = fields[0].ours;
+      if (!B) {
+        // Against the table: field 0's answer is filed, and every other
+        // gather (`--tight`) must give field 0's to the bit.
+        ledger.answer(groupOf(n), [first.x, first.y, first.z]);
+        const free = Math.hypot(first.x - start[0] - smp.step[0], first.y - start[1] - smp.step[1], first.z - start[2] - smp.step[2]);
+        if (free > BLOCKED) row.blocked++;
+        if (fields.every((f) => same(f.ours, first))) continue;
+        state.failures++;
+        if (state.failures <= SHOW) {
+          console.log(
+            `DIFF ${def.id} ${body.name} sample ${n}: the gathers disagree\n${reproduce(def, body, n, smp)}\n` +
+              fields.map(({ ours }, i) => `  ours (gather ${i}) ${JSON.stringify([ours.x, ours.y, ours.z])}`).join("\n"),
+          );
+        }
+        continue;
+      }
       // The list our final gather held, as the reference's meshes, in its order.
       near.length = 0;
       for (const box of fields[0].counting.last) near.push(meshOf.get(box));
-      for (let i = 1; i < fields.length; i++) {
-        oursFromFloat32(env, fields[i].field, smp.position, body.radii, smp.offset, smp.step, fields[i].ours);
-      }
       t = performance.now();
       babylonMove(env, probe, smp.position, body.radii, smp.offset, smp.step, near, narrowed);
       row.narrowMs += performance.now() - t;
       t = performance.now();
       babylonMove(env, probe, smp.position, body.radii, smp.offset, smp.step, null, theirs);
       row.wholeMs += performance.now() - t;
+      ledger.answer(groupOf(n), [theirs.x, theirs.y, theirs.z]);
 
-      row.samples++;
-      const emb = embedding(map, smp, body, anchor, scratch);
-      if (emb.any) row.embedded++;
-      if (emb.anchor) row.inAnchor++;
       const free = Math.hypot(
         theirs.x - smp.position[0] - smp.step[0],
         theirs.y - smp.position[1] - smp.step[1],
@@ -701,26 +854,31 @@ async function runExact(env, def, state) {
     row.whole = wholes() - whole0;
     state.rows.push(row);
   }
-  scene.dispose();
-  engine.dispose();
+  scene?.dispose();
+  engine?.dispose();
   return map.colliderBoxes.length;
 }
 
 function reportExact(state) {
   const us = (ms, n) => ((ms * 1000) / n).toFixed(1);
+  const live = state.rows.some((r) => r.narrowMs > 0);
   table(
-    ["map", "body", "samples", "blocked", "embedded", "in anchor", "regathered", "whole map", "identical", "µs ours", "µs babylon", "µs whole"],
+    ["map", "body", "samples", "blocked", "embedded", "in anchor", "regathered", "whole map", ...(live ? ["identical"] : []), "µs ours", ...(live ? ["µs babylon", "µs whole"] : [])],
     state.rows.map((r) => [
-      r.map, r.body, r.samples, r.blocked, r.embedded, r.inAnchor, r.regathered, r.whole, r.identical,
-      us(r.oursMs, r.samples), us(r.narrowMs, r.samples), us(r.wholeMs, r.samples),
+      r.map, r.body, r.samples, r.blocked, r.embedded, r.inAnchor, r.regathered, r.whole, ...(live ? [r.identical] : []),
+      us(r.oursMs, r.samples), ...(live ? [us(r.narrowMs, r.samples), us(r.wholeMs, r.samples)] : []),
     ]),
   );
   const samples = sum(state.rows, "samples");
-  const identical = sum(state.rows, "identical");
-  console.log(
-    `\n${identical} of ${samples} identical${TIGHT ? ` with --tight (${sum(state.rows, "regathered")} re-gathered, ${sum(state.rows, "whole")} fell through to the whole map)` : ""}.` +
-      " µs babylon is Babylon narrowed to our final gather; µs whole is its walk of the whole reference scene.",
-  );
+  const gathered = TIGHT ? ` with --tight (${sum(state.rows, "regathered")} re-gathered, ${sum(state.rows, "whole")} fell through to the whole map)` : "";
+  if (live) {
+    console.log(
+      `\n${sum(state.rows, "identical")} of ${samples} identical against Babylon live${gathered}.` +
+        " µs babylon is Babylon narrowed to our final gather; µs whole is its walk of the whole reference scene.",
+    );
+  } else {
+    console.log(`\n${samples} samples held to the table${gathered}.`);
+  }
   if (state.failures) console.log(`FAILED: ${state.failures} samples differ${state.failures > SHOW ? ` (the first ${SHOW} printed)` : ""}`);
   return state.failures > 0;
 }
@@ -748,7 +906,7 @@ async function runShipped(env, def, state) {
   const nudged = { x: 0, y: 0, z: 0 };
   const inOrder = { x: 0, y: 0, z: 0 };
   const unmergedAns = { x: 0, y: 0, z: 0 };
-  for (const body of bodiesOf(CONFIG)) {
+  for (const body of bodiesOf(env.params)) {
     const row = {
       map: def.id, body: body.name, samples: 0, blocked: 0, embedded: 0, inAnchor: 0,
       hist: BUCKETS.map(() => 0), worst: 0, oursMs: 0, babylonMs: 0,
@@ -1153,7 +1311,7 @@ async function runWalk(env, def, state) {
   const { scene } = shippedReference(env, engine, map);
   checkMaterials(scene, def.id);
   const probe = new B.Mesh("probe", scene);
-  for (const body of bodiesOf(CONFIG)) {
+  for (const body of bodiesOf(env.params)) {
     const count = body.spec ? Math.max(1, Math.round(state.samples / 2)) : state.samples;
     const row = {
       map: def.id, body: body.name, sequences: 0, frames: 0, blocked: 0, max: 0,
@@ -1275,24 +1433,58 @@ const started = performance.now();
 const server = await vite();
 let exitCode = 0;
 try {
-  const B = await server.ssrLoadModule("@babylonjs/core");
-  B.Logger.LogLevels = B.Logger.NoneLogLevel;
+  // Babylon, where it is still asked: `exact` recording its table, and the
+  // two measuring modes.
+  const B = RECORD || MODE !== "exact" ? await server.ssrLoadModule("@babylonjs/core") : null;
+  if (B) B.Logger.LogLevels = B.Logger.NoneLogLevel;
+  const CONFIG = (await server.ssrLoadModule("/src/config/index.ts")).CONFIG;
+  const samples = Number(opt("--samples", mode.samples));
+  const subset = named.length > 0 || ONLY_BODY !== null;
+  if (MODE === "exact") {
+    if (RECORD && subset) throw new Error("--record records every map and every body, or the table is half a table");
+    ledger = new Ledger("sweep-check", { seed: SEED, samples, block: BLOCK }, {
+      record: RECORD,
+      perturb: PERTURB && "input",
+      partial: subset,
+    });
+  } else if (RECORD || PERTURB) {
+    throw new Error("--record and --perturb are exact's: the other modes measure against Babylon live");
+  }
+  // The bodies: CONFIG's when recording (and frozen into the table), the
+  // table's when checking against it, CONFIG's in the measuring modes.
+  let params = bodyParams(CONFIG);
+  if (ledger && !RECORD) {
+    const frozen = ledger.recorded()?.frozen?.bodies;
+    if (!frozen) throw new Error(`no recorded bodies in ${ledger.path}`);
+    params = { ...frozen };
+  } else if (ledger) {
+    const bodies = {};
+    for (const [k, v] of Object.entries(params)) bodies[k] = { ...v, drive: undefined };
+    ledger.frozen.bodies = JSON.parse(JSON.stringify(bodies));
+  }
   const env = {
     B,
-    CONFIG: (await server.ssrLoadModule("/src/config/index.ts")).CONFIG,
+    CONFIG,
+    params,
     buildServerWorld: (await server.ssrLoadModule("/server/world.ts")).buildServerWorld,
     mulberry32: (await server.ssrLoadModule("/src/world/rng.ts")).mulberry32,
     ...(await server.ssrLoadModule("/src/world/CollisionField.ts")),
+    RayWorld: (await server.ssrLoadModule("/src/world/RayWorld.ts")).RayWorld,
+    TerrainField: (await server.ssrLoadModule("/src/world/TerrainField.ts")).TerrainField,
     EllipsoidSweep: (await server.ssrLoadModule("/src/world/ellipsoidSweep.ts")).EllipsoidSweep,
   };
   const { MAPS } = await server.ssrLoadModule("/src/world/maps.ts");
-  // The proving ground is DEV-only and not a level: checked when named.
-  const defs = named.length ? named.map((id) => MAPS.find((m) => m.id === id) ?? id) : MAPS.filter((m) => m.id !== "proving");
+  // The proving ground is DEV-only and not a level: checked when named. The
+  // seeded world is exact's alone, and run after the maps.
+  const synthetic = { id: SYNTHETIC };
+  const all = MODE === "exact" ? [...MAPS.filter((m) => m.id !== "proving"), synthetic] : MAPS.filter((m) => m.id !== "proving");
+  const defs = named.length
+    ? named.map((id) => (id === SYNTHETIC && MODE === "exact" ? synthetic : (MAPS.find((m) => m.id === id) ?? id)))
+    : all;
   const unknown = defs.filter((d) => typeof d === "string");
-  if (unknown.length) throw new Error(`no such map: ${unknown.join(", ")} (the maps are ${MAPS.map((m) => m.id).join(", ")})`);
-  if (ONLY_BODY && !bodiesOf(env.CONFIG).length) throw new Error(`no such body: ${ONLY_BODY}`);
+  if (unknown.length) throw new Error(`no such map: ${unknown.join(", ")} (the maps are ${MAPS.map((m) => m.id).join(", ")}, and exact's ${SYNTHETIC})`);
+  if (ONLY_BODY && !bodiesOf(env.params).length) throw new Error(`no such body: ${ONLY_BODY}`);
 
-  const samples = Number(opt("--samples", mode.samples));
   const ref = MODE === "exact" ? "" : ` --reference ${REFERENCE}`;
   console.log(`sweep-check --mode ${MODE}${TIGHT ? " --tight" : ""}${ref} (${mode.help}), --samples ${samples}, seed ${SEED}`);
   const state = { samples, rows: [], failures: 0, sequences: [] };
@@ -1302,6 +1494,7 @@ try {
     console.log(`  ${def.id}: ${boxes} boxes, ${((performance.now() - t) / 1000).toFixed(1)} s`);
   }
   if (mode.report(state)) exitCode = 1;
+  if (ledger && ledger.finish()) exitCode = 1;
   console.log(`\nsweep-check: ${defs.length} map(s) in ${((performance.now() - started) / 1000).toFixed(1)} s`);
 } catch (e) {
   console.log(`sweep-check: ${e?.stack ?? e}`);

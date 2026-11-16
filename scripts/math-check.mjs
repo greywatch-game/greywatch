@@ -1,29 +1,41 @@
 /**
  * math-check.mjs — proves `src/math/` gives Babylon's answers BIT FOR BIT.
  *
- *   node scripts/math-check.mjs [--trials 20000] [--seed 1]
+ *   node scripts/math-check.mjs [--perturb]
+ *   node scripts/math-check.mjs --record   (only where Babylon 9.28 is installed)
  *
  * `src/math/` is a port of the subset of Babylon's `Vector2`, `Vector3`,
  * `Vector4`, `Quaternion`, `Matrix`, `Color3`, `Color4`, `Plane` and
  * `Frustum` the tree calls, and
  * its whole claim is that a file moved onto it computes exactly what it did:
  * every oracle the exit is graded by compares bits, so "close" is a failure.
- * This runs every ported method on seeded random inputs through both and
- * compares each output number with `Object.is` — a -0 against a +0 fails, and
- * so does one NaN against a number. Inputs include zeros, negative zeros,
- * exact right angles and identity-flagged matrices, because those are where
+ * This runs every ported method on seeded random inputs and compares each
+ * output number with Babylon's by its bits — a -0 against a +0 fails, and so
+ * does one NaN against a number. Inputs include zeros, negative zeros, exact
+ * right angles and identity-flagged matrices, because those are where
  * Babylon's shortcuts take a different path from the arithmetic.
  *
- * **A method added to `src/math/` owes a case here.** The script fails if one
- * of the classes has a member no case names (`COVERED`), so it cannot quietly
- * fall behind. Deleted with Babylon at X6.1, when there is nothing left to
- * compare against.
+ * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/math-check.json`,
+ * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+ * checks"): each case's answers over a block of a thousand trials are one
+ * digest of Babylon 9.28's, captured by `--record` while the package was
+ * installed (X6.1i's first commit, which also compared every answer live), and
+ * a run now holds ours to them. So the inputs may never change: the seed, the
+ * trial count and every draw below are part of what was recorded.
+ * `--perturb` is the negative test: one value in the first answer of every
+ * group moved one ULP, and every group must then fail.
  *
- * Both sides load under plain Node: Babylon's ESM build resolves as it is, and
- * `src/math/` names its `.ts` imports and holds only erasable syntax.
+ * **A method added to `src/math/` owes a case here**, and the script fails if
+ * one of the classes has a member no case names (`COVERED`), so it cannot
+ * quietly fall behind — but since the package left (X6.1i) nothing can record
+ * the new case's answers, so a new member has no bit-level oracle: it is
+ * proven some other way, or ported with the case while a Babylon is at hand.
+ *
+ * Plain Node: `src/math/` names its `.ts` imports and holds only erasable
+ * syntax.
  */
-import * as B from "@babylonjs/core";
 import * as M from "../src/math/index.ts";
+import { Ledger } from "./lib/babylonTable.mjs";
 import { mulberry32 } from "../src/world/rng.ts";
 
 const args = process.argv.slice(2);
@@ -32,12 +44,22 @@ const arg = (name, dflt) => {
   return i >= 0 ? Number(args[i + 1]) : dflt;
 };
 const TRIALS = arg("--trials", 20000);
+const SEED = arg("--seed", 1);
+const RECORD = args.includes("--record");
+/** A table group is one case over this many trials. */
+const BLOCK = 1000;
+const ledger = new Ledger("math-check", { seed: SEED, trials: TRIALS, block: BLOCK }, {
+  record: RECORD,
+  perturb: args.includes("--perturb") && "output",
+});
 
+/** Babylon, when recording: the reference the table is taken from. */
+const B = RECORD ? await import("@babylonjs/core") : null;
 // Babylon's ProjectToRef reads the depth range off the last engine built, and
 // the game's one engine is WebGPU's, whose range is [0, 1] — so this stands
 // one in that says so.
-Object.defineProperty(new B.NullEngine(), "isNDCHalfZRange", { value: true });
-const rand = mulberry32(arg("--seed", 1));
+if (B) Object.defineProperty(new B.NullEngine(), "isNDCHalfZRange", { value: true });
+const rand = mulberry32(SEED);
 
 // ---------------------------------------------------------------------------
 // Inputs
@@ -117,10 +139,9 @@ function flat(x) {
 let failures = 0;
 let checks = 0;
 const failedNames = new Map();
-function same(name, a, b, input) {
+/** Recording only: ours against Babylon's live, as the check ran before the table. */
+function same(name, fa, fb, input) {
   checks++;
-  const fa = flat(a);
-  const fb = flat(b);
   const ok = fa.length === fb.length && fa.every((v, i) => Object.is(v, fb[i]));
   if (ok) return;
   failures++;
@@ -335,23 +356,33 @@ for (const cls of ["Vector2", "Vector3", "Vector4", "Quaternion", "Matrix", "Col
   for (const n of methods) if (!COVERED.has(`${cls}#${n}`)) missing.push(`${cls}#${n}`);
 }
 
-// A Babylon object handed to ours must work too: it is the direction the
-// header promises is safe.
+// A Babylon object handed to ours had to work too, the direction the header
+// promised was safe: recorded with Babylon's objects on its own side, and
+// since the package left (X6.1i) answered by ours on our own objects.
 caseOf(["mixed"], () => { const a = v3(), b = v3(), q = quat(); return [[a, b, q], (L) => {
   if (L === B) return [B.Vector3.Cross(V(B, a), V(B, b)), V(B, a).rotateByQuaternionToRef(Q(B, q), new B.Vector3())];
-  return [M.Vector3.Cross(V(B, a), V(B, b)), M.Vector3.prototype.rotateByQuaternionToRef.call(V(B, a), Q(B, q), new B.Vector3())];
+  return [M.Vector3.Cross(V(M, a), V(M, b)), V(M, a).rotateByQuaternionToRef(Q(M, q), new M.Vector3())];
 }]; });
 
 for (let t = 0; t < TRIALS; t++) {
+  const block = Math.floor(t / BLOCK);
   for (const [name, make] of Object.entries(CASES)) {
     const [input, run] = make();
-    same(name, run(M), run(B), input);
+    const ours = flat(run(M));
+    if (B) {
+      const theirs = flat(run(B));
+      same(name, ours, theirs, input);
+      ledger.answer(`${name} @${block}`, theirs);
+    } else {
+      ledger.answer(`${name} @${block}`, ours);
+    }
   }
 }
 
-console.log(`math-check: ${checks} comparisons over ${Object.keys(CASES).length} cases, ${TRIALS} trials each`);
+if (B) console.log(`math-check: ${checks} comparisons over ${Object.keys(CASES).length} cases, ${TRIALS} trials each, against Babylon live`);
 if (missing.length) console.log(`UNCOVERED (a member with no case): ${missing.join(", ")}`);
 if (failures) {
   console.log(`FAILED: ${failures} differing answers in ${[...failedNames.keys()].join(", ")}`);
 }
-process.exit(failures || missing.length ? 1 : 0);
+const failed = ledger.finish();
+process.exit(failures || missing.length || failed ? 1 : 0);

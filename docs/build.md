@@ -449,12 +449,12 @@ both sides, so an upgrade cannot move one.
 geometry every model and every structure is built and merged from is ours
 (`src/geometry/`: the primitive generators, `mergeTransformed`, the transform,
 the bake, the normals — Babylon 9.28's, operation for operation), and so is the
-math under every transform (`src/math/`). Two scripts compare each copy with
-the INSTALLED Babylon: `scripts/geometry-check.mjs` (the generators, the merge
-— it is now the only caller of `VertexData._mergeCoroutine` in the tree, as the
-reference the copy is checked against — the transform, the normals, and since
-X6.1g the three effects' own calls: the blast's icospheres, a rubble chunk's
-box and a glass shard's float32 normals), and
+math under every transform (`src/math/`). Two scripts hold each copy to
+Babylon 9.28's answers: `scripts/geometry-check.mjs` (the generators, the
+merge — `VertexData._mergeCoroutine` was the reference the copy was recorded
+against — the transform, the normals, and since X6.1g the three effects' own
+calls: the blast's icospheres, a rubble chunk's box and a glass shard's
+float32 normals), and
 `scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
 decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
 `flattenParts` are built from). **Beside it, `scripts/bounds-check.mjs`** holds
@@ -468,16 +468,32 @@ which `merge:hash --editor` alone covered until the editor's retirement
 `TransformNode.computeWorldMatrix` over every one of those parts and seeded
 parent chains, the WALK (Euler to quaternion, the parent multiplied in) that
 `math-check.mjs`'s primitives do not cover; `--perturb` is its negative test
-for both halves. It runs until X6.1.
+for both halves.
 **The body sweep is a third copy**:
 `src/world/ellipsoidSweep.ts` is Babylon 9.28's `moveWithCollisions` — the
 collider's triangle test, its response and the coordinator's retry loop —
 ported operation for operation against each `WorldBox`'s twelve triangles
 (Apache-2.0 notice in its header), and `scripts/sweep-check.mjs` holds it to
-the BIT against the installed Babylon in its default `exact` mode (it builds
-each map as the authority does, off the bake, and its Babylon reference scenes
-on a `NullEngine` of its own, so it needs no browser).
-After an upgrade a difference in any of the four means
+the BIT in its default `exact` mode (it builds each map as the authority does,
+off the bake, and so needs no browser).
+
+**Babylon's answers are RECORDED TABLES** (`scripts/tables/`,
+`scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+checks", the owner's of 2026-11-12): each check's every answer was captured
+once by its `--record`, against the installed 9.28, in `BABYLON_EXIT.md`
+X6.1i's first commit, and a check now holds ours to them. A table keeps one
+64-bit digest of a GROUP of answers (a case over a block of trials, a kit
+kind, a map's body) rather than the numbers — the bits of every answer are in
+it, so the check is as strict as the live comparison was; it says which group
+moved, never which number (about 85 kB for the four, where the numbers were
+millions). **The inputs are part of what was recorded**: a seed, a count, a
+draw changed is a table nobody can re-record. Where the input is the GAME's —
+`bounds-check`'s kit kinds, `sweep-check`'s maps — the table keeps a digest
+of it beside the answers, and a kind reworked or a map re-laid since reads
+STALE and is not compared; each of those two also runs a SEEDED section built
+from nothing in the game (synthetic parts and chains, a synthetic world) that
+never goes stale. Every `--perturb` must fail every group it touches.
+After an upgrade a difference in any of the four would have meant
 Babylon changed under the copy, not that the map moved — and since the copy is
 what Babylon 9.28 did, which version it should now follow is a decision, not a
 fix.
