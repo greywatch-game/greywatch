@@ -1019,10 +1019,6 @@ export class Matrix {
     return this;
   }
 
-  /**
-   * Adds to the translation row in place — the last step of a PIVOTED local
-   * (`TransformNode.computeWorldMatrix`'s pivot path, `rigJoints.ts`).
-   */
   setTranslationFromFloats(x: number, y: number, z: number): this {
     this._m[12] = x;
     this._m[13] = y;
@@ -1042,6 +1038,10 @@ export class Matrix {
     return result;
   }
 
+  /**
+   * Adds to the translation row in place — the last step of a PIVOTED local
+   * (`TransformNode.computeWorldMatrix`'s pivot path, `rigJoints.ts`).
+   */
   addTranslationFromFloats(x: number, y: number, z: number): this {
     this._m[12] += x;
     this._m[13] += y;

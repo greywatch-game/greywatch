@@ -40,7 +40,8 @@
  *   a lock request was refused is a tool that looks broken.
  *
  * Never: hands a `src/math` vector to a Babylon
- * method (it would read `_x` and write NaN, CLAUDE.md's two `Vector3`s).
+ * method (it would read `_x` and write NaN, CLAUDE.md's "There is ONE math,
+ * `src/math/`, and the CAMERA keeps Babylon's").
  */
 import type { FreeCamera } from "@babylonjs/core";
 import type { InputManager } from "../core/InputManager";
