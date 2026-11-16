@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13986,3 +13986,105 @@ directory).
   but one deleted read).
 - **The NIT (9578708)**: `parts.ts`' header said a mesh is made at the end of the build and named the deleted
   "adapters"; reworded.
+
+**X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step; 2026-11-16; no change to the picture). Measured headless on the
+Windows box against a BEFORE at ef69ef3 (the hook's commit: bb3f7fe's game with the game's readiness beside the scene's,
+and the instruments' arms for the step) in the worktree `greywatch-2-before-x53a` (moved there from 8a69f093, detached,
+and moved back after; the lockfile unchanged, so its `node_modules` stood), every GPU run alone on the GPU.
+
+- **The hook, its own commit (ef69ef3)**, as at X5.4a: the game-side hook the move needs, and the instruments onto it.
+  - `src/core/PendingData.ts`: Babylon 9.28's `Scene` pending-data list ported as written (`addPendingData`,
+    `removePendingData`, `getWaitingItemsCount`, `isLoading`; `onDataLoadedObservable`, observed by nothing, not
+    ported) and `isReady`, the list empty — the one arm of `Scene.isReady` that could answer false in this game (no
+    mesh, geometry, camera, particle system, target, layer or readiness check; no effect compiled; never disposed).
+    `Game.pending` holds it, read by the instruments alone; `WaterSystem` added the foam to it beside the scene's list
+    and removed it from both in the decode's one callback, on success and failure alike.
+  - `scripts/lib/frameAdapter.mjs`: `ready()` with no scene answers `Game.pending.isReady()` wherever the game has one
+    (on an older tree the foam, as it read); `constantDelta(on)` writes `SceneFrame.useConstantAnimationDeltaTime`
+    wherever the frame has that flag, else the scene's as before.
+  - `plans/webgpu-ref/leaks.mjs` no longer throws on a page with no Babylon module: the cache hook is RETIRED and said
+    so (its count 0, as since X5.4h). `plans/physics-ref/clients.mjs`' stand-in vector is `src/math`'s
+    (`copyFromFloats`, the entry points' declared type since X6.1e) where the page loads no Babylon; where it does,
+    both read as before.
+  - **The proof, where both stood** (`x61h/readycheck.mjs`): at every frame's begin, draw and submit, the scene's
+    `isReady()` against `Game.pending.isReady()`, the adapter's scene arm against its no-scene arm, and the two
+    pending lists element for element, through the menu, the card, deploy, the kit lid, a life, the menu, a map change
+    and a second round. Coldharbour then Hollowmere: 1,251 frames, 3,753 asks; Hollowmere then Cinderhaven: 1,249
+    frames, 3,747 asks. **0 differences**; both not ready on the same nine asks of the first card (three frames), the
+    foam alone pending, ready on every other.
+- **The step (a3a3407)**:
+  - `src/core/Observable.ts`: `Observable`, `Observer` and `EventState` copied from `Misc/observable.pure.js`, every
+    member — `add` (mask, `insertFirst`, scope, `unregisterOnFirstCall`, the `WeakRef` remove closure), `addOnce`,
+    `remove`/`removeCallback` marking the observer `_willBeUnregistered` and splicing it in a `setTimeout(0)`,
+    `Observer.remove(defer)`, the priority moves, `notifyObservers`' walk over the live list with the one reused
+    `EventState`, the mask test and `skipNextObservers`, `notifyObserver`, `notifyIfTriggered`, `hasObservers`,
+    `clear`, `clone`, `hasSpecificMask`, `FromPromise`. Not ported: the coroutine extensions. `SceneFrame`,
+    `FrameLoop` and `GlowPass` build their observables on it.
+  - `SceneFrame` takes no scene: `Scene.MinDeltaTime` (1), `MaxDeltaTime` (1000), the non-lock-step branch and
+    `renderTargetsEnabled` (true) are constants; `useConstantAnimationDeltaTime` (false) and `clearColor` (a
+    `src/math` `Color4` at Babylon's default slate, which the constructor's `applyClearColor` overwrites before the
+    first frame) are its own; `applyClearColor`/`applyEnvironment` take that colour.
+  - `WaterSystem` takes `Game.pending` alone.
+  - Deleted: the `Scene` and `core/SceneEngine.ts`; the engine reads in `ShadowSystem` and `BodyShadows` (WebGPU's
+    depth range `HALF_Z_RANGE`, true, in `core/shadowWindow.ts`); `physicsEnabled`, `imageProcessingConfiguration`,
+    `setRenderingOrder` with `Game`'s `eyeDistanceSq` and the comment block it carried, `autoClear` and
+    `autoClearDepthAndStencil`, and with `Game.scene` `__celshock.scene`; the scene parameters of `WaterSystem`,
+    `ShadowSystem`, `BodyShadows`, `environment.ts` and `SceneFrame` (the rest of the bullet's list lost theirs at
+    X6.1c to X6.1g).
+  - **Nothing under `src/` or in `main.ts` imports `@babylonjs/core`.** The gate adds `src/core`, `src/shaders` and
+    `src/world` to `DIRECTORIES` (521 modules walked), every directory under `src/`.
+- **Readers the bullet did not name, decided in its spirit** (named in the step's commit): `check-world-parity.mjs`,
+  which named the scene's unready meshes when a map never became ready, names what `Game.pending` still holds with no
+  scene; the comments in `Game` that named `eyeDistanceSq` as the metric Babylon's queue sorted by name the metric;
+  `surface.adoptInput()` stays where the scene was built. The scratchpad's `live.mjs` gained a no-scene arm (Babylon's
+  engine hooks read 0 with no scene; as before where there is one).
+- **Contracts**: `CLAUDE.md` (the overview, the frame-in-every-state line, the lights, the walk, the particle systems,
+  the clears, the frame paragraph — every observable `core/Observable.ts`, the readiness ours — the deaths section's
+  physics rule, the camera convention); `docs/game.md`, `docs/states.md`, `docs/rendering.md`, `docs/deaths.md`,
+  `docs/build.md`, `docs/multiplayer.md`, `FINDINGS.md`, `VERIFYING.md` and `FILES.md`; the headers of `SceneFrame.ts`,
+  `FrameLoop.ts`, `PendingData.ts`, `WaterSystem.ts` and the rest the change made false; the readiness lines of the
+  adapter, the harness, `capture-map-shots.mjs`, parity and `views.mjs`. Exit history and provenance kept.
+- **Measured**:
+  - The bank by `exact.mjs`: default 147 of 147 byte-equal, `high` 147 of 147, `low` 146 and
+    `harrowmead-view-pistol-reload` within its flake (2 pixels, 1/255).
+  - `merge:hash` identical on eight maps; `kit:hash` (3,722) and `--models --strict-order` identical, `--feet`
+    byte-identical.
+  - Equal to the BEFORE: `census` (168, every map's total), `gi.mjs` (254,724 values on Coldharbour), `particles.mjs`
+    (45,120 numbers over 480 frames, the constant delta now on the frame's own flag), `surfaces.mjs` (5,719),
+    `readers.mjs` replay (the origins IDENTICAL) and the camera log on Hollowmere (120 frames) and with a hull on
+    Coldharbour (152). The draw log equal but `meshes.sizes` `[0]` → `[]` in its nine classes, and `post.mjs` at
+    `desk` and `phone` equal but `chain.autoClear`, `autoClearDepthAndStencil` and `imageProcessing` → `null` in every
+    scenario: the reads X6.1a named RETIRED with no scene, and nothing else.
+  - `pipelines.mjs hollowmere` and `coldharbour --round` nothing built in play (the rounds' shot counts the wall
+    clock's); `leaks.mjs` 0 released and 0 cached in every class, the device's bind groups and live buffers the
+    BEFORE's at every step, the JS heap 12.4 MB lower at the baseline (45.9 to 33.5 MB); `gate` all seven clean (boot
+    times shorter); `shaders` identical.
+  - `lost.mjs --twice --strict` offline and `--match`: every verdict X5.4i's at both trees. The menu's boot frames
+    1–12 and 61–65 (`x54f/menu.mjs`) hashed equal.
+  - `npm run shots` ran to its end at both trees, twice each. Its photographs are not reproducible on this box: each
+    run differs from the committed files (mean 0.7–16.6/255 by channel) and from its own tree's other run (0.25–1.72);
+    the two trees' runs differ by 0.33–1.64, inside that spread. None was committed; `shots/` was restored at both.
+  - The physics clients' oracle (`plans/physics-ref/clients.mjs --check`) identical to its banks on all three maps,
+    engine, nodes and every body, on the `src/math` stand-in; the BEFORE identical on Babylon's.
+  - The fight hash equal on four maps (`e57084dd…`, `380fdf6b…`, `8e839848…`, `772a08d5…`); corecheck, parity
+    (eight maps, every map ready), `maps:check`, the four copy checks (`geometry-check` 8,224, `math-check` 1,920,000,
+    `bounds-check` 25,518, `sweep-check` 7 maps), typecheck and build clean.
+  - **Live** at both trees: `live.mjs` 47 of 47 (Hollowmere then Coldharbour offline, the kit lid, `F2`, every post
+    setting, the rungs, render scale, a resize and the window moves, caps of 30 and 60 at 29.97–29.99 and
+    59.94–60.16 fps, the pause, the teardowns, a match on each map; every frame `0/0/1/1/1/2`, 0 errors), `sarab.mjs`
+    19 of 19 (the tank, the truck and the heli), `cams.mjs` 7 of 7.
+  - **`?profile&gpu`** (two capped benches a tree, Hollowmere and Coldharbour, four pairings): `gpu.frame` within
+    0.5% in every group, the fights `549487ba93bceefe` and `de5622634abca6e7` on every run, and `render` 7.3–16.1%
+    FASTER on the AFTER in every group of every pairing — outside the 8% band on the fast side. Read as the frame no
+    longer running through Babylon's module (the per-frame work the step changed is a handful of field reads and
+    the notifications, now of our copy) and a smaller heap; not investigated further.
+- **Flagged**: two device hangs (`DXGI_ERROR_DEVICE_HUNG`, the box's known hang), both on the BEFORE — the `low` bank
+  (while the AFTER's CPU checks ran beside it) and `surfaces.mjs` — each re-run clean; none on the AFTER.
+- **The census** (`scripts/babylon-census.mjs --against` the parent's): 11 files to 2 (the two copy checks' `*`),
+  10 shrank, 0 grew; `ssrLoadModule` 2 and four page-side loads in the instruments' text remain for X6.1i. The bundle
+  is 56 files, 9,795.8 kB raw and 4,449.4 kB gzipped (from 102, 16,825.3 and 6,019.6); the JS 5,164.4 and 1,518.7 kB
+  (from 12,193.9 and 3,089.0), the main chunk 2,505.4 and 795.0 kB (from 9,336.9 and 2,308.4).
+
+Scripts and logs in the session's scratchpad, `x61h/` (`readycheck.mjs`, `before.sh`, `after-cpu.sh`, `after-gpu.sh`,
+`retry*.sh`, `shots2.sh`, `probes.sh`, `live.mjs`, `sarab.mjs`, `cams.mjs`, `menu.mjs`, `shotcmp.mjs`, `cmpbench.cjs`,
+every log, JSON, kept bank directory and photograph).

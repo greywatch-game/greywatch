@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7230,6 +7230,42 @@ Then the cut, then the sweep.
     - `docs/game.md`, `docs/states.md`, `docs/rendering.md`'s frame and `docs/deaths.md`;
     - the headers of `SceneFrame.ts` and `FrameLoop.ts`;
     - `FILES.md`.
+
+  **X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step; 2026-11-16; no change to the picture; the full note
+  is in `plans/done/babylon_exit_landed.md`). **The hook first** (ef69ef3, as at X5.4a): `core/PendingData.ts` ports
+  the scene's pending-data list (`addPendingData`, `removePendingData`, `getWaitingItemsCount`, `isLoading`) with
+  `isReady`, `Game.pending` holds it, and `WaterSystem` told it beside the scene's; the adapter's `ready` reads it
+  with no scene and `constantDelta` writes the frame's own flag wherever the frame has one; `leaks.mjs` and the
+  physics clients' oracle answer a page that loads no Babylon. **Proven there, where both stood**: the scene's
+  `isReady()`, `Game.pending.isReady()`, the adapter's two arms and the two lists element for element, at every
+  frame's begin, draw and submit (Coldharbour then Hollowmere, 3,753 asks; Hollowmere then Cinderhaven, 3,747),
+  0 differences, both not ready on the same nine asks of the first card. **The step** (a3a3407): `core/Observable.ts`
+  is Babylon's `Observable`, `Observer` and `EventState` ported as written (the deferred removal, the mask, `addOnce`,
+  `insertFirst`), which `SceneFrame`, `FrameLoop` and `GlowPass` build on; `SceneFrame` runs without a scene
+  (`Scene.MinDeltaTime`/`MaxDeltaTime`, the non-lock-step branch and `renderTargetsEnabled` constants, the
+  constant-delta switch and the clear colour its own, `applyClearColor` writing it); the readiness is `Game.pending`
+  alone. Deleted: the `Scene`, `core/SceneEngine.ts`, the engine reads in `ShadowSystem` and `BodyShadows`
+  (`HALF_Z_RANGE`, a constant), `physicsEnabled`, `imageProcessingConfiguration`, `setRenderingOrder` with
+  `eyeDistanceSq`, `autoClear`, `__celshock.scene` and the last `Scene` parameters. **Nothing under `src/` or in
+  `main.ts` imports the package**, and the gate adds `src/core`, `src/shaders` and `src/world`. **Readers the bullet
+  did not name**: parity names `Game.pending`'s holders where it named the scene's unready meshes; `Game`'s comments
+  that named `eyeDistanceSq` name its metric. **Measured** against a BEFORE at ef69ef3 (its game bb3f7fe's but the
+  hook): the bank by `exact.mjs` default and `high` 147 of 147 byte-equal, `low` 146 and the pistol flake;
+  `merge:hash`, `kit:hash`, `--models --strict-order` and `--feet` identical; the draw log, `post.mjs` at both sizes,
+  `census` (168), `gi.mjs`, `particles.mjs` (the constant delta on the frame's flag), `surfaces.mjs` (5,719),
+  `readers.mjs` replay and both camera logs equal but the retired Babylon reads (the draw log's `meshes.sizes`
+  `[0]` → `[]`, `post.mjs`' chain `autoClear`, `autoClearDepthAndStencil` and `imageProcessing` → `null`);
+  `pipelines.mjs` nothing in play, `leaks.mjs` 0 with the same device counts and live buffers (the heap 12 MB lower),
+  `gate` clean, `shaders` identical; `lost.mjs --twice --strict` offline and `--match` every verdict X5.4i's; the
+  menu's boot frames hashed equal; `npm run shots` ran to its end on both trees (its photographs differ from the
+  committed ones run to run on either tree, and the two trees' differ no more than one tree's two runs; none
+  committed); the physics clients' oracle identical to its banks; the fight hash equal on four maps; corecheck,
+  parity, `maps:check`, the four copy checks, typecheck and build clean; live 47 of 47, Sarab 19 of 19, `cams.mjs`
+  7 of 7 at both trees; `?profile&gpu` `gpu.frame` within 0.5%, `render` 7.3–16.1% FASTER in every group of four
+  pairings. **The census**: 11 files to 2 (the two copy checks), every `src/` import gone; the bundle 102 files to
+  56, 16,825.3 to 9,795.8 kB raw and 6,019.6 to 4,449.4 kB gzipped (the JS 12,193.9 to 5,164.4 and 3,089.0 to
+  1,518.7). **Flagged**: two device hangs (`DXGI_ERROR_DEVICE_HUNG`), both on the BEFORE (the `low` bank,
+  `surfaces.mjs`), each re-run clean; the `render` speed-up is outside the 8% band on the fast side.
 
 - **X6.1i — the cut** (no change to the game) — **S–M** (decision: rows "X6.1, the copy
   checks", "X6.1, `optimizeDeps.exclude`", "X6.1, the gate's simulations" and "X6.1, the
