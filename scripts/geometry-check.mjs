@@ -33,9 +33,10 @@
  * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/geometry-check.json`,
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
  * checks"): each case over a block of twenty trials is one digest of Babylon
- * 9.28's answers, captured by `--record` while the package was installed
- * (X6.1i's first commit, which compared every answer live as well; the arm
- * went with the package in the next), and a run holds ours to them — so the seed, the trial count and every draw below
+ * 9.28's answers, recorded once against the installed package at 28dc7f0
+ * (X6.1i's first commit, which compared every answer live as well; a
+ * re-record means checking out that commit's script with the package
+ * installed), and a run holds ours to them — so the seed, the trial count and every draw below
  * are part of what was recorded and may not change. A generator Babylon threw
  * on must throw here too (the throw is recorded, not its message). Two cases
  * compare ours with ours and need no table: a merge leaves its members alone,

@@ -14,8 +14,11 @@
  * and `worldMatrixOf`, and the body sweep are Babylon 9.28's arithmetic
  * copied operation for operation, and every oracle the exit was graded by
  * compares bits. Once the package left the tree (X6.1i) there was nothing to
- * ask, so each check's Babylon answers were captured ONCE, while it was still
- * installed, and committed; the check now compares ours with them.
+ * ask, so each check's Babylon answers were captured ONCE, against the
+ * installed 9.28, at 28dc7f0 (X6.1i's first commit), and committed; the check
+ * now compares ours with them, and this file no longer records. A re-record
+ * means checking out that commit's check and this file with `@babylonjs/core`
+ * 9.28 installed.
  *
  * **A DIGEST per group, never the numbers.** A comparison is the exact list
  * its check compared with `Object.is` — every number as its float64 bits (a
@@ -74,8 +77,7 @@
  * `bounds-check` always has, and use the same verdict.
  */
 import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 /** Where the tables live, beside the scripts that read them. */
@@ -181,16 +183,15 @@ function perturbed(list) {
 
 /**
  * A check's comparisons, digested by group. Built with the check's name and
- * the KNOBS its inputs depend on (a seed, a count); `record` writes the table
- * from Babylon's answers, otherwise the run's own answers are held to it.
- * `perturb` is `"output"` (the ledger moves one value a group) or `"input"`
- * (the check moved its own inputs, so every group it reached must differ).
+ * the KNOBS its inputs depend on (a seed, a count); the run's answers are
+ * held to the table. `perturb` is `"output"` (the ledger moves one value a
+ * group) or `"input"` (the check moved its own inputs, so every group it
+ * reached must differ).
  */
 export class Ledger {
-  constructor(check, knobs, { record = false, perturb = false, partial = false, seeded = () => false } = {}) {
+  constructor(check, knobs, { perturb = false, partial = false, seeded = () => false } = {}) {
     this.check = check;
     this.knobs = knobs;
-    this.record = record;
     this.perturb = perturb;
     /** A run over some of the table (a map or a body named): the rest is not missing. */
     this.partial = partial;
@@ -208,15 +209,14 @@ export class Ledger {
     /** Groups `perturb` moved a value in, and those it could not. */
     this.moved = new Set();
     this.comparisons = 0;
-    /**
-     * Inputs the check FREEZES with its answers rather than reading from the
-     * game each run (`sweep-check`'s bodies: a CONFIG retune is not a change
-     * to the sweep). Written when recording, read back with `recorded()`.
-     */
-    this.frozen = {};
   }
 
-  /** The table as committed, or null where there is none. */
+  /**
+   * The table as committed, or null where there is none — read for the inputs
+   * a check FROZE with its answers rather than reading from the game each run
+   * (the table's `frozen`: `sweep-check`'s bodies, since a CONFIG retune is
+   * not a change to the sweep).
+   */
   recorded() {
     if (!existsSync(this.path)) return null;
     return JSON.parse(readFileSync(this.path, "utf8"));
@@ -232,13 +232,13 @@ export class Ledger {
   }
 
   /**
-   * One comparison's answer in `group`: Babylon's when recording, ours when
-   * checking — the same flat list either way, in the same order.
+   * One comparison's answer in `group`: ours, as the same flat list in the
+   * same order as Babylon's was recorded.
    */
   answer(group, list) {
     this.comparisons++;
     let values = list;
-    if (this.perturb === "output" && !this.record && !this.moved.has(group)) {
+    if (this.perturb === "output" && !this.moved.has(group)) {
       const p = perturbed(list);
       if (p) {
         values = p;
@@ -261,33 +261,21 @@ export class Ledger {
     return h.digest("hex").slice(0, 16);
   }
 
-  /** The table as this run would write it, groups flat (`name @block`). */
+  /** This run's digests in the table's shape, groups flat (`name @block`). */
   table() {
     const groups = {};
     for (const [g, h] of this.answers) groups[g] = Ledger.hex(h);
     const inputs = {};
     for (const [g, h] of this.inputs) inputs[g] = Ledger.hex(h);
-    return { check: this.check, babylon: BABYLON, knobs: this.knobs, frozen: this.frozen, groups, inputs };
+    return { check: this.check, babylon: BABYLON, knobs: this.knobs, groups, inputs };
   }
 
   /**
-   * Writes the table (recording) or holds this run to it (checking). Returns
-   * whether the run FAILED, having printed why; a perturbed run fails unless
-   * every group it moved differs.
+   * Holds this run to the table. Returns whether the run FAILED, having
+   * printed why; a perturbed run fails unless every group it moved differs.
    */
   finish() {
     const mine = this.table();
-    if (this.record) {
-      mkdirSync(dirname(this.path), { recursive: true });
-      const file = { ...mine, groups: fold(mine.groups), inputs: fold(mine.inputs) };
-      // One line per case: its blocks' digests as one array.
-      const text = JSON.stringify(file, null, 1).replace(/\[[^[\]{}]*\]/g, (m) => m.replace(/\s+/g, ""));
-      writeFileSync(this.path, `${text}\n`);
-      console.log(
-        `${this.check}: recorded ${Object.keys(mine.groups).length} groups (${this.comparisons} answers) of Babylon ${BABYLON} to ${this.path}`,
-      );
-      return false;
-    }
     if (!existsSync(this.path)) {
       console.log(`${this.check}: no table at ${this.path}`);
       return true;
@@ -386,21 +374,8 @@ export class Ledger {
 /**
  * A group named `case @n` is a case's nth block: the file keeps each case's
  * blocks as one array (its name written once), and a group with no block as
- * itself.
+ * itself. This reads it back flat.
  */
-function fold(groups) {
-  const out = {};
-  for (const [g, d] of Object.entries(groups)) {
-    const m = /^(.*) @(\d+)$/.exec(g);
-    if (!m) {
-      out[g] = d;
-      continue;
-    }
-    (out[m[1]] ??= [])[Number(m[2])] = d;
-  }
-  return out;
-}
-
 function unfold(folded = {}) {
   const out = {};
   for (const [g, d] of Object.entries(folded)) {

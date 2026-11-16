@@ -378,11 +378,11 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   than wrong, and the verdict. Never loads
                               #   Babylon
   tables/                     # <check>.json: Babylon 9.28's answers to the
-                              #   four copy checks as digests, recorded by each
-                              #   check's `--record` while the package was
-                              #   installed (X6.1i, the first of its commits;
-                              #   the `--record` arms went in the next) and
-                              #   never re-recordable.
+                              #   four copy checks as digests, recorded once
+                              #   against the installed package at 28dc7f0
+                              #   (X6.1i, the first of its commits); a
+                              #   re-record means checking that commit's
+                              #   scripts out with the package installed.
                               #   ~85 kB in all
   lib/mapgen.mjs              # What the seven generators share: the seeded
                               #   stream (world/rng.ts's mulberry32), the

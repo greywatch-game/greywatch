@@ -458,10 +458,11 @@ the authority does, off the bake, and so needs no browser).
 **Babylon's answers are RECORDED TABLES** (`scripts/tables/`,
 `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
 checks", the owner's of 2026-11-12): each check's every answer was captured
-once by its `--record`, against the installed 9.28, in `BABYLON_EXIT.md`
-X6.1i's first commit (the `--record` arms went with the package in the next),
-and a check now holds ours to them. A table keeps one
-64-bit digest of a GROUP of answers (a case over a block of trials, a kit
+once, against the installed 9.28, at 28dc7f0 (`BABYLON_EXIT.md` X6.1i's
+first commit; the checks' recording arms went with the package in the next,
+and the ledger's after X6.1j), and a check now holds ours to them; a re-record
+means checking out that commit's scripts with the package installed. A table
+keeps one 64-bit digest of a GROUP of answers (a case over a block of trials, a kit
 kind, a map's body) rather than the numbers — the bits of every answer are in
 it, so the check is as strict as the live comparison was; it says which group
 moved, never which number (about 85 kB for the four, where the numbers were

@@ -52,9 +52,10 @@
  *
  * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/bounds-check.json`,
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
- * checks"), captured by `--record` while the package was installed (X6.1i's
- * first commit, which compared every answer live as well; the arm went with
- * the package in the next): per kind, one
+ * checks"), recorded once against the installed Babylon 9.28 at 28dc7f0
+ * (X6.1i's first commit, which compared every answer live as well; a
+ * re-record means checking out that commit's script with the package
+ * installed): per kind, one
  * digest of its bounds and one of its world matrices; the chains and the
  * synthetic parts in blocks. **A kind's input is the game's** — its parts'
  * positions and transform chains — so beside each kind's answers the table

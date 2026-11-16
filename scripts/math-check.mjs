@@ -17,9 +17,10 @@
  * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/math-check.json`,
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
  * checks"): each case's answers over a block of a thousand trials are one
- * digest of Babylon 9.28's, captured by `--record` while the package was
- * installed (X6.1i's first commit, which also compared every answer live; the
- * arm went with the package in the next), and a run holds ours to them. So the inputs may never change: the seed, the
+ * digest of Babylon 9.28's, recorded once against the installed package at
+ * 28dc7f0 (X6.1i's first commit, which also compared every answer live; a
+ * re-record means checking out that commit's script with the package
+ * installed), and a run holds ours to them. So the inputs may never change: the seed, the
  * trial count and every draw below are part of what was recorded.
  * `--perturb` is the negative test: one value in the first answer of every
  * group moved one ULP, and every group must then fail.

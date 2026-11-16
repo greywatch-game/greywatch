@@ -28,9 +28,10 @@
  * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/sweep-check.json`,
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
  * checks"): each map's body over a block of 250 samples is one digest of
- * Babylon 9.28's answers, captured by `--record` while the package was
- * installed (X6.1i's first commit, which compared every answer live as well;
- * the arm went with the package in the next), and a run holds ours to them.
+ * Babylon 9.28's answers, recorded once against the installed package at
+ * 28dc7f0 (X6.1i's first commit, which compared every answer live as well; a
+ * re-record means checking out that commit's script with the package
+ * installed), and a run holds ours to them.
  * Babylon was given the world the port was written against — one `CreateBox`
  * collider mesh per box, as `MapBuilder.collider` made them before the
  * scatter was merged, created in the CLIENT's collider order (every box no
