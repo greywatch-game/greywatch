@@ -32,7 +32,7 @@
  * here, in a world that failed anyway (X3.7c), and since then a refusal is
  * the world's failure alone.
  *
- * **Why nothing is a mesh until the end: 87% of a 1500 m build was the
+ * **Why nothing is a mesh (and, until X6.1g, nothing was until the end): 87% of a 1500 m build was the
  * placement loop, and the placement loop is not what anybody thought it was.**
  * `ENGINE_UPGRADE.md` wall 4 derived the cost as `Scene.removeMesh`'s
  * `indexOf` over a `scene.meshes` growing to 23,014 — `O(built x live)`, which
@@ -56,9 +56,9 @@
  * The first answer was the part MESH: a mesh holding vertices with nothing on
  * the device, by holding `Geometry.delayLoadState` at NOTLOADED for the one
  * call that would have created its buffers — a Babylon internal leaned on —
- * and an upload every path out of a merge owed. The second is that there is
- * no mesh at all until the merges and the vertex
- * bake are done: they run on parts, and each surface the world keeps is
+ * and an upload every path out of a merge owed. The second was that there is
+ * no mesh at all until the merges and the vertex bake are done, and since
+ * X6.1g there is none after them either: they run on parts, and each surface the world keeps is
  * uploaded once, by our renderer, as `worldRecords` hands it over. The part
  * mesh, and every helper that kept it honest, is deleted.
  *
@@ -88,7 +88,8 @@ export type PartMetadata = { [flag: string]: unknown };
  * `rotationQuaternion`, `parent` — under the same names and with the same
  * meaning, Euler order included (Babylon turns a node by Z, then X, then Y),
  * so a builder written against a node reads the same against this, and the
- * adapters below are copies rather than translations.
+ * routines below (`worldMatrixOf`, `detachPart`, `flattenParts`) are copies
+ * rather than translations.
  *
  * **`parent` is how a builder says where a part goes, never where it IS.** It
  * keeps Babylon's child order — a node joins the END of its new parent's
