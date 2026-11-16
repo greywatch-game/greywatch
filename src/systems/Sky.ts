@@ -20,10 +20,11 @@
  * Rebuilt from an EnvironmentSpec via apply() — keep it data-driven, no Hollowmere
  * specifics.
  */
-import { Camera, Color3, Matrix, Quaternion, Scene, Vector3, Vector4 } from "@babylonjs/core";
+import { Camera, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
 import { clamp } from "../core/math";
+import { Color3, Matrix, Quaternion, Vector3, type Vector3Like, Vector4 } from "../math";
 import { BACKSIDE, createDisc, createSphere } from "../geometry/primitives";
 import type { GeometryBuffer } from "../geometry/buffer";
 import type { CloudDraw } from "../render/CloudDraw";
@@ -336,7 +337,7 @@ export class Sky {
    * turn was the one thing each client accumulated from its own boot.
    * Offline it accumulates `dt` as before, in every state.
    */
-  update(dt: number, eye: Vector3, clock: number | null): void {
+  update(dt: number, eye: Vector3Like, clock: number | null): void {
     const c = CONFIG.sky.clouds;
     const rate = c.driftDegPerSec * (Math.PI / 180);
     // Unwrapped on purpose: an epoch in seconds times this rate is a few
@@ -600,7 +601,7 @@ export class Sky {
    * it: the ring's world matrix is a turn about Y and nothing else, so one
    * inverse serves every distance.
    */
-  private sortClouds(eye: Vector3): void {
+  private sortClouds(eye: Vector3Like): void {
     const geo = this.cloudGeo;
     if (!geo) return;
     this.ringWorld.invertToRef(this.toLocal);
@@ -835,7 +836,10 @@ export class Sky {
     this.moonTranslation.copyFromFloats(p.x + m[12], p.y + m[13], p.z + m[14]);
     Matrix.ComposeToRef(this.moonScaling, MOON_TURN, this.moonTranslation, world);
     world.getTranslationToRef(this.moonStored);
-    this.viewRotation.copyFrom(camera.getViewMatrix());
+    // The camera's view by its numbers (the camera's matrices are Babylon's
+    // until `BABYLON_EXIT.md` X6.1f); the flag `copyFrom` would carry is reset
+    // by the next line either way.
+    Matrix.FromArrayToRef(camera.getViewMatrix().m, 0, this.viewRotation);
     this.viewRotation.setTranslationFromFloats(0, 0, 0);
     this.viewRotation.invertToRef(this.viewInverse);
     world.setTranslationFromFloats(0, 0, 0);
@@ -850,7 +854,11 @@ export class Sky {
     const radius = Math.max(Math.abs(reach.x), Math.abs(reach.y), Math.abs(reach.z)) * this.moonRadius;
     const planes = this.scene.frustumPlanes;
     for (let i = 0; i < 6; i++) {
-      if (planes[i].dotCoordinate(centre) <= -radius) return false;
+      // `Plane.dotCoordinate`, written out: Babylon's plane, `src/math`'s point.
+      const pl = planes[i];
+      if (pl.normal.x * centre.x + pl.normal.y * centre.y + pl.normal.z * centre.z + pl.d <= -radius) {
+        return false;
+      }
     }
     return true;
   };

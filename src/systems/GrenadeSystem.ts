@@ -213,8 +213,8 @@ export interface FireSlot {
  *
  * A blast hands one of these out through `drawBlast`, and it is the SYSTEM's
  * own scratch: valid for the length of the call and no longer, exactly as
- * `forEachLive`'s position is. Its normal is `src/math`'s — a reader still on
- * Babylon's math copies it across (`Game.debrisGroundOf`).
+ * `forEachLive`'s position is. Its normal is `src/math`'s, and a reader that
+ * keeps it copies it (`Game.debrisGroundOf`).
  */
 export interface BlastGround {
   surface: "ground" | "hard";

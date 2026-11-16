@@ -112,7 +112,7 @@
  * the split every picture in the game takes (`GrenadeFx`, `CombatFx`): the
  * server does not construct this class at all.
  */
-import { Color3, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3 } from "../math";
 import { CONFIG } from "../config";
 import type { Vehicle } from "../entities/Vehicle";
 import type { ParticleDraw } from "../render/ParticleDraw";

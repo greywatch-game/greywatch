@@ -1,9 +1,9 @@
 /**
- * vector.ts — `Vector3`, `Quaternion` and `Matrix`: the subset of Babylon's
- * classes of those names that the tree calls, under the same names and with
- * the same signatures, so that moving a file off Babylon's math is an import
- * change and nothing else.
- * Owns: the three classes, `Epsilon`, the `*Like` shapes their read-only
+ * vector.ts — `Vector2`, `Vector3`, `Vector4`, `Quaternion` and `Matrix`: the
+ * subset of Babylon's classes of those names that the tree calls, under the
+ * same names and with the same signatures, so that moving a file off Babylon's
+ * math is an import change and nothing else.
+ * Owns: the five classes, `Epsilon`, the `*Like` shapes their read-only
  * parameters take, and `Vector3Ref`, the shape of one handed in to be written.
  * Owns NO state beyond three module scratch values and two read-only
  * constants, NO tunable, and imports NOTHING — not `@babylonjs/core`, not
@@ -41,7 +41,9 @@
  *   - **One of these may NEVER be handed to a Babylon method** — Babylon would
  *     read `_x` off it, get `undefined`, and write NaN without a word. The
  *     types refuse it (these lack most of Babylon's members), and the crossing
- *     is `src/math/babylon.ts`, which copies.
+ *     is `src/math/babylon.ts`, which copies. Since `BABYLON_EXIT.md` X6.1e
+ *     the only Babylon methods left to hand one to are the CAMERA's (its
+ *     `setTarget`, `getDirection`, the scene's frustum), until X6.1f.
  *   - **Nor is a Babylon vector one of these**, and the types refuse that too:
  *     called as one, its `add` would be handed a vector of ours and read `_x`
  *     off it. What a Babylon vector CAN be is a `Vector3Like` (read) or a
@@ -50,7 +52,11 @@
  *     accessors answer. So a function written over this module that a caller
  *     still on Babylon's math must reach takes those two types, never
  *     `Vector3` — the world's data layer does (`NavGrid.steer`,
- *     `RayWorld.castRound`, `ObstacleField.resolve`).
+ *     `RayWorld.castRound`, `ObstacleField.resolve`), and so does every reader
+ *     of the camera's position (`camera.position`, `globalPosition`), which
+ *     is Babylon's until X6.1f. A camera MATRIX is read the same way, by its
+ *     numbers: `MatrixLike`, or copied into one of these with
+ *     `Matrix.FromArrayToRef` where a method of ours must take it.
  *
  * `Matrix` keeps its identity flag private, which makes its type nominal; a
  * read-only matrix parameter is typed `MatrixLike` (Babylon's `IMatrixLike`:
@@ -101,6 +107,14 @@ export interface Vector3Ref {
 
 /** Anything with four quaternion components — a Babylon quaternion included. */
 export interface QuaternionLike {
+  readonly x: number;
+  readonly y: number;
+  readonly z: number;
+  readonly w: number;
+}
+
+/** Anything with four coordinates — a Babylon `Vector4` included. */
+export interface Vector4Like {
   readonly x: number;
   readonly y: number;
   readonly z: number;
@@ -462,7 +476,7 @@ export class Vector3 {
    */
   static ProjectToRef<T extends Vector3>(
     vector: Vector3Like,
-    world: Matrix,
+    world: Readonly<Matrix>,
     transform: Matrix,
     viewport: ViewportLike,
     result: T,
@@ -488,6 +502,11 @@ export class Vector3 {
     return result;
   }
 
+  static NormalizeToRef<T extends Vector3>(vector: Vector3, result: T): T {
+    vector.normalizeToRef(result);
+    return result;
+  }
+
   static Distance(value1: Vector3Like, value2: Vector3Like): number {
     return Math.sqrt(Vector3.DistanceSquared(value1, value2));
   }
@@ -510,6 +529,100 @@ export class Vector3 {
     Quaternion.RotationQuaternionFromAxisToRef(axis1, axis2, axis3, quat);
     quat.toEulerAnglesToRef(ref);
     return ref;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Vector2 and Vector4 — the two Babylon classes the tree holds a shader's
+// uniform in. Babylon's `Vector4` keeps `_x`.. behind accessors as its
+// `Vector3` does; these keep plain fields, as every class here does.
+
+export class Vector2 {
+  x: number;
+  y: number;
+
+  constructor(x = 0, y = 0) {
+    this.x = x;
+    this.y = y;
+  }
+
+  toArray(array: number[] | Float32Array, index = 0): this {
+    array[index] = this.x;
+    array[index + 1] = this.y;
+    return this;
+  }
+
+  copyFromFloats(x: number, y: number): this {
+    this.x = x;
+    this.y = y;
+    return this;
+  }
+
+  set(x: number, y: number): this {
+    return this.copyFromFloats(x, y);
+  }
+
+  scaleInPlace(scale: number): this {
+    this.x *= scale;
+    this.y *= scale;
+    return this;
+  }
+
+  length(): number {
+    return Math.sqrt(this.x * this.x + this.y * this.y);
+  }
+
+  normalize(): this {
+    return this.normalizeFromLength(this.length());
+  }
+
+  normalizeFromLength(len: number): this {
+    if (len === 0 || len === 1.0) {
+      return this;
+    }
+    return this.scaleInPlace(1.0 / len);
+  }
+}
+
+export class Vector4 {
+  x: number;
+  y: number;
+  z: number;
+  w: number;
+
+  constructor(x = 0, y = 0, z = 0, w = 0) {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+  }
+
+  toArray(array: number[] | Float32Array, index = 0): this {
+    array[index] = this.x;
+    array[index + 1] = this.y;
+    array[index + 2] = this.z;
+    array[index + 3] = this.w;
+    return this;
+  }
+
+  copyFrom(source: Vector4Like): this {
+    this.x = source.x;
+    this.y = source.y;
+    this.z = source.z;
+    this.w = source.w;
+    return this;
+  }
+
+  copyFromFloats(x: number, y: number, z: number, w: number): this {
+    this.x = x;
+    this.y = y;
+    this.z = z;
+    this.w = w;
+    return this;
+  }
+
+  set(x: number, y: number, z: number, w: number): this {
+    return this.copyFromFloats(x, y, z, w);
   }
 }
 
@@ -910,6 +1023,25 @@ export class Matrix {
    * Adds to the translation row in place — the last step of a PIVOTED local
    * (`TransformNode.computeWorldMatrix`'s pivot path, `rigJoints.ts`).
    */
+  setTranslationFromFloats(x: number, y: number, z: number): this {
+    this._m[12] = x;
+    this._m[13] = y;
+    this._m[14] = z;
+    this.markAsUpdated();
+    return this;
+  }
+
+  setTranslation(vector3: Vector3Like): this {
+    return this.setTranslationFromFloats(vector3.x, vector3.y, vector3.z);
+  }
+
+  getTranslationToRef<T extends Vector3>(result: T): T {
+    result.x = this._m[12];
+    result.y = this._m[13];
+    result.z = this._m[14];
+    return result;
+  }
+
   addTranslationFromFloats(x: number, y: number, z: number): this {
     this._m[12] += x;
     this._m[13] += y;
@@ -1245,6 +1377,28 @@ export class Matrix {
       result.multiplyToRef(NDC_TO_HALF_Z_RANGE, result);
     }
     result._updateIdentityStatus(false);
+    return result;
+  }
+
+  static OrthoLHToRef<T extends Matrix>(
+    width: number,
+    height: number,
+    znear: number,
+    zfar: number,
+    result: T,
+    halfZRange?: boolean,
+  ): T {
+    const n = znear;
+    const f = zfar;
+    const a = 2.0 / width;
+    const b = 2.0 / height;
+    const c = 2.0 / (f - n);
+    const d = -(f + n) / (f - n);
+    Matrix.FromValuesToRef(a, 0.0, 0.0, 0.0, 0.0, b, 0.0, 0.0, 0.0, 0.0, c, 0.0, 0.0, 0.0, d, 1.0, result);
+    if (halfZRange) {
+      result.multiplyToRef(NDC_TO_HALF_Z_RANGE, result);
+    }
+    result._updateIdentityStatus(a === 1 && b === 1 && c === 1 && d === 0);
     return result;
   }
 

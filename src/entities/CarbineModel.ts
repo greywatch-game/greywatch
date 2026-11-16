@@ -8,7 +8,7 @@
  * before it is moved — `weaponKit.ts` owns that contract and the primitives.
  * The optics are `optics.ts`'s, built against `MOUNT` rather than re-tuned.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {

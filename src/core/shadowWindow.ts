@@ -39,7 +39,7 @@
  * because an unsnapped slide along the light shifts receiver depths against
  * caster depths and the hard edges crawl just the same.
  */
-import { Matrix, Vector3 } from "@babylonjs/core";
+import { Matrix, Vector3 } from "../math";
 
 /**
  * The near plane of every shadow volume in the game, in metres along the

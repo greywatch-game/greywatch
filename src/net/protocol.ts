@@ -11,8 +11,11 @@
  * client may only ever ASK (`ClientMessage`), never assert. A client's claimed
  * hit is a hint the server re-resolves, never a fact — see `docs/multiplayer.md`.
  * Vectors cross the wire as plain `[x, y, z]` tuples rather than `Vector3`,
- * because `Vector3` is a Babylon class with private `_x` fields that neither
- * `JSON.stringify` nor a `DataView` encoder has any business knowing about.
+ * so the wire's spelling is the protocol's and never a class's: a Babylon
+ * `Vector3` serialized as `_x`/`_y`/`_z` and `src/math`'s as `x`/`y`/`z`
+ * (`BABYLON_EXIT.md` X6.1e searched for either reaching the wire, and none
+ * does), and neither `JSON.stringify` nor a `DataView` encoder has any
+ * business knowing which.
  *
  * The one import in the file is a TYPE, and it is allowed for the reason the
  * ban above exists: `import type` is erased, so `ScoreKind` costs this module

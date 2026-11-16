@@ -25,10 +25,10 @@
  * cube every body must be born holding.
  * Contract: `docs/rendering.md`, "The water".
  */
-import { type Scene, Vector3 } from "@babylonjs/core";
+import { type Scene } from "@babylonjs/core";
 
 import { CONFIG } from "../config";
-import { Color3 } from "../math";
+import { Color3, Vector3, type Vector3Like } from "../math";
 import { anisotropic, type MadeTexture, type TextureMaker } from "../render/TextureMaker";
 import type { WaterDraw, WaterMirror, WaterShape, WaterSurface } from "../render/WaterDraw";
 import { createWaterBodyValues, createWaterShared, type WaterShared } from "../render/waterProgram";
@@ -412,7 +412,7 @@ export class WaterSystem {
    * Advances the animation and writes camera/lights. Same frame-order rule
    * as the cel materials: call after the camera and LightingSystem update.
    */
-  update(dt: number, camPos: Vector3, lights: readonly PointLightData[]): void {
+  update(dt: number, camPos: Vector3Like, lights: readonly PointLightData[]): void {
     const values = this.values;
     if (!values) return;
     this.time += dt;
@@ -449,7 +449,7 @@ export class WaterSystem {
    * the water's clock, so a held world stays held. Guarded on the position,
    * so the second call in a live frame costs one comparison.
    */
-  follow(camPos: Vector3): void {
+  follow(camPos: Vector3Like): void {
     const values = this.values;
     if (!values) return;
     if (this.followed && this.eye.equalsWithEpsilon(camPos, 1e-4)) return;

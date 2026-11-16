@@ -3,8 +3,8 @@
  *
  *   node scripts/math-check.mjs [--trials 20000] [--seed 1]
  *
- * `src/math/` is a port of the subset of Babylon's `Vector3`, `Quaternion`,
- * `Matrix`, `Color3` and `Color4` the tree calls, and
+ * `src/math/` is a port of the subset of Babylon's `Vector2`, `Vector3`,
+ * `Vector4`, `Quaternion`, `Matrix`, `Color3` and `Color4` the tree calls, and
  * its whole claim is that a file moved onto it computes exactly what it did:
  * every oracle the exit is graded by compares bits, so "close" is a failure.
  * This runs every ported method on seeded random inputs through both and
@@ -108,6 +108,7 @@ function flat(x) {
   if ("w" in x) return [x.x, x.y, x.z, x.w];
   if ("a" in x) return [x.r, x.g, x.b, x.a];
   if ("r" in x) return [x.r, x.g, x.b];
+  if ("x" in x && !("z" in x)) return [x.x, x.y];
   if ("x" in x) return [x.x, x.y, x.z];
   throw new Error(`cannot read ${x}`);
 }
@@ -194,6 +195,18 @@ caseOf(["Vector3.ProjectToRef"], () => {
   }];
 });
 
+caseOf(["Vector3.NormalizeToRef"], () => { const a = rand() < 0.1 ? (rand() < 0.5 ? [0, 0, 0] : [0, 1, 0]) : v3(); return [a, (L) => L.Vector3.NormalizeToRef(V(L, a), new L.Vector3())]; });
+
+// Vector2 / Vector4 — a shader's uniform holders (`CelShader`, `ShadowBindings`, …)
+const v2 = () => [num(), num()];
+const v4 = () => [num(), num(), num(), num()];
+caseOf(["Vector2#constructor", "Vector2#toArray"], () => { const a = v2(); return [a, (L) => { const o = [9, 9, 9, 9]; new L.Vector2(...a).toArray(o, 1); return [o, new L.Vector2()]; }]; });
+caseOf(["Vector2#copyFromFloats", "Vector2#set"], () => { const a = v2(); return [a, (L) => [new L.Vector2().copyFromFloats(...a), new L.Vector2(1, 2).set(...a)]]; });
+caseOf(["Vector2#scaleInPlace", "Vector2#length"], () => { const a = v2(), s = num(); return [[a, s], (L) => [new L.Vector2(...a).scaleInPlace(s), new L.Vector2(...a).length()]]; });
+caseOf(["Vector2#normalize", "Vector2#normalizeFromLength"], () => { const a = rand() < 0.1 ? (rand() < 0.5 ? [0, 0] : [0, 1]) : v2(); return [a, (L) => new L.Vector2(...a).normalize()]; });
+caseOf(["Vector4#constructor", "Vector4#toArray"], () => { const a = v4(); return [a, (L) => { const o = [9, 9, 9, 9, 9, 9]; new L.Vector4(...a).toArray(o, 1); return [o, new L.Vector4()]; }]; });
+caseOf(["Vector4#copyFrom", "Vector4#copyFromFloats", "Vector4#set"], () => { const a = v4(); return [a, (L) => [new L.Vector4().copyFrom(new L.Vector4(...a)), new L.Vector4().copyFromFloats(...a), new L.Vector4(1, 2, 3, 4).set(...a)]]; });
+
 // Quaternion
 caseOf(["Quaternion#constructor", "Quaternion#copyFrom"], () => { const q = quat(); return [q, (L) => new L.Quaternion().copyFrom(Q(L, q))]; });
 caseOf(["Quaternion#copyFromFloats", "Quaternion#set"], () => { const q = quat(); return [q, (L) => new L.Quaternion().set(...q)]; });
@@ -260,6 +273,18 @@ caseOf(["Matrix.PerspectiveFovLHToRef", "NDC_TO_HALF_Z_RANGE"], () => {
 // which the next product's shortcut reads, so each is multiplied after.
 caseOf(["Matrix.ScalingToRef"], () => { const s = rand() < 0.3 ? [1, 1, 1] : v3(), r = matRecipe(); return [[s, r], (L) => { const m = L.Matrix.ScalingToRef(...s, new L.Matrix()); return [m, m.multiply(build(L, r)), build(L, r).multiply(m), m.isIdentity()]; }]; });
 caseOf(["Matrix#addTranslationFromFloats"], () => { const r = matRecipe(), t = rand() < 0.2 ? [0, 0, 0] : v3(), r2 = matRecipe(); return [[r, t, r2], (L) => { const m = build(L, r).addTranslationFromFloats(...t); return [m, m.multiply(build(L, r2)), m.isIdentity()]; }]; });
+// The translation's three (`Sky`'s moon): each read back through a product,
+// since the write clears the identity flag the shortcuts read.
+caseOf(["Matrix#setTranslationFromFloats", "Matrix#setTranslation"], () => { const r = matRecipe(), t = rand() < 0.2 ? [0, 0, 0] : v3(), r2 = matRecipe(), which = rand() < 0.5; return [[r, t, r2, which], (L) => { const m = which ? build(L, r).setTranslationFromFloats(...t) : build(L, r).setTranslation(V(L, t)); return [m, m.multiply(build(L, r2)), m.isIdentity()]; }]; });
+caseOf(["Matrix#getTranslationToRef"], () => { const r = matRecipe(); return [r, (L) => build(L, r).getTranslationToRef(new L.Vector3(7, 7, 7))]; });
+// `shadowWindow.ts`' light projection: both depth ranges, and the identity
+// flag the result is left with (2/w, 2/h, 2/(f-n) all one only at w=h=2).
+caseOf(["Matrix.OrthoLHToRef"], () => {
+  const w = rand() < 0.1 ? 2 : rand() * 400, h = rand() < 0.1 ? 2 : rand() * 400;
+  const n = rand() < 0.2 ? (rand() < 0.5 ? -1 : 0) : num(), f = rand() < 0.2 ? 1 : n + rand() * 3000, half = rand() < 0.7 ? true : rand() < 0.5 ? false : undefined;
+  const r2 = matRecipe();
+  return [[w, h, n, f, half, r2], (L) => { const m = L.Matrix.OrthoLHToRef(w, h, n, f, new L.Matrix(), half); return [m, m.isIdentity(), m.multiply(build(L, r2))]; }];
+});
 caseOf(["Matrix.FromXYZAxesToRef"], () => { const a = v3(), b = v3(), c = v3(); return [[a, b, c], (L) => L.Matrix.FromXYZAxesToRef(V(L, a), V(L, b), V(L, c), new L.Matrix())]; });
 
 // Color3 / Color4
@@ -269,6 +294,7 @@ caseOf(["Color3#equals"], () => { const a = col(), b = rand() < 0.5 ? a : col();
 caseOf(["Color3#scale", "Color3#scaleInPlace"], () => { const a = col(), s = num(2); return [[a, s], (L) => [C3(L, a).scale(s), C3(L, a).scaleInPlace(s)]]; });
 caseOf(["Color3#addInPlace", "Color3#addToRef"], () => { const a = col(), b = col(); return [[a, b], (L) => [C3(L, a).addInPlace(C3(L, b)), C3(L, a).addToRef(C3(L, b), new L.Color3())]]; });
 caseOf(["Color3#clone", "Color3#copyFrom", "Color3#copyFromFloats", "Color3#set"], () => { const a = col(); return [a, (L) => [C3(L, a).clone(), new L.Color3().copyFrom(C3(L, a)), new L.Color3().set(...a)]]; });
+caseOf(["Color3#toArray"], () => { const a = col(); return [a, (L) => { const o = [9, 9, 9, 9, 9]; C3(L, a).toArray(o, 1); C3(L, a).toArray(o); return o; }]; });
 caseOf(["Color3#toHexString"], () => { const a = rand() < 0.2 ? [0, 1, 15 / 255] : col(); return [a, (L) => C3(L, a).toHexString()]; });
 caseOf(["Color3#fromHexString", "Color3.FromHexString"], () => { const h = rand() < 0.5 ? hexes[Math.floor(rand() * hexes.length)] : "#" + Math.floor(rand() * 0xffffff).toString(16).padStart(6, "0"); return [h, (L) => L.Color3.FromHexString(h)]; });
 caseOf(["Color3.Lerp", "Color3.LerpToRef"], () => { const a = col(), b = col(), t = rand(); return [[a, b, t], (L) => L.Color3.Lerp(C3(L, a), C3(L, b), t)]; });
@@ -280,7 +306,7 @@ caseOf(["Color4#fromHexString", "Color4.FromHexString"], () => { const h = hexes
 // Coverage: every member of every class has a case.
 
 const missing = [];
-for (const cls of ["Vector3", "Quaternion", "Matrix", "Color3", "Color4"]) {
+for (const cls of ["Vector2", "Vector3", "Vector4", "Quaternion", "Matrix", "Color3", "Color4"]) {
   const C = M[cls];
   const statics = Object.getOwnPropertyNames(C).filter((n) => !["length", "name", "prototype"].includes(n));
   const methods = Object.getOwnPropertyNames(C.prototype);

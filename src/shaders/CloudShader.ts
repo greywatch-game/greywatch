@@ -34,7 +34,7 @@
  * draws the lumps back to front and the test is LEQUAL, so a later tie wins —
  * which is the state `CloudDraw`'s pipeline is built with.
  */
-import type { Color3, Vector3 } from "@babylonjs/core";
+import type { Color3, Vector3, Vector3Like } from "../math";
 import type { CloudField, CloudRecipe } from "../render/cloudProgram";
 
 /** What `Sky` hands the paint. Colours are display-ready, like every palette here. */
@@ -100,7 +100,7 @@ export class CloudPaint implements CloudRecipe {
   }
 
   /** The eye the terms that ask where the viewer is looking are measured from. */
-  setEye(eye: Vector3): void {
+  setEye(eye: Vector3Like): void {
     const e = this.values.cloudEye;
     e[0] = eye.x;
     e[1] = eye.y;

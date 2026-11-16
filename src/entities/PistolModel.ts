@@ -24,7 +24,7 @@
  * numbers. Units are the models' throughout: ~1.4 per metre, which puts this
  * weapon at 0.33 long against the rifle's 1.27.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";

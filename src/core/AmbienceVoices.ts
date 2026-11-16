@@ -28,7 +28,7 @@
  * Never: a recording. One ambient bed prices out at ten times the whole
  * sampled gun kit — see `docs/audio.md`.
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "../math";
 import type { MixChannel } from "../config";
 import type { AudioCore } from "./sfxCore";
 

@@ -29,7 +29,7 @@
  * owes the support under it**, and the failure is a hole in the weapon rather
  * than anything a build would refuse.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {

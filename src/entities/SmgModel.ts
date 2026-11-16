@@ -9,7 +9,7 @@
  * The optics are `optics.ts`'s, and land correctly on this weapon's lower rail
  * without a number being re-tuned because they are built against `MOUNT`.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, type OpticMount } from "./optics";
 import {

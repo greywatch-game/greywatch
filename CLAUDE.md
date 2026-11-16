@@ -1549,16 +1549,19 @@ built.
 - `CONFIG` is `as const`, so a field like `bots.engageRange` has a *literal* type.
   `let x = CONFIG.bots.engageRange` then reassigning it fails to compile — annotate
   `let x: number` instead.
-- **There are TWO `Vector3`s until the exit's X6.1, and they do not mix.**
-  `src/math/` is the game's own — Babylon's subset under Babylon's names, bit
-  for bit (`scripts/math-check.mjs`) — and a map's LAYOUT positions and the
-  world's data layer are made of it; the rest of the tree still holds
-  Babylon's. **One of ours handed to a Babylon method reads `_x` and writes
-  NaN without a word**, so a crossing is a copy through `src/math/babylon.ts`,
-  and a function both sides reach takes `Vector3Like` (read) or `Vector3Ref`
-  (written through `set`), which Babylon's satisfies. The types catch every
-  crossing (the two they could not were the map editor's, gone at X5.3c), and
-  a layout's positions are `src/math/`'s.
+- **There is ONE math, `src/math/`, and the CAMERA keeps Babylon's until the
+  exit's X6.1f.** `src/math/` is the game's own — Babylon's subset under
+  Babylon's names, bit for bit (`scripts/math-check.mjs`) — and every vector,
+  colour, quaternion and matrix in the tree is made of it (X6.1e) but the
+  camera's: `CameraSystem` (its `FreeCamera`, its eye, `lookDirection`), the
+  viewer's camera, the scene's matrices and frustum planes (`GrassSystem`'s
+  `Frustum`), and a mesh's own rotation in `parts.ts`' mesh arm (X6.1g).
+  **One of ours handed to a Babylon method reads `_x` and writes NaN without
+  a word**, so a value handed TO the camera is copied through
+  `src/math/babylon.ts`, and a reader of the camera takes `Vector3Like`
+  (`camera.position`, which Babylon's satisfies) or copies a matrix by its
+  numbers (`Matrix.FromArrayToRef`). A member a move needs is ADDED to
+  `src/math/` and to `math-check` first. The types catch every crossing.
 - Smoothing is normally the frame-lerp idiom `Math.min(1, dt * rate)`. **Anything
   that moves where bullets go, or that a player will read as recoil, is stepped
   EXACTLY instead**, because burst climb must not vary with frame rate.

@@ -107,9 +107,10 @@
  * carrying a second integrator and a terrain pointer for a fall nobody had
  * seen since the engine started shipping with the build.
  */
-import { Quaternion, Vector3, VertexData } from "@babylonjs/core";
+import { VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import { Quaternion, Vector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { WorldPane } from "../world/MapBuilder";
 import type { ShapeId } from "./havok";
@@ -329,7 +330,7 @@ export class DebrisSystem implements PhysicsClient {
    * pane is still gone, because the break is the world changing and this is
    * only what it looked like.
    */
-  burst(geom: WorldPane, at: Vector3, dir: Vector3, camPos: Vector3): boolean {
+  burst(geom: WorldPane, at: Vector3, dir: Vector3, camPos: Vector3Like): boolean {
     if (this.bursts.length === 0) return false;
     const g = CONFIG.glass;
 

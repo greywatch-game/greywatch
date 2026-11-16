@@ -37,10 +37,9 @@
  * but the model's own answers (`carriedSight`, `reloadAction`, the reload's
  * head pose), which are the drawing's to give.
  */
-import { Matrix } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { createBox, createPlane, DOUBLESIDE } from "../geometry/primitives";
-import { Vector3 } from "../math";
+import { Matrix, Vector3 } from "../math";
 import { Part } from "../world/parts";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Piece, pieceKit, type PieceKit, type PiecePart } from "./pieces";

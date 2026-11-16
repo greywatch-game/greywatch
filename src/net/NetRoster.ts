@@ -33,7 +33,7 @@
  * `setFielded`, and re-addressed together by `setBlockWidth`, the only two
  * things that may write either.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like } from "../math";
 import { CONFIG, FOG_WALL } from "../config";
 import { NetSoldier } from "../entities/NetSoldier";
 import type { Team } from "../entities/Combatant";
@@ -359,7 +359,7 @@ export class NetRoster {
    * No `dt`, for the reason `NetSoldier.update` gives: nothing on this path
    * integrates against frame time.
    */
-  update(renderTime: number, cameraPos: Vector3): void {
+  update(renderTime: number, cameraPos: Vector3Like): void {
     for (const soldier of this.soldiers) {
       if (soldier.slot === this.localSlot) continue;
       // The two edges the ragdoll pool cares about, read either side of the one

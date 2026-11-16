@@ -124,7 +124,6 @@
  *   allowed to be drawn — and it goes up and down with the pose, which is
  *   what keeps it out of every other state in the game.
  */
-import { Matrix as BabylonMatrix, Vector3 as BabylonVector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp, hermite, impulse } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -1223,9 +1222,9 @@ export class ViewModel {
    * start, a command input). Babylon's answer, not a fresh one: the render
    * cache's (`ViewTree.read`), which is what `getAbsolutePosition` gave.
    */
-  muzzleWorld(): BabylonVector3 {
+  muzzleWorld(): Vector3 {
     const m = this.tree.read(this.muzzle).m;
-    return new BabylonVector3(m[12], m[13], m[14]);
+    return new Vector3(m[12], m[13], m[14]);
   }
 
   /**
@@ -1233,8 +1232,8 @@ export class ViewModel {
    * off (`getAbsolutePosition`, then `getWorldMatrix`, which the first read
    * had just stamped). The render cache's answer, as `muzzleWorld`'s is.
    */
-  ejectPortWorld(out: BabylonMatrix): BabylonMatrix {
-    return BabylonMatrix.FromArrayToRef(this.tree.read(this.ejectPort).m, 0, out);
+  ejectPortWorld(out: Matrix): Matrix {
+    return Matrix.FromArrayToRef(this.tree.read(this.ejectPort).m, 0, out);
   }
 
   setVisible(visible: boolean): void {
@@ -1941,9 +1940,9 @@ export class ViewModel {
    * the muzzle and the ejection port are, or a fresh compose off its
    * ancestors' cached worlds for one that was not (`RenderCache`).
    */
-  throwHandWorld(): BabylonVector3 {
+  throwHandWorld(): Vector3 {
     const m = this.tree.read(this.throwHand).m;
-    return new BabylonVector3(m[12], m[13], m[14]);
+    return new Vector3(m[12], m[13], m[14]);
   }
 
   /**

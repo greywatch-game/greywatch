@@ -35,7 +35,7 @@
  * at `toSegment` here; each hung from its sight's JOINT (`WeaponBuild.hang`;
  * X4.3b), which is the switch a loadout change throws.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import {
   createBox,

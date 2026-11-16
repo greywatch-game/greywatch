@@ -56,7 +56,7 @@
  * ejection port have to hang off something that survives a loadout change, so
  * `ViewModel` owns those joints and moves them to whichever weapon is fitted.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";

@@ -25,9 +25,8 @@
  * Split out of `CombatSystem` on the line every mixed system is split on:
  * the simulation keeps the name and the shot,
  * and this file keeps everything a GPU is needed for. Its inputs are
- * `Vector3Like` and are read through their FIELDS, because the simulation's
- * vectors are `src/math`'s and a Babylon method would read `_x` off one and
- * write NaN.
+ * `Vector3Like` and are read through their FIELDS: they are the
+ * simulation's, which this view never writes.
  *
  * The disc pool is `noGlow`, which the bloom reads every frame; without it
  * every dust disc blooms like a lamp.
@@ -48,12 +47,11 @@
  * because an impact seen before its round lands is what makes a slowed tracer
  * read as fake — and `onImpact`, the sound, rides the same clock.
  */
-import { Color3, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { DISC, Fade, fadeKit, type FadeKit, SPARK } from "../entities/fades";
 import { Piece, pieceKit, type PieceKit, type PiecePart } from "../entities/pieces";
 import { createCylinder, createDisc, createSphere, DOUBLESIDE } from "../geometry/primitives";
-import { Quaternion as MathQuaternion, type Vector3Like } from "../math";
+import { Color3, Quaternion as MathQuaternion, Vector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";
 import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";

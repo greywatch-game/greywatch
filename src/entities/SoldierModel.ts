@@ -48,7 +48,6 @@
  * inside `RAGDOLL_LINKS`, because a body can die at any point of it. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
-import { Color3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import { writePaletteIndex } from "../shaders/CelShader";
@@ -57,7 +56,7 @@ import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
 import { createBox } from "../geometry/primitives";
-import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
+import { Color3, Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import { Joint, JointTree, measureBody, type BodySphere } from "./rigJoints";
 import type { BoneJoint } from "./soldierBones";
 import { mergeParts, Part, PartNode, worldMatrixOf } from "../world/parts";

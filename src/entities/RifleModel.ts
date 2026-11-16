@@ -8,7 +8,7 @@
  * along with the primitives this is written in. The optics are `optics.ts`'s,
  * shared with the SMG rather than duplicated here.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {

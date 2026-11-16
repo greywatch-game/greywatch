@@ -98,19 +98,9 @@
  * and no build or match opened after it, `deviceIsLost`),
  * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
-import {
-  Color3,
-  Color4,
-  Matrix,
-  type Plane,
-  Scene,
-  type SubMesh,
-  Vector3,
-  Viewport,
-} from "@babylonjs/core";
+import { type Plane, Scene, type SubMesh, Viewport } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { type Color3Like, Vector3 as MathVector3, type Vector3Like } from "../math";
-import { toBabylon } from "../math/babylon";
+import { Color3, type Color3Like, Color4, Matrix, Vector3, type Vector3Like } from "../math";
 import {
   CelMaterialFactory,
   fogAmountAt,
@@ -429,13 +419,6 @@ interface BenchRun {
 }
 
 /**
- * The camera's own local forward, for `getDirection`. A module constant because
- * the one caller runs per frame and `Axis.Z` would be the same object read
- * through another import.
- */
-const FORWARD_Z = new Vector3(0, 0, 1);
-
-/**
  * One arm of the server's event union, named by its own tag.
  *
  * `ServerEvent`'s members are anonymous — the union is written inline in
@@ -511,7 +494,7 @@ function fireSoundKey(id: number): number {
  * that pair the wrong way round costs one block's early rejection rather than
  * a wrong picture.
  */
-function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
+function eyeDistanceSq(sub: SubMesh, eye: Vector3Like): number {
   const c = sub.getBoundingInfo().boundingSphere.centerWorld;
   const dx = c.x - eye.x;
   const dy = c.y - eye.y;
@@ -1025,7 +1008,7 @@ export class Game {
   private viewKeys = new Float64Array(0);
   /** Each lit segment's and each glass's LOCAL bounding-sphere centre, three doubles a slot — what the bloom's fade (`viewPull`) and a glass's distance (`drawView`) are measured from. */
   private viewCentres = new Float64Array(0);
-  private readonly viewCentre = new MathVector3();
+  private readonly viewCentre = new Vector3();
   private readonly viewBloom = new Color4();
   /** Each kit's index in the order `hullDraw` was handed them — a hull's kit word (`drawHulls`). */
   private readonly hullKitIndex: Map<HullKit, number>;
@@ -1313,6 +1296,12 @@ export class Game {
   private readonly particleDraw: ParticleDraw;
   /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
   private readonly particleInvView = new Matrix();
+  /**
+   * The scene's view, copied into `src/math`'s matrix to be inverted there —
+   * the camera's matrices are Babylon's until `BABYLON_EXIT.md` X6.1f, and
+   * ours reads one only by its numbers.
+   */
+  private readonly particleView = new Matrix();
   /**
    * The dust under the rotors. A picture and nothing else: it reads the fleet
    * and writes nothing back, exactly as the mote field reads the eye.
@@ -1624,9 +1613,11 @@ export class Game {
   /** Scratch for a fire light's position, lifted off the floor it burns on. */
   private readonly fireLightAt = new Vector3();
   /**
-   * A fire's floor, copied into Babylon's vector for the readers still on its
-   * math — the noise, the scorch, the light and the held-open sound. Scratch,
-   * read inside the call.
+   * A fire's floor, copied for its readers — the noise, the scorch, the light
+   * and the held-open sound — into a scratch of the page's own. A COPY since
+   * the readers were on Babylon's math, kept at `BABYLON_EXIT.md` X6.1e (which
+   * moved them onto `src/math`) so no reader is handed the simulation's own
+   * vector. Read inside the call.
    */
   private readonly fireAt = new Vector3();
   /** A blast's point, copied for `onExplosion`'s readers on the same terms. */
@@ -1922,13 +1913,15 @@ export class Game {
   private readonly hullPlace = new Vector3();
   /** Scratch for the shell: the muzzle, the gun's axis, and the marker's point. */
   private readonly shellFrom = new Vector3();
-  /** A hull's centre, copied for the engine voice, which is on Babylon's math. */
+  /** A hull's centre, copied for the engine voice (`fireAt`'s terms). */
   private readonly engineAt = new Vector3();
   private readonly shellDir = new Vector3();
   /** …and for where a rocket leaves the tube, or a mine goes down. */
   private readonly ordnanceAt = new Vector3();
   private readonly markerAt = new Vector3();
   private readonly markerOut = new Vector3();
+  /** The scene's transform, copied into `src/math`'s matrix for the projection. */
+  private readonly markerTransform = new Matrix();
   private readonly markerViewport = new Viewport(0, 0, 1, 1);
 
   /**
@@ -3159,14 +3152,13 @@ export class Game {
    * authority decided, arriving as its `blaze`.
    *
    * The flames and the ignition's billows first, because that is where they
-   * always were: inside the ignition, ahead of the event. `at` is
-   * `src/math`'s and every reader after the view is still Babylon's, so one
-   * COPY serves them all.
+   * always were: inside the ignition, ahead of the event. `at` is the
+   * simulation's, so the readers after the view share one COPY (`fireAt`).
    */
   private fireLit(id: number, at: Vector3Like, ground: BlastGround): void {
     const lc = CONFIG.molotov.light;
     this.grenadeFx.ignite(id, at);
-    const fire = toBabylon(at, this.fireAt);
+    const fire = this.fireAt.copyFrom(at);
     this.sfx.molotov(fire);
     this.blastDebris.scorchAt(fire, CONFIG.molotov.scorch, this.debrisGroundOf(ground));
     this.fireLightAt.copyFrom(fire);
@@ -3221,14 +3213,14 @@ export class Game {
     // where that comes from rather than the event, because the pane's index is
     // its identity on both sides of the wire and its geometry is the map's.
     //
-    // Both arrive as the simulation's (`Vector3Like`) and both readers are
-    // still Babylon's, so they are COPIED across here — fresh, once per pane
-    // broken, which is rare and leaves the burst free to keep what it is given.
+    // Both arrive as the simulation's (`Vector3Like`), so they are COPIED
+    // here — fresh, once per pane broken, which is rare and leaves the burst
+    // free to keep what it is given.
     this.glass.onBreak = (pane, at, dir) => {
-      const p = toBabylon(at);
+      const p = new Vector3(at.x, at.y, at.z);
       this.sfx.impact(p, "glass");
       const geom = this.map?.panes[pane];
-      if (geom) this.debris.burst(geom, p, toBabylon(dir), this.cameraSys.camera.position);
+      if (geom) this.debris.burst(geom, p, new Vector3(dir.x, dir.y, dir.z), this.cameraSys.camera.position);
     };
   }
 
@@ -4718,7 +4710,7 @@ export class Game {
     const view = this.scene.getViewMatrix();
     out.view.set(view.m);
     out.projection.set(this.scene.getProjectionMatrix().m);
-    view.invertToRef(this.particleInvView);
+    Matrix.FromArrayToRef(view.m, 0, this.particleView).invertToRef(this.particleInvView);
     out.invView.set(this.particleInvView.m);
     const eye = this.scene.activeCamera?.globalPosition;
     if (!eye) return;
@@ -5669,14 +5661,16 @@ export class Game {
       // like it means.
       at: () => {
         const c = this.cameraSys.camera;
-        return c.position.add(c.getDirection(FORWARD_Z).scale(10));
+        const p = c.position.add(this.cameraSys.lookDirection().scale(10));
+        return new Vector3(p.x, p.y, p.z);
       },
       // And two metres, for the one cue that is only itself up close: a round
       // going PAST passes inside `hitRadius + suppressRadius`, and at ten
       // metres the panner and the air have made it a different sound.
       near: () => {
         const c = this.cameraSys.camera;
-        return c.position.add(c.getDirection(FORWARD_Z).scale(2));
+        const p = c.position.add(this.cameraSys.lookDirection().scale(2));
+        return new Vector3(p.x, p.y, p.z);
       },
       driving: () => this.driving !== null,
     });
@@ -6342,8 +6336,7 @@ export class Game {
     const viewer = this.viewer;
     if (!viewer) return;
     viewer.update(dt);
-    // `src/math`'s forward, so its numbers cross by value and never as an
-    // object a Babylon method would read `_x` off.
+    // The viewer's forward, added by its numbers.
     const f = viewer.forward;
     this.shadowFocus
       .copyFrom(this.cameraSys.camera.position)
@@ -6933,8 +6926,8 @@ export class Game {
         // Its distance, as `_RenderSorted` measured a transparent submesh's:
         // its bounding sphere's centre in the world, to the eye.
         const s = v.slot * 3;
-        MathVector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
-        keys[i] = MathVector3.Distance(at, eye);
+        Vector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
+        keys[i] = Vector3.Distance(at, eye);
         // Back to front: farthest first, a tie to the one made first.
         let r = glass;
         while (r > 0) {
@@ -7012,8 +7005,8 @@ export class Game {
       const material = v.segment.material;
       if (!material?.emissiveColor) continue;
       const s = v.slot * 3;
-      MathVector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
-      const fade = 1 - fogAmountAt(MathVector3.Distance(at, eye));
+      Vector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
+      const fade = 1 - fogAmountAt(Vector3.Distance(at, eye));
       this.bloomColour(material as { readonly emissiveColor: Color3Like; readonly alpha: number }, fade, this.viewBloom);
       glow[k * 4] = this.viewBloom.r;
       glow[k * 4 + 1] = this.viewBloom.g;
@@ -9228,9 +9221,9 @@ export class Game {
       this.net?.sendShell(muzzle, dir);
       this.hullHitCue(round);
     }
-    // Into Babylon's vector for the light, the report and the shake, which are
-    // still on its math; the rule's muzzle is `src/math`'s.
-    this.drawCannon(tank, toBabylon(muzzle, this.shellFrom));
+    // A COPY of the rule's muzzle for the light, the report and the shake
+    // (`fireAt`'s terms).
+    this.drawCannon(tank, this.shellFrom.copyFrom(muzzle));
     return true;
   }
 
@@ -9336,7 +9329,7 @@ export class Game {
       this.hullHitCue(round);
     }
     // Copied for the light and the report, `resolveShell`'s reason.
-    const at = toBabylon(muzzle, this.shellFrom);
+    const at = this.shellFrom.copyFrom(muzzle);
     this.flashMuzzle(at);
     // Placed at the muzzle rather than voiced in the ear, so it is panned like
     // every other gun in the world — but a crew riding THIS hull hears it at
@@ -9515,7 +9508,7 @@ export class Game {
       const [load, rev] = tank.powerplant(
         Math.min(1, tank.travel / tank.spec.drive.maxSpeed),
       );
-      this.sfx.hullEngine(i, toBabylon(tank.center, this.engineAt), load, rev, tank.spec.engine);
+      this.sfx.hullEngine(i, this.engineAt.copyFrom(tank.center), load, rev, tank.spec.engine);
     }
   }
 
@@ -9952,7 +9945,7 @@ export class Game {
     // refusal is not a visible jerk; a large one is a genuine desync and
     // easing it would mean spending seconds visibly inside a wall.
     net.onCorrection = (pos, reason) => {
-      const off = MathVector3.Distance(this.player.position, pos);
+      const off = Vector3.Distance(this.player.position, pos);
       if (off > CONFIG.net.correctionSnap) {
         this.player.placeAt(pos.clone());
         this.hud.toast(`resynced (${reason})`);
@@ -9973,7 +9966,7 @@ export class Game {
     net.onHullCorrection = (tank, pos, reason) => {
       const hull = this.vehicles.hulls[tank];
       if (!hull || hull !== this.driving || this.drivingSeat !== DRIVER) return;
-      const off = MathVector3.Distance(hull.position, pos);
+      const off = Vector3.Distance(hull.position, pos);
       hull.correctTo(pos.x, pos.y, pos.z);
       // Said out loud only when it was a JUMP. The two lids — the map's edge
       // and the machine's ceiling — correct by centimetres every frame a pilot
@@ -11385,9 +11378,9 @@ export class Game {
   private readonly pushFire = (id: number, at: Vector3Like, strength: number): void => {
     const light = this.fireLights.get(id);
     if (light) light.baseIntensity = CONFIG.molotov.light.intensity * strength;
-    // A COPY into Babylon's vector: the fire's floor is `src/math`'s.
+    // A COPY of the fire's floor (`fireAt`'s terms).
     if (strength > 0.05) {
-      this.sfx.ambience(fireSoundKey(id), toBabylon(at, this.fireAt), this.fireSound);
+      this.sfx.ambience(fireSoundKey(id), this.fireAt.copyFrom(at), this.fireSound);
     } else {
       this.sfx.ambienceOff(fireSoundKey(id));
     }
@@ -12260,7 +12253,7 @@ export class Game {
     const cam = this.cameraSys.camera;
     // In front of the eye? `getDirection` is the camera's own forward, which
     // during a drive is whatever `place` last pointed it at.
-    const fwd = cam.getDirection(FORWARD_Z);
+    const fwd = this.cameraSys.lookDirection();
     if (
       (this.markerAt.x - cam.position.x) * fwd.x +
         (this.markerAt.y - cam.position.y) * fwd.y +
@@ -12277,7 +12270,7 @@ export class Game {
     Vector3.ProjectToRef(
       this.markerAt,
       Matrix.IdentityReadOnly,
-      this.scene.getTransformMatrix(),
+      Matrix.FromArrayToRef(this.scene.getTransformMatrix().m, 0, this.markerTransform),
       this.markerViewport,
       this.markerOut,
     );
@@ -12793,14 +12786,13 @@ export class Game {
   }
 
   /**
-   * What a blast went off on, COPIED for `BlastDebrisSystem`, which is still
-   * on Babylon's math (`DebrisGround`) — the simulation's normal is
-   * `src/math`'s and a Babylon static would read `_x` off it. One scratch,
-   * read inside the call that asked for it.
+   * What a blast went off on, COPIED for `BlastDebrisSystem` (`DebrisGround`)
+   * on `fireAt`'s terms: the simulation's ground is not handed out. One
+   * scratch, read inside the call that asked for it.
    */
   private debrisGroundOf(ground: BlastGround): DebrisGround {
     this.debrisGround.surface = ground.surface;
-    toBabylon(ground.normal, this.debrisGround.normal);
+    this.debrisGround.normal.copyFrom(ground.normal);
     return this.debrisGround;
   }
 
@@ -12830,10 +12822,10 @@ export class Game {
    * camera is not running while the hull's is.
    */
   private onExplosion(point: Vector3Like, power: number, sim: BlastGround): void {
-    // The two COPIES this handler's readers need: they are all still on
-    // Babylon's math, and the blast's point and ground normal are `src/math`'s
+    // The two COPIES this handler's readers are handed, on `fireAt`'s terms:
+    // the blast's point and ground normal are the simulation's
     // (`GrenadeSystem`). The light clones what it keeps.
-    const at = toBabylon(point, this.blastPoint);
+    const at = this.blastPoint.copyFrom(point);
     const ground = this.debrisGroundOf(sim);
     const lc = CONFIG.lighting;
     // The light, scaled by the same `power` the picture is: RANGE whole, the
@@ -12865,7 +12857,7 @@ export class Game {
     const g = CONFIG.grenade;
     const reach = g.blastRadius * 2 * power;
     const tank = this.driving;
-    const d = MathVector3.Distance(
+    const d = Vector3.Distance(
       at,
       tank ? tank.center : this.cameraSys.camera.position,
     );
@@ -12903,7 +12895,7 @@ export class Game {
     if (this.state !== "playing") return;
     const tank = this.driving;
     const from = tank ? tank.center : this.cameraSys.camera.position;
-    const d = MathVector3.Distance(at, from);
+    const d = Vector3.Distance(at, from);
     if (d >= reach) return;
     const f = 1 - d / reach;
     const worth = amount * f * f;

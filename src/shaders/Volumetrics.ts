@@ -94,8 +94,8 @@
  * this CPU half rather than re-configuring it when the player moves the
  * slider, and why every rung's stage stands in the chain from the start.
  */
-import type { Camera, Matrix } from "@babylonjs/core";
-import { Vector3, Vector4 } from "@babylonjs/core";
+import { type Matrix, Vector3, Vector4 } from "../math";
+import type { Camera } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { depthBias } from "../core/shadowWindow";
 import type { FrameTargets } from "../render/FrameTargets";

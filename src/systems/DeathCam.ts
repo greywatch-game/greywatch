@@ -41,10 +41,9 @@
  *   `Game.updateGameplay` like every other body; this file only says which body
  *   to throw and where to stand to watch it.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
@@ -229,7 +228,7 @@ export class DeathCam {
   start(
     feet: Vector3,
     yaw: number,
-    eye: Vector3,
+    eye: Vector3Like,
     forward: Vector3,
     from: Vector3Like | undefined,
     damage: number,

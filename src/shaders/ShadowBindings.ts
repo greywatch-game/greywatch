@@ -27,7 +27,7 @@
  * a material. The irradiance volume is NOT here: it stays with the factory
  * (`setGi`), which copies it into the frame beside this.
  */
-import { Color3, Matrix, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Matrix, Vector3, Vector4 } from "../math";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { type MadeTexture, SAMPLING, type TextureMaker } from "../render/TextureMaker";

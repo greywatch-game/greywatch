@@ -589,15 +589,18 @@ src/
                     #   babylon.ts import nothing and name their .ts imports,
                     #   so Node loads them
     index.ts            # The re-exports. NOT babylon.ts
-    vector.ts           # Vector3, Quaternion, Matrix, and the parameter types
-                        #   that let a Babylon vector in: Vector3Like (read)
-                        #   and Vector3Ref (written through set alone). One of
-                        #   ours handed to a BABYLON method reads `_x` and gets
-                        #   NaN — the header says which way is safe
+    vector.ts           # Vector2, Vector3, Vector4, Quaternion, Matrix, and
+                        #   the parameter types that let a Babylon vector in:
+                        #   Vector3Like (read) and Vector3Ref (written through
+                        #   set alone) — the camera's position is the one
+                        #   left (X6.1e). One of ours handed to a BABYLON
+                        #   method reads `_x` and gets NaN — the header says
+                        #   which way is safe
     color.ts            # Color3 and Color4
     babylon.ts          # THE crossing into Babylon's math (toBabylon). The
-                        #   one file here that imports Babylon; shrinks to
-                        #   nothing by X6.1
+                        #   one file here that imports Babylon; since X6.1e
+                        #   only the camera's owners call it (CameraSystem,
+                        #   the viewer's camera), deleted with them at X6.1f
   geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2, X1.3):
                     #   what the world kit, the scatter props and the models
                     #   build, Babylon's arithmetic copied bit for bit. Imports nothing but
@@ -663,7 +666,10 @@ src/
                         #   gravity estimate. Reports the sensor's real state
                         #   for the settings row; applies nothing
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
-                        #   the fitted optic, at the weapon's own rate
+                        #   the fitted optic, at the weapon's own rate. Keeps
+                        #   Babylon's math for its FreeCamera until X6.1f;
+                        #   what it hands out is src/math's, and `place`
+                        #   copies what it is handed
     cameraShake.ts      # The concussion rattle: a two-pole envelope over
                         #   smooth noise, three COSMETIC angles. One each in
                         #   CameraSystem and VehicleCamera; Game.shakeFrom

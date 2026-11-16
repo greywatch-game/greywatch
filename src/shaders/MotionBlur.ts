@@ -26,7 +26,7 @@
  * Contract: `docs/rendering.md`.
  */
 import type { Camera } from "@babylonjs/core";
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import type { PostStage } from "../render/PostChain";
 import type { FrameTargets } from "../render/FrameTargets";

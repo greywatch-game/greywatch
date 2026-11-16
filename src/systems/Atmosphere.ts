@@ -31,7 +31,7 @@
  * execute on any browser that can run this game is a branch nothing will ever
  * exercise, so it would rot.
  */
-import { Color4, Vector3 } from "@babylonjs/core";
+import { Color4, type Vector3Like } from "../math";
 import { CONFIG } from "../config";
 import type { ParticleDraw } from "../render/ParticleDraw";
 import type { ParticleField } from "../render/ParticleField";
@@ -250,7 +250,7 @@ export class Atmosphere {
    * Only X and Z. The height band is the ground's, not the eye's — see
    * `apply`.
    */
-  update(eye: Vector3): void {
+  update(eye: Vector3Like): void {
     if (this.follow === null || !this.system) return;
     const at = this.system.emitter;
     at.x = eye.x;

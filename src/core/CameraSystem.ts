@@ -46,6 +46,14 @@
  * are the only things that write the camera's roll, and they do it through ONE
  * assignment at the end of `update`: a second write site is how a roll becomes
  * whichever contributor happened to run last.
+ * **It keeps Babylon's math, because the camera is Babylon's**
+ * (`BABYLON_EXIT.md` X6.1e, until X6.1f ports the camera): the `FreeCamera`,
+ * the scratch its eye is built in and `lookDirection` are Babylon's vectors,
+ * and everything it hands the rest of the game is `src/math`'s — `forward`,
+ * `flatForward` and `flatRight`, and the `ToRef`s, which fill either
+ * library's through `set`. A vector handed TO the camera arrives as
+ * `Vector3Like` and is copied by its numbers (`place`, through `toBabylon`):
+ * a Babylon method handed one of ours reads `_x` and writes NaN.
  * Must run before lighting.update()/sfx.setListener() in Game's frame order,
  * and before the shader's eye is pushed on the way into the render.
  */
@@ -67,8 +75,17 @@ import {
   type CarriedId,
 } from "../entities/weapons";
 import type { InputManager } from "./InputManager";
-import type { Vector3Like, Vector3Ref } from "../math";
+import { Vector3 as MathVector3, type Vector3Like, type Vector3Ref } from "../math";
+import { toBabylon } from "../math/babylon";
 import type { GyroMode } from "./settings";
+
+/**
+ * The camera's own local forward, for `getDirection` (`lookDirection`). A
+ * module constant because a caller runs per frame and `Axis.Z` would be the
+ * same object read through another import. Babylon's, as the camera is:
+ * `getDirection` reads `_x` off it.
+ */
+const FORWARD_Z = new Vector3(0, 0, 1);
 
 /**
  * First-person camera. Aiming down sights brings the weapon's sight onto the
@@ -370,6 +387,8 @@ export class CameraSystem {
 
   /** Scratch for the rendered camera position — no per-frame allocation. */
   private readonly eye = new Vector3();
+  /** `place`'s target, copied into Babylon's vector `setTarget` reads `_x` off. */
+  private readonly placeTarget = new Vector3();
 
   constructor(scene: Scene) {
     this.camera = new FreeCamera("mainCamera", new Vector3(0, 3, -8), scene);
@@ -513,7 +532,7 @@ export class CameraSystem {
    * grenade release), where an allocation is free and a scratch would be a trap
    * — two of them holding the same vector is a bug that reads as correct.
    */
-  forwardToRef(out: Vector3): Vector3 {
+  forwardToRef<T extends Vector3Ref>(out: T): T {
     const cp = Math.cos(this.aimPitch);
     return out.set(
       cp * Math.sin(this.aimYaw),
@@ -522,9 +541,20 @@ export class CameraSystem {
     );
   }
 
+  /**
+   * The CAMERA's own forward, `getDirection` of +z: wherever the last
+   * `update` or `place` pointed it, which during a drive is the chase
+   * camera's look rather than the aim. A fresh Babylon vector, as
+   * `getDirection` makes one — read it by its fields or hand it back to the
+   * camera's math, never to `src/math`'s.
+   */
+  lookDirection(): Vector3 {
+    return this.camera.getDirection(FORWARD_Z);
+  }
+
   /** World-space aim direction (the axis the fitted sight sits on). */
-  get forward(): Vector3 {
-    return this.forwardToRef(new Vector3());
+  get forward(): MathVector3 {
+    return this.forwardToRef(new MathVector3());
   }
 
   /**
@@ -570,8 +600,8 @@ export class CameraSystem {
 
   /** Yaw-only forward, for movement on the ground plane. Deliberately the
    * un-recoiled yaw: strafing must not swim while the gun is kicking. */
-  get flatForward(): Vector3 {
-    return this.flatForwardToRef(new Vector3());
+  get flatForward(): MathVector3 {
+    return this.flatForwardToRef(new MathVector3());
   }
 
   /**
@@ -582,8 +612,8 @@ export class CameraSystem {
     return out.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
 
-  get flatRight(): Vector3 {
-    return this.flatRightToRef(new Vector3());
+  get flatRight(): MathVector3 {
+    return this.flatRightToRef(new MathVector3());
   }
 
   /** As `flatRight`, into `out` — either library's, as `flatForwardToRef`. */
@@ -910,13 +940,16 @@ export class CameraSystem {
   // `roll` defaults to level for the same reason: the one caller that passes it
   // is `VehicleCamera`'s shake, a transient that is zero at rest.
   place(
-    eye: Vector3,
-    target: Vector3,
+    eye: Vector3Like,
+    target: Vector3Like,
     fov: number = CONFIG.camera.fovHip,
     roll = 0,
   ): void {
-    this.camera.position.copyFrom(eye);
-    this.camera.setTarget(target);
+    // By their fields: the eye and the target are `src/math`'s (the death
+    // cam's, a hull's chase camera's, the bench's), and Babylon's `copyFrom`
+    // and `setTarget` read `_x`.
+    this.camera.position.copyFromFloats(eye.x, eye.y, eye.z);
+    this.camera.setTarget(toBabylon(target, this.placeTarget));
     this.camera.rotation.z = roll;
     this.camera.fov = fov;
   }
@@ -1181,15 +1214,16 @@ export class CameraSystem {
     const bobW = this.bobAmount * (1 - (1 - c.bobAdsMult) * t);
 
     // --- position: the eye, plus the two cosmetic offsets ---
-    const dir = this.forward;
-    // By its fields: the eye is `Player.eyePos` (`src/math`) or a Babylon
-    // one off the death cam, and Babylon's `copyFrom` reads `_x`.
+    // Babylon's vectors, both: they are added into the camera's eye below.
+    const dir = this.forwardToRef(new Vector3());
+    // By its fields: the eye is `src/math`'s (`Player.eyePos`, the death
+    // cam's), and Babylon's `copyFrom` reads `_x`.
     this.eye.copyFromFloats(eyePos.x, eyePos.y, eyePos.z);
     if (bobW > 0.001) {
       // Vertical at twice the lateral rate: one dip per footfall, one sway
       // per stride. The lateral term rides the flat right axis so it stays
       // level with the horizon when looking up or down.
-      const right = this.flatRight;
+      const right = this.flatRightToRef(new Vector3());
       this.eye.y += Math.sin(this.bobPhase * 2) * c.bobVertical * bobW;
       this.eye.addInPlace(
         right.scale(Math.sin(this.bobPhase) * c.bobLateral * bobW),

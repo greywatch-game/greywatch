@@ -155,11 +155,11 @@ export interface ShotResult {
   /**
    * Where the round stopped — a body, a wall, or the end of its own range.
    *
-   * A fresh `src/math` `Vector3` per shot — as `dir` is — so a reader still on
-   * Babylon's math copies it through `toBabylon` rather than handing it to a
-   * Babylon method. That is affordable for the reason the plain
-   * `forward` getter on `CameraSystem` is: this is per EVENT and not per frame,
-   * and the alternative — scratch handed out of a method whose result a caller
+   * A fresh `src/math` `Vector3` per shot — as `dir` is — so a reader may
+   * keep it (every reader is on `src/math` since `BABYLON_EXIT.md` X6.1e).
+   * That is affordable for the reason the plain `forward` getter on
+   * `CameraSystem` is: this is per EVENT and not per frame, and the
+   * alternative — scratch handed out of a method whose result a caller
    * naturally keeps — is the bug that reads as correct. `fire` already computes
    * this point to place the tracer's far end (`onRound`'s `to`), so nothing
    * extra is measured for it; what needed it was a round that does something
@@ -259,9 +259,8 @@ export class CombatSystem {
    * `at` is the round's point of CLOSEST APPROACH, which is what a crack past
    * your ear actually is — not the shooter, and not wherever the round
    * eventually stopped. It is a shared scratch vector: read it in the
-   * handler, copy it if you mean to keep it. Both are `Vector3Like`, so a
-   * handler still on Babylon's math reads the fields or copies through
-   * `toBabylon`.
+   * handler, copy it if you mean to keep it. Both are `Vector3Like`, read
+   * through their fields.
    */
   onNearMiss: (near: Hittable, from: Vector3Like, at: Vector3Like) => void =
     () => {};

@@ -81,6 +81,7 @@
  */
 import {
   Mesh,
+  // A Babylon mesh's own rotation, for the arm that still makes one (X6.1g).
   Quaternion as BabylonQuaternion,
   VertexBuffer,
   type Scene,

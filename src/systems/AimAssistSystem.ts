@@ -16,11 +16,10 @@
  * a committed push always wins. LOS is `RayWorld.blocked` (walls block
  * assist; a fence the round would pass through does not). Called by Game before CameraSystem.update.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { InputManager } from "../core/InputManager";
 import { clamp, smoothstep } from "../core/math";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import type { RayWorld } from "../world/RayWorld";
 
 /**

@@ -63,10 +63,10 @@
  *   sampled; that view went at `BABYLON_EXIT.md` X5.3d.
  * - A map with no glazing bakes no glazing probe.
  */
-import { type Scene, Vector3 } from "@babylonjs/core";
+import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { SceneFrame } from "../core/SceneFrame";
-import { Vector3 as MathVector3 } from "../math";
+import { Vector3 } from "../math";
 import type { GlassDraw } from "../render/GlassDraw";
 import type { ProbeBake, ProbeExclusion, ProbeJob } from "../render/ProbeBake";
 import type { WaterMirror } from "../render/WaterDraw";
@@ -562,7 +562,7 @@ export class ReflectionSystem {
       slots.push({
         job: {
           cube,
-          eye: new MathVector3(),
+          eye: new Vector3(),
           near: 1,
           far: 10000,
           reach: CONFIG.graphics.reflection.radius,

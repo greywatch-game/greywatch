@@ -73,7 +73,7 @@
  * proxy's instance names its tile, so one draw covers every face of every
  * moving light; a static bake is a pass per face with the tile as a uniform.
  */
-import { Matrix, Quaternion, Vector3 } from "@babylonjs/core";
+import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import type { ShadowQuality } from "../core/settings";
@@ -379,7 +379,7 @@ export class LocalShadows {
    */
   update(
     active: readonly PointLightData[],
-    eye: Vector3,
+    eye: Vector3Like,
     bodies: readonly ShadowBody[],
     hulls: readonly ShadowHull[],
   ): void {
@@ -501,7 +501,7 @@ export class LocalShadows {
   private readonly wanted = new Set<PointLightData>();
   private choose(
     active: readonly PointLightData[],
-    eye: Vector3,
+    eye: Vector3Like,
     tier: (typeof CONFIG.graphics.localShadows.tiers)[ShadowQuality],
   ): Entry[] {
     const c = CONFIG.graphics.localShadows;

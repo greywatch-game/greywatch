@@ -40,9 +40,9 @@
  * The small batch is the exception and its bloom is only ever sparks and the
  * hot heads of trails, a metre or two from the blast that threw them.
  */
-import { Color3, CreateIcoSphereVertexData, Quaternion, Vector3 } from "@babylonjs/core";
+import { CreateIcoSphereVertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { Vector3Like } from "../math";
+import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
 import type { BlastPaint } from "../shaders/BlastShader";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
@@ -712,8 +712,8 @@ export class BlastFx {
   /** The surge: a ring of low dust rolled out flat to the ground. */
   private surge(slot: Slot, at: Vector3Like, power: number, ground: Vector3Like): void {
     const s = CONFIG.grenade.surge;
-    // Babylon's statics below read `_x` off a vector, and the simulation's
-    // ground normal is `src/math`'s: a copy, never a cast.
+    // A copy of the simulation's ground normal, which is not ours to write
+    // through (a crossing into Babylon's vector until `BABYLON_EXIT.md` X6.1e).
     const normal = _normal.copyFromFloats(ground.x, ground.y, ground.z);
     const n = Math.max(3, Math.round(s.billows * power));
     // Two tangents of the ground, so the ring lies on a slope or a wall as

@@ -17,7 +17,7 @@
  * the file `?raw`.
  */
 
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "../../math";
 import {
   CHANNEL_GROUPS,
   CONFIG,

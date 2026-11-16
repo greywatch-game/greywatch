@@ -44,7 +44,7 @@
  * half goes in that class, and a new thing either half needs from this one is
  * a member of `AudioCore` rather than a reach for a private field.
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3, Vector3Like } from "../math";
 import {
   CHANNEL_GROUPS,
   CONFIG,
@@ -699,7 +699,7 @@ export class Sfx {
    * Points the audio listener at the camera. Called once per frame, after the
    * camera has moved — same ordering rule as the lighting and fog uniforms.
    */
-  setListener(position: Vector3, forward: Vector3): void {
+  setListener(position: Vector3Like, forward: Vector3): void {
     const l = this.listener;
     if (!l || !this.ctx) return;
     this.lx = position.x;

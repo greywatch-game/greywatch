@@ -10,7 +10,7 @@
  * (slot selection keys off camera position). Adding a PointLight or
  * HemisphericLight to the scene does nothing to cel-shaded meshes — don't.
  */
-import { Color3, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3, type Vector3Like } from "../math";
 import {
   CelMaterialFactory,
   MAX_POINT_LIGHTS,
@@ -300,7 +300,7 @@ export class LightingSystem {
    * Advances flicker/decay and uploads the winning lights to every cel
    * material. Call once per frame, after the camera has been updated.
    */
-  update(dt: number, viewPos: Vector3, mats: CelMaterialFactory): void {
+  update(dt: number, viewPos: Vector3Like, mats: CelMaterialFactory): void {
     this.t += dt;
 
     // Written out twice rather than through a closure defined per frame: this

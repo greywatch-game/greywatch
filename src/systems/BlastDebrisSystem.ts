@@ -65,11 +65,11 @@
  * exactly, and for its reason: rubble that vanishes mid-flight is worse than
  * rubble that never flew, while a chunk lying in the road is fair game.
  */
-import { Color3, CreateBoxVertexData, Quaternion, Vector3 } from "@babylonjs/core";
+import { CreateBoxVertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Fade, fadeKit, type FadeKit, SCORCH } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
-import { Quaternion as MathQuaternion } from "../math";
+import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -87,11 +87,10 @@ import { parkPose, parkedPose, PosedPiece, storePose } from "./poseView";
 
 /**
  * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
- * `BlastGround` with its normal in Babylon's vector. The rubble's spread and
- * the scorch's turn go through Babylon's statics, which read `_x` off a
- * vector, and the simulation's normal is `src/math`'s — so `Game` hands this
- * a COPY (`Game.debrisGroundOf`), never the simulation's own. It goes when
- * this system leaves Babylon's math.
+ * `BlastGround`, its normal a COPY `Game` hands it (`Game.debrisGroundOf`),
+ * never the simulation's own. The copy was a crossing into Babylon's vector
+ * until `BABYLON_EXIT.md` X6.1e moved this system onto `src/math`; both
+ * shapes are one library's now.
  */
 export interface DebrisGround {
   surface: BlastGround["surface"];
@@ -343,7 +342,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     return this.scorch.fades;
   }
 
-  burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3): boolean {
+  burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3Like): boolean {
     const d = CONFIG.grenade.debris;
     this.scorch.mark(at, power, ground);
 
@@ -681,7 +680,7 @@ class ScorchMarks {
       // Built at radius 1 and scaled, which a flat disc may do and a physics
       // body may not: nothing here is under the solver.
       const fade = new Fade(SCORCH);
-      fade.node.quaternion = MathQuaternion.Identity();
+      fade.node.quaternion = Quaternion.Identity();
       this.fades.push(fade);
       this.marks.push({ fade, t: -1 });
     }
@@ -705,7 +704,7 @@ class ScorchMarks {
     }
     const node = slot.fade.node;
     // `CreateDisc` faces +Z, so the turn is from that onto the surface normal.
-    MathQuaternion.FromUnitVectorsToRef(FORWARD, ground.normal, node.quaternion!);
+    Quaternion.FromUnitVectorsToRef(FORWARD, ground.normal, node.quaternion!);
     node.position.copyFrom(ground.normal).scaleInPlace(s.lift).addInPlace(at);
     node.scaling.setAll(s.radius * power);
     slot.fade.visibility = s.opacity;

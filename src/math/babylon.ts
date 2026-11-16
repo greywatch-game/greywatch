@@ -5,11 +5,14 @@
  * and counted down to none.
  * Owns: `toBabylon`. Owns NO state.
  *
- * **Deleted at X6.1** (`BABYLON_EXIT.md`), with Babylon; it is the one file
- * under `src/math/` that imports `@babylonjs/core`, and `index.ts` does not
- * re-export it. Every function here is a debt: a step that moves a caller
- * onto `src/math/` deletes that caller's use, and a function nobody calls is
- * deleted with its last use.
+ * **Deleted at X6.1f** (`BABYLON_EXIT.md`), with Babylon's camera; it is the
+ * one file under `src/math/` that imports `@babylonjs/core`, and `index.ts`
+ * does not re-export it. Every function here is a debt: a step that moves a
+ * caller onto `src/math/` deletes that caller's use, and a function nobody
+ * calls is deleted with its last use. **Since X6.1e its only callers are the
+ * camera's owners** — `CameraSystem.place` and the viewer's camera
+ * (`viewer/ViewerCamera.ts`), each handing `setTarget` a target of ours —
+ * every other caller having moved onto `src/math/` with its readers.
  *
  * ## Why a crossing is a COPY
  *

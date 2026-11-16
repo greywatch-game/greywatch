@@ -12,7 +12,7 @@
  * sight's base bridges to the front station at exactly the rail's height —
  * see `MOUNT`. The carry handle is FOLDED down the left flank for that reason.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {

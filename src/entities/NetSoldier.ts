@@ -24,7 +24,7 @@
  * instead would be smoother on a clean connection and would invent motion that
  * never happened on a bad one.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "./Combatant";
 import type { DamageKind } from "../systems/CombatSystem";

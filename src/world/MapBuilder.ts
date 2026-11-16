@@ -44,12 +44,7 @@
  * The shapes it builds are `mapTypes.ts` and the merge passes it runs are
  * `merge.ts`; both are re-exported from here, so a reader may name either.
  */
-import {
-  Color3,
-  Mesh,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
@@ -94,7 +89,7 @@ import {
   worldMatrixOf,
   worldMeshes,
 } from "./parts";
-import { Matrix } from "../math";
+import { Color3, Matrix, Vector3 } from "../math";
 import {
   admitProp,
   admitStructure,

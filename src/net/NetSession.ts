@@ -29,10 +29,9 @@
  * only thing that ever moves the local body from outside. See
  * `docs/multiplayer.md`.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
-import type { Vector3Like } from "../math";
+import { Vector3, type Vector3Like } from "../math";
 import type { PieceKits } from "../entities/pieces";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import { Connection, type ConnectionState, type JoinOptions } from "./Connection";
@@ -336,7 +335,7 @@ export class NetSession {
     dt: number,
     local: LocalState,
     points: ControlPoint[],
-    cameraPos: Vector3,
+    cameraPos: Vector3Like,
     alive: boolean,
   ): void {
     this.points = points;

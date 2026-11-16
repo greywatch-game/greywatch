@@ -160,7 +160,8 @@
  * proving ground states on purpose — that is a reach nothing is outside and
  * this offers every mesh it is handed.
  */
-import type { AbstractMesh, Scene, Vector3 } from "@babylonjs/core";
+import type { Vector3Like } from "../math";
+import type { AbstractMesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
@@ -656,7 +657,7 @@ export class WorldCulling {
    * property read each, and the cells' offers are snapshotted again
    * (`rebuildList`) only when a cell crosses its threshold or a map is set.
    */
-  update(eye: Vector3): void {
+  update(eye: Vector3Like): void {
     const step = CONFIG.graphics.culling.step;
     const dx = eye.x - this.evalX;
     const dy = eye.y - this.evalY;
@@ -778,7 +779,7 @@ export class WorldCulling {
    * The order is a subsequence of `eligible`, which is scene order, so
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
    */
-  private offer(eye: Vector3): void {
+  private offer(eye: Vector3Like): void {
     // Pixels per radian, from the camera's own field of view and the height it
     // is rendering at — so the threshold is a size on the SCREEN and needs no
     // per-map tuning. Read once a frame: the FOV moves when a sight goes up.

@@ -84,11 +84,11 @@
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
-import { Matrix, type Scene, Vector3 } from "@babylonjs/core";
+import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
-import { Vector3 as MathVector3 } from "../math";
+import { Matrix, Vector3, type Vector3Like } from "../math";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import {
@@ -718,7 +718,7 @@ export class ShadowSystem {
   updateBlobs(
     player: Combatant,
     bots: readonly Combatant[],
-    camPos: Vector3,
+    camPos: Vector3Like,
     playerGroundY: number,
   ): void {
     this.updateBlob(player, camPos, playerGroundY);
@@ -735,7 +735,7 @@ export class ShadowSystem {
     for (const blob of this.blobFades) blob.node.visible = false;
   }
 
-  private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
+  private updateBlob(cbt: Combatant, camPos: Vector3Like, groundY: number): void {
     const blob = this.blobFor(cbt);
     // A dead combatant normally has no shadow, and for the 0.9 s the collapse
     // tween takes that was never visible enough to matter. A ragdoll lies
@@ -763,9 +763,9 @@ export class ShadowSystem {
     } else {
       at.set(cbt.position.x, groundY + 0.04, cbt.position.z);
     }
-    // Off the math's statics, which read a vector by its fields: the
-    // blob's node is `src/math`'s, which Babylon's read as `_x`.
-    const dist = MathVector3.Distance(camPos, at);
+    // Off the math's statics, which read a vector by its fields: `camPos` is
+    // the camera's, Babylon's until `BABYLON_EXIT.md` X6.1f.
+    const dist = Vector3.Distance(camPos, at);
     const fade = Math.min(
       1,
       Math.max(0, 1 - (dist - this.fogStart) / (this.fogEnd - this.fogStart)),

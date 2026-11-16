@@ -90,7 +90,8 @@
  * shadow 150 m along a low sun, and no window a client can afford contains
  * that. It casts when it is low, which is when a player is under it.
  */
-import { Matrix, type Scene, Vector3 } from "@babylonjs/core";
+import { Matrix, Vector3 } from "../math";
+import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import {

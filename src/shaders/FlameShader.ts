@@ -25,8 +25,8 @@
  * one only in uniform control flow, and the layer is a varying. Every value
  * in `values` is written in place, as `Float32Array` rounds it — what the
  * material's uniform buffer held, number for number.
- * Never: restates a body (`wgsl/flame.ts`); imports anything of Babylon's but
- * its colour and vector maths (X6.1e's to move).
+ * Never: restates a body (`wgsl/flame.ts`); imports anything of Babylon's
+ * (its colour and vector maths moved onto `src/math` at X6.1e).
  * Contract: `docs/rendering.md`, "The fire".
  *
  * WHY IT IS NOT `getEmissive`. A fire was a static glowing cone, and nothing
@@ -77,7 +77,7 @@
  * The clock is the WORLD's (`CelMaterialFactory.updateWind`'s), so a pause that
  * holds the canopy holds the fire.
  */
-import { Color3, Vector2, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Vector2, Vector3, Vector4 } from "../math";
 import { CONFIG } from "../config";
 import type { FlameField, FlameRecipe } from "../render/flameProgram";
 import { MaterialKey } from "./MaterialKey";

@@ -62,7 +62,7 @@
  * dozen times a second while the billow travels on the smooth clock, which is
  * the flame's bargain. The clock is the WORLD's, so a pause holds the cloud.
  */
-import { Color3 } from "@babylonjs/core";
+import { Color3 } from "../math";
 import { CONFIG } from "../config";
 import type { BlastField, BlastRecipe } from "../render/blastProgram";
 import { FIRE_INKS } from "./FlameShader";

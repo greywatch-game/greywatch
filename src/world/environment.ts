@@ -5,7 +5,8 @@
  * our renderer's frame is filled from) and the scene.
  * Pure data in, uniforms out — a second map adds one new spec, no code here.
  */
-import { Color3, Color4, Scene, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3 } from "../math";
+import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory, SpecSpec } from "../shaders/CelShader";
 import { CONFIG } from "../config";
 import { HULL_REACH } from "../entities/vehicleKinds";
@@ -756,7 +757,7 @@ export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
   // (`BABYLON_EXIT.md` X4.5a's row, X4.5c).
   // Nothing downstream sees it — the ink consumes it and writes 1, and the grade at
   // the end of the chain writes 1 again.
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
+  scene.clearColor.copyFromFloats(sky.r, sky.g, sky.b, 1);
 }
 
 /**

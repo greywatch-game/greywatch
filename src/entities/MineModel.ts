@@ -26,7 +26,7 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
 import { Part } from "../world/parts";

@@ -29,7 +29,7 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";

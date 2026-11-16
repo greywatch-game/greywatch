@@ -62,11 +62,7 @@
  *   depends on it — `afterFirstStep` is this file's share of the teleport
  *   read-in, and it is per client precisely because each owns its own bodies.
  */
-import { Vector3 } from "@babylonjs/core";
-import {
-  Quaternion as PoseQuaternion,
-  Vector3 as PoseVector3,
-} from "../math";
+import { Quaternion as PoseQuaternion, Vector3, type Vector3Like } from "../math";
 import { CONFIG, FOG_WALL } from "../config";
 import {
   jointPosition,
@@ -192,8 +188,8 @@ export class RagdollSystem implements PhysicsClient {
   private readonly v1 = new Vector3();
   private readonly v2 = new Vector3();
   // A joint's world, decomposed: the rig's matrices are `src/math`'s.
-  private readonly jointAt = new PoseVector3();
-  private readonly jointScale = new PoseVector3();
+  private readonly jointAt = new Vector3();
+  private readonly jointScale = new Vector3();
   private readonly jointQuat = new PoseQuaternion();
 
   /**
@@ -259,15 +255,15 @@ export class RagdollSystem implements PhysicsClient {
    * hides itself when its death progress off the wire reaches 1
    * (`NetSoldier`'s `dead >= 1` branch).
    */
-  spawn(subject: RagdollSubject, camPos: Vector3): boolean {
+  spawn(subject: RagdollSubject, camPos: Vector3Like): boolean {
     // There is a map to land on. The only thing `PhysicsWorld` can still say
     // no to, and it says it between a map being disposed and the next one
     // being built — which is not a window anything dies in, but a body spawned
     // in it would fall for ever.
     if (!this.physics.hasWorld || this.slots.length === 0) return false;
     // By fields: a subject's vectors are typed `Vector3Like` (`RagdollSubject`),
-    // which admits `src/math`'s as well as Babylon's, and Babylon's `Distance`
-    // reads `_x` (the NaN trap, `src/math/vector.ts`).
+    // and `camPos` is the camera's, Babylon's until `BABYLON_EXIT.md` X6.1f
+    // (the NaN trap, `src/math/vector.ts`, were it handed to that library).
     const gx = subject.position.x - camPos.x;
     const gy = subject.position.y - camPos.y;
     const gz = subject.position.z - camPos.z;

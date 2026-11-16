@@ -63,7 +63,7 @@
  * light), and they are re-bounced from scratch every frame near the eye and
  * never remembered, so their bounce rises and dies exactly with the light.
  */
-import { Color3, Vector3, Vector4 } from "@babylonjs/core";
+import { Color3, Vector3, type Vector3Like, Vector4 } from "../math";
 import { CONFIG } from "../config";
 import type { GiQuality } from "../core/settings";
 import { GiCompute } from "../render/GiCompute";
@@ -276,7 +276,7 @@ export class GiVolume {
    * and write the point-light visibility. After `LightingSystem.update`, whose
    * slots the visibility is written against.
    */
-  update(eye: Vector3, lighting: LightingSystem, hulls: readonly RayHull[]): void {
+  update(eye: Vector3Like, lighting: LightingSystem, hulls: readonly RayHull[]): void {
     const tier = this.tier;
     const map = this.map;
     if (!tier || !map || !this.gpu.traceable) return;
@@ -588,7 +588,7 @@ export class GiVolume {
    * the slow layer. Clustered, so a spreading fire costs one light, and
    * nearest the eye first.
    */
-  private chooseFast(eye: Vector3, lighting: LightingSystem): void {
+  private chooseFast(eye: Vector3Like, lighting: LightingSystem): void {
     // Every record here is POOLED: this runs every frame, and a candidate
     // object, a closure and a spread per light is garbage per frame.
     // And no DOUBLE crosses a call: a number handed to or returned from a
@@ -659,7 +659,7 @@ export class GiVolume {
    * fixtures, measured. Called once per fixture, this reaches the top tier,
    * where the getters inline and nothing is boxed.
    */
-  private fastKind(l: RoomLight, eye: Vector3): number {
+  private fastKind(l: RoomLight, eye: Vector3Like): number {
     const p = l.position;
     const dx = p.x - eye.x;
     const dy = p.y - eye.y;
@@ -676,7 +676,7 @@ export class GiVolume {
    * slow layer already bounces. Computes its own distance rather than taking
    * one, so no double is passed in (see `chooseFast`).
    */
-  private fillCand(l: PointLightData, eye: Vector3, flicker: boolean): void {
+  private fillCand(l: PointLightData, eye: Vector3Like, flicker: boolean): void {
     const c = this.takeCand();
     const p = l.position;
     const dx = p.x - eye.x;
@@ -779,7 +779,7 @@ export class GiVolume {
    * screen — rather than whichever the list happens to hold first. A hull with
    * no box (nothing to trace) takes no slot.
    */
-  private writeHulls(hulls: readonly RayHull[], eye: Vector3): number {
+  private writeHulls(hulls: readonly RayHull[], eye: Vector3Like): number {
     if (!this.gpu.hasMap) return 0;
     const pick = this.hullPick;
     const dist = this.hullDist;

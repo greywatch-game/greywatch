@@ -63,7 +63,6 @@
  * guard moves offsets for that variant alone. See `docs/rendering.md` for the
  * rest of what the dialect decides.
  */
-import { Color3, Vector2, Vector3, Vector4 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GeometryBuffer } from "../geometry/buffer";
 import { EmissiveWorldMaterial } from "./EmissiveWorld";
@@ -71,7 +70,7 @@ import { MAX_EMISSIVE_PALETTE } from "./wgsl/emissiveWorld";
 import { FlameMaterial } from "./FlameShader";
 import { BlastPaint } from "./BlastShader";
 import { MaterialKey } from "./MaterialKey";
-import type { Color3Like, Vector3Like } from "../math";
+import { Color3, type Color3Like, Vector2, Vector3, type Vector3Like, Vector4 } from "../math";
 import type { EmissiveRecipe } from "../render/emissiveWorld";
 import type { FrameTextures, FrameUniforms } from "../render/frame";
 import {
@@ -1475,7 +1474,7 @@ export class CelMaterialFactory {
    * the eye the frame is filled with (`fillFrame`), every cel draw's, the
    * fire's and the billows' alike.
    */
-  updateCamera(camPos: Vector3): void {
+  updateCamera(camPos: Vector3Like): void {
     this.camPos.copyFrom(camPos);
   }
 
