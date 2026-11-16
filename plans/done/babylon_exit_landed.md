@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13750,3 +13750,82 @@ three translation members had been inserted between `addTranslationFromFloats`' 
 (the doc moved back); `ViewerCamera.ts` cited the retired "two `Vector3`s" convention (now the new one).
 Observed: X6.1f's bullet still lists the gun marker's projection, which X6.1e already moved onto our
 `ProjectToRef` — X6.1f is left `Viewport` alone there.
+
+**X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step; 2026-11-15; no change to the picture). Measured headless
+on the Windows box against a BEFORE at 8a69f093 (the instruments' commit, whose game is 44429ec9's) in the worktree
+`greywatch-2-before-x53a` (moved there, detached; the lockfile unchanged, so its `node_modules` stood), every GPU
+run alone on the GPU.
+
+- **The instruments, their own commit (8a69f09)**: `scripts/lib/frameAdapter.mjs`' `camera()` reads the transform off
+  the frame host and the planes off `Game.frustumPlanes` on BOTH arms wherever the game has that field (X6.1f on:
+  the scene a page still has computes neither); on a tree without it nothing moved. Never a restatement of the planes.
+  `readers.mjs camera` gains two steps on every map before the round-over card: the viewer raised over the life and
+  lowered (`Game.toggleViewer`; posed 17 and 18, past every earlier step). Hollowmere's log is 120 frames.
+- **The camera** (`src/core/FreeCamera.ts`): Babylon 9.28's `FreeCamera`, `TargetCamera` and `Camera` collapsed into
+  one class under Babylon's member names, every body copied from `camera.pure.js`, `targetCamera.pure.js` and
+  `freeCamera.pure.js`. Ported:
+  - `setTarget`: `LookAtLH` inverted, the quaternion's Euler angles, the roll zeroed, `_referencePoint` scaled to the
+    focal distance, and `position.z += Epsilon` on a level target.
+  - `_getViewMatrix`: the rotation matrix, the `_cachedRotationZ` up-vector rotation, the reference point's target,
+    and `updateUpVectorFromRotation`'s `Axis.Y` by the Euler quaternion.
+  - `getViewMatrix`: `updateCache`, the view, the world matrix as its inverse, and `globalPosition`.
+  - `getProjectionMatrix`: `PerspectiveFovLHToRef` at half-Z off `CanvasSurface.getAspectRatio(camera)`.
+  - `getWorldMatrix`, `getDirection(ToRef)`, `getTransformationMatrix` and `update` (the view and the projection asked).
+  - The caches member for member: position, up vector and rotation at `MAX_VALUE` until the first update; the
+    locked-target term false until then; the lens fields undefined.
+
+  **Not ported, each named in the header as reaching nothing here**: the inputs and their inertia (`CameraSystem`
+  cleared them, and nothing wrote `cameraDirection` or `cameraRotation`, so `TargetCameraMovement` took its fast
+  path every frame), collisions, gravity, a parent, a locked target, `rotationQuaternion`, rigs, the orthographic
+  and oblique modes, reverse depth, the observables, `_hasMoved` and the camera's own frustum planes.
+- **Added first, each into `math-check`** (96 cases, 1,920,000 comparisons; a perturbed far plane fails all eight
+  frustum members): `Plane` (constructor, `normalize`) and `Frustum` (`GetPlanes`, `GetPlanesToRef` and the six) in
+  new `src/math/plane.ts`; `Quaternion.FromEulerVectorToRef`; `Matrix#invert`.
+- **The frame holds the camera** (`SceneFrame`):
+  - `activeCamera` is what `scene.activeCamera` was. `CameraSystem` sets it, and the scene now holds no camera
+    (`isReady` answers the same with none: a camera with no post-processes was always ready).
+  - `updateTransformMatrix` is the scene's `updateTransformMatrix`/`setTransformMatrix` ported: the camera's two
+    matrices asked and held by reference, the product, and the planes by `Frustum.GetPlanesToRef`. The
+    change-counter shortcut is not kept: it skips only a recompute that gives the same numbers.
+  - `getViewMatrix`/`getProjectionMatrix`/`getTransformMatrix`/`frustumPlanes` answer as the scene's did, and
+    `Game.frustumPlanes` exposes the planes.
+- **Every reader moved**:
+  - `Game`: the four culls' planes, the particle camera, the gun marker's transform (its `Viewport` a plain object),
+    the opaque sort's eye, the chain's two checks.
+  - `CelInk`, `MotionBlur`, `PaperGrain` and `Volumetrics` (by type), and `GrassSystem` (our `Frustum`/`Plane`).
+  - `GlowPass`, `Sky` (`FreeCamera.FOVMODE_HORIZONTAL_FIXED`, the frame's planes) and `ReflectionSystem`, each
+    losing a scene parameter it then read for nothing.
+  - `WorldCulling`, which takes the frame.
+  - The viewer: `setTarget` handed `src/math`'s aim, no copy.
+- **The crossing goes**: `src/math/babylon.ts` is deleted with `CameraSystem.place` and the viewer, its last
+  calls. `NOT_ROOTS` is empty and `src/viewer` joins `DIRECTORIES` (the gate's per-directory probe: it is the
+  one newly clean directory).
+- **Instrument**: `leaks.mjs` told the page's Babylon chunk by `camera.position.constructor`, which is ours now.
+  It reads the frame's `Observable` instead, and was re-run at both trees with that change: 0 released and 0
+  cached everywhere, the frame counts the wall clock's.
+- **Measured**:
+  - The camera log on Hollowmere (120 frames: the menu, the card, deploy, the kit lid, a life, render scale 0.75,
+    a resize, the pause, the viewer, the round over, the menu) and on Coldharbour (152 frames, 32 gun-marker frames
+    as driver and gunner at scale 1 and 0.75 and after a resize) is equal bit for bit, the planes READ off
+    `Game.frustumPlanes` on every frame (none `"unproven"`). Under `REF_NO_SCENE=1` it is equal to the scene arm's.
+  - The bank by `exact.mjs`: default and `high` 146 byte-equal plus `harrowmead-view-pistol-reload` within its
+    flake; `low` 147 of 147.
+  - `readers.mjs` replay equal (the origins IDENTICAL); the draw log, `census` (168), `gi.mjs`, `particles.mjs`,
+    `surfaces.mjs` (5,719) and `post.mjs` (`desk` and `phone`, 31,837 each) equal; `shaders` identical;
+    `pipelines.mjs` nothing in play; `gate` all seven clean (boot times the wall clock's).
+  - `kit:hash` (3,722), `--models` and `--feet` identical; `merge:hash` identical on eight maps; the fight hash
+    equal on four maps (`e57084dd…`, `380fdf6b…`, `8e839848…`, `772a08d5…`); corecheck, parity, `maps:check`,
+    the four copy checks, typecheck and build clean.
+  - **Live**: `live.mjs` 47 of 47 and `sarab.mjs` 19 of 19 at both trees. A new `cams.mjs` passed 7 of 7 at
+    both trees: every optic aimed down (`fov` at `fovAds`), the viewer raised, flown 32 m and lowered, the death
+    cam, and the gunner's sight on Coldharbour (`opticUp`, its `fov`, the marker pushed), every frame finite.
+  - `?profile&gpu`: `render` within 8.0% (faster on the AFTER) and `gpu.frame` within 0.4%, the fights equal.
+- **Flagged**: the device hung twice on the AFTER runs (`DXGI_ERROR_DEVICE_HUNG`, `nvlddmkm` 153 at 20:21 and
+  20:47 — the box's known hang, `reference-gpu-hangs`), in the `high` bank and in the second capped bench. Both
+  re-runs were clean, and the BEFORE had none.
+- **The census**: 30 files to 19, 21 shrank, 0 grew. The bundle is 102 files, 16,827.4 kB raw and 6,020.3 kB
+  gzipped (from 16,820.3 and 6,018.7: our port is added, and Babylon's camera classes are still bundled through
+  the scene until X6.1h).
+
+Scripts and logs in the session's scratchpad, `x61f/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `retry.sh`,
+`probes.sh`, `cams.mjs`, `live.mjs`, `sarab.mjs`, every log, JSON and kept bank directory).

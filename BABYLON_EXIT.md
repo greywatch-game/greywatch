@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7073,6 +7073,41 @@ Then the cut, then the sweep.
   - **Rewrites:** `CameraSystem`'s header; `docs/weapons.md` and `docs/vehicles.md` where
     they name the camera's class; `docs/rendering.md`'s frame; `CLAUDE.md` (the viewer's
     one Babylon type); `FILES.md`.
+
+  **X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step; 2026-11-15; no change to the picture; the full
+  note is in `plans/done/babylon_exit_landed.md`). **The instruments first, in their own commit**: the
+  frame adapter's `camera()` reads the host's transform and `Game.frustumPlanes` on both arms wherever the
+  game has that field, and the camera log gains the viewer raised and lowered (posed 17 and 18).
+  **The camera** is `src/core/FreeCamera.ts`, Babylon 9.28's `FreeCamera`/`TargetCamera`/`Camera` ported as
+  one class under Babylon's names: `setTarget`, the view with the roll's up vector, `PerspectiveFovLH` at
+  WebGPU's depth range off the surface's aspect, the world matrix and `globalPosition`, and the caches member
+  for member. The inputs and their inertia are not ported (cleared at construction; nothing wrote
+  `cameraDirection` or `cameraRotation`), and neither are rigs, ortho, a parent, a locked target or the
+  observables; each is named in the header. **The frame holds it**: `SceneFrame.activeCamera` and
+  `updateTransformMatrix` (the scene's ported; the transform and the six planes, `Game.frustumPlanes`).
+  `Plane`/`Frustum` (`src/math/plane.ts`), `Quaternion.FromEulerVectorToRef` and `Matrix#invert` went into
+  `math-check` first. Every reader moved (`Game`, the post stages, `Volumetrics`, `GlowPass`, `GrassSystem`,
+  `Sky`, `ReflectionSystem`, `WorldCulling`, the viewer). `GlowPass`, `Sky` and `ReflectionSystem` lost
+  the scene parameter they then read for nothing. `Viewport` is a plain object. `math/babylon.ts` is
+  deleted and `NOT_ROOTS` emptied, and `src/viewer` joins `DIRECTORIES`. **Measured** against a BEFORE at
+  8a69f093:
+  - the camera log bit for bit on Hollowmere (120 frames) and Coldharbour (152, 32 gun-marker frames as
+    driver and gunner at scale 1 and 0.75 and after a resize), every frame's planes READ off the game's
+    array, and the no-scene arm equal;
+  - the bank by `exact.mjs` 146 plus the pistol flake by default and at `high`, and 147 of 147 at `low`;
+  - `readers.mjs` replay, the draw log, `census`, `gi.mjs`, `particles.mjs`, `surfaces.mjs` and `post.mjs`
+    at both sizes equal, `shaders` identical;
+  - `pipelines.mjs` nothing in play, `leaks.mjs` 0 and `gate` clean;
+  - `kit:hash`/`--models`/`--feet` and `merge:hash` identical, the fight hash equal on four maps;
+  - live 47 of 47, Sarab 19 of 19, and the death cam, every optic, `F2` flown and the gunner's sight 7 of 7
+    at both trees;
+  - `?profile&gpu` `render` within 8.0% (faster) and `gpu.frame` within 0.4%.
+
+  **Flagged**: the device hung twice on the AFTER runs (`DXGI_ERROR_DEVICE_HUNG`, `nvlddmkm` 153 — the
+  box's known GPU hang), once in the `high` bank and once in a capped bench. Both were re-run clean.
+  **The census**: 30 files to 19, 21 shrank, 0 grew. The bundle is 16,827.4 kB raw and 6,020.3 kB
+  gzipped (from 16,820.3 and 6,018.7): our port is added, and Babylon's camera classes are still bundled
+  through the scene until X6.1h.
 
 - **X6.1g — Babylon makes no mesh in any build** (no change to the game) — **S–M**.
   - **`worldMeshes` makes records alone.** Its mesh arm, `drawnMesh`, `vertexDataOf` and
