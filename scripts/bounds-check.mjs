@@ -59,7 +59,12 @@
  * synthetic parts in blocks. **A kind's input is the game's** — its parts'
  * positions and transform chains — so beside each kind's answers the table
  * holds a digest of that input, and a kind reworked since is reported STALE
- * and not compared (nothing can ask Babylon about its new drawing). The
+ * and not compared (nothing can ask Babylon about its new drawing); a kind
+ * added since is NEW and one deleted GONE, reported and neither compared nor
+ * failed, and so is a scatter kind's rung when a foliage tier's detail moves
+ * (it names the group). A MASS of them at once is suspect: a kind's input is
+ * partly computed through `src/math` (a builder's own arithmetic, and
+ * `flattenParts` for a scatter kind), so a copy that moved can move it. The
  * chains and the synthetic parts are seeded and never stale, so the oracle
  * holds `boundsOf` and `worldMatrixOf` whatever the art does. The knobs (the
  * seed and the counts) are part of what was recorded.

@@ -48,7 +48,9 @@
  *
  * **A map is the game's**, so beside its answers the table holds a digest of
  * what the map is to a sweep (its boxes, their groups, its floor, its
- * square), and a map re-laid since is reported STALE and not compared. So
+ * square), and a map re-laid since is reported STALE and not compared — and
+ * one added to `MAPS` since is NEW and one retired GONE, neither compared nor
+ * failed (`scripts/lib/babylonTable.mjs`). So
  * that the oracle does not fade as the maps move, a SEEDED world built from
  * nothing in the game runs after the maps (`synthetic`: see
  * `syntheticWorld`), which is never stale. Each body's samples are a stream
@@ -544,6 +546,11 @@ try {
   ledger = new Ledger("sweep-check", { seed: SEED, samples: SAMPLES, block: BLOCK }, {
     perturb: PERTURB && "input",
     partial: named.length > 0 || ONLY_BODY !== null,
+    // The seeded world carries an input digest as a map does, and is still
+    // never NEW or GONE: one of its groups added or lost FAILS. Named both as
+    // the table recorded it and as this run does, so a rename fails both the
+    // groups it leaves behind and the ones it brings.
+    seeded: (group) => group.startsWith("synthetic") || group.startsWith(SYNTHETIC),
   });
   // The bodies the table was recorded with (`CONFIG`'s at the time).
   const params = ledger.recorded()?.frozen?.bodies;

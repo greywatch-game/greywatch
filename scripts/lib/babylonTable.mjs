@@ -4,9 +4,10 @@
  * `sweep-check`), and the ledger each of them keeps its comparisons in.
  *
  * Owns: the table format (`scripts/tables/<check>.json`), the byte encoding a
- * comparison is digested in, and the verdict (pass, fail, stale) a check run
- * against a table reaches. It decides nothing about WHAT is compared — every
- * case is its check's — and it never loads Babylon.
+ * comparison is digested in, and the verdict (pass or fail, with the groups
+ * reported NEW, GONE or STALE) a check run against a table reaches. It
+ * decides nothing about WHAT is compared — every case is its check's — and it
+ * never loads Babylon.
  *
  * **Why a table** (`BABYLON_EXIT.md` row "X6.1, the copy checks", decided by
  * the owner 2026-11-12, option B): `src/geometry/`, `src/math/`, `boundsOf`
@@ -33,17 +34,35 @@
  * `sweep-check` the maps, and a rework of a builder or a re-laid map hands the
  * copy different numbers than Babylon was asked about — which no answer can
  * be recorded for any more. So those groups carry an INPUT digest beside the
- * answer, taken over what the case reads before any copy under test runs (a
- * part's positions and transform chain, a map's boxes and floor), and a group
- * whose input moved is reported STALE and skipped rather than failed. Each of
- * those two checks also has a SEEDED section built from nothing in the game
+ * answer, taken over what the case reads (a part's positions and transform
+ * chain, a map's boxes and floor) as the game hands it over, before the case
+ * calls the copy it compares, and a group whose input moved is reported STALE
+ * and skipped rather than failed. **That input is not independent of the
+ * copies**: the game computes it, and partly through `src/math` — a builder's
+ * own vector arithmetic, and a scatter kind's part chains, which come out of
+ * `flattenParts` → `detachPart` → `worldMatrixOf` and `Matrix.decompose` — so
+ * a copy that moved can move inputs too (one ULP on
+ * `Vector3.TransformCoordinatesFromFloatsToRef` turns eighteen kit groups
+ * STALE, beside the groups that fail). **A sudden MASS of STALE groups is therefore suspect, not "the
+ * art moved"**: find what changed under them before believing it. The same
+ * content can be ADDED or REMOVED as well as changed — a kit builder or a
+ * scatter kind new or deleted, a foliage tier's detail (which names a scatter
+ * group) moved, a map in `MAPS` new or retired — and such a group is reported
+ * NEW (the run reached it, the table has none) or GONE (the table has it, the
+ * run did not reach it) and is not compared, as STALE is not. Each of those
+ * two checks also has a SEEDED section built from nothing in the game
  * (`bounds-check`'s synthetic parts and chains, `sweep-check`'s synthetic
- * world), which is never stale, so the oracle does not fade as the art moves.
+ * world, which a check names to the ledger as `seeded`), so the oracle does
+ * not fade as the art moves, and which is never NEW or GONE.
  *
- * **What fails**: an answer digest that differs where the input did not, a
- * group the table has and the run did not reach (or the reverse — a new case
- * has nothing recorded to meet, and cannot have), and a run at knobs other
- * than the table's (the seed and the counts are part of every input).
+ * **What fails**: an answer digest that differs where the input did not; a
+ * group the table has and a whole run did not reach, or the reverse — a new
+ * case has nothing recorded to meet, and cannot have — unless the group is
+ * the game's content (it carries an INPUT digest and is not `seeded`), when it
+ * is NEW or GONE as above; and a run at knobs other than the table's (the seed
+ * and the counts are part of every input). A PARTIAL run (a map or a body
+ * named) is held to the groups it reached, and the rest of the table is
+ * neither missing nor GONE.
  *
  * `--perturb` is each check's negative test. For the two seeded checks the
  * ledger does it: one number in the FIRST comparison of every group is moved
@@ -165,13 +184,19 @@ function perturbed(list) {
  * (the check moved its own inputs, so every group it reached must differ).
  */
 export class Ledger {
-  constructor(check, knobs, { record = false, perturb = false, partial = false } = {}) {
+  constructor(check, knobs, { record = false, perturb = false, partial = false, seeded = () => false } = {}) {
     this.check = check;
     this.knobs = knobs;
     this.record = record;
     this.perturb = perturb;
     /** A run over some of the table (a map or a body named): the rest is not missing. */
     this.partial = partial;
+    /**
+     * The groups built from nothing in the game even where they carry an
+     * input digest (`sweep-check`'s synthetic world): never NEW or GONE, so
+     * one added or lost FAILS as a seeded check's does.
+     */
+    this.seeded = seeded;
     this.path = `${TABLES}${check}.json`;
     this.enc = new Encoder();
     /** group → hash, answers then inputs. */
@@ -273,9 +298,15 @@ export class Ledger {
       );
       return true;
     }
+    // The game's content: a group with an input digest (this run's or the
+    // table's) that the check has not named seeded. Only such a group can be
+    // NEW or GONE; any other one unrecorded or unreached fails.
+    const content = (g) => !this.seeded(g) && (mine.inputs[g] !== undefined || table.inputs?.[g] !== undefined);
     const differ = [];
     const stale = [];
     const missing = [];
+    const gone = [];
+    let compared = 0;
     for (const [g, digest] of Object.entries(table.groups)) {
       const input = table.inputs?.[g];
       if (input !== undefined && mine.inputs[g] !== undefined && mine.inputs[g] !== input) {
@@ -283,21 +314,38 @@ export class Ledger {
         continue;
       }
       if (mine.groups[g] === undefined) {
-        if (!this.partial) missing.push(g);
-      } else if (mine.groups[g] !== digest) differ.push(g);
+        // A partial run reached only what it named: the rest is out of it.
+        if (this.partial) continue;
+        if (content(g)) gone.push(g);
+        else missing.push(g);
+        continue;
+      }
+      compared++;
+      if (mine.groups[g] !== digest) differ.push(g);
     }
-    const unrecorded = Object.keys(mine.groups).filter((g) => table.groups[g] === undefined);
-    const checked = Object.keys(table.groups).filter((g) => mine.groups[g] !== undefined || !this.partial).length - stale.length;
+    const added = Object.keys(mine.groups).filter((g) => table.groups[g] === undefined);
+    const fresh = added.filter(content);
+    const unrecorded = added.filter((g) => !content(g));
     console.log(
       `${this.check}: ${this.comparisons} answers in ${Object.keys(mine.groups).length} groups against the table of Babylon ${table.babylon}: ` +
-        `${checked - differ.length - missing.length} of ${checked} groups identical` +
-        (stale.length ? `, ${stale.length} STALE (their input moved since the table; not compared)` : ""),
+        `${compared - differ.length} of ${compared} groups identical`,
     );
+    // The count, for a check whose groups can be the game's content at all.
+    if (this.inputs.size > 0 || Object.keys(table.inputs ?? {}).length > 0) {
+      console.log(
+        `${this.check}: ${fresh.length} NEW, ${gone.length} GONE, ${stale.length} STALE ` +
+          "(the game's content added, removed or changed since the table; reported, not compared)",
+      );
+    }
+    if (fresh.length) console.log(`  new: ${summarise(fresh)}`);
+    if (gone.length) console.log(`  gone: ${summarise(gone)}`);
     if (stale.length) console.log(`  stale: ${summarise(stale)}`);
     if (this.perturb) {
       if (this.perturb === "input") for (const g of Object.keys(mine.groups)) this.moved.add(g);
       const caught = [...this.moved].filter((g) => differ.includes(g)).length;
-      const uncaught = [...this.moved].filter((g) => !differ.includes(g) && !stale.includes(g));
+      // A NEW group has nothing recorded to differ from, as a STALE one has
+      // nothing it may be compared with: neither is the perturbation's miss.
+      const uncaught = [...this.moved].filter((g) => !differ.includes(g) && !stale.includes(g) && !fresh.includes(g));
       const how = this.perturb === "input" ? "the input moved under" : "one value moved in";
       console.log(`perturbed: ${how} ${this.moved.size} groups, ${caught} of them differ`);
       if (uncaught.length) console.log(`  NOT caught: ${summarise(uncaught)}`);

@@ -295,10 +295,16 @@ install failed.
 
 **Since X6.1i it reads the WHOLE TREE**, file by file: `src/`, `server/`,
 `main.ts`, `scripts/`, `plans/`, `.claude/skills/` and the two Vite configs.
-Every file that NAMES `@babylonjs/core` as a module fails — an `import` or
+**`plans/` and `.claude/skills/` are OPTIONAL and nothing else is**: the Docker
+image's build stage copies neither (nothing in them ships), so the gate on the
+front of its `npm run build` skips the pair with a printed note, `ci.yml`'s
+full checkout still gates both, and any other root missing still fails.
+Every file that NAMES `@babylonjs/core` as a module fails, a declaration file
+(`.d.ts`) included since `skipLibCheck` hides one from `tsc` — an `import` or
 `export … from` of it (`import type` too, since the package is not there to
 name), an `import()`, `require()`, `import.meta.resolve()` or Vite
-`ssrLoadModule()` taking it as a literal, or a relative path into
+`ssrLoadModule()` taking it as a literal, a `declare module` of it or a
+`/// <reference types>` to it, or a relative path into
 `node_modules/@babylonjs/core`. A comment, a header's history or a string a
 census greps for is not an import, and the instruments may compute a specifier
 (a probe importing a page's module by its url) because nothing the package
@@ -463,9 +469,18 @@ millions). **The inputs are part of what was recorded**: a seed, a count, a
 draw changed is a table nobody can re-record. Where the input is the GAME's —
 `bounds-check`'s kit kinds, `sweep-check`'s maps — the table keeps a digest
 of it beside the answers, and a kind reworked or a map re-laid since reads
-STALE and is not compared; each of those two also runs a SEEDED section built
-from nothing in the game (synthetic parts and chains, a synthetic world) that
-never goes stale. Every `--perturb` must fail every group it touches. **Since
+STALE and is not compared; a kind or a map ADDED since reads NEW and one
+removed GONE (so does a scatter kind's rung when a foliage tier's detail
+moves, since it names the group), reported and not compared either, and each
+run prints a line counting the three. **A sudden MASS of STALE groups is
+suspect, not "the art moved"**: a kind's input digest is partly computed
+through `src/math` (a builder's own vector arithmetic, and a scatter kind's
+chains through `flattenParts` → `detachPart` → `worldMatrixOf`), so a copy
+that moved can move it too. Each
+of those two also runs a SEEDED section built from nothing in the game
+(synthetic parts and chains, a synthetic world), and a seeded group — like
+every group of `math-check` and `geometry-check` — added or lost still FAILS.
+Every `--perturb` must fail every group it touches. **Since
 nothing can record a new answer, a member ADDED to a copy has no bit-level
 oracle**: `math-check` and `geometry-check` fail on an export no case covers,
 and a case added now has nothing to meet; such a member is proven another way,

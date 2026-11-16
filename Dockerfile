@@ -72,7 +72,14 @@ COPY public ./public
 # has typechecked a line. The whole of `docs/` rather than the two files that
 # have rows today: a new CLAIMS row must not be able to break this image, and
 # 1.3 MB is nothing beside the audio above it. **A gate that reads a file
-# outside `src/` owes a COPY here** — that is now three times.
+# outside `src/` owes a COPY here** — that is now three times — **unless the
+# gate is told to do without it, and `check-babylon-free.mjs` is.** Its tree
+# pass also reads `plans/` and `.claude/skills/`, and neither is copied: nothing
+# in them ships (reference harnesses and skill scripts, instruments both), so
+# the gate names the pair as OPTIONAL and skips it with a note when absent,
+# which is only ever here — `ci.yml`'s full checkout still gates both. Its
+# other roots (`src/`, `server/`, `scripts/`, `main.ts`) are copied above and
+# still fail the gate when missing.
 COPY CLAUDE.md ./
 COPY docs ./docs
 

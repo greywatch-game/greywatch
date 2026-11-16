@@ -24,12 +24,18 @@
  *   - **The TREE, file by file** (`TREE`, and the three files at the root,
  *     `TREE_FILES`): `src/`, `server/`, `main.ts`, `scripts/`, `plans/` and
  *     `.claude/skills/` (`BABYLON_EXIT.md` rule 6's last turn, X6.1i), and
- *     the two Vite configs beside `main.ts`. Every file there that NAMES the
- *     package as a module fails: an `import` or `export … from` of it
- *     (`import type` too — the package is not installed, so even a type is a
- *     dangling name), an `import()`, a `require()`, an
+ *     the two Vite configs beside `main.ts`. `plans/` and `.claude/skills/`
+ *     alone are read when present and SKIPPED with a note when not
+ *     (`TREE_OPTIONAL`): the Docker image's build stage copies neither,
+ *     nothing in them ships, and `ci.yml`'s full checkout gates them; the
+ *     rest must exist. Every file there that NAMES the package as a module
+ *     fails, a declaration file (`.d.ts`) included: an `import` or
+ *     `export … from` of it (`import type` too — the package is not
+ *     installed, so even a type is a dangling name, and `skipLibCheck` hides
+ *     one in a `.d.ts` from `tsc`), an `import()`, a `require()`, an
  *     `import.meta.resolve()` and a Vite `ssrLoadModule()` taking it as a
- *     literal, or a relative path into `node_modules/@babylonjs/core`. Text
+ *     literal, a `declare module` of it or a `/// <reference types>` to it,
+ *     or a relative path into `node_modules/@babylonjs/core`. Text
  *     that only MENTIONS the package — a comment, the history in a header, a
  *     string a census greps for — is not an import and is not read. The
  *     instruments may compute a specifier (a probe importing a page's module
@@ -130,10 +136,21 @@ const ROOT_FILES = ["main.ts"];
 
 /**
  * The TREE: every source file under these, and the files at the repository's
- * root, is read for an import naming the package (the header).
+ * root, is read for an import naming the package (the header). Each of these
+ * must exist, and one missing fails.
  */
-const TREE = ["src", "server", "scripts", "plans", ".claude/skills"];
+const TREE = ["src", "server", "scripts"];
 const TREE_FILES = ["main.ts", "vite.config.ts", "vite.server.config.ts"];
+/**
+ * …and these two are read when they are THERE. Nothing in either ships — the
+ * plans' reference harnesses and the skills' scripts are instruments — so the
+ * Docker image's build stage does not copy them, and the gate on the front of
+ * its `npm run build` skips them with a note rather than failing on a
+ * directory it was never meant to have. Every full checkout has both, and
+ * `ci.yml` gates them there. The pair is named, not a rule: a directory of
+ * `TREE` missing still fails.
+ */
+const TREE_OPTIONAL = ["plans", ".claude/skills"];
 
 /**
  * The simulation modules, one by one.
@@ -201,10 +218,16 @@ const NODE_BANNED_FILE = /\/node_modules\/ws\//;
 const abs = (p) => resolve(REPO, p);
 const rel = (p) => relative(REPO, p).replaceAll("\\", "/");
 
-function walkDir(path, out) {
+/**
+ * Every source file under `path`. A declaration file (`.d.ts`) is no module
+ * the graph loads and is never a root of a WALK, but the TREE pass reads it
+ * (`declarations`): a type the package declares named in one is as dangling as
+ * one named in a `.ts`, and `tsc`'s `skipLibCheck` would not say so.
+ */
+function walkDir(path, out, declarations = false) {
   if (statSync(path).isDirectory()) {
-    for (const entry of readdirSync(path)) if (entry !== "node_modules") walkDir(join(path, entry), out);
-  } else if (SOURCE.includes(extname(path)) && !path.endsWith(".d.ts")) {
+    for (const entry of readdirSync(path)) if (entry !== "node_modules") walkDir(join(path, entry), out, declarations);
+  } else if (SOURCE.includes(extname(path)) && (declarations || !path.endsWith(".d.ts"))) {
     out.push(path);
   }
   return out;
@@ -294,8 +317,10 @@ function loadsModule(n) {
 
 /**
  * Every place a file NAMES the package as a module — type-only imports
- * included, and the calls above with a literal — as `{ line, spec }`. Read by
- * syntax, so a comment or a string that only mentions it is not one.
+ * included, the calls above with a literal, and in a declaration file a
+ * `declare module` of it or a `/// <reference types>` to it — as
+ * `{ line, spec }`. Read by syntax, so a comment or a string that only
+ * mentions it is not one.
  */
 function namesPackage(file) {
   const text = readFileSync(file, "utf8");
@@ -304,6 +329,9 @@ function namesPackage(file) {
   const out = [];
   const lineOf = (node) => src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1;
   const banned = (spec) => BANNED.test(spec) || BANNED_FILE.test(`/${spec.replaceAll("\\", "/")}`);
+  for (const ref of src.typeReferenceDirectives) {
+    if (banned(ref.fileName)) out.push({ line: src.getLineAndCharacterOfPosition(ref.pos).line + 1, spec: ref.fileName });
+  }
   const visit = (n) => {
     let spec = null;
     if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
@@ -312,6 +340,8 @@ function namesPackage(file) {
       spec = n.moduleReference.expression.text;
     } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
       spec = n.argument.literal.text;
+    } else if (ts.isModuleDeclaration(n) && ts.isStringLiteral(n.name)) {
+      spec = n.name.text;
     } else if (ts.isCallExpression(n) && loadsModule(n)) {
       const arg = n.arguments[0];
       if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) spec = arg.text;
@@ -394,11 +424,22 @@ const babylon = walk(roots, (spec) => BANNED.test(spec), BANNED_FILE);
 // The tree, file by file — skipped for a diagnostic run.
 const named = [];
 let scanned = 0;
+/** `TREE` and whichever of `TREE_OPTIONAL` this checkout has, and the rest. */
+const treeRead = [...TREE];
+const treeSkipped = [];
 if (!asked.length) {
   const treeFiles = [];
   for (const dir of TREE) {
     if (!existsSync(abs(dir))) problems.push({ root: dir, why: "tree directory does not exist" });
-    else walkDir(abs(dir), treeFiles);
+    else walkDir(abs(dir), treeFiles, true);
+  }
+  for (const dir of TREE_OPTIONAL) {
+    if (existsSync(abs(dir))) {
+      walkDir(abs(dir), treeFiles, true);
+      treeRead.push(dir);
+    } else {
+      treeSkipped.push(dir);
+    }
   }
   for (const file of TREE_FILES) {
     if (!existsSync(abs(file))) problems.push({ root: file, why: "tree file does not exist" });
@@ -476,7 +517,13 @@ const from = asked.length
   ? asked.join(", ")
   : `${DIRECTORIES.map((d) => `${d}/`).join(", ")}, ${ROOT_FILES.join(", ")} or the ${SIMULATIONS.length} simulations`;
 if (!asked.length) {
-  console.log(`no import of @babylonjs/core in ${TREE.map((d) => `${d}/`).join(", ")} or ${TREE_FILES.join(", ")} (${scanned} files read)`);
+  console.log(`no import of @babylonjs/core in ${treeRead.map((d) => `${d}/`).join(", ")} or ${TREE_FILES.join(", ")} (${scanned} files read)`);
+  if (treeSkipped.length) {
+    console.log(
+      `  skipped ${treeSkipped.map((d) => `${d}/`).join(" and ")}: not in this checkout (the Docker image's build stage ` +
+        "copies neither — nothing in them ships — and a full checkout, ci.yml's, gates them)",
+    );
+  }
 }
 console.log(`no path to @babylonjs/core from ${from} (${babylon.walked} modules walked)`);
 if (node) {
