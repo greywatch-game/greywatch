@@ -427,7 +427,9 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   live GPUBuffers (and their MB) and the heap, over
                       #   --rounds rounds (two), a teardown and a map change —
                       #   the proof that deleted webgpuLeaks.ts (X5.4b), after
-                      #   a positive control that both hooks count
+                      #   a positive control that both hooks count; the
+                      #   cache's hook RETIRED with no Babylon on the page
+                      #   (X6.1h)
   lost.mjs            # The device destroyed on purpose at the menu, the card,
                       #   deploy and a life, offline or in a server's match
                       #   (--match), once or twice (--twice, --stale), and what
@@ -881,6 +883,15 @@ src/
                         #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
+    PendingData.ts      # The page's READINESS (X6.1h): the scene's pending-
+                        #   data list ported (addPendingData,
+                        #   removePendingData, getWaitingItemsCount,
+                        #   isLoading) and isReady, what scene.isReady()
+                        #   answered — the list empty. The water's foam is
+                        #   its one holder while it decodes; Game.pending,
+                        #   read by the instruments alone (the frame
+                        #   adapter's ready). Beside the scene's own list
+                        #   until the scene goes
     PipelineWarmup.ts   # When the building card may come down: the wait
                         #   for OUR renderer's pipelines — the round's
                         #   DECLARED list (DeclaredPipelines,

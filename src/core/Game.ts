@@ -148,6 +148,7 @@ import { FrameCap } from "./FrameCap";
 import { answerLoss, takeLossNotice } from "./deviceLoss";
 import { type FrameClock, FrameLoop } from "./FrameLoop";
 import { FrameProfile } from "./FrameProfile";
+import { PendingData } from "./PendingData";
 import { type DeclaredPipelines, PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
@@ -1384,6 +1385,16 @@ export class Game {
    */
   readonly sceneFrame: SceneFrame;
   /**
+   * The page's READINESS (`core/PendingData.ts`, `BABYLON_EXIT.md` X6.1h):
+   * what is still being waited on — the water's foam mask while it decodes —
+   * and `isReady`, what `scene.isReady()` answered. It stands beside the
+   * scene's own list until the scene goes, the foam told to both. Read by
+   * nothing in the game; public for the frame adapter's `ready`
+   * (`scripts/lib/frameAdapter.mjs`), which the bank, `npm run shots` and the
+   * skills' scripts wait on.
+   */
+  readonly pending = new PendingData();
+  /**
    * The frame's six FRUSTUM PLANES (`SceneFrame.frustumPlanes`, the scene's
    * until `BABYLON_EXIT.md` X6.1f): the very array this file's culls and
    * `Sky`'s moon read, null before the first frame. Public for the frame
@@ -2457,7 +2468,7 @@ export class Game {
     // for (`keyLight`); the shadow map, its matrix and its params reach both
     // shaders off the frame (see `celShadow`).
     this.waterDraw = new WaterDraw(this.renderer);
-    this.water = new WaterSystem(this.scene, this.mats, this.waterDraw, this.renderer.textureMaker);
+    this.water = new WaterSystem(this.scene, this.pending, this.mats, this.waterDraw, this.renderer.textureMaker);
     this.grassDraw = new GrassDraw(this.renderer);
     this.grass = new GrassSystem(this.grassDraw, this.mats);
     // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the

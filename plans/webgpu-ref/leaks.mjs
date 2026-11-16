@@ -92,7 +92,13 @@
  * **The scene's engine is asked of the frame adapter since X6.1a** (`harness.mjs`'
  * `babylon()`): with no scene its hook and Babylon's half of the control are
  * RETIRED (the control says it was skipped), and the device's half runs as
- * before.
+ * before. **And with no Babylon on the page at all** (`BABYLON_EXIT.md`
+ * X6.1h: nothing the page loads imports the package once the scene and the
+ * frame's `Observable` are gone, so its module is not among the page's
+ * resources) the cache's hook is RETIRED too — there is no
+ * `WebGPUCacheBindGroups` to count, and its count reads 0, as it read since
+ * X5.4h — said once at the baseline; where the module is loaded it is
+ * hooked as before, told by the frame's `Observable` while that is Babylon's.
  */
 import { bootMap, hardLimit, installRound, launchClient, MAP_IDS, root, startDevServer } from "./harness.mjs";
 
@@ -164,13 +170,13 @@ await frames(60);
 await page.evaluate(async () => {
   const g = window.__celshock;
   const url = performance.getEntriesByType("resource").map((e) => e.name).find((n) => /babylonjs_core/i.test(n));
-  if (!url) throw new Error("leaks.mjs: Babylon's module is not among the page's resources");
-  const B = await import(url);
+  // No Babylon on the page (the header, X6.1h): the cache's hook is RETIRED.
+  const B = url ? await import(url) : null;
   // The page's own instance of the package, told by a Babylon class the page
   // still holds: the frame's `Observable` (`SceneFrame`'s points, Babylon's
   // until X6.1h). The camera's position, which told it until X6.1f, is ours.
-  if (B.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("leaks.mjs: not the page's Babylon");
-  const L = (window.__leaks = { cls: g.state, byClass: {}, cache: B.WebGPUCacheBindGroups });
+  if (B && B.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("leaks.mjs: not the page's Babylon");
+  const L = (window.__leaks = { cls: g.state, byClass: {}, cache: B?.WebGPUCacheBindGroups ?? null });
   const bucket = () => (L.byClass[L.cls] ??= { deletes: 0, deletesWithContext: 0, cacheCreated: 0, cacheCalls: 0, frames: 0 });
   window.__refFrame().onBegin(() => {
     L.cls = g.state;
@@ -186,7 +192,8 @@ await page.evaluate(async () => {
     if (ctx) b.deletesWithContext++;
     return del.call(this, ctx, ...rest);
   };
-  const Cache = B.WebGPUCacheBindGroups;
+  const Cache = B?.WebGPUCacheBindGroups ?? null;
+  if (!Cache) return null;
   const get = Cache.prototype.getBindGroups;
   Cache.prototype.getBindGroups = function (...a) {
     const before = Cache.NumBindGroupsCreatedTotal;
@@ -199,7 +206,13 @@ await page.evaluate(async () => {
   // What the BOOT made, so a count of zero after it reads against a counter
   // that is live: Babylon's cache's own total at the baseline.
   return Cache.NumBindGroupsCreatedTotal;
-}).then((n) => console.log(`at the baseline Babylon's cache had made ${n} bind groups (the boot's)`));
+}).then((n) =>
+  console.log(
+    n === null
+      ? "no Babylon on the page: Babylon's cache is RETIRED, its count 0 (X6.1h)"
+      : `at the baseline Babylon's cache had made ${n} bind groups (the boot's)`,
+  ),
+);
 
 // THE POSITIVE CONTROL (the header): both hooks seen to count, in a class of
 // their own, before anything is read.

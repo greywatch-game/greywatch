@@ -134,14 +134,18 @@
  * business, says so by answering `null` (RETIRED: there is no Babylon left to
  * ask):
  *
- * - `ready()` with no scene: the game's PENDING DATA, read off the objects
- *   that hold it — the water's foam mask while it decodes (`WaterSystem`'s
- *   `foam`, a `MadeTexture` whose `texture` lands in the same task as the
- *   scene's `removePendingData`), the one thing the game hands the scene's
- *   `addPendingData` (X5.4d). A foam whose decode FAILED reads not ready for
- *   good here, where the scene's went ready on the error (the console says
- *   so, and every probe fails on a console error). X6.1h owes the game a
- *   readiness of its own, and this arm reads it then.
+ * - `ready()` with no scene: the GAME's readiness wherever the game has one
+ *   (`Game.pending`, `src/core/PendingData.ts`, `BABYLON_EXIT.md` X6.1h's
+ *   hook: the scene's pending-data list ported, `isReady` what
+ *   `scene.isReady()` answered — proven equal to the scene's on the same
+ *   frames at the hook's commit, where both stand). On a tree before it, the
+ *   game's PENDING DATA read off the objects that hold it — the water's foam
+ *   mask while it decodes (`WaterSystem`'s `foam`, a `MadeTexture` whose
+ *   `texture` lands in the same task as the scene's `removePendingData`), the
+ *   one thing the game hands the scene's `addPendingData` (X5.4d). A foam
+ *   whose decode FAILED reads not ready for good there, where the scene's
+ *   (and `Game.pending`) went ready on the error (the console says so, and
+ *   every probe fails on a console error).
  * - `camera()`: the frame camera's matrices as the LAST render computed them
  *   (read it after a draw) — `{ camera, view, projection, transform, planes,
  *   globalPosition, renderWidth, renderHeight, aspect }`, the three matrices
@@ -174,9 +178,10 @@
  *   frame steps and draws them, then the scene's `particleSystems`), and the
  *   switch over both (`scene.particlesEnabled` and its twin
  *   `ParticleDraw.enabled`) — ours alone with no scene. `constantDelta(on)`:
- *   the frame's constant 16 ms (`scene.useConstantAnimationDeltaTime`, which
- *   `SceneFrame` reads); with no scene it THROWS, until X6.1h gives the frame
- *   its own.
+ *   the frame's constant 16 ms — the FRAME's own flag wherever the frame has
+ *   one (`SceneFrame.useConstantAnimationDeltaTime`, `BABYLON_EXIT.md`
+ *   X6.1h), else the scene's (`scene.useConstantAnimationDeltaTime`, which
+ *   `SceneFrame` read until then); with neither it THROWS.
  * - `counts()`: what the scene holds — `{ meshes, geometries, materials,
  *   activeMeshes }` — and `null` with no scene: Babylon holds nothing.
  * - `materials()`: every material on the page — every one the FACTORY holds
@@ -309,11 +314,14 @@ export function frameAdapter() {
     const questions = {
       ready: scene
         ? () => scene.isReady()
-        : () => {
-            // The game's pending data (the header): the foam mask, while it decodes.
-            const foam = g.water?.foam ?? null;
-            return foam === null || foam.texture !== null;
-          },
+        : g.pending
+          ? // The game's readiness (the header, X6.1h's hook).
+            () => g.pending.isReady()
+          : () => {
+              // The game's pending data (the header): the foam mask, while it decodes.
+              const foam = g.water?.foam ?? null;
+              return foam === null || foam.texture !== null;
+            },
       camera: () => {
         const cam = g.cameraSys.camera;
         let transform;
@@ -363,8 +371,14 @@ export function frameAdapter() {
         if (g.particleDraw) g.particleDraw.enabled = on;
       },
       constantDelta: (on) => {
+        // The frame's own flag wherever it has one (the header, X6.1h).
+        const f = g.sceneFrame;
+        if (f && "useConstantAnimationDeltaTime" in f) {
+          f.useConstantAnimationDeltaTime = on;
+          return;
+        }
         if (!scene) {
-          throw new Error("frame adapter: the frame's constant delta has no arm with no scene (X6.1h owes the frame its own)");
+          throw new Error("frame adapter: the frame's constant delta has no arm with no scene and no flag of the frame's");
         }
         scene.useConstantAnimationDeltaTime = on;
       },

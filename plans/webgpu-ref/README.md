@@ -137,8 +137,11 @@ still read for ours).
 `Game.scene`): **Babylon's arm is built only where `g.scene` exists**, and
 every read a script here made of the scene or its engine is a member of the
 adapter, so no probe names `g.scene` (`harness.mjs`' header lists them): the
-readiness (`ready`, with no scene the game's pending data — the water's foam
-mask while it decodes — until X6.1h gives the game a readiness of its own);
+readiness (`ready`, with no scene the game's own — `Game.pending`, the
+scene's pending-data list ported, X6.1h's hook, proven equal to
+`scene.isReady()` on the same frames at the hook's commit — and on a tree
+before it the game's pending data read off its holder, the water's foam mask
+while it decodes);
 the camera (`camera()`: its view, projection and transform as float32s, the
 six frustum planes, `globalPosition`, the render size and the aspect — off the
 frame host's `viewProjection` and the surface with no scene, and the planes
@@ -147,8 +150,9 @@ that is `Game.frustumPlanes`, which X6.1f gave the game, so before it they
 answer `null`, UNPROVEN, X6.1a's review — and from X6.1f, when the frame computes
 the transform and the planes itself, BOTH arms read the host's transform and
 `Game.frustumPlanes`); the particle fields and their switch
-(`fields`, `particles`) and the frame's constant delta (`constantDelta`, which
-THROWS with no scene until X6.1h); the frame's clear colour (`clearColor`);
+(`fields`, `particles`) and the frame's constant delta (`constantDelta`: the
+frame's own flag wherever it has one, X6.1h, else the scene's, and with
+neither it THROWS); the frame's clear colour (`clearColor`);
 every material on the page (`materials`, the factory's with no scene); the
 pictures' cache key (`pictureKey`, the factory on both arms since X6.1d keyed
 the cache on it, where it was the scene a builder was handed); and — `null`, RETIRED,
@@ -613,7 +617,10 @@ grew), which every later sub-step of X6.1 records in its note.
   256-byte buffer made and destroyed and one bind group made over it, on the
   device the game draws with (`Game.renderer.device`), which must move the
   device hooks' counters by 1 buffer, 1 destroyed, 256 live bytes and back, and
-  1 bind group — or the run fails.
+  1 bind group — or the run fails. **With no Babylon on the page** (X6.1h:
+  nothing the page loads imports the package once the scene and the frame's
+  `Observable` go) the cache's hook is RETIRED too, said once at the baseline,
+  its count 0.
 - **`lost.mjs`** destroys the device every draw is made on, from the page, at the
   menu, the building card, deploy and a life, each on a fresh page, and records
   what follows for `--seconds`: the state, the frames drawn and submitted, whether

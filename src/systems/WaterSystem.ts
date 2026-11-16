@@ -12,9 +12,11 @@
  * The one tiling texture left (the foam mask) is loaded once and reused across
  * rebuilds — OUR texture since `BABYLON_EXIT.md` X5.4d, decoded, flipped and
  * mipped as Babylon's `Texture` did it (`TextureMaker.image`), and held as
- * scene's PENDING DATA while it decodes, as that `Texture` held it, so
+ * the scene's PENDING DATA while it decodes, as that `Texture` held it, so
  * `scene.isReady()` waits for it as it did (what the bank and `npm run shots`
- * read a frame by).
+ * read a frame by) — and as the GAME's (`core/PendingData.ts`, `Game.pending`,
+ * `BABYLON_EXIT.md` X6.1h's hook), told in the same callback, so the two
+ * readinesses answer alike until the scene goes.
  * A rect without its own `y` floats ankle-deep above the TERRAIN under it, not
  * above absolute zero — that is what lets a pool sit recessed in a dug bed.
  * The BED-DEPTH map is per body and per build — it is baked against the
@@ -32,6 +34,7 @@ import { Color3, Vector3, type Vector3Like } from "../math";
 import { anisotropic, type MadeTexture, type TextureMaker } from "../render/TextureMaker";
 import type { WaterDraw, WaterMirror, WaterShape, WaterSurface } from "../render/WaterDraw";
 import { createWaterBodyValues, createWaterShared, type WaterShared } from "../render/waterProgram";
+import type { PendingData } from "../core/PendingData";
 import { MAX_POINT_LIGHTS, type CelMaterialFactory, type PointLightData } from "../shaders/CelShader";
 import { waveTrains } from "../shaders/wgsl/water";
 import type { EnvironmentSpec } from "../world/environment";
@@ -182,6 +185,8 @@ export class WaterSystem {
 
   constructor(
     private scene: Scene,
+    /** The game's readiness (`core/PendingData.ts`): the foam is waited on there too, beside the scene's. */
+    private readonly pending: PendingData,
     private mats: CelMaterialFactory,
     private draw: WaterDraw,
     /** Our renderer's maker of the textures the game decodes for itself: the foam mask. */
@@ -222,11 +227,14 @@ export class WaterSystem {
       // (What Babylon's sampler cache made of a mipped `Texture` at trilinear
       // still carried its default anisotropy of 4, and so does this.)
       const scene = this.scene;
+      const pending = this.pending;
       const foam = this.textures.image("water-foam", foamUrl, anisotropic("repeat", "repeat", 4), (error) => {
         scene.removePendingData(foam);
+        pending.removePendingData(foam);
         if (error) console.error("water: the foam mask did not load", error);
       });
       scene.addPendingData(foam);
+      pending.addPendingData(foam);
       this.foam = foam;
     }
 
