@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7385,6 +7385,36 @@ Then the cut, then the sweep.
   - **Verify:** `npm run build` (no code moves); the census reading 0 imports; a grep for
     "until X6.1", "NullEngine", "the scene's" and `__celshock.scene`, answered line by line.
   - **Rewrites:** what it sweeps.
+
+  **X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments; 2026-11-16; no change to the game;
+  the full note is in `plans/done/babylon_exit_landed.md`). **The licence** (241f706, row "X6.1, the licence", (A)):
+  eighteen ports gained the `## Licence` section the nine X6.1i citers carry, in their form (the Babylon 9.28 source,
+  the Apache-2.0 citation, the NOTICE's line, what changed), found by their headers' port language and by what the
+  four copy checks hold: FXAA (`shaders/Fxaa.ts`, `wgsl/fxaa.ts`), the glow blur (`wgsl/glowBlur.ts`,
+  `render/GlowBlur.ts`), the `postprocess` vertex stage in the ink's, the blur's, the grain's and the shafts' modules,
+  the particles (`ParticleField`, `ParticleDraw`, `wgsl/particles.ts`), the mip chains (`cubeMips.ts`), the canvas,
+  the frame and its loop, `worldMatrixOf`/`detachPart` (`parts.ts`), `boundsOf` (`worldGeometry.ts`) and a joint's
+  compose (`rigJoints.ts`); `licenses/babylonjs.md` now names all twenty-seven, so its "which files are ports" is
+  true. **The sweep** (row "X6.1, the sweep's reach", (A)): about 310 edits in 106 files (18 docs, 88 code files),
+  each the smallest that makes a sentence true (a tense, the scene's → the frame's, "Babylon is made no mesh of X" →
+  "no mesh is made of X"), provenance and the exit's history kept. **The greps**, answered line by line after the
+  sweep (the whole tree but `BABYLON_EXIT.md` and `plans/done/`): 693 lines, 404 of the literal patterns (`until
+  X6.1` 67, `NullEngine` 43, `the scene's` 148, `scene.render` 44, `WebGPUEngine` 39, `getEngine` 3,
+  `@babylonjs/core` 68, `BABYLON.` 0) and 289 of Babylon with a present verb; 55 rewritten (what is left on the line
+  is history), 151 provenance, 162 history, 96 true negatives, 196 an instrument's Babylon-era arm (the probes under
+  `plans/webgpu-ref/` and the harness's adapter), 24 an argument about Babylon's library, 8 false hits, 1 reported.
+  No `until X6.1` without a landed sub-step's letter remains. **Measured**: typecheck, `npm run build` (every gate),
+  corecheck, `maps:check`, the four copy checks against their tables (every group identical, 0 NEW, GONE, STALE),
+  the census at 0 (no file, no `ssrLoadModule`, no page-side load); every changed code file identical to its parent
+  through TypeScript's printer with comments removed (105 files over the three commits); the bundle with
+  `BUILD_COMMIT` fixed byte-identical to 48d7e457's (`diff -r`, 56 files, 9,795.8 kB raw, 4,449.4 kB gzipped).
+  `CLAUDE.md`: no section changed length; "The scene has no Babylon lights" was 196 lines before this step and is
+  left so (over its cap since before X6.1; its split is not this step's). **Reported, not changed**: a vantage's note
+  string (`bench/vantages.ts` 383, "Babylon draws a group's particles…"); `FINDINGS.md` 68 ("Delete the entry with
+  Babylon") now due, and 38 stale as a whole (a candidate list of Babylon meshes, gone at X5.4f); `VERIFYING.md`'s
+  sight-occlusion recipe (`scene.pickWithRay` over the weapon's meshes) dead; `babylonTable.mjs`' `record` path
+  dead since X6.1i; descriptor-matching files (`ChainPasses`, `FrameTargets`, `FrameSubmit`, `TextureMaker`) and
+  three inline formulas (`Game.inFrustum`, `BlastFx`'s and `vehicleRig`'s bounding sphere) not cited as ports.
 
 **Verify, the whole step:**
 

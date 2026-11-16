@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14259,3 +14259,95 @@ directory; a computed specifier passes, as designed; `SIMULATIONS` unchanged (15
 - **NITs** (53c250a): `licenses/babylonjs.md`'s claim that the ports are the files citing it (X6.1j's), "the version
   installed then", `sweep-check`'s single mode. Every `--perturb` still catches every group; with `BUILD_COMMIT`
   fixed the bundle is byte-identical to the review's parent.
+
+**X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments; 2026-11-16; no change to the game).
+Text only, on the Windows box, no GPU run (none was owed: no code moved). Rows "X6.1, the licence" and "X6.1, the
+sweep's reach", both (A).
+
+- **The licence (241f706).** The X6.1i review left the ports that said they were ports without citing
+  `licenses/babylonjs.md`. Found by grepping every header under `src/`, `server/`, `scripts/` and `main.ts` for port
+  language ("ported", "as compiled", "copied", "as written", "operation for operation", "step for step", "line for
+  line", "character for character") and by what the four copy checks hold; the Babylon 9.28 source paths were read
+  off the package still installed in the `greywatch-2-before-x53a` worktree (read only, left at 8a69f093). Eighteen
+  files gained the `## Licence` section in the nine X6.1i citers' form (the source, the Apache-2.0 citation with
+  `licenses/babylonjs.md`, the NOTICE's copyright line, "Changes from the original: …"):
+  - the post chain and the glow: `shaders/Fxaa.ts`, `shaders/wgsl/fxaa.ts` (`ShadersWGSL/fxaa.*`,
+    `thinFXAAPostProcess`), `wgsl/glowBlur.ts` (`kernelBlur.*`, `postprocess.vertex`, `thinBlurPostProcess`'
+    `_nearestBestKernel` and `_updateParameters`), `render/GlowBlur.ts` (`thinBlurPostProcess`, `EffectRenderer`'s
+    quad), and `wgsl/celInk.ts`, `motionBlur.ts`, `paperGrain.ts`, `volumetrics.ts` (Babylon's `postprocess` vertex
+    stage and what its WGSL processor wrote into the modules; their fragments' sources are the game's);
+  - the particles: `render/ParticleField.ts`, `ParticleDraw.ts`, `shaders/wgsl/particles.ts`
+    (`gpuParticleSystem`, `computeShaderParticleSystem`, `gradients`, `gpuUpdateParticles.compute`,
+    `gpuRenderParticles.*`);
+  - the frame, its loop and the canvas: `core/SceneFrame.ts` (`scene.pure.js`), `FrameLoop.ts` (`abstractEngine`,
+    `webgpuEngine`, `performanceMonitor`), `CanvasSurface.ts` (`abstractEngine`, `abstractEngine.dom`,
+    `webgpuEngine`, `scene.inputManager`, `webDeviceInputSystem`);
+  - the mip chains: `render/cubeMips.ts` (`webgpuTextureManager`'s mipmap shader, `generateCubeMipmaps`,
+    `generateMipmaps`);
+  - what `bounds-check` holds and a joint's compose: `world/parts.ts` (`worldMatrixOf`, `detachPart`:
+    `TransformNode.computeWorldMatrix`, `setParent`), `world/worldGeometry.ts` (`boundsOf`: `extractMinAndMax`,
+    `BoundingBox`, `BoundingSphere`), `entities/rigJoints.ts` (the compose and `RenderCache`).
+
+  `licenses/babylonjs.md`'s "Which files are ports" now names all twenty-seven (the nine and the eighteen) by area,
+  says `git grep -l licenses/babylonjs.md -- src` lists them, and that a new port joins the list; its opening list of
+  what was ported gained the frame, its loop, the canvas, the particles and the compiled shader text. **Not cited, and
+  why**: files that MATCH Babylon's descriptors or state rather than copy its code (`render/ChainPasses.ts`,
+  `FrameTargets.ts`, `FrameSubmit.ts`, `TextureMaker.ts`, `PipelineCache.ts`, `ViewDraw.ts`, `WorldBlocks.ts`,
+  `core/renderId.ts`, `main.ts`' device request); files that only point at a port (`CameraSystem`, `FrameCap`,
+  `Atmosphere`, `RotorWash`, `GlowPass`, `PostChain`, `Vehicle`, `Player`, `CollisionField`, `math/index.ts`, which
+  re-exports); and three one-line formulas inside files that are not ports (`Game`'s `inFrustum`,
+  `BoundingSphere.isInFrustum`; `BlastFx`'s `reConstruct`; `vehicleRig`'s `_update`). The owner may want any of
+  these cited too.
+- **The sweep (4efc9d1 the docs, 099288d the comments).** Only text describing Babylon as PRESENT was rewritten — a
+  Babylon object at runtime, Babylon doing something now, an `until X6.1…` read as the future, "the scene's X" as a
+  live scene, "either library's vector" (until X6.1f), the NaN trap in the present, the copy checks "against the
+  installed package" (since X6.1i, Babylon's recorded answers), "Babylon is made no mesh of X". Each change is the
+  smallest that makes the sentence true (a tense, a noun, "no mesh is made of X"); provenance and the exit's history
+  are kept, and no argument was paraphrased. About 310 edits in 106 files:
+  - the docs commit, 18 files: `CLAUDE.md` 5 (the overview's stack, "TypeScript + Vite, the engine ported off
+    Babylon.js"; the lights section's heading without "(almost)", as `docs/rendering.md`'s; "no rig, hull or
+    viewmodel is a mesh"; a new ray reaches for no drawn geometry; the NaN trap in the past), `docs/rendering.md`
+    72, the other docs 34, `FILES.md` 11, `VERIFYING.md` 15, `FINDINGS.md` 9, `plans/webgpu-ref/README.md` 6,
+    `server/README.md` 3, the model-detail skill 1;
+  - the comments commit, 88 files: `src/` 77 (core 9, render 13, shaders 3, entities 16, systems 17, world 6, math
+    3, geometry 2, the rest 8), `scripts/` 6, `server/` 1, `main.ts`, the skills' two scripts, and the Dockerfile's
+    comment (the server image bundles no Babylon).
+- **The greps, answered line by line** (scratch table, one verdict a line), after the sweep, over the whole tree but
+  `node_modules`, `dist`, `.git`, `BABYLON_EXIT.md` and `plans/done/`: 693 lines.
+  - The literal patterns, 404 lines: `until X6.1` 67 (42 history, 21 rewritten to history, 4 an instrument's; none
+    without a landed sub-step's letter), `NullEngine` 43, `the scene's` 148, `__celshock.scene` 0 (one false hit,
+    `__celshock.sceneFrame`), `scene.render` 44, `WebGPUEngine` 39, `getEngine` 3, `@babylonjs/core` 68 (the gate's
+    rules and the licence's provenance), `BABYLON.` 0.
+  - Babylon with a present verb, 289 lines.
+  - Verdicts: 55 rewritten (what is left on the line is history), 151 provenance, 162 history, 96 true negatives
+    (gate rules, "no Babylon mesh"), 196 an instrument's Babylon-era arm (the probes under `plans/webgpu-ref/` and the
+    harness's frame adapter, true for the BEFORE trees they still read), 24 an argument about Babylon's library, 8
+    false hits, 1 reported.
+- **Measured**: `npm run typecheck`; `npm run build` with `BUILD_COMMIT` fixed (every gate: the bake current,
+  `maps:check`, the WebGPU globals, `check-babylon-free` over 599 files, the audio, the proving ground's sentinel);
+  `npm run corecheck` (all passed); `npm run maps:check`; the census at 0 (`babylon-census.mjs`: 0 files importing
+  the package, 0 `ssrLoadModule`, 0 page-side loads); the four copy checks against their tables (`geometry-check`
+  342 of 342 groups, `math-check` 1,920 of 1,920, `bounds-check` 351 of 351, `sweep-check` 8 maps; 0 NEW, GONE,
+  STALE). **Comments only**: every changed `.ts`/`.mjs` file printed through TypeScript's printer with its comments
+  removed is identical to its parent's (105 files over the three commits; a planted change inside a WGSL template
+  was caught). **The bundle** built at this step and at 48d7e457 (a worktree with a junction to the same
+  `node_modules`, removed after), both with `BUILD_COMMIT` fixed: `diff -r` identical, 56 files, 9,795.8 kB raw,
+  4,449.4 kB gzipped. `CLAUDE.md`: 1,665 lines and no section changed length.
+- **Reported, not changed**:
+  - `CLAUDE.md`'s "The scene has no Babylon lights" is 196 lines, over the ~135 cap, as it was before this step;
+    bringing it under means moving rules to `docs/rendering.md`, which is the owner's (or a step of its own).
+  - `src/bench/vantages.ts` 383: a vantage's note, a STRING, says "Babylon draws a group's particles BEFORE its
+    blended meshes".
+  - `FINDINGS.md` 68 ends "Delete the entry with Babylon (X6.1)", now due; `FINDINGS.md` 38 is stale as a whole
+    (`WorldCulling`'s candidate list of Babylon meshes and "`rebuildList` is a full scene walk", gone at X5.4f) and
+    owes a status or a deletion.
+  - `VERIFYING.md`'s sight-occlusion recipe (about lines 1552–1596) fires `scene.pickWithRay` at the weapon's meshes,
+    neither of which exists; it needs a new method, not a tense.
+  - `scripts/lib/babylonTable.mjs`' `Ledger` keeps its `record` path, which no caller has reached since X6.1i.
+  - `docs/rendering.md`'s sections that call themselves retired or history keep their present-tense account of
+    Babylon's library ("Frozen materials", "Hand-written WGSL"'s history), and about line 3317 ("What our side does
+    not do yet is Babylon's flip of `fragmentInputs.position`") may be technically stale.
+  - `PERF_PLAN.md` ("Babylon stays", "Removing Babylon outright is not on the table") and `ENGINE_UPGRADE.md`, dated
+    plans outside the sweep, kept as history.
+- The worktrees `greywatch-2-before-x53a` (8a69f093) and `greywatch-2-before-x36b` untouched; X6.1 as a whole is not
+  DONE: the whole step's Verify against 5613d1e and the owner's phone check are still to run.
