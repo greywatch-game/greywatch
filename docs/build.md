@@ -210,7 +210,7 @@ of what the optional version cost, are in [`deaths.md`](deaths.md).
 Havok's is the one binary that ships. There were two more Babylon's ENGINE
 would fetch at runtime if anything let it, and they are the reason a shader
 language was a build contract rather than a rendering detail: **glslang and
-twgsl, four files off `cdn.babylonjs.com/v9.28.0/`** (the installed version,
+twgsl, four files off `cdn.babylonjs.com/v9.28.0/`** (the version installed then,
 which Babylon wrote into the path itself) — `glslang/glslang.{js,wasm}` and
 `twgsl/twgsl.{js,wasm}`. `WebGPUEngine` built them lazily, inside
 `prepareGlslangAndTintAsync`, the first time a shader reaching the backend was
@@ -446,8 +446,8 @@ for both halves.
 collider's triangle test, its response and the coordinator's retry loop —
 ported operation for operation against each `WorldBox`'s twelve triangles
 (Apache-2.0, `licenses/babylonjs.md`), and `scripts/sweep-check.mjs` holds it to
-the BIT in its default `exact` mode (it builds each map as the authority does,
-off the bake, and so needs no browser).
+the BIT (its one mode since X6.1i, once called `exact`: it builds each map as
+the authority does, off the bake, and so needs no browser).
 
 **Babylon's answers are RECORDED TABLES** (`scripts/tables/`,
 `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy

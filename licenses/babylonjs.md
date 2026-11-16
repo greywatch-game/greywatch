@@ -11,7 +11,12 @@ is that licence and NOTICE, verbatim, kept in the repository (the owner's
 decision, row "X6.1, the licence": the repository carries the notice, the
 shipped bundle does not).
 
-**Which files are ports**: every file whose header cites this file. A new port
+**Which files are ports**: every file whose header cites this file. At X6.1i
+those are the nine whose headers cited the package's own copy of this licence;
+other ports in the tree (the post chain's FXAA and glow blur, the particles,
+the canvas surface, the frame and its loop) say so in their headers but do not
+cite it yet, and pointing them here is `BABYLON_EXIT.md` X6.1j's (its row "X6.1,
+the licence"). A new port
 of anything of Babylon's says so in its header, names the source file and the
 version, states what it changed, and cites `licenses/babylonjs.md`.
 

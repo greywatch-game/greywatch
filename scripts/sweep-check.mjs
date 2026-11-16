@@ -224,7 +224,7 @@ async function buildWorld(env, def) {
 /**
  * What a map IS to a sweep, before any copy under test runs: every box's
  * fields, the groups that rank them, the floor a hull is stood on and the
- * square — the INPUT digest `exact`'s table keeps beside each map's answers,
+ * square — the INPUT digest the table keeps beside each map's answers,
  * so a re-laid map reads STALE rather than wrong.
  */
 function worldInput(map, size) {
@@ -241,7 +241,7 @@ function worldInput(map, size) {
 const SYNTHETIC = "synthetic";
 
 /**
- * `exact`'s SEEDED world, built from nothing in the game (X6.1i), so the
+ * The SEEDED world, built from nothing in the game (X6.1i), so the
  * table holds the port whatever the maps become: six hundred boxes on a flat
  * floor in a 160 m square — slabs and walls from a hand's breadth to a house,
  * on the ground or lifted, square to the axes, at right angles or at any yaw,
@@ -338,7 +338,7 @@ function countingRays(rays) {
 }
 
 // ---------------------------------------------------------------------------
-// Sampling single moves (`exact`, `shipped`).
+// Sampling single moves.
 
 /**
  * One start and one step round `box`, in its turned frame. The ellipsoid's
