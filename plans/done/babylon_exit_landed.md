@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13620,3 +13620,114 @@ four copy checks, the live list and `?profile&gpu`. Every GPU run was alone on t
 
 Scripts and logs in the session's scratchpad, `x61d-fix/` (`probes.sh`, `after.sh`, `live.mjs`,
 `sarab.mjs`, the BEFORE and AFTER logs and JSON, and the bench captures).
+
+**X6.1e LANDED** (91fbd70; 2026-11-13; no change to the game). Measured headless on the Windows box against a
+BEFORE at dc527d4b in the worktree `greywatch-2-before-x53a` (moved there, detached; the lockfile unchanged
+since ac96836e, so its `node_modules` stood), every GPU run alone on the GPU. No device lost.
+
+- **The move**: every value and type import of `Vector3`, `Color3`, `Color4`, `Matrix`, `Quaternion`,
+  `Vector2` and `Vector4` from the package moves onto `src/math/`, in 54 files of views, systems, `net/`,
+  `shaders/`, `core/`, the weapon models and the world (`shadowWindow.ts`' ortho light matrix with them).
+  Aliases that told the two apart (`MathVector3`, `PoseVector3`, `MathQuaternion`, `BabylonMatrix`,
+  `BabylonVector3`) fold to the plain names where both now name ours.
+- **What keeps Babylon's math, and why** (the camera's owners, and one mesh): `CameraSystem` (its
+  `FreeCamera`, the scratch its eye is built in, `getDirection`'s `FORWARD_Z`, moved in from `Game` behind a
+  new `lookDirection()`); the viewer's camera (`FreeCamera` by type, `toBabylon` for `setTarget`);
+  `GrassSystem`'s `Frustum.GetPlanes(Matrix.Identity())` and `Plane` (X6.1f adds `Plane` and `Frustum`);
+  and `parts.ts`' `BabylonQuaternion`, a Babylon mesh's own `rotationQuaternion` in the mesh arm X6.1g
+  deletes. **Named as a deviation**: the plan lists `Quaternion` among the names that move; that one
+  instance stays because a Babylon `Mesh` is written with it.
+- **Added first, each into `math-check`** (92 cases, 20,000 trials, every member covered; perturbing
+  `Vector4#toArray` and `OrthoLHToRef`'s half-z branch fails it): `Vector2` (constructor, `toArray`,
+  `copyFromFloats`, `set`, `scaleInPlace`, `length`, `normalize`, `normalizeFromLength`) and `Vector4`
+  (constructor, `toArray`, `copyFrom`, `copyFromFloats`, `set`), plain fields where Babylon's `Vector4` had
+  accessors; `Vector3.NormalizeToRef`; `Matrix.OrthoLHToRef`; `Matrix#setTranslationFromFloats`,
+  `#setTranslation` and `#getTranslationToRef` (`Sky`'s moon); `Color3#toArray` (`CelShader.own`); the
+  `Vector4Like` type. `ProjectToRef`'s `world` takes `Readonly<Matrix>` (Babylon's is `DeepImmutable`), so
+  `Matrix.IdentityReadOnly` passes.
+- **The crossings, each the same numbers**:
+  - `CameraSystem` hands out ours: `forward`, `flatForward` and `flatRight` return `src/math`'s, and
+    `forwardToRef` fills either library's through `set`, as the flat pair already did. Its own update reads
+    Babylon scratches (`forwardToRef(new Vector3())`), since they are added into its eye. `place(eye,
+    target)` takes `Vector3Like`, writes the eye by `copyFromFloats` (Babylon's `copyFrom` reads `_x`) and
+    hands `setTarget` a `toBabylon` copy (which reads it by `subtract` and `LookAtLHToRef` and never
+    writes it).
+  - Every reader of `camera.position` (`globalPosition` too) takes `Vector3Like`: `RagdollSystem.spawn`,
+    `DebrisSystem.burst`, `BlastDebrisSystem.burst`, `CelMaterialFactory.updateCamera`, `WaterSystem`,
+    `WorldCulling`, `Atmosphere`, `LightingSystem`, `GiVolume` (with `chooseFast`, `fastKind`, `fillCand`,
+    `writeHulls`), `Sky` (with `sortClouds`, `CloudPaint.setEye`), `Sfx.setListener`, `AmbienceSystem`,
+    `ShadowSystem.updateBlobs`, `LocalShadows.update`, `GrassSystem.update`, `DeathCam.start`,
+    `NetSession.update`, `NetRoster.update` and `Game`'s `eyeDistanceSq`. Each reads by fields or our statics.
+  - `Game`'s seven `toBabylon` calls became copies into its own scratches (`fireAt`, `shellFrom`,
+    `engineAt`, `blastPoint`, `debrisGround.normal`), and the pane break's two fresh copies `new Vector3`.
+    The copies are kept, so no reader is handed the simulation's vector, and dropping them is a later change.
+  - The camera's MATRICES, copied into ours by `Matrix.FromArrayToRef` where a method of ours takes one: the
+    particle camera's view, inverted by our `invertToRef`; the gun marker's transform, projected by our
+    `ProjectToRef` at WebGPU's depth range, as `SceneEngine` states it; `Sky`'s view for the moon. Babylon's
+    copies carried an identity flag our copy does not, and nothing reads it. A camera matrix is made by
+    `FromValuesToRef`, which leaves the raw flag false, and nothing in Babylon calls `isIdentity()` on one
+    (searched). Both `invertToRef` and `multiplyToRef` take the arithmetic path either way, and the logs
+    below agree.
+  - `Sky`'s frustum test writes `Plane.dotCoordinate` out (Babylon's plane, our point; the same expression
+    in the same order). `environment.ts` writes the scene's clear colour with `copyFromFloats` in place of
+    a new Babylon `Color4`. The only reader, `SceneFrame`, reads `scene.clearColor` each frame.
+- **JSON spelling** (the plan's STOP item): every client message spells a vector as `[x, y, z]`, and
+  `protocol.ts`' types refuse an object. The owner channel, `localStorage`/`sessionStorage`, the
+  profiler's report and the bench capture hold no vector. `kit:hash` spells a math value by class name and
+  fields, whichever library made it. **None reaches the wire, a capture or a record**, and
+  `protocol.ts`' header now says why the tuple is the rule.
+- **The gate**: no directory is left with no value path to the package. Measured by the gate's own
+  diagnostic over every directory under `src/`: the clean ones are those already held, and `src/entities`,
+  `src/net` and `src/ui` still reach it through `parts.ts`. `DIRECTORIES` is unchanged.
+- **Contracts**: `CLAUDE.md`'s "TWO `Vector3`s" convention is restated as one math, with the camera's kept
+  until X6.1f. Also rewritten: the four `src/math/` headers (`babylon.ts` deleted at X6.1f, its callers
+  named), `CameraSystem`'s header (why it keeps Babylon's math and what it hands out), `protocol.ts`'
+  header, and the comments the move made false (`Game`, `BlastDebrisSystem`, `BlastFx`, `CombatFx`,
+  `CombatSystem`, `GrenadeSystem`, `ShadowSystem`, `RagdollSystem`, `VehicleCamera`, `FlameShader`),
+  `math-check`'s header and `FILES.md` (`vector.ts`, `babylon.ts`, `CameraSystem.ts`).
+- **Every bank row** by `exact.mjs`, `--check --keep` at each tree: default **147 of 147 byte-equal**;
+  `volumetrics=low` and `high` 146 byte-equal and `harrowmead-view-pistol-reload` within its known flake
+  (2 pixels, 1/255).
+- **The probes against the parent's** (X6.1c's `probes.sh`):
+  - the draw log (Coldharbour) equal;
+  - `census` 168, totals equal;
+  - `gi.mjs` equal (254,724 values on Coldharbour);
+  - `particles.mjs` 45,120 numbers over 480 frames equal by `Object.is`;
+  - `surfaces.mjs` 5,719 values equal;
+  - `post.mjs` at `desk` and `phone`, 31,837 values each, equal;
+  - `readers.mjs` replay of X5.4a's record equal (frames, readers, digests, ids, the origins:
+    `sendShot`, `sendOrdnance` and `sendGrenade` IDENTICAL to the live page's), and its camera log equal;
+  - `readers.mjs camera --map=coldharbour` (136 frames: the driver and the gunner, at render scale 0.75
+    and after a resize, so the gun marker's projected point as float bits) equal;
+  - `shaders`' log byte-identical.
+- **Named differences, each the wall clock's**:
+  - `pipelines.mjs`: nothing built in play on either tree; the per-second fps column differs. In
+    `coldharbour --round` the rounds fired differ (3 against 6 and so on), as at X6.1c and X6.1d.
+  - `leaks.mjs`: 0 released and 0 cached everywhere, every delete, bind-group, device and live-buffer
+    count equal. The heap figures differ.
+  - `gate`: all seven clean, the probe counts equal; the boot and install times and `bake1` (the frames
+    the reflection bake drains in under the card, 1 to 4 on both trees in no order) differ.
+- **`kit:hash`** (3,722 builds of 105 kinds, the scatter among them, 0 threw) and `--models` (244)
+  identical; `--feet` byte-identical; `merge:hash` identical on all eight maps.
+- **`simulate`'s fight hash** (`<map> 1 2 4242`): `e57084ddbf7d69ed` Hollowmere, `380fdf6bec3b2dfb`
+  Coldharbour, `8e839848a7f77cc4` Sarab, `772a08d599c4c8ec` Cinderhaven, at both trees.
+- **Live** (`x61d-fix/live.mjs` as it stood): 47 of 47 at both trees, every frame `0/0/1/1/1/2`, 0 errors.
+  The only differences are the frame totals and the caps' fps (30 at 29.95 to 30.03, 60 at 60.04 to 60.14).
+  **Sarab** (`x61d-fix/sarab.mjs`, botless match): the tank, the truck and the helicopter asked for,
+  driven, crossed to the gunner's seat and dismounted, 19 of 19 at both trees. The distances are within
+  0.2 m and the walk lengths differ, since the spawn rides the wall clock.
+- **`?profile&gpu`** (`bench.mjs hollowmere coldharbour --gpu --capped --runs 2`, BEFORE and AFTER twice
+  each): `render` within 4.2% in every group of both pairs, `gpu.frame` within 0.4%. The fights were
+  `549487ba93bceefe` and `de5622634abca6e7` on every run.
+- **Verify**: typecheck, build (the gate: 254 modules walked, clean; `check-proving`), corecheck (62 s),
+  parity (eight maps, 17 fields each), `maps:check`, `geometry-check` 7,368, `math-check` 1,840,000,
+  `bounds-check` 25,518 matrices, `sweep-check` 7 maps.
+- **The census** (`scripts/babylon-census.mjs --against` the parent's): 69 files to 30 (17 with a value
+  import), 94 shrank, 0 grew. `Vector3` is in `CameraSystem` and `math/babylon.ts`, and `Matrix`,
+  `Quaternion`, `Frustum` and `Plane` in `GrassSystem` and `parts.ts`. No `Color3`, `Color4`, `Vector2`
+  or `Vector4` is left. The bundle is 102 files, 16,820.3 kB raw and 6,018.7 kB gzipped (from 16,817.7
+  and 6,018.1: our new members, with Babylon's math still bundled for the camera); the JS is 12,188.9
+  and 3,088.0 kB.
+
+Scripts and logs in the session's scratchpad, `x61e/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`,
+`probes.sh`, `edit/move-imports.cjs`, every log, JSON and kept bank directory).

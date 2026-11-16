@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7000,6 +7000,33 @@ Then the cut, then the sweep.
   - **Rewrites:** `CLAUDE.md`'s convention "There are TWO `Vector3`s until the exit's
     X6.1" (now one, plus the camera's owners until X6.1f); the `src/math/` headers;
     `FILES.md`.
+
+  **X6.1e LANDED** (91fbd70; 2026-11-13; no change to the game; the full note is in
+  `plans/done/babylon_exit_landed.md`). Every value and type import of the seven math names moves
+  onto `src/math/` (54 files) but the camera's: `CameraSystem` (its `FreeCamera`, its eye, a new
+  `lookDirection` holding `getDirection`'s `FORWARD_Z`), the viewer's camera, `GrassSystem`'s
+  `Frustum` with its `Matrix` (X6.1f's) and `parts.ts`' mesh-arm `rotationQuaternion` (X6.1g's).
+  **Added first, each into `math-check`** (92 cases, a perturbation of the new ones failing):
+  `Vector2`, `Vector4`, `Vector3.NormalizeToRef`, `Matrix.OrthoLHToRef`,
+  `Matrix#setTranslationFromFloats`/`setTranslation`/`getTranslationToRef` and `Color3#toArray`.
+  **The crossings**: `CameraSystem` hands out `src/math`'s and `place` copies in; every reader of
+  `camera.position` takes `Vector3Like`; `Game`'s `toBabylon` copies became copies into its own
+  scratches; the scene's view and transform are copied into our matrices by
+  `Matrix.FromArrayToRef` (the particle camera's inverse, the gun marker, now on our
+  `ProjectToRef`, and `Sky`'s view); `environment.ts` writes the scene's clear colour in place.
+  `toBabylon` is left with `CameraSystem.place` and the viewer's camera. **No vector reaches the
+  wire as an object** (every message spells `[x, y, z]`), nor a capture or a record. No directory
+  emptied, so `DIRECTORIES` is unchanged. **Measured** against a BEFORE at dc527d4b: the bank by
+  `exact.mjs` 147 of 147 byte-equal by default and 146 plus the pistol flake at `volumetrics=low`
+  and `high`; `kit:hash` (3,722) and `--models` (244) identical, `--feet` byte-identical;
+  `merge:hash` identical on eight maps; `simulate`'s fight hash equal on four maps; `readers.mjs`
+  replay (the origins IDENTICAL), its camera log and the Coldharbour hull log with the gun marker
+  equal; the draw log, `census`, `gi.mjs`, `particles.mjs`, `surfaces.mjs` and `post.mjs` at both
+  sizes equal; `shaders` the same; `pipelines.mjs` nothing in play; `leaks.mjs` 0; `gate` clean;
+  live 47 of 47 and Sarab in each hull 19 of 19 at both trees; `?profile&gpu` `render` within
+  4.2% and `gpu.frame` within 0.4%, the fights equal; parity, `maps:check`, corecheck, the four
+  copy checks, typecheck and build clean. **The census**: 69 files to 30, 94 shrank, 0 grew; the
+  bundle 16,820.3 kB raw and 6,018.7 kB gzipped (from 16,817.7 and 6,018.1).
 
 - **X6.1f — the camera is ours** (no change to the picture) — **M**. The viewer's one
   Babylon type goes here (the Do's `FreeCamera` item).
