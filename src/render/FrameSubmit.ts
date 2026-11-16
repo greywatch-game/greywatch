@@ -34,6 +34,18 @@
  * `FrameHost.afterSubmit` adds to).
  * Contract: `docs/rendering.md`, "Our renderer's frame";
  * `docs/profiling.md`, "GPU time, and why it is a BOOT FLAG".
+ *
+ * ## Licence
+ *
+ * The submit's order is restated from Babylon.js 9.28
+ * (`Engines/webgpuEngine.pure.js`, `flushFramebuffer`: the encoders finished
+ * and handed to one `queue.submit`, the next frame's made straight after it,
+ * and the timestamp query's `startFrame` opened on the new one), which is
+ * licensed under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: one encoder
+ * in place of the upload and render pair, its label our own, and the timer
+ * ours (`render/FrameTimer.ts`).
  */
 import { FrameTimer } from "./FrameTimer";
 

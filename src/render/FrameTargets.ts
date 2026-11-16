@@ -41,6 +41,18 @@
  * by whoever reads the render size (`ChainPasses`), the glow's by its rules
  * (`GlowPass`).
  * Contract: `docs/rendering.md`, "Our renderer's frame" and "The glow".
+ *
+ * ## Licence
+ *
+ * The texture and view descriptors are restated from Babylon.js 9.28
+ * (`Engines/WebGPU/webgpuTextureManager.js`: `createTexture` and
+ * `createGPUTextureForInternalTexture`, what a `RenderTargetTexture`'s
+ * texture and view were made of), which is licensed under the Apache
+ * License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: plain
+ * descriptors made by our renderer, the labels our own, and each target made
+ * and remade at its owner's size (above).
  */
 import type { FrameHost } from "./frameHost";
 import { OwnTexture } from "./HostBindGroup";

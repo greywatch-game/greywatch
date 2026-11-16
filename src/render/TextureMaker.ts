@@ -51,6 +51,22 @@
  * as the key its texture is found by.
  * Contract: `docs/rendering.md`, "Our renderer's frame" and "The textures the
  * game paints".
+ *
+ * ## Licence
+ *
+ * The texture, view and sampler descriptors and the uploads' options are
+ * restated from Babylon.js 9.28 (`Engines/WebGPU/webgpuTextureManager.js`:
+ * `createTexture`, `createGPUTextureForInternalTexture` and `updateTexture`'s
+ * `copyExternalImageToTexture`; `webgpuTextureHelper.js`:
+ * `ComputeNumMipmapLevels`; `webgpuCacheSampler.js`: `_GetSamplerDescriptor`
+ * and `_GetSamplerFilterDescriptor`; `Misc/fileTools.pure.js`: `LoadImage`'s
+ * `createImageBitmap` options; `Engines/abstractEngine.pure.js`:
+ * `_CreateCanvas`), which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: plain descriptors made by our renderer, the labels our
+ * own, a mipped texture given no view until its chain is recorded, and the
+ * chain itself `cubeMips.ts`' port.
  */
 import { CubeMips } from "./cubeMips";
 import type { FrameHost } from "./frameHost";

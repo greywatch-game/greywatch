@@ -39,6 +39,17 @@
  * (`GlowRules.colour`), so a batch has to be one place: a slot is one blast.
  * The small batch is the exception and its bloom is only ever sparks and the
  * hot heads of trails, a metre or two from the blast that threw them.
+ *
+ * ## Licence
+ *
+ * `BillowBatch.end`'s bounding sphere only is restated from Babylon.js 9.28
+ * (`Culling/boundingSphere.js`' `reConstruct`, as
+ * `Culling/boundingInfo.js`' `reConstruct` called it under the identity),
+ * which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: the extent set by hand from the billows drawn (each
+ * one's larger half-extent and its lumps) in place of a mesh's vertices.
  */
 import { CONFIG } from "../config";
 import { createIcoSphere } from "../geometry/primitives";

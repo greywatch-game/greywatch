@@ -82,6 +82,24 @@
  * reads a node; submits.
  * Contract: `docs/rendering.md`, "The irradiance volume" and "Our renderer's
  * frame".
+ *
+ * ## Licence
+ *
+ * The buffer, texture, view, sampler, bind group and pass descriptors are
+ * restated from Babylon.js 9.28 (`Engines/webgpuEngine.pure.js`:
+ * `createStorageBuffer` and `clearStorageBuffer`, what
+ * `Buffers/storageBuffer.js` asked of it;
+ * `Engines/WebGPU/Extensions/engine.rawTexture.pure.js`' `createRawTexture3D`
+ * and `webgpuTextureManager.js`' `createGPUTextureForInternalTexture`, what
+ * `Materials/Textures/rawTexture3D.js` made; `webgpuCacheSampler.js`'
+ * `_GetSamplerDescriptor`; `Engines/WebGPU/webgpuComputeContext.js`'
+ * `getBindGroups` and `Extensions/engine.computeShader.pure.js`'
+ * `_computeDispatch`), which is licensed under the Apache License, Version
+ * 2.0 (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: the passes recorded by our renderer as a late prepare on
+ * the frame's one encoder, the pipelines asked at construction, and the
+ * readiness gate asking the pipelines alone (above).
  */
 import { CONFIG } from "../config";
 import { GI_STATE_VEC4, giComposeSource, giTraceSource, giVisSource } from "../shaders/wgsl/giTrace";

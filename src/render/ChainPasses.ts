@@ -51,6 +51,22 @@
  * Never: imports Babylon; draws — a stage of the chain does, into the pass
  * this begins (`PostChain`); clears the frame (`Renderer.end` does).
  * Contract: `docs/rendering.md`, "Our renderer's frame".
+ *
+ * ## Licence
+ *
+ * The pass, texture and view descriptors are restated from Babylon.js 9.28
+ * (`Engines/webgpuEngine.pure.js`: `ViewDescriptorSwapChain`, the main depth
+ * texture and its view `_initializeMainAttachments` made, and the passes
+ * `_startRenderTargetRenderPass` and `_startMainRenderPass` began;
+ * `Engines/WebGPU/webgpuTextureManager.js`: a render target's texture and
+ * view, `createTexture` and `createGPUTextureForInternalTexture`), which is
+ * licensed under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: plain
+ * descriptors begun by our renderer on the frame's one encoder, the labels
+ * our own or Babylon's without its frame counters, and the canvas's depth
+ * made at the swap chain's size when its pass first needs it and never
+ * cleared.
  */
 import type { FrameHost } from "./frameHost";
 import { FrameTarget, type FrameTargets } from "./FrameTargets";

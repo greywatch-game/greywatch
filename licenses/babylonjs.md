@@ -6,7 +6,8 @@ is licensed under the Apache License, Version 2.0. The game ran on Babylon until
 the bit — the math, the primitive generators and the merge, the body sweep, the
 camera, the observables, the readiness list, the frame, its loop and the
 canvas, the particles, and the shader text its processor compiled — the code
-was ported rather than rewritten. The package itself left the tree at `BABYLON_EXIT.md` X6.1i, and with
+was ported rather than rewritten, and where a descriptor, a shader's
+arithmetic or a bounding sphere had to match, it was restated. The package itself left the tree at `BABYLON_EXIT.md` X6.1i, and with
 it the copy of its licence a checkout used to carry in `node_modules/`; this file
 is that licence and NOTICE, verbatim, kept in the repository (the owner's
 decision, row "X6.1, the licence": the repository carries the notice, the
@@ -15,24 +16,35 @@ shipped bundle does not).
 **Which files are ports**: every file whose header cites this file, in a
 `## Licence` section naming the Babylon source it came from and what it
 changed. They are the nine whose headers cited the package's own copy of this
-licence at X6.1i and the eighteen `BABYLON_EXIT.md` X6.1j pointed here (its row
-"X6.1, the licence"), twenty-seven in all:
+licence at X6.1i, the eighteen `BABYLON_EXIT.md` X6.1j pointed here (its row
+"X6.1, the licence"), and the ten its review left to the owner, who had them
+cite it on 2026-11-16 — files that RESTATE Babylon's descriptors, shader
+arithmetic or a bounding-sphere formula rather than port a module, the three
+in which only a function or two does so (`Game.ts`, `vehicleRig.ts`,
+`BlastFx.ts`) scoping the section to those functions — thirty-seven in all:
 
 - the math: `src/math/vector.ts`, `color.ts`, `plane.ts`;
 - the geometry: `src/geometry/buffer.ts`, `primitives.ts`; a part's world
   matrix (`src/world/parts.ts`), the world bounds
   (`src/world/worldGeometry.ts`) and a joint's compose
   (`src/entities/rigJoints.ts`);
+- the bounding spheres restated inline: the frustum test
+  (`src/core/Game.ts`), a hull's segments (`src/entities/vehicleRig.ts`) and
+  a blast's batches (`src/systems/BlastFx.ts`);
 - the body sweep: `src/world/ellipsoidSweep.ts`;
 - the camera, the observables and the readiness: `src/core/FreeCamera.ts`,
   `Observable.ts`, `PendingData.ts`;
 - the frame, its loop and the canvas: `src/core/SceneFrame.ts`,
   `FrameLoop.ts`, `CanvasSurface.ts`;
+- the descriptors our renderer restates: `src/render/ChainPasses.ts`,
+  `FrameTargets.ts`, `FrameSubmit.ts`, `TextureMaker.ts`, `GiCompute.ts`;
 - the particles: `src/render/ParticleField.ts`, `ParticleDraw.ts`,
   `src/shaders/wgsl/particles.ts`;
 - the post chain and the glow: `src/shaders/Fxaa.ts`,
   `src/shaders/wgsl/fxaa.ts`, `glowBlur.ts`, `celInk.ts`, `motionBlur.ts`,
   `paperGrain.ts`, `volumetrics.ts`, `src/render/GlowBlur.ts`;
+- `StandardMaterial`'s arithmetic, restated: the sky and the fading pools
+  (`src/shaders/wgsl/sky.ts`, `fade.ts`);
 - the mip chains: `src/render/cubeMips.ts`.
 
 `git grep -l licenses/babylonjs.md -- src` lists them. A new port of anything

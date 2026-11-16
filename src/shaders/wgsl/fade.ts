@@ -23,6 +23,23 @@
  * plugin's `scene.vEyePosition`, on the factory's band (`fogRange`).
  * Never: imports Babylon; declares a binding.
  * Contract: `docs/rendering.md`, "The pools, ours".
+ *
+ * ## Licence
+ *
+ * The arithmetic is restated from Babylon.js 9.28's WGSL shaders as its
+ * processor compiled them for these materials
+ * (`ShadersWGSL/default.vertex.js` 156, 172 and 174, the world and clip
+ * positions and `vPositionW`; `default.fragment.js` 103, 242, 258, 275, 287
+ * and 297, the alpha, the emissive colour, `finalDiffuse`, `color`, its floor
+ * at 0 and the mesh's `visibility`; `ShadersInclude/defaultFragmentAlpha.js`
+ * 9, the opacity map's alpha; `glowMapGeneration.fragment.js` 28 and 63, the
+ * mask's colour), which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: the terms the uniforms zero folded (above), the
+ * emissive colour a palette slot and the visibility an item's, the opacity
+ * texture's matrix (the identity) dropped from its UV, and the fog's fade the
+ * game's own (`EmissiveFog`'s, never Babylon's).
  */
 
 /** The vertex stage: world first, then the view-projection, as `default.vertex` and the mask's stage both did. */

@@ -97,6 +97,17 @@
  * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
  * and no build or match opened after it, `deviceIsLost`),
  * window.__celshock debug handle.
+ *
+ * ## Licence
+ *
+ * `inFrustum` only — with `inPlanes`, the same test over planes copied to
+ * numbers — restates Babylon.js 9.28's sphere-against-frustum test
+ * (`Culling/boundingSphere.js`, `BoundingSphere.isInFrustum`, through
+ * `Maths/math.plane.js`' `dotCoordinate`), which is licensed under the Apache
+ * License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: a centre
+ * and a radius as numbers in place of a `BoundingSphere`.
  */
 import { CONFIG } from "../config";
 import { Color3, type Color3Like, Color4, Matrix, type Plane, Vector3, type Vector3Like } from "../math";

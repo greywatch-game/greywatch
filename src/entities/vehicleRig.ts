@@ -105,6 +105,18 @@
  *
  * `segmentOf` enforces both by construction, which is why no model may build
  * a segment any other way — a model hands it parts, never meshes.
+ *
+ * ## Licence
+ *
+ * The bounding-sphere arithmetic only — `kitSegment`'s and `restMeasure`'s
+ * centre and radius, and the world sphere `writeHullDrawing` writes — is
+ * restated from Babylon.js 9.28 (`Maths/math.functions.js`'
+ * `extractMinAndMax`, and `Culling/boundingSphere.js`' `reConstruct` and
+ * `_update`), which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: positions and matrices in place of a mesh, and
+ * `restMeasure`'s extent taken over a whole kit at rest in its root's frame.
  */
 import type { VehicleSpec } from "../config/vehicles";
 import type { GeometryBuffer } from "../geometry/buffer";

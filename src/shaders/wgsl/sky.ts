@@ -24,6 +24,22 @@
  * Never: imports Babylon (`src/render/` imports this, and the build gate walks
  * it); declares a binding; lights or fogs anything.
  * Contract: `docs/rendering.md`, "The sky".
+ *
+ * ## Licence
+ *
+ * The arithmetic is restated from Babylon.js 9.28's WGSL shaders as its
+ * processor compiled them for these two (`ShadersWGSL/default.vertex.js` 156
+ * and 172, the world and clip positions; `default.fragment.js` 103, 242-244,
+ * 258 and 275, the base colour and alpha, the emissive colour and texture,
+ * `finalDiffuse` and `color`; `ShadersInclude/defaultFragmentAlpha.js` 9, the
+ * opacity map's alpha; `glowMapGeneration.vertex.js` 56 and 60, and
+ * `glowMapGeneration.fragment.js` 28, 46 and 61, the moon's mask), which is
+ * licensed under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the terms
+ * exactly 0 or exactly 1 for these two taken out (above), the texture's
+ * matrix (the identity) dropped from its UV, and the moon's emissive and
+ * opacity texture sampled once.
  */
 
 /** The vertex stage: world first, then the view-projection, as `default.vertex` and the mask's. */
