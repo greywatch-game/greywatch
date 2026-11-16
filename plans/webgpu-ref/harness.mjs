@@ -23,7 +23,10 @@
  * there, and it silently photographs a blank canvas here. Since
  * `BABYLON_EXIT.md` X5.2c1 the post chain's stages that are OUR draws are not
  * in it, so the wait asks them beside it (`postAdapter`'s `ready`) — since
- * X5.2d the whole chain, the ink included.
+ * X5.2d the whole chain, the ink included. And since X6.1h there is no scene:
+ * the frame adapter's `ready` is the page's own readiness (`Game.pending`,
+ * the scene's pending data ported), which answered what `scene.isReady()`
+ * answered on every frame where both stood.
  *
  * **A frozen frame needs EIGHT things held, not the two the plan assumed, and
  * the last two are not clocks at all.** `Game.tick` runs `post.update`,

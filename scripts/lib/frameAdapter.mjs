@@ -123,7 +123,9 @@
  * probes is THE SCENE'S (`scene.getEngine()`) — at a parent the
  * `WebGPUEngine` the game held as `Game.engine`, the same object — so a probe
  * hooking Babylon's begin-frames, draws or compiles hooks the `NullEngine`
- * after X5.4h and reads the 0 Babylon does there.
+ * after X5.4h and reads the 0 Babylon does there — and since X6.1h, which
+ * deleted the scene and its `NullEngine`, there is no engine of Babylon's to
+ * hook at all: `host().engine` is `null` and every such hook is RETIRED.
  *
  * **And it answers with NO SCENE since X6.1a** (`BABYLON_EXIT.md` X6.1a, for
  * X6.1h, which deletes `Game.scene`): **Babylon's arm is built only where
@@ -215,7 +217,7 @@
  * the same frame (X6.1a's check). And `window.__refNoScene = true` (an init
  * script's, or `REF_NO_SCENE=1` in the environment, which `bootMap` turns
  * into one) makes EVERY adapter the page asks for that one — how a probe runs
- * as it will once X6.1h has deleted the scene, on a tree that still has one.
+ * as it has run since X6.1h deleted the scene, on a tree that still has one.
  */
 export function frameAdapter() {
   window.__refFrame ??= (opts = {}) => {

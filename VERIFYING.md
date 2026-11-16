@@ -97,7 +97,11 @@ you are on before you believe anything else in this section.
   the last resort**: its SIGKILL skips those handlers and can leave a Chromium tree
   standing, idle, in the next run's way, so check for one before you measure anything.
 - **A script that needs Babylon's own classes must import the URL the PAGE
-  loaded, and find it off the resource timeline.** Vite pre-bundles
+  loaded, and find it off the resource timeline — and since `BABYLON_EXIT.md`
+  X6.1h the page loads NONE** (no scene, no engine, the frame's `Observable`
+  ours), so the timeline has no Babylon entry and such a script RETIRES that
+  half (`leaks.mjs`' cache hook) or takes `src/math`'s own value
+  (`plans/physics-ref/clients.mjs`' stand-in vector). On an older tree: Vite pre-bundles
   `@babylonjs/core` into `/node_modules/.vite/deps/@babylonjs_core.js` under a
   content hash that moves with the lockfile; importing the package by its own
   path gives a SECOND copy of the library, whose classes are not the game's —
@@ -106,14 +110,14 @@ you are on before you believe anything else in this section.
   own observables. `performance.getEntriesByType("resource")` is where the real
   URL is written down; assert the identity against a Babylon class the page
   still holds (`B.Observable === g.sceneFrame.onBeforeRenderObservable
-  .constructor`, as `plans/webgpu-ref/leaks.mjs` does — the camera's
-  position, which told it until `BABYLON_EXIT.md` X6.1f, is `src/math`'s)
+  .constructor`, as `plans/webgpu-ref/leaks.mjs` does, until X6.1h — the
+  camera's position, which told it until `BABYLON_EXIT.md` X6.1f, is `src/math`'s)
   rather than trusting the spelling. `plans/webgpu-ref/depth.mjs` is the
   worked version. **A script that only needed a Babylon VALUE could skip the
   timeline** by importing a game module that made one — `/src/math/babylon.ts`'s
   `toBabylon`, deleted at X6.1f — because Vite serves each `/src` file at one
   URL; no game module makes a Babylon vector since, so take the timeline, as
-  `plans/physics-ref/clients.mjs` has since X6.1f's review.
+  `plans/physics-ref/clients.mjs` did from X6.1f's review until X6.1h.
 - **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
   thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
   fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in
@@ -385,7 +389,8 @@ you are on before you believe anything else in this section.
   `--disable-frame-rate-limit --disable-gpu-vsync` Hollowmere reads 103 fps
   because that is the ceiling rather than the cost; with them, 132–176. Say
   which you measured.
-- **A map DRAWS when `scene.isReady()` says so, and a frame count is not a
+- **A map DRAWS when the page's readiness says so (`scene.isReady()` until
+  `BABYLON_EXIT.md` X6.1h, `Game.pending` since), and a frame count is not a
   substitute.** Until the pipelines exist the canvas presents nothing, and the
   frame that first changes is not a constant — across runs it moved between 67
   and 137 on Hollowmere and between 3 and 35 on Greyfen. `scene.isReady()`
@@ -396,12 +401,14 @@ you are on before you believe anything else in this section.
   committed backdrops with blank frames. **Ask it through the frame adapter**
   (`scripts/lib/frameAdapter.mjs`, installed as an init script through its
   `installFrameAdapter`, which honours `REF_NO_SCENE=1`:
-  `window.__refFrame().ready()`, beside its `drawn`/`onDrawn`), never as
-  `g.scene.isReady()`: since `BABYLON_EXIT.md` X6.1a it answers with no scene
-  too (the game's pending data, the water's foam mask while it decodes), and
-  X6.1h deletes `Game.scene`. Every other question a script asks of the scene
-  — the camera's matrices and frustum planes, the particle switch, the
-  materials, the clear colour — is a member of the same adapter.
+  `window.__refFrame().ready()`, beside its `drawn`/`onDrawn`), never of the
+  game directly: there is no `Game.scene` since `BABYLON_EXIT.md` X6.1h, and
+  the adapter answers with the GAME's readiness (`Game.pending`,
+  `core/PendingData.ts`: the scene's pending-data list ported, the water's foam
+  mask its one holder while it decodes) — and on an older tree with whatever
+  it had. Every other question a script once asked of the scene — the
+  camera's matrices and frustum planes, the particle switch, the materials,
+  the clear colour, the constant delta — is a member of the same adapter.
 - **…and ONE unuploaded texture anywhere in the scene turns that answer off
   for the whole process**, which is the trap rather than the rule above. A
   `DynamicTexture` is not READY until something calls `update()` on it, so a
@@ -418,17 +425,22 @@ you are on before you believe anything else in this section.
   went from failing after 120 s to a picture in 2.8 s, and Sarab in 5.9 s.
   (Since `BABYLON_EXIT.md` X4.3d the card is no mesh and has no
   `DynamicTexture`: it is a segment our renderer draws, its canvas made and
-  uploaded at its first paint, so it cannot hold the scene unready; and since
+  uploaded at its first paint, so it cannot hold the scene unready; since
   X5.4d no `DynamicTexture` is left in the tree — every canvas the game paints
-  is OUR texture, made in the call that paints it, `render/TextureMaker.ts`.)
-  **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
-  list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
+  is OUR texture, made in the call that paints it, `render/TextureMaker.ts`;
+  and since X6.1h there is no scene to walk: the page's readiness is its
+  pending data and nothing else, so this trap has nowhere left to live — a
+  new thing the frames must wait on is ADDED to `Game.pending`.)
+  **What generalises is the diagnosis**: when the readiness will not flip,
+  list what holds it — since X6.1h `g.pending._pendingData`, and while there
+  was a scene the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
   usually a texture rather than a shader. Material-less meshes (the colliders
   and the effect pools were, until `BABYLON_EXIT.md` X4.6e and X5.3e left a
   round's scene holding none) show up in that list on the FIRST call and clear
   themselves on later ones, because asking is what compiles them; ask every
   frame before believing the list. **`npm run parity` asks this of every map now**, prints the
-  frame count each one took, and fails the run naming the meshes that are stuck
+  frame count each one took, and fails the run naming what is stuck (the
+  pending data since X6.1h, the meshes before it)
   — which is the guard the shots script could not be, because nobody runs a
   photographer as a check.
 - **Do not touch `src/` while a dev-server-backed script is running.** Vite's
@@ -668,10 +680,10 @@ you are on before you believe anything else in this section.
     ~3 forever under Babylon's loop; since `BABYLON_EXIT.md` X5.4g the readout
     is `g.frameLoop.clock.getFps()`, the same arithmetic over the same
     samples (not re-measured here), and since X5.4h there is no
-    `WebGPUEngine` to read at all (the scene's is a `NullEngine`) — so do not
-    read the readout as a stall. (That
-    index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene is
-    never rendered since, so `getFrameId()` reads 0 on every machine.)
+    `WebGPUEngine` to read at all (and since X6.1h no scene or `NullEngine`
+    either) — so do not read the readout as a stall. (That
+    index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene was
+    never rendered since, and is gone since X6.1h.)
 
 - **Babylon's `WebGPUEngine` fetched glslang and twgsl from `cdn.babylonjs.com`
   (none is built since `BABYLON_EXIT.md` X5.4h, so nothing can now), so match
@@ -682,7 +694,8 @@ you are on before you believe anything else in this section.
   what it costs is `docs/pwa.md`'s offline promise: a game that needs the
   network on its first draw. `harness.mjs` owns the check and every script it
   boots gets it — `bootMap` records every request to the domain AND aborts the
-  route, and `assertNoTranspiler` reads the scene's engine.
+  route, and `assertNoTranspiler` reads the scene's engine (none since X6.1h:
+  the adapter's `transpilers()` answers `null`, RETIRED).
 
   **Four traps in that one check, and the last two are the reason it is two
   halves rather than one.** It has already produced a false PASS by watching

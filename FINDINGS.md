@@ -2990,8 +2990,9 @@ INDIRECT").
 size gate (`WorldCulling.offer`) read the mesh's bounds as of the last time its
 world was COMPUTED, and `_evaluateActiveMeshes` computed only a candidate the
 gate kept, so a drop LATCHED (`docs/rendering.md`, "A WRONG DROP LATCHES"). The
-bank waits on `scene.isReady()` (`harness.mjs`' `waitUntilDrawn`), and
-`Mesh.isReady(true)` computes every mesh's world, so every banked frame is
+bank waited on `scene.isReady()` (`harness.mjs`' `waitUntilDrawn`; the page's
+pending data since `BABYLON_EXIT.md` X6.1h), and
+`Mesh.isReady(true)` computed every mesh's world, so every banked frame was
 drawn with every mesh's bounds fresh, and a port that gates on this frame's
 sphere comes back byte-equal to a BEFORE that latched. **Structurally blind,
 not unlucky**: it missed the pieces (X4.4b), the debris (X4.4c) and the scorch

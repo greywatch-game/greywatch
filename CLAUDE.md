@@ -93,12 +93,12 @@ EXACTLY as Babylon's `WebGPUEngine` did — no limits, no feature but
 COPY_SRC`, premultiplied — because a shader moves if it does not (the glow
 blur's text reads a device limit), and the canvas's size, scaling level and
 aspect ratio are `core/CanvasSurface.ts`'s (Babylon's `resize`/`setSize`
-ported). **Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
-`NullEngine` until X6.1 (`core/SceneEngine.ts`), and the CAMERA is ours
+ported). **Babylon's `WebGPUEngine` is not constructed, and there is no
+Babylon scene and no engine under one** (X6.1h): the CAMERA is ours
 (`core/FreeCamera.ts`, Babylon's ported as written, X6.1f), its projection at
 WebGPU's depth range off the surface's aspect ratio, to the bit — **a reader of
-a render size, a scaling level or an aspect ratio asks the SURFACE, never the
-scene's engine**.
+a render size, a scaling level or an aspect ratio asks the SURFACE**, and
+WebGPU's depth range is a constant (`HALF_Z_RANGE`, the shadow maps').
 
 **Zero model files, and SEVENTEEN audio files** — every mesh is built from
 primitives at runtime (the copies of Babylon's generators in `src/geometry/`,
@@ -290,7 +290,7 @@ plays against the old colliders until `npm run collision` re-bakes them.
 deploy`, with `roundover` when a side runs out of tickets, and `bench` — the
 benchmark `?bench=<map>` plays — off to one side of it. **The frame is
 drawn in every state** — ours (`core/SceneFrame.ts`: what `scene.render()`
-did, in its order, called where it was; **the scene is never rendered**) — in
+did, in its order, called where it was; **there is no Babylon scene**) — in
 the page's own match over a HELD world,
 advanced only through `updateWorld` (`playing`, `dying`, `bench`) — and
 `loading` and `dying` are **STEPS, not lids**: `updateWorld` runs in full under
@@ -560,7 +560,8 @@ every cel material shares is the FRAME's, filled off the factory's fields.
 
 The cel program carries its own light as uniforms (key, ambient, sky fill, up to
 16 point lights) and `LightingSystem` is the sole owner of dynamic light: **a
-`PointLight` or `HemisphericLight` added to the scene lights no cel mesh**.
+`PointLight` or `HemisphericLight` lights no cel mesh** (and there is no
+Babylon scene to add one to).
 
 **The indirect light is TRACED in compute against the COLLIDERS**
 (`systems/GiVolume.ts`): **a light whose brightness changes faster than a sweep
@@ -637,7 +638,7 @@ OUR renderer's in every pass and **no build makes a MESH of anything**
 cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
 that cannot draw its world tells the failure it was HANDED WITH it:
 **`Game.worldFailed`**, the menu and a toast, never a fallback.
-**The frame no longer WALKS the scene** — the scene is never rendered, so
+**The frame no longer WALKS a scene** — there is none (X6.1h), and
 `WorldCulling`'s candidate list went with the walk (X5.4f) — and it **writes
 nothing onto any mesh**;
 a CELL is grown from the RECORDS (`GameMap.world`, whole). **The SCATTER is
@@ -663,7 +664,7 @@ are a capture zone's stones, paint, pole and cloth, the GRASS and the WATER** (`
 **So is every PARTICLE FIELD, the ash and the rotor wash** (`ParticleDraw`:
 Babylon's `GPUParticleSystem` PORTED, its shaders as compiled, its seeds, its
 gradients and its clock), in creation order, behind the turf and ahead of the
-moon, and **Babylon's scene holds no particle system**. **So is the WHOLE
+moon, and **no particle system is Babylon's**. **So is the WHOLE
 post chain — the ink, FXAA, the shafts, a stage a rung, the blur and the
 grade** (`render/PostChain.ts`, X5.2c1 to X5.2d: a host of DECLARED stages,
 the first reading the frame, the last active one given the canvas, any other
@@ -674,9 +675,9 @@ stands on the camera**. **The FRAME and its passes are OURS**
 (`render/FrameTargets.ts`, X5.4e: the frame, its depth, the glow's six, each
 made as Babylon made it), **every pass of the frame is recorded into the
 frame's ONE encoder, submitted once** (`render/FrameSubmit.ts`, X5.4g) and
-Babylon's encoders hold nothing, so **the
-scene clears nothing** (`autoClear` and `autoClearDepthAndStencil` FALSE, no
-`outputRenderTarget`), **the frame's opening pass is the frame's**, and **the
+no Babylon encoder or scene exists, so **nothing
+clears but our passes**, **the frame's opening pass is the frame's** (its
+colour the frame's `clearColor`, the environment's), and **the
 canvas's pass is begun EXACTLY ONCE a frame** — by the chain's last stage, or
 empty at the frame's end (`ChainPasses.finishFrame`), as Babylon's render
 began its main pass.
@@ -703,13 +704,19 @@ draw**, **`noGlow` is read PER SURFACE at the take** (a world fire's too), and
 **The FRAME is the game's** (`core/SceneFrame.ts`, X5.4f): `Game.tick` calls
 `sceneFrame.render()` where it called `scene.render()`, and it does what that
 did for this game in its order — the scene's animations (`Scene.animate`'s
-ratio, the particle fields' clock, ported over the loop's delta since X5.4g),
+ratio, the particle fields' clock, ported over the loop's delta since X5.4g,
+its bounds and branch constants since X6.1h),
 the camera's update, the render id's two
-advances, `scene.updateTransformMatrix()` (public API, so every matrix is
-Babylon's to the bit), the evaluation, the draw phase, the chain — raising its
-OWN observables, each named for the scene's it replaces, at the points the
-scene raised that one. **A module that hung off a scene observable hangs off
-the frame's now, and a new one hangs there too**: nothing raises the scene's.
+advances, `updateTransformMatrix` (the scene's, ported at X6.1f, so every
+matrix is Babylon's to the bit), the evaluation, the draw phase, the chain —
+raising its OWN observables, each named for the scene's it replaces, at the
+points the scene raised that one. **Every observable in the game is
+`core/Observable.ts`** (Babylon's PORTED as written, X6.1h: its order, its
+deferred removal, its mask), and **a module that hooks a frame point hangs
+off the frame's or the loop's, and a new one hangs there too**: there is no
+scene to hang off. **The page's READINESS is ours** (`core/PendingData.ts`,
+`Game.pending`: the scene's pending data ported), and a new thing the frames
+must wait on is added there.
 **The LOOP is the game's too** (`core/FrameLoop.ts`, X5.4g): its
 `requestAnimationFrame` chain, `FrameCap` the admitter, the frame's begin and
 end as observables of its own (named for the engine's), and the frame's ONE
@@ -1103,10 +1110,9 @@ A killed bot falls under **Havok**, the only physics engine in the tree; so do
 the death cam's stand-in body, a broken pane's shards and a blast's rubble.
 **Nothing under it feeds navigation, cover or hit detection** — a corpse is not in
 `NavGrid`, not in `ObstacleField`, not in `hittablesAgainst`, and neither a shard
-nor a chunk is either. `scene.physicsEnabled` is **false and must stay false**
-until the scene goes — the scene is never rendered and nothing calls
-`scene.animate()`, which steps a scene physics engine (our frame ports its
-animation ratio) — and Havok never touches a node at all.
+nor a chunk is either. **There is no physics engine on any scene** — there is
+no scene (X6.1h), so nothing steps Havok but `PhysicsWorld`, from
+`stepAftermath` — and Havok never touches a node at all.
 **What the pool holds for a body is its RIG** (a `NetSoldier`'s, or the death
 cam's stand-in), never the simulation's `Bot`.
 
@@ -1123,7 +1129,7 @@ of the PICTURE. `DamageKind` picks, and the test is "not a bullet or a burn".
 into `RagdollSystem`, `DebrisSystem` and `BlastDebrisSystem` by `Game` — the
 `BattleSystem`←`CombatSystem` precedent — and `Game` steps the engine and *then*
 its three clients, never the other way round. **It calls Havok's RAW `HP_*` API**
-(`systems/havok.ts`) — no Babylon plugin, no physics engine on the scene — and
+(`systems/havok.ts`) — no Babylon plugin and no scene — and
 **a body's pose is seven numbers in an array** (`WorldBody.pose`): a corpse's
 rig JOINTS are posed straight off it (`Joint.pose`, read at every compose, and a
 pose left on a joint is the leak to fear; the corpse is drawn as any body is,
@@ -1559,8 +1565,8 @@ built.
   Babylon 9.28's `FreeCamera` ported as written, its caches with it, X6.1f):
   the frame's camera is `SceneFrame.activeCamera`, and the frame's view,
   projection, transform and six FRUSTUM PLANES are the frame's
-  (`SceneFrame.updateTransformMatrix`, `Game.frustumPlanes`), never the
-  scene's — a new reader asks the FRAME. **One of ours handed to a Babylon
+  (`SceneFrame.updateTransformMatrix`, `Game.frustumPlanes`) — a new
+  reader asks the FRAME. **One of ours handed to a Babylon
   method reads `_x` and writes NaN without a word**, and since X6.1f there is
   no Babylon method left to hand one to and no crossing (`src/math/babylon.ts`
   is gone). A member a move needs is ADDED to `src/math/` and to `math-check`

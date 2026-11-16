@@ -84,7 +84,6 @@
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
-import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
 import { createDisc } from "../geometry/primitives";
@@ -93,6 +92,7 @@ import type { OwnTexture } from "../render/HostBindGroup";
 import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import {
   depthBias,
+  HALF_Z_RANGE,
   lightTransformToRef,
   SHADOW_NEAR,
   type ShadowLight,
@@ -295,7 +295,6 @@ export class ShadowSystem {
   }
 
   constructor(
-    private scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
     /** Our renderer's maps: who draws the world's shadows whenever the handover holds every caster. */
@@ -470,7 +469,7 @@ export class ShadowSystem {
       light.side,
       SHADOW_NEAR,
       CONFIG.graphics.shadows.depthRange,
-      this.scene.getEngine().isNDCHalfZRange,
+      HALF_Z_RANGE,
       map.matrix,
     );
   }

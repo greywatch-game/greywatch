@@ -150,9 +150,10 @@ and configures the canvas's context itself, exactly as the engine's
 `initAsync` did (no limits; no feature but `timestamp-query`, under `?gpu`;
 the preferred format, `RENDER_ATTACHMENT | COPY_SRC`, premultiplied), with the
 boot's three failure branches unchanged — no WebGPU (or an insecure origin),
-no physics, no graphics device. The Babylon `Scene` that still stands until
-X6.1 is built on a `NullEngine` (`src/core/SceneEngine.ts`), Babylon's own
-data-only engine: no device, no canvas, nothing it could compile with. So
+no physics, no graphics device. The Babylon `Scene` that stood until
+`BABYLON_EXIT.md` X6.1h was built on a `NullEngine` (`src/core/SceneEngine.ts`,
+deleted with it), Babylon's own data-only engine: no device, no canvas, nothing
+it could compile with; since X6.1h there is no scene and no engine at all. So
 `WebGPUEngine.CreateAsync`'s missing `reject` (a rejected `initAsync` that
 never settled, and a boot screen that said "loading" forever) is no longer a
 trap here: the boot awaits WebGPU's own promises.
@@ -214,11 +215,13 @@ which Babylon writes into the path itself) — `glslang/glslang.{js,wasm}` and
 `prepareGlslangAndTintAsync`, the first time a shader reaching the backend was
 GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under
 the new engine for five milestones before the sources were rewritten. **Since
-`BABYLON_EXIT.md` X5.4h no `WebGPUEngine` is built** — the scene stands on a
-`NullEngine`, which compiles for no backend — so nothing of Babylon's can
-reach the CDN; and since X6.1c no Babylon declaration of a shader is left
-to compile (the cel program's went with the Babylon materials). The gates
-below stand until X6.1i, and `assertNoTranspiler` reads the scene's engine.
+`BABYLON_EXIT.md` X5.4h no `WebGPUEngine` is built** — the scene stood on a
+`NullEngine`, which compiles for no backend, and since X6.1h there is no scene
+or engine at all — so nothing of Babylon's can reach the CDN; and since X6.1c
+no Babylon declaration of a shader is left to compile (the cel program's went
+with the Babylon materials). The gates below stand until X6.1i, and
+`assertNoTranspiler` reads the scene's engine where a page has one (none since
+X6.1h: the frame adapter's `transpilers()` answers `null`, RETIRED).
 
 **Every shader in the tree is WGSL now, so a fetch is a regression and what it
 costs is the offline promise.** They are not in the bundle, they are not
@@ -230,7 +233,7 @@ to. Nothing about it is visible on a developer's machine.
 **Two gates watch for it and both are needed, because each is blind where the
 other sees.** `plans/webgpu-ref/harness.mjs` aborts `**/*.babylonjs.com/**` on
 every page it boots and records every request to it, and `assertNoTranspiler`
-reads `engine._glslang` / `engine._tintWASM` (the scene's engine) after a sweep
+reads `engine._glslang` / `engine._tintWASM` (the scene's engine, while a page had one) after a sweep
 that really compiled something (Babylon's half of `shaders.mjs`, skipped with no
 backend since X5.4h). A route filter proves only what was REQUESTED and a shader nobody
 compiled requests nothing; the engine state proves the stronger thing and is
@@ -350,7 +353,11 @@ camera, became ours. X6.1g added the six that reached the package only through
 the last mesh maker (`world/parts.ts`' `drawnMesh`) or the three effects'
 Babylon geometry routines: `src/entities/`, `src/net/`, `src/systems/`,
 `src/ui/`, the kit (`src/world/kit/`) and the scatter props
-(`src/world/props/`).
+(`src/world/props/`). X6.1h added the last three under `src/` — `src/core/`,
+`src/shaders/` and `src/world/` — when the scene, its engine and Babylon's
+`Observable` went, so nothing under `src/` or in `main.ts` reaches the
+package; what is left of it is the instruments' (`scripts/`, `plans/`) until
+X6.1i.
 
 ## A map reproduces from its generator: `check-maps.mjs`
 

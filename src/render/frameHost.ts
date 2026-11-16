@@ -71,8 +71,9 @@ export interface FrameHost {
   /** The view-projection the frame's camera is drawn with, as 16 floats. */
   viewProjection(out: Float32Array): void;
   /**
-   * The colour the frame is cleared to as it opens — the scene's clear colour,
-   * the value Babylon's own clear of the frame read — written into `out`.
+   * The colour the frame is cleared to as it opens — the frame's clear colour
+   * (`SceneFrame.clearColor`, the scene's until `BABYLON_EXIT.md` X6.1h, the
+   * value Babylon's own clear of the frame read) — written into `out`.
    */
   clearColor(out: GPUColorDict): void;
   /**

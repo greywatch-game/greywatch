@@ -2,11 +2,10 @@
  * environment.ts — EnvironmentSpec: the declarative shape of a map's look
  * (palette, lighting direction, fog, mist, sky, water, particles) plus
  * applyEnvironment(), which hands it to the material factory (whose fields
- * our renderer's frame is filled from) and the scene.
+ * our renderer's frame is filled from) and the frame's clear colour.
  * Pure data in, uniforms out — a second map adds one new spec, no code here.
  */
-import { Color3, Vector3 } from "../math";
-import { Scene } from "@babylonjs/core";
+import { Color3, type Color4, Vector3 } from "../math";
 import type { CelMaterialFactory, SpecSpec } from "../shaders/CelShader";
 import { CONFIG } from "../config";
 import { HULL_REACH } from "../entities/vehicleKinds";
@@ -737,14 +736,15 @@ export function hullDrawDistanceOf(env: EnvironmentSpec): number {
 }
 
 /**
- * The scene's clear colour off an environment: the one write of
- * `scene.clearColor` in the tree. `applyEnvironment` calls it, and `Game`'s
- * constructor calls it alone for the map the menu boots on, so the frame under
- * the boot's fade is that map's flat colour rather than Babylon's default
- * slate (`docs/states.md`). The reel and a teardown do not reach it: after a
- * round the colour is the last map's.
+ * The frame's clear colour off an environment, into `clearColor` (the
+ * frame's, `SceneFrame.clearColor` — `scene.clearColor` until
+ * `BABYLON_EXIT.md` X6.1h): the one write of it in the tree.
+ * `applyEnvironment` calls it, and `Game`'s constructor calls it alone for the
+ * map the menu boots on, so the frame under the boot's fade is that map's flat
+ * colour rather than Babylon's default slate (`docs/states.md`). The reel and
+ * a teardown do not reach it: after a round the colour is the last map's.
  */
-export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
+export function applyClearColor(clearColor: Color4, env: EnvironmentSpec): void {
   const sky = Color3.FromHexString(env.skyColor);
   // Alpha 1, and it is the frame's alpha channel rather than the canvas's: that
   // channel is TRANSLUCENT COVERAGE for `CelInk`, which scales its stroke by
@@ -757,20 +757,20 @@ export function applyClearColor(scene: Scene, env: EnvironmentSpec): void {
   // (`BABYLON_EXIT.md` X4.5a's row, X4.5c).
   // Nothing downstream sees it — the ink consumes it and writes 1, and the grade at
   // the end of the chain writes 1 again.
-  scene.clearColor.copyFromFloats(sky.r, sky.g, sky.b, 1);
+  clearColor.copyFromFloats(sky.r, sky.g, sky.b, 1);
 }
 
 /**
- * Push an environment into the scene clear color and every cel material's
- * lighting/fog uniforms. The scene has no Babylon lights — this is how light
+ * Push an environment into the frame's clear colour and every cel material's
+ * lighting/fog uniforms. There are no Babylon lights — this is how light
  * reaches the shader.
  */
 export function applyEnvironment(
-  scene: Scene,
+  clearColor: Color4,
   env: EnvironmentSpec,
   mats: CelMaterialFactory,
 ): void {
-  applyClearColor(scene, env);
+  applyClearColor(clearColor, env);
 
   const [dx, dy, dz] = env.lighting.direction;
   const lit = env.lighting;

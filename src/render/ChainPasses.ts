@@ -17,7 +17,7 @@
  * Invariants:
  * - **A pool pass is begun as Babylon's `bindFramebuffer` and `clear` began
  *   one** (`_startRenderTargetRenderPass` with the scene's clear colour): its
- *   colour CLEARED to the scene's clear colour and stored, no depth (the pool
+ *   colour CLEARED to the frame's clear colour (the scene's until X6.1h) and stored, no depth (the pool
  *   has none), labelled `<target's label> - RenderPass`, whether or not its
  *   stage then draws — so a stage not built leaves its target cleared, as it
  *   did.
@@ -83,7 +83,7 @@ export class ChainPasses implements PostPassOwner {
   private canvasBegun = false;
   private readonly retired: GPUTexture[] = [];
   private readonly afterSubmit: { dispose(): void };
-  /** The scene's clear colour, written in place as each pool pass is begun. */
+  /** The frame's clear colour (`FrameHost.clearColor`), written in place as each pool pass is begun. */
   private readonly clearValue: GPUColorDict = { r: 0, g: 0, b: 0, a: 1 };
   private readonly poolColour: GPURenderPassColorAttachment;
   private readonly poolPass: GPURenderPassDescriptor;

@@ -56,9 +56,11 @@
  *   canvas presents nothing. Measured on the Windows box, the frame each map
  *   FIRST draws anything on is 67 (Hollowmere), 11 (Greyfen), 14 (Coldharbour)
  *   and 69 (Harrowmead) — so six frames is two blank backdrops, silently
- *   written over two good committed ones. `scene.isReady()` flips on exactly
+ *   written over two good committed ones. `scene.isReady()` flipped on exactly
  *   the frame the map first draws, on all four, so the wait is that and never
- *   a number. Six frames was never wrong on the Chromebook, where six frames
+ *   a number — the page's readiness since `BABYLON_EXIT.md` X6.1h
+ *   (`Game.pending`, the scene's pending data ported), which answers what it
+ *   answered on every frame. Six frames was never wrong on the Chromebook, where six frames
  *   is three wall-clock seconds; it was a duration wearing a frame count's
  *   clothes.
  *
@@ -77,8 +79,8 @@
  * **The frame is asked of the ONE frame adapter since `BABYLON_EXIT.md`
  * X6.1a** (`scripts/lib/frameAdapter.mjs` since its review, installed as an
  * init script through `installFrameAdapter`, which honours `REF_NO_SCENE=1`): its draws (`onDrawn`), its readiness (`ready`, the scene's while there
- * is one, the game's pending data after) and the render size (`camera()`), so
- * nothing here names `g.scene`.
+ * was one, the game's own — `Game.pending` — since X6.1h) and the render size
+ * (`camera()`), so nothing here names `g.scene`.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -252,10 +254,10 @@ async function captureMap(browser, url, id, vantage) {
 
       // Readiness first and the settle after it, for the reason in the header:
       // a frame count cannot stand in for a map having compiled its shaders,
-      // and the frame that answers that question is `scene.isReady()` — the
+      // and the frame that answers that question is the page's readiness — the
       // frame adapter's `ready` and `onDrawn` (`lib/frameAdapter.mjs`, X6.1a): the
-      // scene's readiness while there is one, the game's after, and OUR
-      // frame's draw since X5.4f.
+      // scene's readiness while there was one, the game's (`Game.pending`)
+      // since X6.1h, and OUR frame's draw since X5.4f.
       const F = window.__refFrame();
       const readyBy = performance.now() + readyTimeout;
       await new Promise((resolve, reject) => {

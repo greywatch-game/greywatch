@@ -118,8 +118,10 @@ const DEPLOY_TIMEOUT_MS = 300_000;
  * map in the registry, dev maps included. Asking costs a few hundred
  * milliseconds on top of a page that is open anyway.
  *
- * **What it is guarding is `scene.isReady()`, which is load-bearing for
- * TOOLING and for nothing else.** Nothing in `src/` asks it; what does is
+ * **What it is guarding is the page's readiness** (`scene.isReady()` until
+ * `BABYLON_EXIT.md` X6.1h, `Game.pending` since — the frame adapter's `ready`),
+ * **which is load-bearing for TOOLING and for nothing else.** Nothing in
+ * `src/` asks it; what does is
  * `capture-map-shots.mjs`, because WebGPU compiles pipelines lazily and a
  * settled frame count cannot tell a compiled map from a blank canvas. So a
  * scene that can never be ready is a `npm run shots` that can never succeed —
@@ -187,7 +189,7 @@ async function inspectClient(browser, url, id) {
           // The frame drawn and the readiness through the frame adapter
           // (`lib/frameAdapter.mjs`, X6.1a): OUR frame's point since BABYLON_EXIT.md
           // X5.4f (the scene is never rendered), and the scene's readiness
-          // while there is one, the game's after.
+          // while there is one, the game's (`Game.pending`) after X6.1h.
           const F = window.__refFrame();
           const s = F.babylon()?.scene ?? null;
           let off = null;
@@ -221,14 +223,21 @@ async function inspectClient(browser, url, id) {
             resolve({
               ready: false,
               frames,
-              // Babylon's meshes, while there is a scene (none after X6.1h).
-              blocking: (s ? s.meshes : [])
-                .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
-                .slice(0, 8)
-                .map((m) => {
-                  const mat = m.subMeshes[0].getMaterial();
-                  return `${m.name} [${m.material ? mat.name : `default: ${mat?.name}`}]`;
-                }),
+              // Babylon's meshes, while there is a scene; with none (X6.1h)
+              // what the page's readiness still waits on (`Game.pending`).
+              blocking: s
+                ? s.meshes
+                    .filter((m) => m.subMeshes && m.subMeshes.length && !m.isReady(true))
+                    .slice(0, 8)
+                    .map((m) => {
+                      const mat = m.subMeshes[0].getMaterial();
+                      return `${m.name} [${m.material ? mat.name : `default: ${mat?.name}`}]`;
+                    })
+                : (window.__celshock.pending?._pendingData ?? [])
+                    .slice(0, 8)
+                    .map((p) =>
+                      p === window.__celshock.water?.foam ? "the water's foam mask (pending data)" : `${p?.constructor?.name ?? typeof p} (pending data)`,
+                    ),
             });
           });
         }),

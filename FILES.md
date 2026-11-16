@@ -159,7 +159,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   went and NOT_ROOTS emptied; src/entities/,
                               #   src/net/, src/systems/, src/ui/,
                               #   src/world/kit/ and src/world/props/, X6.1g,
-                              #   when the last mesh maker went)
+                              #   when the last mesh maker went; src/core/,
+                              #   src/shaders/ and src/world/, X6.1h, when the
+                              #   scene and Babylon's Observable went — every
+                              #   directory under src/)
   babylon-census.mjs          # X6.1a's CENSUS of what is left of
                               #   @babylonjs/core: every import of it under
                               #   src/, server/, main.ts, scripts/,
@@ -767,8 +770,11 @@ src/
                         #   generator composed it (lightTransformToRef, the one
                         #   copy both read; ShadowLight, what a light is to
                         #   both: a plain pair, no Babylon light since
-                        #   X5.3d). (The 1x1 LIT texture a map switched OFF is
-                        #   bound as went to render/TextureMaker at X5.4d)
+                        #   X5.3d) at WebGPU's depth range (HALF_Z_RANGE, a
+                        #   constant since X6.1h: the scene engine's
+                        #   isNDCHalfZRange before). (The 1x1 LIT texture a map
+                        #   switched OFF is bound as went to render/TextureMaker
+                        #   at X5.4d)
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
                         #   packed as instance matrices. RAGDOLL_BONES and the
                         #   collider — a hull's off its OWN fields (pos, yaw,
@@ -792,14 +798,24 @@ src/
                         #   ported at X6.1f: the frame's camera, activeCamera,
                         #   its view and projection held, their product and
                         #   the six frustum planes), the evaluation, the draw phase, the
-                        #   post chain — called from Game.tick in its place,
-                        #   so the scene is never rendered. Its points are
-                        #   Babylon Observables of its own named for the
-                        #   scene's they replace; its host is our renderer's
-                        #   FrameHost (the game's device, the loop's encoder
-                        #   and end of frame, the frame's matrix and the
-                        #   scene's clear colour). Brackets the profiler's drawWorld and
-                        #   glow (timeWith, X5.4g)
+                        #   post chain — called from Game.tick in its place;
+                        #   there is no scene (X6.1h). Its points are
+                        #   Observables of its own (core/Observable.ts) named
+                        #   for the scene's they replace; it holds the frame's
+                        #   clear colour (clearColor, the environment's) and
+                        #   the constant-delta switch, Scene.MinDeltaTime /
+                        #   MaxDeltaTime and renderTargetsEnabled as constants;
+                        #   its host is our renderer's FrameHost (the game's
+                        #   device, the loop's encoder and end of frame, the
+                        #   frame's matrix and its clear colour). Brackets the
+                        #   profiler's drawWorld and glow (timeWith, X5.4g)
+    Observable.ts       # Babylon 9.28's Observable, Observer and EventState
+                        #   PORTED as written (X6.1h): add / addOnce /
+                        #   insertFirst, removal DEFERRED to a setTimeout and
+                        #   skipped by a notification in progress, the mask,
+                        #   notifyIfTriggered. Every observable in the game —
+                        #   the frame's points, the loop's, the glow's two —
+                        #   and what the frame adapter and the probes hang on
     CanvasSurface.ts    # THE CANVAS, ours (X5.4h): its WebGPU context and
                         #   format (configured by main.ts), its backing
                         #   store's size and scaling level — Babylon's
@@ -813,19 +829,13 @@ src/
                         #   index, press/release default-prevented and
                         #   focusing, pointer capture, and the release it
                         #   made on a blur or a cancel with a press held)
-    SceneEngine.ts      # The engine the Babylon Scene stands on until X6.1
-                        #   (X5.4h, row "X5.4, Babylon's engine"): a
-                        #   NullEngine told WebGPU's depth range
-                        #   (isNDCHalfZRange) and the surface's size and level
-                        #   (the camera's projection was Babylon's off it to
-                        #   the bit until X6.1f ported the camera). No
-                        #   device, no canvas
     FrameLoop.ts        # THE LOOP, ours (X5.4g): what runRenderLoop,
                         #   beginFrame and endFrame did — the
                         #   requestAnimationFrame chain FrameCap admits, the
                         #   clock (FrameClock: Babylon's getDeltaTime and getFps,
                         #   its performance monitor's arithmetic ported), the
-                        #   frame's begin and end as Observables of its own,
+                        #   frame's begin and end as Observables of its own
+                        #   (core/Observable.ts),
                         #   the frame id, the ONE submit (FrameSubmit) and the
                         #   profiler's present around it; stop(),
                         #   stopRenderLoop's port, the first step of a lost
@@ -890,8 +900,8 @@ src/
                         #   answered — the list empty. The water's foam is
                         #   its one holder while it decodes; Game.pending,
                         #   read by the instruments alone (the frame
-                        #   adapter's ready). Beside the scene's own list
-                        #   until the scene goes
+                        #   adapter's ready), proven equal to the scene's
+                        #   on every frame at its hook's commit
     PipelineWarmup.ts   # When the building card may come down: the wait
                         #   for OUR renderer's pipelines — the round's
                         #   DECLARED list (DeclaredPipelines,
@@ -1741,8 +1751,8 @@ src/
                         #   each body the cube it is handed back. Its PICTURE is
                         #   render/WaterDraw.ts (X4.6d): no mesh, no material,
                         #   and the values plain arrays; the foam mask ours
-                        #   (TextureMaker.image, X5.4d), the scene's pending
-                        #   data while it decodes
+                        #   (TextureMaker.image, X5.4d), the page's pending
+                        #   data (Game.pending, X6.1h) while it decodes
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
@@ -2169,7 +2179,8 @@ src/
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
     environment.ts      # EnvironmentSpec + applyEnvironment, applyClearColor
-                        #   (the one write of scene.clearColor; the boot's too), and
+                        #   (the one write of the frame's clear colour,
+                        #   SceneFrame.clearColor; the boot's too), and
                         #   bodyDrawDistanceOf — the one reader of a map's body
                         #   draw distance, capped at its own fogEnd — and
                         #   hullDrawDistanceOf, the hull's (X4.2d): absent is
@@ -2961,7 +2972,7 @@ src/
                         #   seam, babylonSeam.ts, deleted with Babylon's
                         #   engine), the draw phase's
                         #   two ends (onDrawPhase, X5.4e), the camera's matrix,
-                        #   the scene's clear colour, the encoder every pass of
+                        #   the frame's clear colour, the encoder every pass of
                         #   the frame is recorded into and a call after every
                         #   frame's submit — afterSubmit, X5.1b — both the
                         #   game's loop's since X5.4g),
@@ -2979,7 +2990,7 @@ src/
                         #   for its reader; the POOL (one target a pass
                         #   position, made as Babylon's RenderTargetTexture
                         #   was, rgba8unorm, usage 23, remade with the render
-                        #   size) and its passes, cleared to the scene's
+                        #   size) and its passes, cleared to the frame's
                         #   colour; the CANVAS's pass (Babylon's main pass: the
                         #   swap chain's texture, a depth32float of its own,
                         #   both loaded), begun exactly once a frame — by the

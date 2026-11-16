@@ -1898,7 +1898,9 @@ do not "tidy" it.
 **It carries a RIDER that is nothing to do with the server**, and the reason is
 that a browser is the expensive part: this is the one gate run as a matter of
 routine that already boots a real client and builds every map in the registry,
-so it also asks each of them whether `scene.isReady()` ever becomes true, and
+so it also asks each of them whether the page's readiness ever becomes true
+(the frame adapter's `ready`: `scene.isReady()` until `BABYLON_EXIT.md` X6.1h,
+`Game.pending` since), and
 prints the frame count it took (2-3 on every shipped map). Nothing in `src/`
 asks that question — what does is `capture-map-shots.mjs`, which has no other
 way to tell a compiled map from a blank canvas — so a scene that can never be

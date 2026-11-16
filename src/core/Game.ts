@@ -51,7 +51,7 @@
  * is what writes the pref and what tells the lobby screen.
  * State machine: menu -> deploy -> playing (deploy re-entered on each death)
  * -> roundover. The frame is drawn live behind every state (ours since
- * `BABYLON_EXIT.md` X5.4f, `core/SceneFrame.ts`: the scene is never rendered). The SHAPE of it
+ * `BABYLON_EXIT.md` X5.4f, `core/SceneFrame.ts`: there is no Babylon scene since X6.1h). The SHAPE of it
  * is `ScreenStack.ts` and not this file: what a screen may cover, what it holds
  * in the page's own match, what it owes a server's round and whether the
  * scoreboard is owed to
@@ -96,9 +96,8 @@
  * the teardown between frames, then the page reloaded to the menu, or the
  * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
  * and no build or match opened after it, `deviceIsLost`),
- * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
+ * window.__celshock debug handle.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Color3, type Color3Like, Color4, Matrix, type Plane, Vector3, type Vector3Like } from "../math";
 import {
@@ -333,7 +332,6 @@ import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
 import { RenderId } from "./renderId";
 import { SceneFrame } from "./SceneFrame";
-import { SceneEngine } from "./SceneEngine";
 
 /**
  * The bodies in the round when there is no round — the menu and the building
@@ -485,30 +483,6 @@ function fireSoundKey(id: number): number {
 }
 
 /**
- * Squared eye distance to a submesh's bounding-sphere centre, for the
- * front-to-back opaque sort installed in the constructor — asked of anything
- * that answers a world bounding sphere, so no mesh type is named here
- * (`BABYLON_EXIT.md` X6.1g: no build makes a mesh, and the sort orders none).
- *
- * Squared because a sort only needs the ORDER, and the centre rather than the
- * near point because this is picking a drawing order rather than measuring
- * anything: a merged block's near point would order two overlapping blocks
- * more correctly and cost a radius lookup per comparison to do it, and getting
- * that pair the wrong way round costs one block's early rejection rather than
- * a wrong picture.
- */
-function eyeDistanceSq(
-  sub: { getBoundingInfo(): { boundingSphere: { centerWorld: Vector3Like } } },
-  eye: Vector3Like,
-): number {
-  const c = sub.getBoundingInfo().boundingSphere.centerWorld;
-  const dx = c.x - eye.x;
-  const dy = c.y - eye.y;
-  const dz = c.z - eye.z;
-  return dx * dx + dy * dy + dz * dz;
-}
-
-/**
  * Files surface `i` into the first `n` of a list sorted nearest first: a stable
  * insertion, so it moves ahead only of one strictly farther, as Babylon's stable sort
  * over the order its meshes were made in. Allocates nothing.
@@ -611,13 +585,12 @@ function burstSpacing(rounds: number): number {
 }
 
 /**
- * Top-level orchestrator: owns the scene, all systems, the game state machine,
+ * Top-level orchestrator: owns the frame, all systems, the game state machine,
  * and the per-frame update loop. The DEVICE and the CANVAS are the things here
  * it does not make — `main.ts` asks for the device (WebGPU's is async),
  * configures the canvas's context and hands both in as the device and the
  * `CanvasSurface`, exactly as it hands in Havok (`BABYLON_EXIT.md` X5.4h).
- * The engine the Babylon scene stands on until X6.1 is built here, a
- * `NullEngine` over that surface (`core/SceneEngine.ts`).
+ * There is no Babylon scene and no engine under one (X6.1h).
  *
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
@@ -668,14 +641,6 @@ export class Game {
    * `applyRenderScale`. Public for the probes (`plans/webgpu-ref/harness.mjs`).
    */
   readonly surface: CanvasSurface;
-  /**
-   * The engine the Babylon scene stands on until X6.1: a `NullEngine` told
-   * WebGPU's depth range and the surface's size (`core/SceneEngine.ts`, row
-   * "X5.4, Babylon's engine"). The scene's alone: the camera is ours since
-   * X6.1f (`core/FreeCamera.ts`) and asks the surface.
-   */
-  private readonly sceneEngine: SceneEngine;
-  private scene: Scene;
   private mats: CelMaterialFactory;
   /**
    * OUR renderer (`src/render/`), every pass of the frame on the game's own
@@ -1378,8 +1343,8 @@ export class Game {
   /**
    * THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
    * `scene.render()` did, in its order, called from `tick` in its place —
-   * the scene is never rendered. Its points are where every module that hung
-   * off a scene observable hangs now, and our renderer's host is its
+   * there is no scene since X6.1h. Its points are where every module that
+   * hung off a scene observable hangs now, and our renderer's host is its
    * (`SceneFrame.host`). Public for the harness's frame adapter
    * (`plans/webgpu-ref/harness.mjs`).
    */
@@ -1387,9 +1352,8 @@ export class Game {
   /**
    * The page's READINESS (`core/PendingData.ts`, `BABYLON_EXIT.md` X6.1h):
    * what is still being waited on — the water's foam mask while it decodes —
-   * and `isReady`, what `scene.isReady()` answered. It stands beside the
-   * scene's own list until the scene goes, the foam told to both. Read by
-   * nothing in the game; public for the frame adapter's `ready`
+   * and `isReady`, what `scene.isReady()` answered until the scene went. Read
+   * by nothing in the game; public for the frame adapter's `ready`
    * (`scripts/lib/frameAdapter.mjs`), which the bank, `npm run shots` and the
    * skills' scripts wait on.
    */
@@ -2011,9 +1975,6 @@ export class Game {
     this.canvas = canvas;
     this.deviceFailed = deviceFailed;
     this.surface = surface;
-    // The engine the scene stands on (`core/SceneEngine.ts`): a `NullEngine`,
-    // the last engine built, so `Vector3.ProjectToRef` reads its depth range.
-    this.sceneEngine = new SceneEngine(surface);
     // **The page's own match host** — in a Worker or on a channel in this
     // thread (`src/net/matchHost.ts`), chosen by
     // the boot and handed in as `havok` and the device are. Every round that is
@@ -2047,26 +2008,19 @@ export class Game {
     // promise settles once, so nothing in the answer re-enters it.
     void device.lost.then((info) => this.deviceLost(info));
     this.prof.setFrameTimer(this.frameLoop.submit.timer);
-    this.scene = new Scene(this.sceneEngine);
-    // What the scene's input manager did to the canvas when the scene attached
-    // it, on Babylon's engine (`CanvasSurface.adoptInput`): the tab index, the
-    // press and release default-prevented and focusing, the pointer captured,
-    // and the release it made on a blur or a cancel with a press held.
+    // What Babylon's scene input manager did to the canvas when a scene
+    // attached it, on Babylon's engine, until `BABYLON_EXIT.md` X5.4h
+    // (`CanvasSurface.adoptInput`): the tab index, the press and release
+    // default-prevented and focusing, the pointer captured, and the release
+    // it made on a blur or a cancel with a press held. Where the scene was
+    // built until X6.1h, so in the order it was.
     surface.adoptInput();
-    // The `Scene` constructor sets this true, and it is held FALSE: Babylon
-    // steps a scene's physics engine from `scene.animate()`, which our frame
-    // no longer calls (`SceneFrame` ports its animation ratio, X5.4g), and the
-    // scene has no physics engine any more (`PhysicsWorld` owns Havok's world
-    // outright and is stepped from `stepAftermath` alone), so there is nothing
-    // for it to step — the flag is written because the rule stands until the
-    // scene goes (`CLAUDE.md`, "Deaths, glass, and the one physics engine").
-    this.scene.physicsEnabled = false;
     // THE FRAME is ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
-    // `scene.render()` did, in its order, so the scene is never rendered.
-    // Before anything hangs on its points, and before our renderer, whose
-    // host it is.
-    this.sceneFrame = new SceneFrame(this.scene, this.renderId, device, this.frameLoop);
-    // The scene has no Babylon lights at all: cel materials carry their own
+    // `scene.render()` did, in its order — and since X6.1h there is no scene
+    // at all. Before anything hangs on its points, and before our renderer,
+    // whose host it is.
+    this.sceneFrame = new SceneFrame(this.renderId, device, this.frameLoop);
+    // There are no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
     // Our renderer first: the factory makes a ground's textures, and its
@@ -2088,7 +2042,7 @@ export class Game {
     this.worldShadows = new WorldShadows(this.renderer);
     // Stepped moon shadows + contact blobs. Must exist before the first frame,
     // so the frame's shadow map is bound from the first.
-    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality, this.worldShadows, this.renderer.textureMaker);
+    this.shadows = new ShadowSystem(this.mats, this.shadowQuality, this.worldShadows, this.renderer.textureMaker);
     // Same rule as the line above, and it binds a texture every cel program
     // DECLARES: the frame's textures list `bodyShadowMap`, and a frame with
     // one unbound draws nothing. So this exists before the first frame does,
@@ -2096,7 +2050,7 @@ export class Game {
     // our renderer's in every state, a pass of its own (`BABYLON_EXIT.md`
     // X4.1c), and its pipeline is asked here, once for the session.
     this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
-    this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality, this.bodyShadowMap);
+    this.bodyShadows = new BodyShadows(this.mats, this.shadowQuality, this.bodyShadowMap);
     // Every body, ours in every round (`BABYLON_EXIT.md` X4.1d): each side's
     // kit built here, once, and its six pipelines (three plain, three behind
     // the fade's screen door) asked for the session, so the building card's
@@ -2216,43 +2170,6 @@ export class Game {
     this.input = new InputManager(canvas);
     this.cameraSys = new CameraSystem(this.sceneFrame, this.surface);
 
-    // **Draw the opaque queue front to back**, which Babylon does not do on its
-    // own: its default is `PainterSortCompare`, grouping by material id and
-    // leaving depth to chance. That is the right default for a scene whose cost
-    // is state changes and the wrong one for this scene, whose cost is PIXELS —
-    // a street of towers occludes most of itself, and a fragment is only
-    // rejected before it shades if whatever stands in front of it was drawn
-    // first. Ordering is the whole of the win; nothing about the picture moves,
-    // because opaque draws are order-independent through the depth buffer.
-    //
-    // It made `backed` glazing pay (see `CelMaterialFactory.getGlass`) while
-    // this queue held it: a curtain wall only saves the shading of the shaft
-    // behind it if the pane is down first. A round's panes are our renderer's
-    // since `BABYLON_EXIT.md` X4.6e, drawn nearest first AHEAD of everything of
-    // ours (`GlassDraw`, `glassPull`), and no build makes a pane MESH since
-    // the map editor's went (`BABYLON_EXIT.md` X5.3c).
-    //
-    // The comparator is ours rather than `RenderingGroup.frontToBackSortCompare`
-    // because that one reads `subMesh._distanceToCamera`, which Babylon fills in
-    // only on the transparent path. Cost is two bounding-sphere reads per
-    // comparison over a couple of hundred submeshes — microseconds, against the
-    // fill it is buying back.
-    //
-    // **The map's BLOCKS are no longer in this queue** (`BABYLON_EXIT.md`
-    // X3.3), **nor is its LANDFORM** (X3.5), **nor its emissive PALETTE**
-    // (X3.6e): our renderer draws them AFTER all of it, ahead of the group's
-    // alpha-tested meshes — the palette first, so a lit window ties with its
-    // own wall as it did when this queue drew it, then the blocks and the
-    // scatter and the floor, the rim and the roads after them
-    // (`render/Renderer.ts`, `"beforeAlphaTest"`) — so the floor behind a
-    // building fails the depth test before it shades. What this sort still
-    // orders is what Babylon draws — in any state, since X5.3c, nothing — and
-    // what is left of the cost of ours coming after it is `FINDINGS.md` 61's.
-    this.scene.setRenderingOrder(0, (a, b) => {
-      const eye = this.sceneFrame.activeCamera?.globalPosition;
-      if (!eye) return 0;
-      return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
-    });
     // **ONE depth image for the frame** — the world and the gun together —
     // which every post stage reads (`FrameTargets.depth`, our renderer's), and
     // which the glow's mask occludes the bloom against. The viewmodel had a rendering group of its
@@ -2324,8 +2241,8 @@ export class Game {
     // starts by the post chain's pass owner, `ChainPasses` (ours since X5.4f),
     // which begins every pass of the chain after the camera's render, into
     // its pool and the canvas. No Babylon `PostProcess` stands on the camera
-    // since X5.2d, no `outputRenderTarget` since X5.4e, and the scene is
-    // never rendered since X5.4f.
+    // since X5.2d, no `outputRenderTarget` since X5.4e, and there is no
+    // scene since X6.1h.
     const chainPasses = new ChainPasses(
       this.renderer.device,
       this.sceneFrame.host,
@@ -2366,26 +2283,13 @@ export class Game {
     // lines round its lamp rather than under them, and before FXAA and
     // everything else, which treat it as part of the picture.
     this.celInk = new CelInk(this.cameraSys.camera, glow, targets);
-    // The cel shader outputs display-ready colours, and Babylon's image
-    // processing would re-apply gamma and wash them out — so it is OFF, as
-    // `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` left it
-    // until X5.2c2 deleted the pipeline (its only pass was FXAA). Only a
-    // Babylon material reads this, and none has drawn in any state since the
-    // map editor went (`BABYLON_EXIT.md` X5.3c): every draw is ours.
-    this.scene.imageProcessingConfiguration.isEnabled = false;
-    // The scene clears NOTHING (`BABYLON_EXIT.md` X5.4e): the frame's clear —
-    // its colour to the scene's clear colour and its depth, then its depth
-    // again — is our renderer's own opening pass and main pass
-    // (`Renderer.end`), where it was the scene's clear of the camera's output
-    // target under `autoClear` (X5.2d to X5.4e). With no output target on the
-    // camera the scene's only clear would be one of the CANVAS, at the frame's
-    // first bind, under either flag — a pass of Babylon's that no frame before
-    // this step began — so both are held false. The canvas's boot frames keep
-    // X5.2d's state (no clear: what the swap chain hands over, the owner's
-    // decision, row "X5.2, the boot canvas"), and every frame the chain draws
-    // its last stage overwrites the canvas whole.
-    this.scene.autoClear = false;
-    this.scene.autoClearDepthAndStencil = false;
+    // The frame's clear — its colour to the frame's clear colour and its
+    // depth, then its depth again — is our renderer's own opening pass and
+    // main pass (`Renderer.end`, `BABYLON_EXIT.md` X5.4e), and nothing else
+    // clears. The canvas's boot frames keep X5.2d's state (no clear: what the
+    // swap chain hands over, the owner's decision, row "X5.2, the boot
+    // canvas"), and every frame the chain draws its last stage overwrites the
+    // canvas whole.
     // FXAA: OUR draw since X5.2c2, the post chain's stage after the ink it
     // antialiases (`shaders/Fxaa.ts`).
     this.fxaa = new Fxaa();
@@ -2468,7 +2372,7 @@ export class Game {
     // for (`keyLight`); the shadow map, its matrix and its params reach both
     // shaders off the frame (see `celShadow`).
     this.waterDraw = new WaterDraw(this.renderer);
-    this.water = new WaterSystem(this.scene, this.pending, this.mats, this.waterDraw, this.renderer.textureMaker);
+    this.water = new WaterSystem(this.pending, this.mats, this.waterDraw, this.renderer.textureMaker);
     this.grassDraw = new GrassDraw(this.renderer);
     this.grass = new GrassSystem(this.grassDraw, this.mats);
     // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the
@@ -2894,7 +2798,7 @@ export class Game {
     // The frame under the boot's fade, the sky being undrawn with no map
     // standing (`BABYLON_EXIT.md` X4.5c). Nothing has applied an environment
     // yet, and the menu's photograph is of this same map.
-    applyClearColor(this.scene, this.mapDef.environment);
+    applyClearColor(this.sceneFrame.clearColor, this.mapDef.environment);
     this.applySky();
 
     this.hullRules = {
@@ -5777,7 +5681,7 @@ export class Game {
       environment: this.mapDef.environment,
       fixtures: this.lighting.fixtures,
       applyEnvironment: (env) => {
-        applyEnvironment(this.scene, env, this.mats);
+        applyEnvironment(this.sceneFrame.clearColor, env, this.mats);
         this.celInk.applyEnvironment();
       },
     });
@@ -6607,7 +6511,7 @@ export class Game {
     // and the cel materials the map's meshes are created against read their
     // fog and key light off the uniforms this writes.
     const env = this.mapDef.environment;
-    applyEnvironment(this.scene, env, this.mats);
+    applyEnvironment(this.sceneFrame.clearColor, env, this.mats);
     // The ink fades over the MAP's fog band, so it owes a re-read here and at
     // every other `applyEnvironment` (the viewer's work light) — an ink that
     // kept the previous map's band
@@ -6753,8 +6657,9 @@ export class Game {
    * `camera.position` — for this frame's `n` drawn bodies (`drawBodies`):
    *
    * - each body's segments in the ORDER Babylon's queue drew a rig's meshes:
-   *   group 0's opaque sort (`setRenderingOrder`, nearest first by
-   *   `eyeDistanceSq`, the bounding sphere's centre from that eye) and,
+   *   group 0's opaque sort (`setRenderingOrder`, until `BABYLON_EXIT.md`
+   *   X6.1h: nearest first by the squared distance of the bounding sphere's
+   *   centre from that eye) and,
    *   between two at one distance, the order the meshes were made in, the
    *   kit's — a stable sort, as `Array.prototype.sort` is. What it decides is
    *   which of two segments wins an equal depth, the later (LEQUAL): a visor
@@ -7141,7 +7046,7 @@ export class Game {
    *
    * - each piece's segments in the ORDER Babylon's queue drew a pool's
    *   meshes — `bodyPull`'s sort, off `globalPosition`, for its reason:
-   *   group 0's opaque sort, nearest first by `eyeDistanceSq` and, between
+   *   group 0's opaque sort, nearest first by the squared distance to the bounding sphere's centre and, between
    *   two at one distance, the order the meshes were made in, the kit's,
    *   stable. A segment not drawn goes last;
    * - with `glowOn`, each piece's unlit segment's bloom — `GlowRules.colour`
@@ -7223,7 +7128,7 @@ export class Game {
    * What our renderer PULLS inside the render for this frame's `n` drawn
    * marks (`drawMarks`), where the render has placed the camera: the marks
    * THEMSELVES in the order Babylon's queue drew their meshes — group 0's
-   * opaque sort, nearest first by `eyeDistanceSq` off `globalPosition`, the
+   * opaque sort, nearest first by the squared distance to the bounding sphere's centre off `globalPosition`, the
    * slot order (the order the meshes were made in) breaking a tie, stable —
    * each one's frozen world and kit word written in that order, since two
    * marks overlapping on one wall are coplanar at one bias and the later
@@ -7291,7 +7196,7 @@ export class Game {
    * by hand) passes the frustum test of the mesh's culling strategy, the
    * sphere alone (`inFrustum`, off this render's planes) — a billow is emissive, so the size gate never
    * dropped one; the main pass's draws in group 0's opaque order, nearest
-   * first by `eyeDistanceSq` off `globalPosition`, the batches' own order
+   * first by the squared distance to the bounding sphere's centre off `globalPosition`, the batches' own order
    * (their meshes', the active list's) breaking a tie, stable; each draw its
    * batch's instances in the order they were pushed; and, with `glowOn`, the
    * mask's draws in the active list's order (the mask's queue sorted them by
@@ -7428,7 +7333,7 @@ export class Game {
    * `BABYLON_EXIT.md` X4.6d), where the render has placed the camera — what Babylon
    * did with these meshes on its opaque list, step for step: a surface is drawn when
    * it is kept and its sphere passes the frustum test of the mesh's culling strategy,
-   * the sphere alone (`inPlanes`, off this render's planes); nearest first by `eyeDistanceSq` off `globalPosition`, the order the
+   * the sphere alone (`inPlanes`, off this render's planes); nearest first by the squared distance to the bounding sphere's centre off `globalPosition`, the order the
    * meshes were made in breaking a tie (a sheet's field and band share one sphere),
    * stable. The blades are one key, their field's centre, a patch's own frustum test
    * being `GrassSystem.follow`'s; how an equal key falls BETWEEN the three lists is the
@@ -7537,7 +7442,7 @@ export class Game {
    * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
    * the filed mesh) and the sphere passes the frustum test of the mesh's
    * culling strategy (`inPlanes`); a
-   * BACKED one into group 0's opaque order, nearest first by `eyeDistanceSq`
+   * BACKED one into group 0's opaque order, nearest first by the squared distance to the bounding sphere's centre
    * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
    * at `"beforeAlphaTest"`; a SEE-THROUGH one kept, with its key in the
    * transparent order — Babylon's `_distanceToCamera`, the square root of its
@@ -7723,8 +7628,8 @@ export class Game {
    * by) at identity, its sphere its record's — each kept if its sphere passes
    * the frustum test of the mesh's culling strategy, the sphere alone
    * (`inFrustum`, off this render's planes). A fire is emissive, so the size gate never dropped one. The
-   * main pass's draws in group 0's opaque order, nearest first by
-   * `eyeDistanceSq` off `globalPosition`, the active list's order breaking a
+   * main pass's draws in group 0's opaque order, nearest first by the
+   * squared distance to the bounding sphere's centre off `globalPosition`, the active list's order breaking a
    * tie, stable; and, with `glowOn`, the mask's draws in the active list's
    * order (the mask's queue sorted them by material, and they wore one), a
    * `noGlow` world fire left out — each one's bloom `GlowRules.colour` as
@@ -7878,7 +7783,7 @@ export class Game {
    * What our renderer PULLS inside the render for this frame's `n` drawn
    * pieces of debris (`drawDebris`), where the render has placed the camera:
    * the pieces THEMSELVES in the order Babylon's queue drew their meshes —
-   * group 0's opaque sort, nearest first by `eyeDistanceSq` off
+   * group 0's opaque sort, nearest first by the squared distance to the bounding sphere's centre off
    * `globalPosition` and this frame's world sphere (the bounds a candidate's
    * compute refreshed), the meshes' order — the shards', then the chunks'
    * — breaking a tie, stable — each one's world and kit word written in that
@@ -8019,7 +7924,7 @@ export class Game {
    *   the planes this render computed (`Game.frustumPlanes`);
    * - each hull's segments in the ORDER Babylon's queue drew a hull's meshes —
    *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
-   *   0's opaque sort, nearest first by `eyeDistanceSq` and, between two at one
+   *   0's opaque sort, nearest first by the squared distance to the bounding sphere's centre and, between two at one
    *   distance, the order the meshes were made in, the kit's, stable. A
    *   segment not drawn (culled, dropped by the size gate, a DETAIL segment of
    *   a hull the detail tier refuses — `WorldCulling.keepsDetail`, X4.2c — or
@@ -11422,10 +11327,11 @@ export class Game {
    * **The ENGINE before its three clients, always.** A corpse tested for
    * stillness or a shard aged before its own step would be reading last frame's
    * velocities. And this is now the ONE place the physics world is stepped
-   * anywhere in the client — `scene.physicsEnabled` is false precisely so that
-   * a pause, the deploy map and the menu, all of which render, cannot advance
-   * it, and a second door into the engine would be the thing that quietly
-   * reopened.
+   * anywhere in the client — no frame point steps it (there is no scene to,
+   * since `BABYLON_EXIT.md` X6.1h; `scene.physicsEnabled` was held false until
+   * then) precisely so that a pause, the deploy map and the menu, all of which
+   * render, cannot advance it, and a second door into the engine would be the
+   * thing that quietly reopened.
    *
    * **The glass owes this frame nothing, and it used to.** A broken pane left
    * seven flow fields to sweep and they were drained here one per frame, which

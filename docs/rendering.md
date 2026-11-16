@@ -1382,14 +1382,18 @@ shoulder — `col` goes through it and `glassBackdrop * light` does not — plus
 geometry that was faintly visible through the glass and is now occluded.
 Neither has been confirmed.
 
-**It pays only if the pane is drawn FIRST**, and Babylon will not do that on its
-own: its default opaque sort is `PainterSortCompare`, which groups by material
-id and leaves depth to chance. `Game`'s constructor installs a front-to-back
-comparator with `scene.setRenderingOrder(0, …)` — its own rather than
-`RenderingGroup.frontToBackSortCompare`, which reads a `_distanceToCamera` that
-Babylon fills in only on the transparent path. The sort is a visual no-op by
-construction (opaque draws are order-independent through the depth buffer) and
-worth having on its own: a street of towers occludes most of itself.
+**It pays only if the pane is drawn FIRST**, and Babylon would not do that on
+its own: its default opaque sort is `PainterSortCompare`, which groups by
+material id and leaves depth to chance. `Game`'s constructor installed a
+front-to-back comparator with `scene.setRenderingOrder(0, …)` — its own rather
+than `RenderingGroup.frontToBackSortCompare`, which reads a `_distanceToCamera`
+that Babylon fills in only on the transparent path — while Babylon's queue drew
+anything (nothing since X5.3c; the comparator went with the scene at X6.1h).
+Our renderer's backed panes are drawn nearest first by its own pull
+(`Game.glassPull`), ahead of everything else of ours. The sort is a visual
+no-op by construction (opaque draws are order-independent through the depth
+buffer) and worth having on its own: a street of towers occludes most of
+itself.
 
 **Memoising it — one bounding-sphere read per submesh per frame, stamped on the
 frame id and the eye — changes nothing.** A/B'd in one session, three paired
@@ -2744,10 +2748,9 @@ sparks' blooms go into the glow's mask in that same order, behind the moon's
   is read where the bake left it, sampled as `wrapCubeTexture`'s view sampled it; no cube is
   wrapped for Babylon any more (the default cube's view, for the map editor's build, went at X5.3d).
 - **The `backed` panes write depth and are not in the run**: they are drawn nearest first by
-  `eyeDistanceSq`, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
+  the squared distance to their sphere's centre, AHEAD of everything else of ours at `"beforeAlphaTest"` — the one run, the
   palette, the blocks — where Babylon's opaque list drew them, which is the whole of what makes
-  a backed pane pay. **Babylon's opaque list is EMPTY in a round now**, and so is its
-  transparent list.
+  a backed pane pay. **Babylon has no list at all** (no scene, since X6.1h).
 - **A break writes into our buffer** (`GlassDraw.collapse`, `GlassFx`): a block that holds a
   breakable pane keeps a CPU copy of its positions, and only it.
 - **A fade is one draw of one instance of its kit** (`entities/fades.ts`): a spark, a disc, a
@@ -2805,8 +2808,9 @@ buffer over one storage array. What it keeps, and what proved each:
   decoded it (the file's bytes in an untyped `Blob`, `createImageBitmap` unpremultiplied and unconverted),
   uploaded flipped, its nine levels Babylon's filter, its sampler Babylon's (repeat, linear, anisotropy
   4); until it decodes it binds what Babylon bound for a texture not ready (the engine's empty texel,
-  `NEAREST`, wrapped as the foam is), and it is the scene's PENDING DATA meanwhile, as the `Texture` was,
-  so `scene.isReady()` waits for it. The MIRROR
+  `NEAREST`, wrapped as the foam is), and it is the page's PENDING DATA meanwhile
+  (`core/PendingData.ts`, `Game.pending`; the scene's, as the `Texture` was, until X6.1h),
+  so the page's readiness waits for it as `scene.isReady()` did. The MIRROR
   is the bake's cube, read where it lies through a view over all six faces and every level; the
   water's pool makes no wrapped view (and `wrapCubeTexture` itself went at X5.3d with its last
   reader, the map editor's build's glazing). **Both samplers of ours are stated as Babylon's bind built them, measured at the BEFORE**: the
@@ -3459,18 +3463,23 @@ is the preprocessor eating code, this one is JavaScript eating the shader.
 ## Our renderer's frame: the game's, on the game's device
 
 **The FRAME is the game's since `BABYLON_EXIT.md` X5.4f** (`core/SceneFrame.ts`):
-the scene is never rendered. `Game.tick` calls `sceneFrame.render()` where it
+the scene was never rendered, and since X6.1h there is no scene at all (nor
+the `NullEngine` it stood on). `Game.tick` calls `sceneFrame.render()` where it
 called `scene.render()`, and it does what that did for this game, in its
 order, read off Babylon 9.28's `Scene._renderFrame` and `_renderForCamera` and
 the frame's logs (`plans/webgpu-ref/post.mjs`, `readers.mjs`): the frame id;
 the scene's animations — the animation RATIO the particle fields' clock reads,
 `Scene.animate`'s arithmetic PORTED over the loop's delta since X5.4g
 (`SceneFrame.animationRatio`; `scene.animate()`, public API, until then, which
-read Babylon's `getDeltaTime`); the active camera's `update()` (the frame's
+read Babylon's `getDeltaTime`) — `Scene.MinDeltaTime`/`MaxDeltaTime` and the
+non-lock-step branch constants since X6.1h, the constant-delta switch the
+frame's own (`useConstantAnimationDeltaTime`, the scene's flag of that name,
+which the probes write); the active camera's `update()` (the frame's
 camera, `SceneFrame.activeCamera`, ours since X6.1f — see below); `onBeforeRenderObservable` (the frame
 sized, `ChainPasses.prepareFrame`); `onBeforeRenderTargetsRenderObservable`
 (the reflection bake's share); the render id's first advance (under
-`renderTargetsEnabled`); then the camera's render — the second advance,
+`renderTargetsEnabled`, which the scene set true and nothing wrote: a constant
+since X6.1h); then the camera's render — the second advance,
 `updateTransformMatrix()` (the view, the projection, the frame's transform
 matrix and its six frustum planes — `scene.updateTransformMatrix()`, public
 API, until X6.1f, and since then `SceneFrame`'s port of it — Babylon's own
@@ -3482,10 +3491,20 @@ renderer's `begin` and `end`, the glow, and the profiler's `drawWorld` and
 `glow`, which the frame brackets itself since X5.4g), and
 `onAfterCameraRenderObservable` (the post chain); and last
 `onAfterRenderObservable` and the canvas's pass if nothing began one. Each
-point is a Babylon `Observable` of the FRAME's own, named for the scene's it
-replaces, so every observer behaves as it did; nothing raises the scene's. What
+point is an `Observable` of the FRAME's own, named for the scene's it
+replaces — Babylon's own class until X6.1h, and since then its PORT, as
+written (`core/Observable.ts`: the order, `insertFirst`, the removal deferred
+to a `setTimeout` and skipped by a notification in progress, `addOnce`, the
+mask) — so every observer behaves as it did; there is no scene to raise
+anything. **The frame's clear colour is the frame's** (`SceneFrame.clearColor`,
+`scene.clearColor` until X6.1h: Babylon's default slate until the environment
+writes it, `applyClearColor`), and **the page's readiness is ours**
+(`core/PendingData.ts`, `Game.pending`: the scene's pending-data list ported;
+`isReady` what `scene.isReady()` answered for this game, the list empty —
+proven equal on every frame's begin, draw and submit at X6.1h's hook, where
+both stood). What
 `scene.render()` did and this does not is what nothing in a round reached —
-the readiness check, transient components, the per-frame counters
+the readiness check (nothing in a frame asks the page's), transient components, the per-frame counters
 (`SceneInstrumentation`'s, which therefore stopped moving and were retired with
 the profiler's report version 38 at X5.4g), the component stages,
 the custom and camera render targets, Babylon's binds and clears, the
@@ -3530,11 +3549,13 @@ Babylon's engine — the tab index, a press and a release default-prevented and
 focusing, the pointer captured, and the release Babylon made for a press that
 ended without one (a blur with it held, a cancel), which focused the canvas
 too — is the surface's too (`adoptInput`).
-**Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
-`NullEngine` until X6.1 (`core/SceneEngine.ts`, row "X5.4, Babylon's engine"),
-told WebGPU's depth range (`isNDCHalfZRange`, which `Vector3.ProjectToRef`
-reads off the last engine built too) and the surface's size, so the camera's
-projection was Babylon's to the bit (the camera log). **Since X6.1f the CAMERA
+**Babylon's `WebGPUEngine` is not constructed**: the scene stood on a
+`NullEngine` from X5.4h until X6.1h deleted both (`core/SceneEngine.ts`, row
+"X5.4, Babylon's engine"), told WebGPU's depth range (`isNDCHalfZRange`, which
+`Vector3.ProjectToRef` read off the last engine built too) and the surface's
+size, so the camera's projection was Babylon's to the bit (the camera log);
+the shadow maps' light matrices read that depth range off it until then, and
+a constant since (`HALF_Z_RANGE`, `core/shadowWindow.ts`). **Since X6.1f the CAMERA
 is ours** (`core/FreeCamera.ts`: Babylon 9.28's `FreeCamera`, `TargetCamera`
 and `Camera` ported as written onto `src/math/` — `setTarget`, the view and
 the roll's up vector, `PerspectiveFovLH` at WebGPU's depth range and the
@@ -3545,11 +3566,10 @@ and the orthographic modes, which this game never reached, are named in its
 header and not ported), it is the FRAME's active camera
 (`SceneFrame.activeCamera`, which `CameraSystem` sets) and the frame computes
 its transform and planes (`SceneFrame.updateTransformMatrix`,
-`Frustum.GetPlanesToRef` on `src/math/plane.ts`), so the scene holds no camera
-and computes neither: **a reader of the view, the projection, the transform or
-the planes asks the frame** (`SceneFrame.getViewMatrix`/`getProjectionMatrix`/
-`getTransformMatrix`, `Game.frustumPlanes`), never the scene. The scene's engine
-now serves nothing of the camera's. Gone with the engine: its
+`Frustum.GetPlanesToRef` on `src/math/plane.ts`): **a reader of the view, the
+projection, the transform or the planes asks the frame**
+(`SceneFrame.getViewMatrix`/`getProjectionMatrix`/`getTransformMatrix`,
+`Game.frustumPlanes`). Gone with the `WebGPUEngine` (X5.4h): its
 main depth (the canvas pass's is `ChainPasses`'), its resize frames (a flush,
 a pass on the swap chain's texture that loaded it and cleared that depth, a
 submit), its clear quad, and the shadow maps' wrapped views (`ShadowBindings`
@@ -3606,7 +3626,7 @@ records the passes into the frame's encoder (Babylon's upload encoder, item 9,
 until X5.4g made it ours, `render/FrameSubmit.ts`), after the prepares, each with the load ops and clear values Babylon began it with, read
 off the device at the parent (`plans/webgpu-ref/post.mjs`' whole-frame log):
 at the draw phase's END, the frame's OPENING pass — its colour cleared to the
-scene's clear colour (`FrameHost.clearColor`), its depth to 1, what
+frame's clear colour (`FrameHost.clearColor`; the scene's until X6.1h), its depth to 1, what
 `Scene.render`'s first bind of the camera's output target cleared — and the
 MAIN pass, the colour loaded and the depth cleared again, as the camera's
 render bound the target, both every frame the camera draws, whatever is to
@@ -3617,13 +3637,14 @@ since X5.4f and recorded after these in the same encoder (`ChainPasses`,
 below), reads them; `gpu.frame` and `present` kept Babylon's meaning, every
 pass inside its timer and its one submit and Babylon's RENDER encoder,
 submitted after, holding nothing — until X5.4g made the encoder, the submit
-and both measurements ours (`docs/profiling.md`). **So the scene clears nothing**: `Game` holds `scene.autoClear` AND
-`autoClearDepthAndStencil` false, and the camera has no `outputRenderTarget`
-(X5.2d's field, deleted) — with no output target, Babylon's only clear would be
-one of the CANVAS at the frame's first bind, a pass no frame before had; the
-camera's own render binds nothing (`Scene.render` hands it `bindFrameBuffer` =
-"has an output target"). The canvas's boot frames keep X5.2d's state (what the
-swap chain hands over).
+and both measurements ours (`docs/profiling.md`). **So nothing clears but our
+passes**: `Game` held `scene.autoClear` AND `autoClearDepthAndStencil` false
+from X5.4e until X6.1h deleted the scene, and the camera has no
+`outputRenderTarget` (X5.2d's field, deleted) — with no output target,
+Babylon's only clear would have been one of the CANVAS at the frame's first
+bind, a pass no frame before had; the camera's own render bound nothing
+(`Scene.render` handed it `bindFrameBuffer` = "has an output target"). The
+canvas's boot frames keep X5.2d's state (what the swap chain hands over).
 
 **A draw into a pass of BABYLON's was QUEUED into Babylon's order, never
 issued** — the main pass, the mask and the blur until X5.4e, the post chain's
@@ -4836,9 +4857,10 @@ canvas, whether it is flipped, whether it is mipped and how it is sampled.
 - **A picture is made ONCE** (`picture` keeps one texture a `Picture`), and a
   texture released (`release`: the sky's per map, the puff with its rings) is
   destroyed after the next frame's submit, never inside a frame that may bind it.
-- **The foam is the scene's pending data while it decodes**, as Babylon's
-  `Texture` was, so `scene.isReady()` — what the bank and `npm run shots` read
-  a frame by — waits for it exactly as it did.
+- **The foam is the page's pending data while it decodes** (`Game.pending`,
+  `core/PendingData.ts`; the scene's, as Babylon's `Texture` was, until X6.1h),
+  so the page's readiness — what the bank and `npm run shots` read a frame by,
+  `scene.isReady()` until then — waits for it exactly as it did.
 
 ## The bodies, ours: every soldier an instance of its kit
 
@@ -4938,7 +4960,7 @@ compiles nothing. Four consequences are decisions, not accidents:
   a shadow map would be a pattern in its texels, not the screen's.
 
 **A draw is a RANK, and the rank is the load-bearing part.** Babylon's group-0
-opaque queue is sorted nearest-first (`Game`'s `setRenderingOrder`, the
+opaque queue was sorted nearest-first (`Game`'s `setRenderingOrder` until X6.1h, the
 bounding sphere's centre off `camera.globalPosition`), so a rig's fourteen
 meshes went down nearest first — and under LEQUAL the LATER of two equal
 depths wins. At 250 m the depth buffer cannot tell a visor 3 cm proud of the
@@ -5385,7 +5407,7 @@ opaque draws through the depth buffer differ only where two depths tie.
   marks overlapping on one wall are coplanar at one bias, where the LATER
   wins an equal depth (LEQUAL). So `Game.markPull` orders the marks
   themselves inside the render, as Babylon's queue did: nearest first by
-  `eyeDistanceSq` off `globalPosition`, the slot order (the meshes' order)
+  the squared distance to the sphere's centre off `globalPosition`, the slot order (the meshes' order)
   breaking a tie, stable. A kit is a shape in a paint (`MARK_SHAPES` times
   `MARK_PAINTS`), the paint being a slot in the vertices; the pipeline carries
   `MARK_DEPTH_UNITS` as its `depthBias`, as the material's `zOffsetUnits` was.
@@ -6111,12 +6133,12 @@ all in the counter this finding is named after. Not chased.
 
 ## Rendering constraints that look like bugs if you undo them
 
-- `scene.imageProcessingConfiguration.isEnabled` must stay `false` (`Game` states it, where
-  `DefaultRenderingPipeline`'s `imageProcessingEnabled = false` set it until X5.2c2
-  deleted the pipeline; only a Babylon material reads it, and none has drawn in any state since
-  X5.3c deleted the map editor's build): the cel shader outputs
-  display-ready colors and Babylon's image-processing pass re-gammas them and washes
-  the palette out. That is also why the vignette/grain/aberration/damage flash grade is
+- **No image-processing pass stands anywhere** — Babylon's re-gammas the cel shader's
+  display-ready colours and washes the palette out. `Game` held
+  `scene.imageProcessingConfiguration.isEnabled` false (`DefaultRenderingPipeline`'s
+  `imageProcessingEnabled = false` until X5.2c2 deleted the pipeline) until X6.1h deleted
+  the scene; only a Babylon material read it, and none had drawn since X5.3c. That is
+  also why the vignette/grain/aberration/damage flash grade is
   hand-written (`src/shaders/PaperGrain.ts`).
 - **The grade's colour is a VIBRANCE and a LUMINANCE curve, never a saturation or a
   per-channel curve** (`CONFIG.graphics.vivid`, `contrast`, each restatable per map
@@ -7520,7 +7542,8 @@ of empty dome.
   it (`VERIFYING.md` has the hunt). Every `DynamicTexture` was uploaded in its
   own constructor by the end; what stands for one now (a `Picture`) is uploaded by
   the `TextureMaker.picture` call that makes its texture, and the one texture
-  that holds `scene.isReady()` while it loads is the water's foam, whose pending
+  that holds the page's readiness while it loads (`Game.pending`, `scene.isReady()`
+  until X6.1h) is the water's foam, whose pending
   data `TextureMaker.image`'s `whenReady` releases on every path, a failed upload
   included.
 - **Sky textures are uploaded UNFLIPPED (`flipY: false`, `update(false)` while they

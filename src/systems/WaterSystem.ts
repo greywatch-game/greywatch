@@ -12,11 +12,10 @@
  * The one tiling texture left (the foam mask) is loaded once and reused across
  * rebuilds — OUR texture since `BABYLON_EXIT.md` X5.4d, decoded, flipped and
  * mipped as Babylon's `Texture` did it (`TextureMaker.image`), and held as
- * the scene's PENDING DATA while it decodes, as that `Texture` held it, so
- * `scene.isReady()` waits for it as it did (what the bank and `npm run shots`
- * read a frame by) — and as the GAME's (`core/PendingData.ts`, `Game.pending`,
- * `BABYLON_EXIT.md` X6.1h's hook), told in the same callback, so the two
- * readinesses answer alike until the scene goes.
+ * the page's PENDING DATA while it decodes (`core/PendingData.ts`,
+ * `Game.pending`: the scene's list until `BABYLON_EXIT.md` X6.1h, as that
+ * `Texture` held it), so the page's readiness waits for it as
+ * `scene.isReady()` did (what the bank and `npm run shots` read a frame by).
  * A rect without its own `y` floats ankle-deep above the TERRAIN under it, not
  * above absolute zero — that is what lets a pool sit recessed in a dug bed.
  * The BED-DEPTH map is per body and per build — it is baked against the
@@ -27,8 +26,6 @@
  * cube every body must be born holding.
  * Contract: `docs/rendering.md`, "The water".
  */
-import { type Scene } from "@babylonjs/core";
-
 import { CONFIG } from "../config";
 import { Color3, Vector3, type Vector3Like } from "../math";
 import { anisotropic, type MadeTexture, type TextureMaker } from "../render/TextureMaker";
@@ -184,8 +181,7 @@ export class WaterSystem {
   private washSites: Float32Array | null = null;
 
   constructor(
-    private scene: Scene,
-    /** The game's readiness (`core/PendingData.ts`): the foam is waited on there too, beside the scene's. */
+    /** The page's readiness (`core/PendingData.ts`, `Game.pending`): the foam is waited on there while it decodes. */
     private readonly pending: PendingData,
     private mats: CelMaterialFactory,
     private draw: WaterDraw,
@@ -226,14 +222,11 @@ export class WaterSystem {
       // the surface it used to be needed for is summed rather than sampled.
       // (What Babylon's sampler cache made of a mipped `Texture` at trilinear
       // still carried its default anisotropy of 4, and so does this.)
-      const scene = this.scene;
       const pending = this.pending;
       const foam = this.textures.image("water-foam", foamUrl, anisotropic("repeat", "repeat", 4), (error) => {
-        scene.removePendingData(foam);
         pending.removePendingData(foam);
         if (error) console.error("water: the foam mask did not load", error);
       });
-      scene.addPendingData(foam);
       pending.addPendingData(foam);
       this.foam = foam;
     }

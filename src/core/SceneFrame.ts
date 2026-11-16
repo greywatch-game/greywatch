@@ -1,15 +1,20 @@
 /**
  * SceneFrame.ts — the FRAME as OURS (`BABYLON_EXIT.md` X5.4f): what Babylon's
  * `scene.render()` did for this game, done in its order by the game, so the
- * scene is never rendered. `Game.tick` calls `render` where it called
- * `scene.render()`, once a frame in every state.
- * Owns: `SceneFrame` — the frame's index (what `scene.getFrameId()` answered),
- * its six points as OBSERVABLES of its own, each named for the scene's
+ * scene was never rendered — and since `BABYLON_EXIT.md` X6.1h there is no
+ * scene at all: this is the frame without one. `Game.tick` calls `render`
+ * where it called `scene.render()`, once a frame in every state.
+ * Owns: `SceneFrame` — the frame's index (what `scene.getFrameId()` answered,
+ * its own count since X6.1h), its six points as OBSERVABLES of its own
+ * (`core/Observable.ts`, Babylon's ported), each named for the scene's
  * observable it replaces and raised where `Scene._renderFrame` and
  * `Scene._renderForCamera` raised that one (Babylon 9.28, `scene.pure.js`
- * 4492-4612 and 4055-4198), and the `FrameHost` our renderer is handed
+ * 4492-4612 and 4055-4198), the frame's CLEAR COLOUR (`clearColor`, what
+ * `scene.clearColor` was: the environment's, `world/environment.ts`), the
+ * animation ratio's constant-delta switch (`useConstantAnimationDeltaTime`,
+ * the scene's flag of that name), and the `FrameHost` our renderer is handed
  * (`host`): the draw phase this frame tells, the frame's camera matrix and
- * the scene's clear colour, the game's own device (`main.ts`, `BABYLON_EXIT.md` X5.4h),
+ * its clear colour, the game's own device (`main.ts`, `BABYLON_EXIT.md` X5.4h),
  * and the encoder and the end of frame of the game's own loop
  * (`core/FrameLoop.ts`, X5.4g); the
  * particle fields' ANIMATION RATIO (`animationRatio`, what
@@ -28,15 +33,18 @@
  *   steps that did anything in this game are kept (the list below): the frame
  *   id; the scene's animations — `Scene.animate`'s arithmetic PORTED since
  *   X5.4g (`animationRatio`: the loop's delta, `FrameClock.getDeltaTime()`,
- *   clamped to `Scene.MinDeltaTime`..`MaxDeltaTime` and scaled by 60/1000, or
- *   16 ms under `scene.useConstantAnimationDeltaTime`, its non-lock-step
- *   branch — the engine is never deterministic-lock-step here), the ratio the
+ *   clamped to `Scene.MinDeltaTime`..`MaxDeltaTime` (1 and 1000 ms, constants
+ *   here since X6.1h) and scaled by 60/1000, or 16 ms under
+ *   `useConstantAnimationDeltaTime` (the scene's flag, the frame's own since
+ *   X6.1h), its non-lock-step branch — the frame is never
+ *   deterministic-lock-step, a constant too — the ratio the
  *   particle fields' clock reads (`ParticleDraw`), because the delta
  *   `scene.animate()` read was Babylon's `getDeltaTime()`, which only Babylon's
  *   own frame sampled; the active camera's update (`camera.update()`, ours
  *   since X6.1f); `onBeforeRenderObservable`; `onBeforeRenderTargetsRenderObservable`
  *   (the frame's); the render id's FIRST advance, under
- *   `scene.renderTargetsEnabled`, where `_renderFrame` moved Babylon's after
+ *   `scene.renderTargetsEnabled` (true, and written by nothing: a constant
+ *   since X6.1h), where `_renderFrame` moved Babylon's after
  *   its custom render targets' block; then the camera's render: the render
  *   id's SECOND advance, `updateTransformMatrix()` (the view, the projection,
  *   the frame's transform matrix and its frustum, computed as
@@ -58,10 +66,12 @@
  *   off the scene's observables until this step), and the evaluation is told
  *   between the second advance and the camera's render targets, so the
  *   viewmodel's readers answer as Babylon's did, bit for bit.
- * - **An observable here is BABYLON's `Observable`**, so an observer added,
- *   removed, inserted first or called once behaves exactly as it did on the
- *   scene's (the harness's frame adapter and every probe rest on that), and
- *   each module hangs on the point here in the order it hung on the scene's.
+ * - **An observable here is Babylon's `Observable` PORTED as written**
+ *   (`core/Observable.ts`, X6.1h; Babylon's own until then), so an observer
+ *   added, removed, inserted first or called once behaves exactly as it did
+ *   on the scene's (the harness's frame adapter and every probe rest on
+ *   that), and each module hangs on the point here in the order it hung on
+ *   the scene's.
  * - **`drawWorld` and `glow` are bracketed HERE** (X5.4g; `FrameProfile
  *   .hookRender` hung them off these points until then): `drawWorld` opens
  *   once the draw phase's opening is told (after our renderer's `begin`,
@@ -74,15 +84,16 @@
  *   round of this game reached it (measured at X5.4f's parent: no observer,
  *   no stage, no target, no mesh): `scene.animate()` itself since X5.4g, its
  *   ratio ported above — `_animate` steps no `Animatable` (none exists) and
- *   nothing observes `onAfterAnimationsObservable`, physics being off; the readiness check `_renderFrame` opened
- *   with (`executeWhenReady`'s own timer still runs), the transient
+ *   nothing observed `onAfterAnimationsObservable`, physics being off; the
+ *   readiness check `_renderFrame` opened with (the page's readiness is
+ *   `core/PendingData.ts`, which nothing in a frame asks), the transient
  *   components, the per-frame counters (`SceneInstrumentation`'s, which the
  *   profiler reads and which therefore stop moving: an instrument's change,
  *   retired with them at X5.4g), the cached material, the action manager, the
  *   component stages, rig cameras, the custom render targets, the camera's
  *   viewport on the engine and every bind and clear of Babylon's (the scene
- *   clears nothing: `autoClear` and `autoClearDepthAndStencil` are false and
- *   no target is bound), the active-mesh walk (`WorldCulling` hands it no
+ *   cleared nothing, `autoClear` and `autoClearDepthAndStencil` held false
+ *   from X5.4e until it went), the active-mesh walk (`WorldCulling` hands it no
  *   candidates since this step: no Babylon mesh is drawn), particle systems
  *   (none is Babylon's), the rendering manager (Babylon draws nothing), the
  *   post-process manager (no Babylon `PostProcess`), the pointer pick,
@@ -94,8 +105,8 @@
  * Contract: `docs/game.md` ("What a frame owes") and `docs/rendering.md`
  * ("Our renderer's frame").
  */
-import { Observable, Scene } from "@babylonjs/core";
-import { Frustum, Matrix, type Plane } from "../math";
+import { Color4, Frustum, Matrix, type Plane } from "../math";
+import { Observable } from "./Observable";
 import type { FreeCamera } from "./FreeCamera";
 import type { DrawPhaseHooks, FrameHost } from "../render/frameHost";
 import type { FrameLoop } from "./FrameLoop";
@@ -121,9 +132,33 @@ export interface GlowSpans {
   readonly onAfterWorkObservable: Observable<void>;
 }
 
+/** `Scene.MinDeltaTime` (Babylon 9.28, `scene.pure.js` 5566): the shortest delta the animation ratio is taken over, in ms. */
+const MIN_DELTA_TIME = 1.0;
+/** `Scene.MaxDeltaTime` (`scene.pure.js` 5571): the longest, in ms. */
+const MAX_DELTA_TIME = 1000.0;
+/**
+ * `scene.renderTargetsEnabled`, which the scene set true (`scene.pure.js`
+ * 1244) and nothing in the game wrote: the frame's render id advances after
+ * its (empty) custom render targets' block.
+ */
+const RENDER_TARGETS_ENABLED = true;
+
 export class SceneFrame {
   /** The frame's index: what `scene.getFrameId()` answered, moved once a `render`. */
   index = 0;
+  /**
+   * The frame's CLEAR COLOUR — what `scene.clearColor` was: Babylon's default
+   * slate (`scene.pure.js` 693) until the environment writes it
+   * (`world/environment.ts`' `applyClearColor`, the one write), and what our
+   * passes clear to (`host.clearColor`).
+   */
+  readonly clearColor = new Color4(0.2, 0.2, 0.3, 1.0);
+  /**
+   * `scene.useConstantAnimationDeltaTime` (false, as the scene set it, and
+   * nothing in the game writes it): the animation ratio taken over a constant
+   * 16 ms. The probes' switch (the frame adapter's `constantDelta`).
+   */
+  useConstantAnimationDeltaTime = false;
   /** The frame's camera: what `scene.activeCamera` was — `CameraSystem` sets it, once. */
   activeCamera: FreeCamera | null = null;
   /**
@@ -150,7 +185,7 @@ export class SceneFrame {
   readonly onAfterCameraRenderObservable = new Observable<void>();
   /** The frame drawn: `Scene.onAfterRenderObservable`'s point. */
   readonly onAfterRenderObservable = new Observable<void>();
-  /** Our renderer's host: the draw phase told here, the matrix the frame's (`updateTransformMatrix`), the clear colour the scene's, the device and the encoder the game's. */
+  /** Our renderer's host: the draw phase told here, the matrix the frame's (`updateTransformMatrix`), the clear colour the frame's (`clearColor`), the device and the encoder the game's. */
   readonly host: FrameHost;
   /**
    * The particle fields' clock this frame — what `scene.getAnimationRatio()`
@@ -164,7 +199,6 @@ export class SceneFrame {
   private spans: FrameSpans | null = null;
 
   constructor(
-    private readonly scene: Scene,
     private readonly ids: RenderId,
     /** The game's device (`main.ts`). */
     device: GPUDevice,
@@ -184,9 +218,9 @@ export class SceneFrame {
       // The frame's transform matrix: what `updateTransformMatrix` computed
       // this frame, read inside the draw phase.
       viewProjection: (out) => out.set(frame.transformMatrix.m),
-      // The scene's clear colour, public API: the value Babylon's own clears read.
+      // The frame's clear colour (`clearColor`): what the environment wrote.
       clearColor: (out) => {
-        const c = scene.clearColor;
+        const c = frame.clearColor;
         out.r = c.r;
         out.g = c.g;
         out.b = c.b;
@@ -273,13 +307,13 @@ export class SceneFrame {
 
   /** The frame, in `scene.render()`'s order (the header). */
   render(): void {
-    const scene = this.scene;
     this.index++;
-    // `_renderFrame`'s animations, `Scene.animate`'s non-lock-step branch:
-    // the animation ratio (the particle fields' clock) off the loop's delta.
-    const delta = scene.useConstantAnimationDeltaTime
+    // `_renderFrame`'s animations, `Scene.animate`'s non-lock-step branch
+    // (the frame is never deterministic-lock-step): the animation ratio (the
+    // particle fields' clock) off the loop's delta.
+    const delta = this.useConstantAnimationDeltaTime
       ? 16
-      : Math.max(Scene.MinDeltaTime, Math.min(this.loop.clock.getDeltaTime(), Scene.MaxDeltaTime));
+      : Math.max(MIN_DELTA_TIME, Math.min(this.loop.clock.getDeltaTime(), MAX_DELTA_TIME));
     this.animationRatio = delta * (60.0 / 1000.0);
     const camera = this.activeCamera;
     // `_renderFrame`'s camera update (no rig cameras, no `activeCameras`).
@@ -287,7 +321,7 @@ export class SceneFrame {
     this.onBeforeRenderObservable.notifyObservers();
     this.onBeforeRenderTargetsRenderObservable.notifyObservers();
     // `_renderFrame`'s advance, after its (empty) custom render targets.
-    if (scene.renderTargetsEnabled) this.ids.advance();
+    if (RENDER_TARGETS_ENABLED) this.ids.advance();
     if (!camera) throw new Error("No camera defined");
     // The camera's render (`_renderForCamera`): its advance, its matrices,
     // its evaluation, its render targets' point, its draw phase, its end.

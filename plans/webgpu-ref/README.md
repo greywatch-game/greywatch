@@ -80,7 +80,8 @@ does.
 
 **OUR arm since X5.4f, picked first** (`Game.sceneFrame`, `src/core/SceneFrame.ts`:
 the scene is never rendered). `drawn`/`onDrawn`, `beforeDraw`/`onBeforeDraw` and
-the index are answered off our frame's own points (each a Babylon `Observable`
+the index are answered off our frame's own points (each an `Observable` —
+Babylon's until X6.1h, its port as written since, `src/core/Observable.ts` —
 named for the scene's it replaces, raised where Babylon raised that one), the
 canvas pass's depth off our pass owner (`Game.chainPasses`); the engine's
 questions (begin, submit, the device, the encoders, the delta) stay Babylon's

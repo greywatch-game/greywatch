@@ -320,7 +320,7 @@ export class Renderer {
    * The frame's two passes and the mask's, as Babylon began them (X5.4e's
    * BEFORE, `plans/webgpu-ref/post.mjs`), each a descriptor made once and
    * re-pointed at its targets' views every frame. The OPENING pass clears the
-   * frame's colour to the scene's clear colour and its depth to 1, where
+   * frame's colour to the frame's clear colour and its depth to 1, where
    * `Scene.render`'s first bind cleared the camera's output target
    * (`_clearFrameBuffer`); the MAIN pass loads that colour and clears the depth
    * again, as the camera's render bound the target and cleared its depth.
@@ -638,7 +638,7 @@ export class Renderer {
 
   /**
    * The draw phase's END (`FrameHost.onDrawPhase`): the frame's OPENING pass —
-   * its colour cleared to the scene's clear colour, its depth to 1 — and then
+   * its colour cleared to the frame's clear colour, its depth to 1 — and then
    * its MAIN pass, recorded now into the host's prepare encoder after the
    * prepares `begin` recorded there, with every point told in its order: the
    * opening clear and the main pass are what Babylon began on its render

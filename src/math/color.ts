@@ -9,8 +9,9 @@
  * these do, so — unlike a vector — a colour from here is safe to hand to a
  * Babylon method at RUN time; the types still refuse it, because these lack
  * most of Babylon's members. Since `BABYLON_EXIT.md` X6.1e no colour of
- * Babylon's is made anywhere in the tree (the scene's clear colour, which is
- * the scene's own, is written in place by `world/environment.ts`).
+ * Babylon's is made anywhere in the tree (the frame's clear colour, the
+ * scene's own Babylon colour until X6.1h, is ours since: `SceneFrame.clearColor`,
+ * written in place by `world/environment.ts`).
  *
  * ## Licence
  *

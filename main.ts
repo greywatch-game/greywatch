@@ -51,8 +51,8 @@
  * They are the GAME's since `BABYLON_EXIT.md` X5.4h, asked for and configured
  * exactly as Babylon's `WebGPUEngine.initAsync` asked for and configured its
  * own (the comment at the request says how); Babylon's engine is not
- * constructed, the scene standing on a `NullEngine` until X6.1
- * (`core/SceneEngine.ts`).
+ * constructed, and since X6.1h there is no scene and no `NullEngine` under
+ * one either.
  *
  * **The page's own match host is the third** (`BABYLON_EXIT.md` X2.5c C4):
  * every round that is not a server's is a `Match` the page hosts, in a Worker
@@ -339,8 +339,8 @@ window.addEventListener("DOMContentLoaded", async () => {
   // features against the adapter's); the context configured with the
   // preferred canvas format, `RENDER_ATTACHMENT | COPY_SRC` and premultiplied
   // alpha. Only the device's LABEL is ours. Babylon's engine is not
-  // constructed: the scene stands on a `NullEngine` until X6.1
-  // (`core/SceneEngine.ts`, row "X5.4, Babylon's engine").
+  // constructed, and since `BABYLON_EXIT.md` X6.1h no scene or `NullEngine`
+  // stands anywhere.
   //
   // **No MSAA, and that is a saving rather than a downgrade.** The canvas's
   // texture is written by one full-screen quad a frame (the post chain's last

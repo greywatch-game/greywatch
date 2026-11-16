@@ -47,8 +47,8 @@ inside and taken that away. `VERIFYING.md` says how to wait for it from a script
 deploy`, with `roundover` when a side runs out of tickets. The FRAME is drawn
 in **every** state, which is what lets the deploy screen sit over a live view —
 ours since `BABYLON_EXIT.md` X5.4f (`core/SceneFrame.ts`: what `scene.render()`
-did, in its order, called from `tick` where it was; the scene itself is never
-rendered, and Babylon begins no pass in any state).
+did, in its order, called from `tick` where it was; there is no Babylon scene
+since X6.1h, and Babylon begins no pass in any state).
 **In the page's own match that view is HELD**: `deploy` steps no world —
 `tick`'s arm runs the deploy screen and the page's own respawn countdown and
 nothing else, so nothing posts the match an `advance` (`updateWorld` is the one
@@ -95,10 +95,12 @@ way out of a round: `enterMenu` tears the map down and `MenuBackdrop.show` raise
 `#menu-shot` from 0 over its 0.4 s transition, about 300 to 400 ms on Coldharbour, over the
 last map's colour. From the round-over card there is no fade, its picture being up already.
 
-**Those windows show `scene.clearColor` through the post chain** — the FRAME is
-cleared to it as every frame opens (by the scene under `scene.autoClear`, X5.2c2's
-picture change, into `PostPasses`' frame from X5.2d; by our renderer's own opening
-pass since X5.4e, which reads the same colour, the scene clearing nothing). The canvas is
+**Those windows show the frame's clear colour through the post chain**
+(`SceneFrame.clearColor`, `scene.clearColor` until `BABYLON_EXIT.md` X6.1h) — the
+FRAME is cleared to it as every frame opens (by the scene under `scene.autoClear`,
+X5.2c2's picture change, into `PostPasses`' frame from X5.2d; by our renderer's own
+opening pass since X5.4e, which reads the same colour, the scene clearing nothing
+until it went at X6.1h). The canvas is
 cleared by no pass since X5.2d, so the page's first frames, before the chain first
 draws, hold what the swap chain hands over (transparent zeros), under the boot screen,
 where X5.2c2's picture change had them show the clear colour — X5.2d's own picture

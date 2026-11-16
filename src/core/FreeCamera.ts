@@ -45,7 +45,7 @@
  *
  * Invariants:
  * - **The projection is WebGPU's** (`isNDCHalfZRange`: depth 0..1, what
- *   `SceneEngine` told Babylon's) **at the SURFACE's aspect ratio**
+ *   the game's `SceneEngine` told Babylon's until X6.1h) **at the SURFACE's aspect ratio**
  *   (`CanvasSurface.getAspectRatio(this)`, Babylon's `getAspectRatio` over the
  *   render size and this camera's `viewport`).
  * - The matrices are `src/math`'s (float32, Babylon's identity flag), so a

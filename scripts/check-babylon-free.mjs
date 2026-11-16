@@ -47,6 +47,13 @@
  *     three effects took their geometry from `src/geometry/`: `src/entities/`,
  *     `src/net/`, `src/systems/`, `src/ui/`, the kit (`src/world/kit/`, every
  *     set under it) and the scatter props (`src/world/props/`).
+ *   - The three X6.1h emptied, when the scene, its engine and Babylon's
+ *     `Observable` went (`core/SceneFrame.ts`, `core/FrameLoop.ts`,
+ *     `shaders/GlowPass.ts`, `world/environment.ts` and `Game` their last
+ *     importers): `src/core/`, `src/shaders/` (`wgsl/` with it) and
+ *     `src/world/` (the maps, the kit and the props with it) — so every
+ *     directory under `src/` is a root, and nothing under it or in `main.ts`
+ *     reaches the package.
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -63,7 +70,7 @@
  * `NOT_ROOTS` until X6.1f deleted it, and X6.1 widens it to the whole tree, a
  * directory at a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`;
  * X6.1d's review: the thirteen that were already clean; X6.1f: `src/viewer/`;
- * X6.1g: the six above).
+ * X6.1g: the six above; X6.1h: the last three under `src/`).
  * **An entry in `NOT_ROOTS` is exempt from being a root, never from being
  * REACHED**: a simulation that reaches one still fails, which is the point
  * of having one door.
@@ -125,7 +132,8 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * it: `src/dev` holds `src/dev/mixer`). The second line is X6.1d's review
  * (`BABYLON_EXIT.md`): every directory that already reached nothing of the
  * package at its parent, ac96836e, added at once so the ratchet holds them;
- * the last is X6.1g's, the six it emptied.
+ * the fourth is X6.1g's, the six it emptied, and the last X6.1h's, the three
+ * it emptied — every directory under `src/` now.
  */
 const DIRECTORIES = [
   "server", "src/sim", "src/render", "src/math", "src/shaders/wgsl",
@@ -133,6 +141,7 @@ const DIRECTORIES = [
   "src/world/cinderhaven", "src/world/coldharbour", "src/world/greyfen", "src/world/harrowmead",
   "src/world/hollowmere", "src/world/kurenai", "src/world/sarab", "src/world/proving",
   "src/entities", "src/net", "src/systems", "src/ui", "src/world/kit", "src/world/props",
+  "src/core", "src/shaders", "src/world",
 ];
 
 /**

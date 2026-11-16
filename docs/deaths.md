@@ -352,16 +352,16 @@ unused slots are free (four corpses cost the same in a pool of four and a pool o
 eight). Raising the DISTANCE is what makes the pool busier — raise the two together.
 FINDINGS #8's older 1.37 ms for four does not reproduce; see the note there.
 
-- **`scene.physicsEnabled` is FALSE and must stay false.** Babylon steps physics
-  from `scene.animate()`, which nothing calls since `BABYLON_EXIT.md` X5.4g (our
-  frame, `core/SceneFrame.ts`, ports the animation ratio the particle fields' clock
-  reads; it called `scene.animate()` from X5.4f, and the scene's render before
-  that), and a frame is drawn in every state
-  — so a scene-driven step would leave corpses tumbling under the pause card, under the
-  deploy map and behind the menu. The scene has no physics engine any more, so
-  there is nothing for it to step; `Game` writes the flag false straight after
-  constructing the scene anyway, because the rule stands until the scene goes.
-  `PhysicsWorld.update` steps the world by hand and is called only from
+- **Nothing steps physics but `PhysicsWorld`, and nothing ever steps it from a
+  frame.** Babylon stepped a scene's physics from `scene.animate()`, which nothing
+  called since `BABYLON_EXIT.md` X5.4g (our frame, `core/SceneFrame.ts`, ports the
+  animation ratio the particle fields' clock reads; it called `scene.animate()`
+  from X5.4f, and the scene's render before that), and a frame is drawn in every
+  state — so a frame-driven step would leave corpses tumbling under the pause
+  card, under the deploy map and behind the menu. `Game` held
+  `scene.physicsEnabled` false until X6.1h, which deleted the scene: there is no
+  scene and no physics engine on one, so the rule is now simply that no frame
+  point steps the world. `PhysicsWorld.update` steps the world by hand and is called only from
   `Game.stepAftermath` — reached from the frames that simulate (`updateWorld`,
   and the netplay frame), which is what a pause already stops. Measured:
   bit-identical body position across 12 rendered frames while paused, corpses

@@ -502,8 +502,9 @@ on the step it visibly blocked it. What the page's order guarantees is the only
 thing `stepAftermath` asks of its caller — that the hulls have already moved
 this frame, since a mine's trigger is a distance test against where a hull IS.
 **`stepAftermath` is also the ONE place the physics world is stepped anywhere
-in the client**, which was two places and a sentence in each saying so;
-`scene.physicsEnabled` stays false precisely so that a pause, the deploy map
+in the client**, which was two places and a sentence in each saying so; no
+frame point steps it (there is no scene to, since `BABYLON_EXIT.md` X6.1h;
+`scene.physicsEnabled` was held false until then), so a pause, the deploy map
 and the menu, all of which render, cannot advance it.
 
 ## What `tick` pushes, not a state's own arm
@@ -614,20 +615,31 @@ state's own arm.
 `Game.tick` calls `sceneFrame.render()` (`core/SceneFrame.ts`, `BABYLON_EXIT.md`
 X5.4f) inside the `render` span, after the draws the table above hands our
 renderer (`drawBodies` to `drawBlended`) and before `updateBakeWait`, where it
-called `scene.render()` until that step. **The scene is never rendered.** The
-frame does what `scene.render()` did for this game, in Babylon's order — its
-index, the scene's animations (`Scene.animate`'s arithmetic ported over the
-loop's delta, X5.4g: `SceneFrame.animationRatio`, the particle fields' clock),
-the camera's update, the render id's two advances, `scene.updateTransformMatrix()`, the
-evaluation, the draw phase, the post chain, and the canvas's pass if nothing
-began one — and raises its OWN observables, each named for the scene's it
-replaces, at the point the scene raised that one. So **a module that hung off
-a scene observable hangs off the frame's now, and a new one hangs there too:
-nothing raises the scene's**, and a script waiting on a drawn frame waits on
-`g.sceneFrame.onAfterRenderObservable` and counts `g.sceneFrame.index`
-(`VERIFYING.md`). The order point for point, and what `scene.render()` did
-that this does not, is `SceneFrame`'s header and `docs/rendering.md`, "Our
-renderer's frame".
+called `scene.render()` until that step. **There is no Babylon scene** (X6.1h
+deleted it, with the `NullEngine` it stood on). The frame does what
+`scene.render()` did for this game, in Babylon's order — its index (its own),
+the scene's animations (`Scene.animate`'s arithmetic ported over the loop's
+delta, X5.4g: `SceneFrame.animationRatio`, the particle fields' clock — its
+bounds, its non-lock-step branch and `renderTargetsEnabled` constants since
+X6.1h, its constant-delta switch the frame's own), the camera's update, the
+render id's two advances, `updateTransformMatrix` (the scene's, ported at
+X6.1f), the evaluation, the draw phase, the post chain, and the canvas's pass
+if nothing began one — and raises its OWN observables, each named for the
+scene's it replaces, at the point the scene raised that one. **Every observable
+is `core/Observable.ts`**, Babylon's PORTED as written (X6.1h): its order, its
+deferred removal and its mask are Babylon's, which the frame adapter and every
+probe rest on. So **a module that hooks a frame point hangs off the frame's or
+the loop's, and a new one hangs there too**, and a script waiting on a drawn
+frame waits on `g.sceneFrame.onAfterRenderObservable` and counts
+`g.sceneFrame.index` (`VERIFYING.md`). **The frame's clear colour is its own**
+(`SceneFrame.clearColor`, the environment's: `applyClearColor`), and **the
+page's READINESS is ours** (`core/PendingData.ts`, `Game.pending`: the scene's
+pending-data list ported, `isReady` what `scene.isReady()` answered — the
+list empty; the water's foam its one holder while it decodes). Nothing in the
+game reads the readiness; the instruments wait on it (the frame adapter's
+`ready`), so **a new thing the frames must wait on is added there**. The order
+point for point, and what `scene.render()` did that this does not, is
+`SceneFrame`'s header and `docs/rendering.md`, "Our renderer's frame".
 
 **And the LOOP around it is the game's** (`core/FrameLoop.ts`,
 `BABYLON_EXIT.md` X5.4g): what Babylon's `runRenderLoop`, `beginFrame` and

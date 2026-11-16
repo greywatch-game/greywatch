@@ -22,10 +22,11 @@
  * - The holders: the water's foam mask while it decodes (`WaterSystem`, its
  *   decode's callback removing it on success and on failure alike, as the
  *   scene's `Texture` did). A new thing the frames must wait on is added here.
- * - **It stands BESIDE the scene's own list until the scene goes**
- *   (`BABYLON_EXIT.md` X6.1h, whose hook this is): the holder tells both in the
- *   same task, so the two answer alike on every frame — what the frame
- *   adapter's two arms are compared on before the scene is deleted.
+ * - **It answered what the scene's own list answered on every frame**, proven
+ *   at its hook's commit (`BABYLON_EXIT.md` X6.1h), where it stood beside the
+ *   scene's and the holder told both in the same task: the frame adapter's
+ *   two arms compared at every frame's begin, draw and submit, the two lists
+ *   element for element. The scene went in the next commit.
  * Never: reads a clock, polls or schedules (`executeWhenReady`'s timer has no
  *   caller in the game); is read by the game for an outcome — what reads it
  *   is the instruments (`scripts/lib/frameAdapter.mjs`' `ready`, the bank,

@@ -23,7 +23,8 @@
  * LightingSystem publishes into here once per frame. Flat/faceted shading is
  * recovered in the fragment shader from screen-space derivatives — NEVER call
  * convertToFlatShadedMesh(). Output is display-ready color, which is why
- * `scene.imageProcessingConfiguration.isEnabled` must stay false (`Game`). Output is also opaque, and
+ * no image-processing pass may stand after it (`Game` held Babylon's off until the scene went at
+ * `BABYLON_EXIT.md` X6.1h). Output is also opaque, and
  * an opaque cel fragment writes `opaqueAlpha` rather than 1 — the frame's alpha
  * channel is TRANSLUCENT COVERAGE and a probe's is the cube's own mask, so the
  * two passes want opposite values out of the same line (see that field in

@@ -6,8 +6,10 @@
  * Owns: `FrameLoop` — the `requestAnimationFrame` chain (and `stop`, its
  * end), `FrameCap` asked of every refresh (its ADMITTER, no longer a
  * requester Babylon calls), the
- * frame's begin and end as OBSERVABLES of its own, each named for the
- * engine's it replaces (`onBeginFrameObservable`, `onEndFrameObservable`),
+ * frame's begin and end as OBSERVABLES of its own (`core/Observable.ts`,
+ * Babylon's ported as written since `BABYLON_EXIT.md` X6.1h, Babylon's own
+ * before), each named for the engine's it replaces
+ * (`onBeginFrameObservable`, `onEndFrameObservable`),
  * the frame's id (what `engine.frameId` was: moved once a frame, after its
  * submit, as `endFrame` moved Babylon's), the frame's ONE encoder and ONE
  * submit (`render/FrameSubmit.ts`), and the profiler's `present`, the span
@@ -59,7 +61,7 @@
  * Contract: `docs/game.md` ("What a frame owes"), `docs/profiling.md`
  * ("`present`, and the three roots").
  */
-import { Observable } from "@babylonjs/core";
+import { Observable } from "./Observable";
 import { FrameSubmit } from "../render/FrameSubmit";
 import type { FrameCap } from "./FrameCap";
 

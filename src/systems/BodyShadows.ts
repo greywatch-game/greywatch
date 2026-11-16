@@ -91,11 +91,11 @@
  * that. It casts when it is low, which is when a player is under it.
  */
 import { Matrix, Vector3 } from "../math";
-import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { ProxyBoxes, type ShadowBody, type ShadowHull } from "../core/proxyBoxes";
 import {
   depthBias,
+  HALF_Z_RANGE,
   lightTransformToRef,
   SHADOW_NEAR,
   type ShadowLight,
@@ -179,7 +179,6 @@ export class BodyShadows {
   }
 
   constructor(
-    private readonly scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
     /** Our renderer's map: what every proxy packed here is drawn into. */
@@ -288,7 +287,7 @@ export class BodyShadows {
       this.window,
       SHADOW_NEAR,
       CONFIG.graphics.bodyShadows.depthRange,
-      this.scene.getEngine().isNDCHalfZRange,
+      HALF_Z_RANGE,
       this.matrix,
     );
   }

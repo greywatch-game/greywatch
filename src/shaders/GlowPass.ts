@@ -154,7 +154,7 @@
  * records it, the mask cleared to black with alpha 1 and the frame's depth
  * loaded, as `onClearObservable` cleared it and `shareDepth` attached it.
  */
-import { Observable } from "@babylonjs/core";
+import { Observable } from "../core/Observable";
 import type { FreeCamera } from "../core/FreeCamera";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";

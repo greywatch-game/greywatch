@@ -50,6 +50,15 @@ import { Matrix, Vector3 } from "../math";
 export const SHADOW_NEAR = 1;
 
 /**
+ * WebGPU's depth range, 0..1 — what both maps' light matrices are made at
+ * (`lightTransformToRef`'s `halfZ`). A constant since `BABYLON_EXIT.md`
+ * X6.1h: it was read off the scene's engine (`isNDCHalfZRange`), which the
+ * game's `SceneEngine` set true as the `WebGPUEngine` answered, and there is
+ * no other engine.
+ */
+export const HALF_Z_RANGE = true;
+
+/**
  * A depth bias stated in METRES along the light, as the shader's normalised
  * depth over a volume `depthRange` deep.
  *

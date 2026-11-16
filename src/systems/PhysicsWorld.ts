@@ -37,11 +37,11 @@
  *   own vertex arrays (`GameMap.terrainGeometry`) — what its collider clone
  *   was made of while it was a mesh (until X5.3e).
  * - Stepping is `update()`'s job and it is only ever called from a gameplay
- *   path — `Game.stepAftermath`, and nowhere else. The scene has no physics
- *   engine for `scene.animate()` to step behind a pause card (and nothing
- *   calls `scene.animate()` since `BABYLON_EXIT.md` X5.4g), and `Game`,
- *   which owns the scene, still holds `scene.physicsEnabled` false until the
- *   scene goes (see `CLAUDE.md`, "Deaths, glass, and the one physics engine").
+ *   path — `Game.stepAftermath`, and nowhere else. There is no scene and no
+ *   physics engine on one to step behind a pause card (nothing called
+ *   `scene.animate()` since `BABYLON_EXIT.md` X5.4g, `Game` held
+ *   `scene.physicsEnabled` false until X6.1h deleted the scene; see
+ *   `CLAUDE.md`, "Deaths, glass, and the one physics engine").
  * - The sim is a FIXED step with a CARRIED remainder, so a tumble is identical
  *   at 30, 60 and 144 fps and reproducible headless, where `dt` is clamped to
  *   0.05. Both halves are load-bearing and both have already been wrong once.
