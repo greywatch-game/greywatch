@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7426,6 +7426,14 @@ Then the cut, then the sweep.
   cap (195 lines, over before this step and unchanged by it); whether descriptor-matching files and restated shader
   arithmetic (`sky.ts`, `fade.ts` beside those above) owe a citation; `vantages.ts` 383's string, which ships; and
   `babylonTable.mjs`' dead `record` branch.
+  **The owner's answers** (2026-11-16, asked by the orchestrating session): the cap BOOKED, not trimmed
+  (`FINDINGS.md` 76, 574ab8e: 196 lines against ~135, over since X4.5c, a step after the exit); the edge cases
+  CITED (e1e37ed: `ChainPasses`, `FrameTargets`, `FrameSubmit`, `TextureMaker`, `GiCompute`, `wgsl/sky.ts`,
+  `wgsl/fade.ts`, and scoped to the one function `Game.inFrustum`, `vehicleRig`'s sphere and `BlastFx`'s; the
+  list is 37 and matches the citing files); `vantages.ts`' string REWRITTEN as provenance (870ca49, the bundle's
+  one change: that string, with the BenchScript, index and localMatch chunk names, `index.html` and `sw.js`
+  rippling); the `record` branch DELETED (165a717; a re-record checks out 28dc7f0's script with the package
+  installed). Every copy check and every `--perturb` as before, and a one-ULP `vector.ts` plant fails `math-check`.
 
 **Verify, the whole step:**
 

@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14373,3 +14373,15 @@ GONE or STALE) pass.
 - **For the owner**: the "no Babylon lights" section's cap (195 lines, unchanged by the step; trimming rewrites argued
   rules); the licence edge cases above; `bench/vantages.ts` 383's shipped string; `babylonTable.mjs`' dead `record`
   branch (no check passes `record`).
+
+**X6.1j, the owner's answers** (e1e37ed, 574ab8e, 870ca49, 165a717; 2026-11-16): (a) `FINDINGS.md` 76 books the
+"no Babylon lights" section (196 lines with its heading, against ~135; 189 at X5.4i, over since X4.5c at 136; the
+split alone recovers ~61 of the ~165 the file is over). (b) Ten files cite the licence, each naming the 9.28 source it
+restates (`webgpuEngine.pure.js`, `webgpuTextureManager.js`, `webgpuCacheSampler.js`, `default.vertex`/
+`default.fragment` lines, `boundingSphere.js`, ...), scoped to the one function in `Game.ts`, `vehicleRig.ts` and
+`BlastFx.ts`; `licenses/babylonjs.md` lists 37. The printer without comments finds the ten unchanged, and `dist/`
+equal. (c) The `sky-motes` string: the order was Babylon's and ours keeps it (every field at `particles`, ahead of the
+moon's `beforeBlended`); `dist/` differs in that string and the names it ripples (BenchScript, index, localMatch,
+`index.html`, `sw.js`'s version). (d) `babylonTable.mjs`' `record` option, branch, `fold()` and `frozen` deleted,
+`recorded()` kept for `sweep-check`; no check parsed `--record`. Build, typecheck, corecheck, the four copy checks
+(1,920, 342, 351, 256) and every `--perturb` pass; one ULP in `TransformCoordinatesFromFloatsToRef` fails `math-check`.
