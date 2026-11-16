@@ -11,9 +11,9 @@
  * decides.
  * Owns: the map's cull CELLS, one a block,
  * each cell's box grown from the RECORDS of every surface filed under its
- * block (`SurfaceRecord.bounds`, X3.7a) — a surface our renderer draws, which
- * has no mesh since X3.7b, as much as one Babylon draws — and Babylon's
- * block-keyed meshes filed into them (none on a shipped build); and the reach
+ * block (`SurfaceRecord.bounds`, X3.7a) — every one a surface our renderer
+ * draws, and none a mesh (Babylon's block-keyed meshes were filed into them
+ * until `BABYLON_EXIT.md` X6.1g, none on a shipped build since X4.6e); and the reach
  * and the size gate this file decides, handed to our
  * renderer's GPU cull as numbers (`reachGate`) with the box each of its
  * surfaces is measured to (`reachBoxOf`, by the BLOCK) — and, since
@@ -34,21 +34,16 @@
  * here. So every ray, every collision,
  * every shadow caster, every cube probe and every vertex range into a pane is
  * indifferent to it BY CONSTRUCTION. It must stay that way: the moment this
- * disables a mesh it acquires all four of those problems at once. And every
- * mesh it files in a cell is one of the map's VISUALS with a RECORD naming
- * it — each index of `GameMap.visuals` named by exactly one record of
- * `world.surfaces` (`SurfaceRecord.visual`) — which `setMap` REFUSES a map
- * for in every build, as it does a block-keyed mesh that is no map visual:
- * those are the build's own contract broken rather than a state a map can
- * be in, and a cell grown from anything else would be a box nobody measured.
- * A refusal files nothing and is handed back as its reason, which `Game`
- * spends on `worldFailed` (the menu and a toast, `BABYLON_EXIT.md` X3.7b) —
- * and a reach asked for a block no cell was grown for answers null rather
- * than a box (`reachBoxOf`), which the handover refuses the same way.
- * Never: writes a property on a mesh; grows a cell's box off a mesh's
- * bounding info rather than its record's; files a block-keyed mesh that has
- * no record, or a map whose visuals and records disagree — it refuses the
- * map instead; throws for a build's broken contract.
+ * disables a mesh it acquires all four of those problems at once. A cell is
+ * grown from the map's RECORDS and from nothing else, so it is never a box
+ * nobody measured. (Until `BABYLON_EXIT.md` X6.1g it also filed the map's
+ * block-keyed MESHES, and refused a map whose meshes and records disagreed;
+ * no build makes a mesh since, so there is nothing to file or to disagree.)
+ * A reach asked for a block no cell was grown for answers null rather
+ * than a box (`reachBoxOf`), which the handover refuses, failing the world
+ * (`Game.worldFailed`, the menu and a toast, X3.7b).
+ * Never: writes a property on a mesh; grows a cell's box off anything but a
+ * record's bounds; throws for a build's broken contract.
  *
  * **The frame walks the SCENE, and the scene is the map.**
  * `_evaluateActiveMeshes` iterates every candidate every frame — a Map get for
@@ -72,7 +67,9 @@
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
  * **Three classes of mesh, and which class a mesh is in is the whole design.**
- * What our renderer draws (below) is in none of them: it has no mesh. (A
+ * What our renderer draws (below) is in none of them: it has no mesh — and
+ * since `BABYLON_EXIT.md` X6.1g nothing in the world is one, so read the
+ * classes as what each kind of surface is decided by. (A
  * fourth, **hidden**, was the map's collider proxies — invisible boxes the
  * walk paid full price for and rejected on `isVisible`, 5,929 of 9,002 scene
  * meshes on the 900/300 proving ground, never candidates at any distance and
@@ -82,9 +79,10 @@
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. On a shipped build NOTHING is filed here since
- *   `BABYLON_EXIT.md` X4.6e: the merged glazing was the last of it, and every
- *   block surface is our renderer's (below); the cell's box is still grown
+ *   of that cell's own bounds. On a shipped build NOTHING was filed here
+ *   from `BABYLON_EXIT.md` X4.6e — the merged glazing was the last of it —
+ *   and on any build nothing is since X6.1g, every block surface being our
+ *   renderer's (below); the cell's box is still grown
  *   from all of it, every STRUCTURE on the map. The world's FIRES (since
  *   X4.4d) and the GLAZING (since X4.6e) are no mesh: our renderer draws each
  *   (`render/FlameDraw.ts`, `render/GlassDraw.ts`) while its block's cell is
@@ -161,13 +159,11 @@
  * this offers every mesh it is handed.
  */
 import type { Vector3Like } from "../math";
-import type { AbstractMesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
 import type { SceneFrame } from "../core/SceneFrame";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
-import type { SurfaceRecord } from "../world/worldGeometry";
 
 /**
  * The reach box of the LANDFORM — the floor, the rim and the road merge, which
@@ -197,14 +193,15 @@ export const NO_REACH: BlockBox = {
  * The cell holds no meshes. Until `BABYLON_EXIT.md` X5.4f a map pointed the
  * other way, from a mesh to its cell, because the candidate list was rebuilt
  * by walking the scene in ORDER rather than by concatenating cells; the walk
- * and the list are gone, and what is left of the filing is `filed`, a set
- * that only dedupes a block-keyed mesh and counts it (`stats.blocked`).
+ * and the list are gone, and what was left of the filing (`filed`, a set
+ * that deduped a block-keyed mesh and counted it) went at X6.1g with the
+ * last mesh it could hold.
  *
  * The bounds are the SURFACES' rather than the block's nominal square — read
- * off each one's record (`SurfaceRecord.bounds`), mesh or none — which is
+ * off each one's record (`SurfaceRecord.bounds`) — which is
  * also why nothing here has to be told how big a block IS on this map: the key
  * is a name and not an alignment claim — a merged block's
- * geometry can hang over its own seam, and a mesh filed by its key can be much
+ * geometry can hang over its own seam, and a surface filed by its key can be much
  * bigger than the square it was filed under. Measuring what is there cannot be
  * wrong in the direction that matters.
  */
@@ -276,13 +273,6 @@ interface Pool {
 }
 
 export class WorldCulling {
-  /**
-   * Every Babylon map mesh that carries a block, filed once (none on a
-   * shipped build). Read only to dedupe the filing and to count it
-   * (`stats.blocked`): no list is built from it since the mesh walk went
-   * (`BABYLON_EXIT.md` X5.4f).
-   */
-  private filed = new Set<AbstractMesh>();
   private cells: Cell[] = [];
   /** Each cell by its block key — what `reachBoxOf` answers our renderer's surfaces off. */
   private cellByKey = new Map<string, Cell>();
@@ -325,14 +315,6 @@ export class WorldCulling {
    * is no behaviour behind it and nothing in the game reads it.
    */
   readonly stats = {
-    /**
-     * `scene.meshes.length` as of the last `rebuildList` — refreshed there
-     * and nowhere else, so it lags a mesh added or removed between rebuilds
-     * (a cell crossing its threshold, or `setMap`). Nothing is filed from it
-     * since the candidate list went (`BABYLON_EXIT.md` X5.4f).
-     */
-    scene: 0,
-    blocked: 0,
     /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
     pooled: 0,
     cells: 0,
@@ -346,7 +328,6 @@ export class WorldCulling {
    * until the scene stopped rendering (`BABYLON_EXIT.md` X5.4f).
    */
   constructor(
-    private scene: Scene,
     /** The frame whose camera the size gate reads (`activeCamera`, the scene's until `BABYLON_EXIT.md` X6.1f). */
     private readonly frame: Pick<SceneFrame, "activeCamera">,
     /** The canvas: the render height and the scaling level the size gate reads (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
@@ -356,40 +337,30 @@ export class WorldCulling {
   /**
    * Files a freshly built map. Called from `Game.installMap` and from nowhere
    * else, exactly as `ShadowSystem.setCasters` and `ReflectionSystem.build`
-   * are: last build's meshes are disposed by now, and a cell still holding one
-   * would hand Babylon a dead mesh.
+   * are: a cell left from the last build would measure a world that is gone.
    *
    * `fogEnd` is the MAP's (`EnvironmentSpec.fogEnd`) rather than `CONFIG`'s —
    * it is the fourth thing `installMap` pushes that number into, and for the
    * same reason as the other three: past it there is nothing to see.
-   *
-   * Null once filed; else the build's contract it found broken — a visual
-   * no record names, or two do, a record naming no visual, a block-keyed
-   * mesh that is no map visual — with nothing filed, as `setMap(null)`
-   * leaves it: the caller fails the world on it (`Game.worldFailed`).
    */
-  setMap(map: GameMap | null, fogEnd: number): string | null {
-    this.filed = new Set();
+  setMap(map: GameMap | null, fogEnd: number): void {
     this.cellByKey = new Map();
     this.cells = [];
     this.listDirty = true;
     this.evalX = Number.POSITIVE_INFINITY;
     this.evalZ = Number.POSITIVE_INFINITY;
-    this.stats.blocked = 0;
     this.stats.cells = 0;
     if (!map) {
       this.on = Number.POSITIVE_INFINITY;
       this.onSq = Number.POSITIVE_INFINITY;
       this.offSq = Number.POSITIVE_INFINITY;
-      return null;
+      return;
     }
-    const refused = this.file(map, fogEnd);
-    if (refused) this.setMap(null, 0);
-    return refused;
+    this.file(map, fogEnd);
   }
 
-  /** `setMap`'s filing: null once done, else what the build broke (see `setMap`). */
-  private file(map: GameMap, fogEnd: number): string | null {
+  /** `setMap`'s filing: the reach, and the cells grown from the map's records. */
+  private file(map: GameMap, fogEnd: number): void {
     const c = CONFIG.graphics.culling;
     // Clamped at zero because the reach is SQUARED below, and a negative one
     // squares back to an enormous positive — which would turn a map claiming
@@ -401,28 +372,11 @@ export class WorldCulling {
     this.onSq = on * on;
     this.offSq = off * off;
 
-    // Each visual's RECORD (`GameMap.world`, one a surface, each naming its
-    // mesh if it has one): every index of `visuals` named exactly once.
+    // The cells, grown from EVERY record filed under a block: its bounds were
+    // taken off its arrays before they were released, the numbers a mesh's
+    // bounding info held when one was made. In list order; a box is a min
+    // and a max, which no order moves.
     const surfaces = map.world.surfaces;
-    const recordOfVisual = new Array<SurfaceRecord | undefined>(map.visuals.length);
-    for (const record of surfaces) {
-      const v = record.visual;
-      if (v < 0) continue;
-      if (v >= map.visuals.length) return `the record "${record.name}" names visual ${v} of ${map.visuals.length}`;
-      const named = recordOfVisual[v];
-      if (named) return `visual ${v} is named by both "${named.name}" and "${record.name}"`;
-      recordOfVisual[v] = record;
-    }
-    const recordByMesh = new Map<AbstractMesh, SurfaceRecord>();
-    for (let v = 0; v < map.visuals.length; v++) {
-      const record = recordOfVisual[v];
-      if (!record) return `the visual "${map.visuals[v].name}" has no surface record`;
-      recordByMesh.set(map.visuals[v], record);
-    }
-    // The cells, grown from EVERY record filed under a block — mesh or none:
-    // its bounds were taken off its arrays before they were released, the
-    // numbers its mesh's bounding info holds where it has one. In list
-    // order; a box is a min and a max, which no order moves.
     for (const record of surfaces) {
       const key = blockOf(record.metadata);
       if (key === null) continue;
@@ -450,21 +404,12 @@ export class WorldCulling {
         this.cells.push(cell);
       }
     }
-    // Babylon's block-keyed meshes, each into its cell: none on a shipped
-    // build (the fires are no mesh since X4.4d and the glazing since X4.6e:
-    // `offersBlock`, by the same key `PaneBlocks` writes a group under — a
-    // curtain wall and the shaft behind it go out of the frame together, or
-    // the tower is a sheet of glass hanging in the fog with nothing behind it).
-    for (const mesh of map.visuals) {
-      const key = blockOf(mesh.metadata);
-      if (key === null || this.filed.has(mesh)) continue;
-      const record = recordByMesh.get(mesh);
-      if (!record) return `"${mesh.name}" carries a block but is no map visual`;
-      this.filed.add(mesh);
-      this.stats.blocked++;
-    }
+    // What a cell offers is read back by its block (`offersBlock`): the
+    // fires and the glazing, by the same key `PaneBlocks` writes a group
+    // under — a curtain wall and the shaft behind it go out of the frame
+    // together, or the tower is a sheet of glass hanging in the fog with
+    // nothing behind it.
     this.stats.cells = this.cells.length;
-    return null;
   }
 
   /**
@@ -741,7 +686,6 @@ export class WorldCulling {
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
-    this.stats.scene = this.scene.meshes.length;
     this.stats.cellsOn = cellsOn;
   }
 

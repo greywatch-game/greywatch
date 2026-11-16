@@ -3,7 +3,9 @@
  * spawns, hardstandings, water and grass are once `MapBuilder` has read them,
  * the collider box and the pane every query and the collision bake carry, the
  * layout item a piece names (`ItemRef`), and `GameMap` itself.
- * Owns: types and nothing else — no value, no Babylon object, no code path.
+ * Owns: types and nothing else — no value, no Babylon object, no code path,
+ * and since `BABYLON_EXIT.md` X6.1g no Babylon type either: a built map's
+ * drawn world is RECORDS (`GameMap.world`), and no field holds a mesh.
  * Every import here is `import type`, so a module that reads a `GameMap`
  * pulls nothing in at runtime by naming one.
  * Invariants: `MapBuilder` re-exports every name here, so the readers that
@@ -15,7 +17,6 @@
  * `MapBuilder.ts` (`collider()`) or in
  * `merge.ts` (`PaneBlocks`), never beside the shape.
  */
-import type { Mesh } from "@babylonjs/core";
 import type { Vector3 } from "../math";
 import type { WaterAmbienceId } from "../core/Sfx";
 import type { VehicleKind } from "../entities/vehicleKinds";
@@ -33,9 +34,9 @@ import type { WorldGeometry, WorldSurface } from "./worldGeometry";
  * One floor block's collider as data: its positions (three a vertex, in the
  * world's space — the block stands at identity) and its triangles, three
  * indices each, wound for Babylon's left-handed default as every triangle in
- * the world is. The arrays are the floor block's own, in the types its
+ * the world is. The arrays are the floor block's values, in the types its
  * collider clone held when it was a mesh (`BABYLON_EXIT.md` X5.3e took the
- * mesh away) — not copies (`parts.ts`' `plainGeometryOf`).
+ * mesh away; `parts.ts`' `plainGeometryOf`).
  */
 export interface TerrainGeometry {
   readonly positions: ArrayLike<number>;
@@ -186,8 +187,9 @@ export interface GrassRect {
 }
 
 /**
- * A collider's world-space geometry, kept alongside the mesh so the nav grid
- * can compute surface heights analytically instead of firing 25,600 rays.
+ * A collider's world-space geometry, kept alongside the drawn surface it
+ * stands in for so the nav grid can compute surface heights analytically
+ * instead of firing 25,600 rays.
  */
 export interface WorldBox {
   w: number;
@@ -222,7 +224,7 @@ export interface WorldBox {
  * **Only a `breakable` pane is one of these.** Most of a city's glazing is
  * hung on something solid and never goes, and none of it is here — a sheet
  * that cannot be taken away has nothing to say to the sweep, the wire or the
- * authority, and is a mesh and nothing else (see `PaneSpec.breakable`).
+ * authority, and is drawn glazing and nothing else (see `PaneSpec.breakable`).
  *
  * **The index into `GameMap.panes` IS the pane's identity**, on the client and
  * on the authority alike, exactly as an index into `colliderBoxes` is. Both
@@ -258,7 +260,7 @@ export interface WorldPane {
 }
 
 /**
- * One placement's glazing: the merged mesh, and the breakable panes with
+ * One placement's glazing: the merged surface, and the breakable panes with
  * vertices in it — usually none, because most glass never goes anywhere.
  *
  * Merged per placement and kept out of `BlockMerge`, so a building's glass is
@@ -335,13 +337,13 @@ export interface BuildOptions {
   navFields?: boolean;
   /**
    * Handed every surface and its index in `GameMap.world.surfaces`, in the
-   * one moment its ARRAYS can still be read — before any mesh is made of it
-   * and before they are released (`worldMeshes`, and `SurfaceRecord` for why
-   * they go) — and answering whether OUR renderer draws it in every pass:
-   * `true` and Babylon is made no mesh of it (`BABYLON_EXIT.md` X3.7b). For a
-   * renderer of our own that uploads a surface itself
-   * (`systems/BlockHandover.ts`, which the game passes on every build).
-   * Absent is a mesh of every surface, nothing handed and nothing kept.
+   * one moment its ARRAYS can still be read — before they are released
+   * (`worldRecords`, and `SurfaceRecord` for why they go) — and answering
+   * whether OUR renderer draws it in every pass: `false` is a REFUSAL, which
+   * fails the world (`BABYLON_EXIT.md` X3.7b; no build makes a mesh of it
+   * instead since X6.1g). For a renderer of our own that uploads a surface
+   * itself (`systems/BlockHandover.ts`, which the game passes on every
+   * build). Absent is the records alone, nothing handed and nothing drawn.
    */
   onSurface?: (surface: WorldSurface, index: number) => boolean;
   /**
@@ -353,7 +355,7 @@ export interface BuildOptions {
   onScatter?: (field: ScatterField) => void;
 }
 
-/** The built world: geometry is in the scene, this is the queryable part. */
+/** The built world: its drawn surfaces as records (`world`), and the queryable part. */
 export interface GameMap {
   /**
    * The PLAY square's side, centred on the origin. Everything authored, every
@@ -498,21 +500,15 @@ export interface GameMap {
    */
   terrainGeometry: TerrainGeometry[];
   /**
-   * The drawn geometry BABYLON holds a mesh of, merged per colour — on a
-   * shipped build the glazing and the fires alone, every other surface being
-   * our renderer's in every pass and made no mesh (`BABYLON_EXIT.md` X3.7b).
-   * In list order; `world` names each one's record.
-   */
-  visuals: Mesh[];
-  /**
-   * What the build KEPT of the world's surfaces — one `SurfaceRecord` per
-   * surface, mesh or none, in list order: its world bounds, its block, its
-   * piece ranges, its material and the very metadata object a mesh of it
-   * carries, whether its positions are writable, its counts, and WHO DRAWS
-   * IT (`SurfaceRecord.visual`: its mesh's index in `visuals`, or -1 for one
-   * our renderer draws whole). **Not its vertex arrays**, which went to the
-   * device — see `SurfaceRecord`. Empty on the authority, which draws nothing
-   * (`paneGroups`' reason).
+   * The drawn world: what the build KEPT of its surfaces — one
+   * `SurfaceRecord` per surface, in list order: its world bounds, its block,
+   * its piece ranges, its material and the very metadata object its part
+   * carried, whether its positions are writable, and its counts. Every one is
+   * our renderer's in every pass, and none is a mesh (`BABYLON_EXIT.md`
+   * X6.1g deleted `visuals`, the list of the meshes Babylon was made of the
+   * world — on a shipped build none since X4.6e). **Not its vertex arrays**,
+   * which went to the device — see `SurfaceRecord`. Empty on the authority,
+   * which draws nothing (`paneGroups`' reason).
    */
   world: WorldGeometry;
   /** Walkable-surface graph with one precomputed flow field per objective. */

@@ -40,8 +40,8 @@
  * The small batch is the exception and its bloom is only ever sparks and the
  * hot heads of trails, a metre or two from the blast that threw them.
  */
-import { CreateIcoSphereVertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { createIcoSphere } from "../geometry/primitives";
 import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
 import type { BlastPaint } from "../shaders/BlastShader";
 import type { CelMaterialFactory } from "../shaders/CelShader";
@@ -124,7 +124,13 @@ interface Slot {
   t: number;
 }
 
-/** One of the two icospheres a billow is an instance of: its arrays, as `CreateIcoSphereVertexData` made them. */
+/**
+ * One of the two icospheres a billow is an instance of: its arrays, as
+ * `CreateIcoSphereVertexData` made them — by `src/geometry/`'s copy since
+ * `BABYLON_EXIT.md` X6.1g (`createIcoSphere`, held to Babylon's bit for bit
+ * by `geometry-check`), doubles in a `Float64Array` where Babylon's were a
+ * `number[]`, which our renderer copies into float32 the same (`BlastDraw`).
+ */
 export interface BillowShape {
   /** xyz a vertex. */
   readonly positions: ArrayLike<number>;
@@ -430,8 +436,8 @@ export class BlastFx {
     }
     this.batches = [...this.slots.map((s) => s.batch), this.small];
     const sphere = (subdivisions: number): BillowShape => {
-      const data = CreateIcoSphereVertexData({ radius: 1, subdivisions, flat: false });
-      return { positions: data.positions!, indices: data.indices! };
+      const data = createIcoSphere({ radius: 1, subdivisions, flat: false });
+      return { positions: data.positions, indices: data.indices };
     };
     this.shapes = [sphere(8), sphere(4)];
   }

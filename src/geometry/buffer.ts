@@ -389,13 +389,16 @@ export function computeNormals(positions: ArrayLike<number>, indices: ArrayLike<
 /**
  * `computeNormals` into an array the caller holds — a `number[]` that grows,
  * as the primitives' own arrays do (`primitives.ts`), or a `Float64Array` the
- * length of `positions`. Never a `Float32Array`: the sums would be rounded at
- * every step, and Babylon's were not.
+ * length of `positions` — or a `Float32Array`, and then every sum is rounded
+ * to float32 as it is stored, exactly as Babylon's are into one: a glass
+ * shard's (`DebrisSystem`, which handed Babylon its own float32 array until
+ * `BABYLON_EXIT.md` X6.1g). Never a `Float32Array` where Babylon was handed
+ * doubles, which it summed unrounded.
  */
 export function computeNormalsInto(
   positions: ArrayLike<number>,
   indices: ArrayLike<number>,
-  normals: number[] | Float64Array,
+  normals: number[] | Float64Array | Float32Array,
 ): void {
   for (let index = 0; index < positions.length; index++) {
     normals[index] = 0.0;

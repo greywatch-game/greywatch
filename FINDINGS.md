@@ -953,18 +953,21 @@ less than when this was written**: with most builders on `StoneBatch`, a
 `Mesh` per part is ~300 ms of Coldharbour's 4.4 s, so the merge-only
 accumulator was not built. **The collider half is CLOSED**
 (`BABYLON_EXIT.md` X5.3e: no collider is a mesh; the numbers are under "What is
-open"). **What remains open from this entry**: the GC share (not re-measured),
-and the final upload's plain-array conversion, which only a change that rounds
-vertices differently would remove. If nothing here is taken up, delete the
-entry.
+open"). **What remains open from this entry**: the GC share (not re-measured).
+The final upload's plain-array conversion is GONE: no surface reached it once
+our renderer drew the whole world (`BABYLON_EXIT.md` X3.7b, X4.6e), and X6.1g
+deleted it with the mesh it fed (`vertexDataOf`); what is left of it is the
+floor's arrays for `PhysicsWorld` (`plainGeometryOf`). If nothing here is
+taken up, delete the entry.
 
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
 locally, for the stone and tile runs that opt in. Since BABYLON_EXIT.md X1.2 a
 builder's part is plain data (`Part`, a `GeometryBuffer` built by
 `src/geometry/`, whose `createBox` shares one unit tessellation), and since
 X1.4 the merge and the vertex bake run on those buffers and no part is ever a
-mesh: the world becomes meshes once, at the end of the build (`worldMeshes`),
-and the part mesh and its helpers are deleted. That is this entry's first
+mesh: the world becomes meshes once, at the end of the build (`worldMeshes`,
+until `BABYLON_EXIT.md` X6.1g made it records alone, `worldRecords`), and the
+part mesh and its helpers are deleted. That is this entry's first
 sub-thread, taken; the round trip described below no longer exists, and what
 is left open is the paragraph above (the GC share, the final upload's plain-array
 conversion; the colliders closed at X5.3e).

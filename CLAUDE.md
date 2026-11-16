@@ -101,8 +101,8 @@ a render size, a scaling level or an aspect ratio asks the SURFACE, never the
 scene's engine**.
 
 **Zero model files, and SEVENTEEN audio files** — every mesh is built from
-primitives at runtime (for the world kit, the scatter props and every model
-the copies of Babylon's in `src/geometry/`, for the rest Babylon's own), and
+primitives at runtime (the copies of Babylon's generators in `src/geometry/`,
+for the world kit, the scatter props, every model and the effects), and
 every sound is synthesized WebAudio (`src/core/Sfx.ts`) but for those seventeen. Do not add asset files unless
 explicitly asked. There are four generated exceptions, each with a generator in
 `package.json`: the icons, Havok's `.wasm`, the water's foam mask, and each
@@ -632,8 +632,8 @@ caster**, and see-through glazing gets no ink.
 
 **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT START.** Every BLOCK, the
 LANDFORM (the BUILD marks `WorldSurface.landform`) and the emissive PALETTE are
-OUR renderer's in every pass and **Babylon is made NO MESH of them**
-(`BlockHandover`, `worldMeshes`), nor of a round's glazing — so a surface ours
+OUR renderer's in every pass and **no build makes a MESH of anything**
+(`BlockHandover`, `worldRecords`), the glazing included — so a surface ours
 cannot hold is REFUSED (a DEV throw `merge:hash` fails on), and a pass of ours
 that cannot draw its world tells the failure it was HANDED WITH it:
 **`Game.worldFailed`**, the menu and a toast, never a fallback.
@@ -890,7 +890,7 @@ sweep's own so the push never asks for room the sweep does not hold it out to.
 
 | Kind         | what it is | drawn | in the rays, sweeps and nav | merged |
 | ------------ | ---------- | ----- | --------------------------- | ------ |
-| **Visual**   | a surface's record (a mesh only where Babylon draws it) | yes | **no** | yes |
+| **Visual**   | a surface's record — **no mesh** (`BABYLON_EXIT.md` X6.1g) | yes | **no** | yes |
 | **Collider** | a `WorldBox` — **no mesh** (`BABYLON_EXIT.md` X5.3e) | **no** | yes | no — grouped as DATA |
 
 Colliders must line up with the surfaces they stand in for or bullet sparks land
@@ -973,10 +973,10 @@ misbehaves silently. **A collider's are fields on its BOX** (`BoxSpec` onto the
 box in `colliderBoxes` or a strut in `rayGroups` IS the solid world, and nothing
 else stops a round, a look or a body. **On the world's drawn geometry they are written on the
 RECORD, not the mesh** — the surface's part (`WorldSurface.part.metadata`,
-`world/worldGeometry.ts`) — and the one adapter (`worldMeshes`) hands that same
-object, unchanged, to a mesh WHERE IT MAKES ONE: since X3.7b only for what
-Babylon draws (none in a round since X4.6e), our renderer reading the
-record. `GameMap.world` keeps it for every surface:
+`world/worldGeometry.ts`) — and the record keeps that same object,
+unchanged (`worldRecords`), which is what our renderer reads: no mesh is made
+of any surface (`BABYLON_EXIT.md` X6.1g). `GameMap.world` keeps it for every
+surface:
 
 - `porous: true` — a collider that rounds, sightlines and grenades pass
   through anyway (`castRound` subtracts it; `castBody` keeps it). Declared as
@@ -1023,8 +1023,8 @@ record. `GameMap.world` keeps it for every surface:
   albedo palette left the merge key — asked as NUMBERS (`exclusionOf`, off
   `WorldSurface.block`, and for a scatter instance the REGION its copy was
   merged under, `ScatterSet.blocks`), so those keep the merge's lattice. And
-  `WorldCulling`, which grows a cull cell from every RECORD carrying one, files
-  Babylon's meshes carrying one into it, and answers a fire and a pane by it (`offersBlock`).
+  `WorldCulling`, which grows a cull cell from every RECORD carrying one and
+  answers a fire and a pane by it (`offersBlock`).
 - `surface: "ground"` — what a round that stops here kicks up. The odd one out:
   a **value with a default** that nothing WRITES — `RayHit.surface`, which
   `RayWorld` answers `"ground"` off the floor alone and `"hard"` off every box —
@@ -1553,8 +1553,9 @@ built.
 - **There is ONE math, `src/math/`, and the CAMERA is made of it.**
   `src/math/` is the game's own — Babylon's subset under Babylon's names, bit
   for bit (`scripts/math-check.mjs`) — and every vector, colour, quaternion,
-  matrix and plane in the tree is made of it but a mesh's own rotation in
-  `parts.ts`' mesh arm (X6.1g). **The camera is OURS** (`core/FreeCamera.ts`,
+  matrix and plane in the tree is made of it (the last exception, a Babylon
+  mesh's own rotation in `parts.ts`, went with the mesh at X6.1g). **The
+  camera is OURS** (`core/FreeCamera.ts`,
   Babylon 9.28's `FreeCamera` ported as written, its caches with it, X6.1f):
   the frame's camera is `SceneFrame.activeCamera`, and the frame's view,
   projection, transform and six FRUSTUM PLANES are the frame's

@@ -15,7 +15,7 @@
  * pane block `PaneBlocks` made writable) and `worldMatrixOf`'s numbers (the
  * float32 matrix `computeWorldMatrix(true)` made of the mesh when the bake
  * still ran on meshes), and stores what comes back as the part's `colors`.
- * The adapter (`worldMeshes`) uploads it with the rest.
+ * Our renderer uploads it with the rest (`worldRecords` hands it over).
  * Owns no geometry and no materials; `MapBuilder` calls it, `world/sway.ts`
  * says what a surface's weight means and `CelShader` reads what it wrote.
  * Invariants: AO lives in the ALPHA and 1.0 means UNOCCLUDED (see below — the

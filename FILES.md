@@ -156,7 +156,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   src/pwa/, the seven maps' and the proving
                               #   ground's, X6.1d's review; src/viewer/,
                               #   X6.1f, when the crossing math/babylon.ts
-                              #   went and NOT_ROOTS emptied)
+                              #   went and NOT_ROOTS emptied; src/entities/,
+                              #   src/net/, src/systems/, src/ui/,
+                              #   src/world/kit/ and src/world/props/, X6.1g,
+                              #   when the last mesh maker went)
   babylon-census.mjs          # X6.1a's CENSUS of what is left of
                               #   @babylonjs/core: every import of it under
                               #   src/, server/, main.ts, scripts/,
@@ -231,7 +234,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   reported apart. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
                               #   builds every map in a real browser and hashes
-                              #   every merged visual plus the box lists, so a change to
+                              #   every merged visual (its record; a build
+                              #   with no mesh, X6.1g on, mesh: false
+                              #   throughout) plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
                               #   nothing (`--editor`, the map editor's build,
                               #   retired with it at X5.3c and refused). Per mesh also its creation rank in the
@@ -265,7 +270,10 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   the same name over seeded options, and runs
                               #   merge (with and without each member's
                               #   matrix), transform, bake and computeNormals
-                              #   against Babylon's, comparing every number BIT for
+                              #   against Babylon's — and the three effects' own
+                              #   calls (X6.1g: the blast's icospheres, a rubble
+                              #   chunk's box, a shard's float32 normals) —
+                              #   comparing every number BIT for
                               #   bit; fails on an export no case covers.
                               #   Deleted with Babylon (X6.1). Not a gate
   math-check.mjs              # `node scripts/math-check.mjs`: runs every
@@ -610,7 +618,9 @@ src/
     buffer.ts           # GeometryBuffer (positions, normals, uvs, uv2,
                         #   colours, indices — Float64Array where Babylon held
                         #   a number[], Float32Array where it held one) and
-                        #   VertexData's merge, transform and ComputeNormals;
+                        #   VertexData's merge, transform and ComputeNormals
+                        #   (into doubles, or into a Float32Array rounding
+                        #   as Babylon's does — a glass shard's, X6.1g);
                         #   mergeTransformed (MergeMeshes' merge, each member
                         #   under its own matrix) and bake (Mesh's
                         #   bakeTransformIntoVertices)
@@ -1377,7 +1387,8 @@ src/
                         #   every one a billow in BlastShader. One BATCH per
                         #   blast (and one for sparks and trails), its sphere
                         #   set by hand; motion in closed form; no mesh —
-                        #   render/BlastDraw.ts draws the batches (X4.4c).
+                        #   render/BlastDraw.ts draws the batches (X4.4c),
+                        #   its two icospheres src/geometry/'s (X6.1g).
                         #   Client only
     AntiTankSystem.ts   # The AT kit in the world: the rocket pool (the SECOND
                         #   thing that isn't hitscan), the mine pool, the arm
@@ -1444,7 +1455,8 @@ src/
                         #   past its own apparent-size gate, and evicts only a
                         #   burst that has already landed. No mesh: each shard
                         #   a PosedPiece our renderer draws, its vertices
-                        #   handed over on every cut (onCut, X4.4c)
+                        #   handed over on every cut (onCut, X4.4c), its
+                        #   normals src/geometry/'s computeNormalsInto (X6.1g)
     BlastDebrisSystem.ts# The two blast layers that outlive the fire, and the
                         #   THIRD Havok client: the rubble a detonation throws —
                         #   keyed on what it went off ON, so a crater turns up
@@ -1453,7 +1465,8 @@ src/
                         #   rather than painting a colour onto it. A chunk's
                         #   size and shape are decided at construction, so a
                         #   burst never touches the WASM heap. No chunk mesh
-                        #   (a PosedPiece our renderer draws, X4.4c); no scorch
+                        #   (a PosedPiece our renderer draws, X4.4c, its box
+                        #   src/geometry/'s createBox since X6.1g); no scorch
                         #   mesh either since X4.6e (a fade of its kit, its map
                         #   a canvas painted here, ours since X5.4d)
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
@@ -1645,18 +1658,19 @@ src/
                         #   is a mesh (X5.3e), a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
                         #   always is; what our renderer draws is no mesh
-                        #   (X3.7b), and a world FIRE is drawn while its
+                        #   (X3.7b; nothing is since X6.1g, and nothing is
+                        #   filed), and a world FIRE is drawn while its
                         #   block's cell is offered (offersBlock, snapshotted
                         #   where the list is built, X4.4d). A cell's box is grown from every RECORD
-                        #   filed under its block, mesh or none
-                        #   (SurfaceRecord.bounds, X3.7a), a filed mesh's size
+                        #   filed under its block
+                        #   (SurfaceRecord.bounds, X3.7a), a filed surface's size
                         #   gate reads its record's sphere; reachGate states
                         #   the reach and the size gate as numbers for the GPU
                         #   cull, reachBoxOf the box by the BLOCK (the
                         #   landform's NO_REACH, null for a block no cell grew
-                        #   for). setMap REFUSES a build whose visuals and
-                        #   records disagree, handing back the reason for
-                        #   Game.worldFailed. A pooled BODY is no mesh
+                        #   for; the handover fails the world on it — setMap's
+                        #   own refusal of meshes and records that disagree
+                        #   went with the meshes, X6.1g). A pooled BODY is no mesh
                         #   (X4.1d): measured once a frame and answered by
                         #   index (drawsBody), which the drawing reads, and
                         #   with how much of it is drawn (bodyFade, X4.1e):
@@ -1694,9 +1708,9 @@ src/
                         #   WITH the install's failure (failFor), which it
                         #   tells of whatever it cannot draw — no pass latches
                         #   a loss (X3.7c).
-                        #   A surface it cannot hold, or a Babylon mesh not
-                        #   glazing (strayMesh), is REFUSED at the
-                        #   install (and thrown after it in DEV), and every
+                        #   A surface it cannot hold is REFUSED at the
+                        #   install (and thrown after it in DEV) — no mesh is
+                        #   made of it instead (X6.1g) — and every
                         #   former handback — a block no cell grew for, a
                         #   failed group or cull, a cut past the limits, a
                         #   refused pass, a pass of ours that cannot draw what
@@ -1822,14 +1836,15 @@ src/
                         #   build() is a list of phases, one method each. The
                         #   floor, the rim and every part are WorldSurfaces;
                         #   the merges and the vertex bake run on those, and
-                        #   bake() makes the ones Babylon draws meshes once
-                        #   (worldMeshes; none of one our renderer draws
-                        #   whole, X3.7b) and keeps the record of every one
+                        #   bake() hands each to our renderer once
+                        #   (worldRecords, BuildOptions.onSurface; no mesh of
+                        #   any since X6.1g) and keeps the record of every one
                         #   as GameMap.world
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
                         #   flag/spawn/water/grass shapes and ItemRef (a piece's
                         #   layout item).
-                        #   Types only; MapBuilder re-exports every one
+                        #   Types only, and no Babylon type (no mesh field
+                        #   since X6.1g); MapBuilder re-exports every one
     merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
                         #   then BlockMerge and PaneBlocks per map block (one
                         #   key, one metadata.block — blockOf, on the lattice
@@ -1853,9 +1868,8 @@ src/
                         #   which releaseArrays drops at upload — through the
                         #   DEV SurfaceSink merge:hash reads them by — since
                         #   X3.7a the world BOUNDS, boundsOf, Babylon's
-                        #   bounding info step for step, and since X3.7b
-                        #   `visual`, its mesh in GameMap.visuals or -1 for
-                        #   one our renderer draws whole), and admission
+                        #   bounding info step for step; `visual`, its mesh
+                        #   in GameMap.visuals, X3.7b to X6.1g), and admission
                         #   (admitStructure / admitProp), the one door a part
                         #   enters the merge by, refusing a shared array in DEV.
                         #   The PIECE id (a layout item) and its ranges'
@@ -1903,17 +1917,14 @@ src/
                         #   step for step: detachPart), mergeParts and
                         #   bakePartTransform (MergeMeshes and
                         #   bakeCurrentTransformIntoVertices, for the models),
-                        #   and the adapters into Babylon: drawnMesh for a
-                        #   model (uploaded, ready to draw), worldMeshes for
-                        #   the world's surfaces (made in BIRTH order — none
-                        #   of one onSurface says our renderer draws whole,
-                        #   X3.7b, and none of the emissive palette, which DEV
-                        #   refuses in a build handing no onSurface — arrays
-                        #   released, a floor mesh sharing terrainGeometry's
-                        #   arrays through the PlainArrays memo), vertexDataOf,
+                        #   worldRecords for the world's surfaces (walked in
+                        #   BIRTH order, each handed to our renderer through
+                        #   onSurface — false is a refusal — its record taken
+                        #   and its arrays released; no mesh: drawnMesh,
+                        #   vertexDataOf and the adapter went at X6.1g) and
                         #   plainGeometryOf (the floor's positions and indices
-                        #   for PhysicsWorld). Only public
-                        #   Babylon API. Colliders are NOT parts, nor meshes
+                        #   for PhysicsWorld). No Babylon. Colliders are NOT
+                        #   parts, nor meshes
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
                         #   palette, builder contract (handed the factory
@@ -2748,8 +2759,9 @@ src/
                         #   GlowRules reads its white emissiveColor). Our renderer draws
                         #   the palette in every pass; no Babylon draw of it
                         #   is left, and
-                        #   no mesh is made of it (worldMeshes: one would draw
-                        #   nothing and bloom white in GlowPass).
+                        #   no mesh is made of it (none of anything since
+                        #   X6.1g; one would have drawn nothing and bloomed
+                        #   white in GlowPass).
                         #   Two per factory, by over-glass offset
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the

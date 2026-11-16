@@ -24,8 +24,9 @@
  *
  * This file must NOT create meshes, materials or colliders — it hands back
  * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the scene, and it
- * imports nothing from Babylon: the server reads it too, and the client turns
- * a patch into a mesh through `world/parts.ts`'s `vertexDataOf`.
+ * imports nothing from Babylon: the server reads it too, and the client hands
+ * a patch to our renderer through `world/parts.ts`'s `worldRecords` (a mesh
+ * through its `vertexDataOf` until `BABYLON_EXIT.md` X6.1g).
  */
 import { CONFIG } from "../config";
 import { computeNormals, GeometryBuffer } from "../geometry/buffer";

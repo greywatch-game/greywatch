@@ -2156,15 +2156,15 @@ arithmetic, `mergeTransformed`), `bakePartTransform` for one, the palette slot
 written into the buffer's `uv2`, the metadata written on the part. The floor's
 patches and the rim's runs are surfaces of the same record, minted first; the
 vertex bake runs on the record after the last merge; and nothing touches the
-device until `MapBuilder.bake`, where `worldMeshes` (`parts.ts`) makes every
-surface Babylon draws a mesh at once — and none of one our renderer draws in
-every pass, which on a shipped build is all but the glazing
-(`BuildOptions.onSurface`, `BABYLON_EXIT.md` X3.7b; the fires since X4.4d) —
-and releases its arrays.
+device until `MapBuilder.bake`, where `worldRecords` (`parts.ts`) hands every
+surface to our renderer at once (`BuildOptions.onSurface`, `BABYLON_EXIT.md`
+X3.7b), which draws it in every pass or refuses it, failing the world, and
+releases its arrays — making no mesh of any (X6.1g; until then a surface our
+renderer did not take was made a Babylon mesh here, which on a shipped build
+was the glazing until X4.6e).
 What the map keeps of the record is `GameMap.world` — each surface's block,
-piece ranges, bounds, material, metadata and counts, mesh or none, each
-naming its mesh in `visuals` if it has one (`SurfaceRecord.visual`) — and
-never the arrays, which the device holds. It used to
+piece ranges, bounds, material, metadata and counts — and never the arrays,
+which the device holds. It used to
 be the other way round: every plank was a Babylon mesh, uploaded the instant it
 existed, read back out of the CPU copies by the merge and disposed — HALF the
 build at 1500 m (161 seconds of a 186-second one), until `parts.ts` stopped
@@ -2174,17 +2174,16 @@ Three consequences a builder has to know. **A part's arrays are its own**: the
 merge bakes a lone part's transform into its arrays IN PLACE, so two parts
 sharing one array would both be moved by it, silently — DEV refuses a shared
 buffer or array at admission. **A part with no material is dropped**: nothing
-would draw it. And **the adapter makes the meshes in BIRTH order**
+would draw it. And **the surfaces are handed over in BIRTH order**
 (`WorldSurface.born`, minted at admission and at every merge of two or more,
-inherited by a merge of one) — the order Babylon made them in while the merge
-ran on meshes, and the order `scene.meshes` holds them in, which `WorldCulling`
-offers candidates in. `npm run merge:hash` records that order per mesh
-(`sceneRank`) and fails on it. **The floor's collider arrays share its patch's**
-(`GameMap.terrainGeometry`, `PhysicsWorld`'s floor; a mesh, the patch's
-collider clone, until `BABYLON_EXIT.md` X5.3e): taken in `buildValley` through
-the build's `PlainArrays` memo (`plainGeometryOf`), which hands a floor mesh
-made of the patch at the end of the build — where one is made — the very
-`number[]` they hold.
+inherited by a merge of one) — the order Babylon made their meshes in while
+the merge ran on meshes, and so its candidate order, which our renderer takes
+the glazing and the fires in. `npm run merge:hash` recorded that order per
+mesh (`sceneRank`) while there were meshes. **The floor's collider arrays are
+its patch's values** (`GameMap.terrainGeometry`, `PhysicsWorld`'s floor; a
+mesh, the patch's collider clone, until `BABYLON_EXIT.md` X5.3e): taken in
+`buildValley` (`plainGeometryOf`), in the types that clone held — a floor mesh
+made of the patch shared them through a build's memo until X6.1g.
 
 **A merged surface still knows which LAYOUT ITEM each span of it came from —
 its PIECE ranges** (`WorldSurface.pieces`, kept on `GameMap.world`). A piece

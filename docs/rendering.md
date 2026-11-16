@@ -165,9 +165,9 @@ Six rules about it, and the first is the one everything else rests on:
   (`WorldSurface`, `world/worldGeometry.ts` — the floor's patches, the rim and
   every merged surface), reading each part's arrays and its world matrix as
   `worldMatrixOf` composes it (the float32 numbers `computeWorldMatrix(true)`
-  made of the mesh when the bake ran on meshes), and the adapter
-  (`worldMeshes`) uploads the colours with the rest and keeps
-  `hasVertexAlpha` false. Baking last also makes a positional
+  made of the mesh when the bake ran on meshes), and our renderer uploads
+  the colours with the rest (`worldRecords` hands them over; the adapter
+  that kept `hasVertexAlpha` false on a mesh went at X6.1g). Baking last also makes a positional
   estimate legitimate: two meshes meeting at a corner are in different merge
   groups (the merge is per colour), and shading a vertex from where it *is*
   rather than from what it belongs to is what makes the two sides agree.
@@ -1505,10 +1505,10 @@ released, and whether an install bakes at all. `ProbeBake` decides nothing.
 Every surface of ours is in it — a block, the landform, the emissive palette
 with its slots — and of Babylon's meshes none: the glazing is in no bake, and
 a FIRE is left out as Babylon's bake left it (`FINDINGS.md` 51). **Since X3.7b
-Babylon is made no mesh of what ours draws, so any other mesh Babylon is made
-is one the bake would owe and cannot draw** — REFUSED at the TAKE, on every
-map whether it has glazing or not (`BlockHandover.install`'s `strayMesh`): the
-world fails (`Game.worldFailed`, the menu and a toast), and a DEV build throws
+Babylon is made no mesh of what ours draws, so any other surface is one the
+bake would owe and cannot draw** — REFUSED at the TAKE, on every map whether
+it has glazing or not (`BlockHandover.onSurface`; until X6.1g it was made a
+Babylon mesh and refused at the install, `strayMesh`): the world fails (`Game.worldFailed`, the menu and a toast), and a DEV build throws
 after it so `merge:hash` refuses the map. **A build our bake holds no world
 for bakes nothing** — a round whose world has already failed, and the map
 editor's build while it stood — and a bake that cannot draw the world it was handed fails the world
@@ -4110,11 +4110,11 @@ it; X3.3c took the switch out. The world's directional shadow maps are our
 side's since X3.6a, the lamps' atlas since X3.6b, the reflection bake since
 X3.6c and the emissive palette's share of the glow's mask since X3.6d
 (below). **And since X3.7b Babylon is made NO MESH of any of it**
-(`worldMeshes`, `BuildOptions.onSurface` answering for each surface): a
-round's `GameMap.visuals` are the glazing (and until X4.4d the fires), the records
-(`GameMap.world`) stay complete and each says who draws it
-(`SurfaceRecord.visual`), and **THE WORLD DRAWS WHOLE OR THE ROUND DOES NOT
-START** — a surface our side cannot hold is refused at the build, and every
+(`BuildOptions.onSurface` answering for each surface), **and since X6.1g no
+build makes a mesh of anything** (`worldRecords`; a round's `GameMap.visuals`
+were the glazing until X4.6e, and the list and `SurfaceRecord.visual` went at
+X6.1g): the records (`GameMap.world`) stay complete, and **THE WORLD DRAWS
+WHOLE OR THE ROUND DOES NOT START** — a surface our side cannot hold is refused at the build, and every
 former handback (a failed pipeline or cull, a cut past the device's limits,
 a refused pass, a pass of ours that cannot draw the world it was handed) is
 `Game.worldFailed`: a `console.error`, the menu, and a toast that the map
@@ -4133,10 +4133,10 @@ its settled promise.
   the part's own transform, the blend is the material's (`blends`, what
   `needAlphaBlendingForMesh` answers for a mesh at full visibility with no
   vertex alpha, which is every world mesh), and rendering group 0 on the
-  default layer mask is every world mesh by construction, `worldMeshes`
-  setting neither. Its arrays are handed over BEFORE any mesh is made of it
-  (`BuildOptions.onSurface`, which answers whether one is), the one moment
-  they can still be read, and read once more when the map is CUT
+  default layer mask was every world mesh by construction, the adapter
+  setting neither. Its arrays are handed over before they are released
+  (`BuildOptions.onSurface`, which answers whether ours draws it — `false`
+  is a refusal), the one moment they can still be read, and read once more when the map is CUT
   (`WorldBlocks.finish`, from `installMap` after `WorldCulling.setMap`).
   `Game.handover` is always built. **A FIRE is taken for the fire draw**
   (`takeFire`, X4.4d: block-merged at identity, never `updatable`, casting
@@ -4275,8 +4275,8 @@ its settled promise.
   keeps only what glows; the palette, which glows, is drawn into the mask by
   our side through the main view (X3.6d, X3.6e; "The palette, ours").
 - **The world's FIRES are handed to the fire draw at the install, in BIRTH
-  order** (`BlockHandover.handFires`, X4.4d) — the order `worldMeshes` made
-  their meshes in, which was Babylon's candidate order, so its active list's,
+  order** (`BlockHandover.handFires`, X4.4d) — the order Babylon made
+  their meshes in while it made any, which was its candidate order, so its active list's,
   its opaque sort's tie-break and the glow mask's order — each with its
   record's block and sphere, and a block no cell was grown for fails the
   world as a surface's does. A fire is drawn while its block's cell is
@@ -5316,10 +5316,11 @@ the frame that are load-bearing.
   warm-up waits for all of them and poses nothing of the weapon
   (`Player.warmView`, which posed the put-away weapon for the glass's sake,
   went with X4.3d).
-- **`kit:hash --models`** hashes a segment IN THE BYTES ITS MESH GAVE: made a
-  throwaway mesh by the same `drawnMesh` on the same arrays and dressed with the
-  flags the mesh carried — the card as the group-0 mesh it was (the script's
-  header).
+- **`kit:hash --models`** hashed a segment IN THE BYTES ITS MESH GAVE until
+  `BABYLON_EXIT.md` X6.1a — a throwaway mesh made by the same `drawnMesh` on the
+  same arrays and dressed with the flags the mesh carried, the card as the
+  group-0 mesh it was — and since then off what the segment IS, its arrays and
+  flags, with no Babylon (the script's header; `drawnMesh` went at X6.1g).
 
 ## The pools, ours: every piece an instance of its kit, all the marks one draw
 
@@ -5421,7 +5422,8 @@ Every batch `BlastFx` poses — one per blast slot, and one the sparks and the
 burning fragments' trails share — was a thin-instanced icosphere on
 `BlastShader`'s material, and is now one draw of ours, its billows instances
 of one of the two icospheres (8 subdivisions for a slot, 4 for the small
-batch), uploaded once off `CreateIcoSphereVertexData` (`render/BlastDraw.ts`,
+batch), uploaded once off `createIcoSphere` (`src/geometry/`'s copy of
+`CreateIcoSphereVertexData` since `BABYLON_EXIT.md` X6.1g; `render/BlastDraw.ts`,
 `render/blastProgram.ts`, the WGSL `shaders/wgsl/blast.ts` — the material's
 arithmetic statement for statement, an instance's matrix, `billow`, `warmth`
 and bloom read where its thin instance's attributes and the mask's `glowColor`

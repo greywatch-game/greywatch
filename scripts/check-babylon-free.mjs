@@ -42,6 +42,11 @@
  *     seven shipped maps' own directories under `src/world/` and the proving
  *     ground's (`src/world/proving/`) — a map's layout, heights and collision
  *     bake being data on `src/math/`.
+ *   - The directories X6.1g emptied, when the last mesh maker went
+ *     (`world/parts.ts`' `drawnMesh`, which every one of them reached) and the
+ *     three effects took their geometry from `src/geometry/`: `src/entities/`,
+ *     `src/net/`, `src/systems/`, `src/ui/`, the kit (`src/world/kit/`, every
+ *     set under it) and the scatter props (`src/world/props/`).
  *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
  *     `docs/build.md`). Most of them the server reaches anyway,
  *     and they are listed regardless, so a simulation is held because it IS
@@ -57,7 +62,8 @@
  * `DIRECTORIES` with `src/math/babylon.ts` — the crossing — named in
  * `NOT_ROOTS` until X6.1f deleted it, and X6.1 widens it to the whole tree, a
  * directory at a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`;
- * X6.1d's review: the thirteen that were already clean; X6.1f: `src/viewer/`).
+ * X6.1d's review: the thirteen that were already clean; X6.1f: `src/viewer/`;
+ * X6.1g: the six above).
  * **An entry in `NOT_ROOTS` is exempt from being a root, never from being
  * REACHED**: a simulation that reaches one still fails, which is the point
  * of having one door.
@@ -67,7 +73,7 @@
  *   - **Type-only imports are erased and skipped** — `import type`, a named
  *     list whose every specifier is inline `type`, and the same two shapes of
  *     `export … from`. That is what lets a simulation NAME a Babylon type
- *     (`GameMap`'s mesh fields do) without loading a byte of it. An import
+ *     (as `GameMap`'s mesh fields did until X6.1g) without loading a byte of it. An import
  *     NOT marked `type` counts as a value even when the bundler would elide it
  *     as unused: the gate reads syntax, not usage, so it is stricter than the
  *     runtime and never looser. Mark it `type`.
@@ -118,13 +124,15 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  * Every source file under these is a root (a directory's subdirectories with
  * it: `src/dev` holds `src/dev/mixer`). The second line is X6.1d's review
  * (`BABYLON_EXIT.md`): every directory that already reached nothing of the
- * package at its parent, ac96836e, added at once so the ratchet holds them.
+ * package at its parent, ac96836e, added at once so the ratchet holds them;
+ * the last is X6.1g's, the six it emptied.
  */
 const DIRECTORIES = [
   "server", "src/sim", "src/render", "src/math", "src/shaders/wgsl",
   "src/bench", "src/config", "src/dev", "src/geometry", "src/pwa", "src/viewer",
   "src/world/cinderhaven", "src/world/coldharbour", "src/world/greyfen", "src/world/harrowmead",
   "src/world/hollowmere", "src/world/kurenai", "src/world/sarab", "src/world/proving",
+  "src/entities", "src/net", "src/systems", "src/ui", "src/world/kit", "src/world/props",
 ];
 
 /**

@@ -21,8 +21,9 @@
  * stated for a reader of the material, never read by a draw. Never given a
  * vertex colour buffer (`vertexShading` skips it). Never worn by anything but
  * a merge: every vertex it draws carries a slot. Never on a Babylon mesh
- * (`worldMeshes` makes none of it: X3.7c's review) — a refused palette fails
- * the world instead, since nothing else could draw it.
+ * (none was made of it from X3.7c's review, and no build makes a mesh of
+ * anything since X6.1g) — a refused palette fails the world instead, since
+ * nothing else could draw it.
  *
  * WHY IT EXISTS. `docs/rendering.md`, "The paint palette": the block merge
  * splits once per MATERIAL, and the albedo palette took a matte surface's

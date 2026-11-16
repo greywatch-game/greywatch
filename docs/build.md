@@ -327,8 +327,8 @@ builds). **A new module that simulates, or a system split into a simulation and
 a view, joins that list in the commit that makes it**; a view never does, and a
 listed file that no longer exists fails rather than dropping out. Type-only
 imports (`import type`, an all-`type` named list, and the `export … from`
-twins) are skipped, because naming a Babylon type loads none of it — `GameMap`
-still names `Mesh` for the client's fields. Re-exports and `import()` are
+twins) are skipped, because naming a Babylon type loads none of it — as
+`GameMap` named `Mesh` for the client's fields until X6.1g. Re-exports and `import()` are
 followed, a computed `import()` or an unresolvable relative specifier FAILS (the
 gate would otherwise have a hole), and resolution takes a name as written, so
 `src/math`'s `./vector.ts` style resolves. A failure prints the importing line
@@ -346,7 +346,11 @@ thirteen that reached nothing of the package already, so the ratchet holds them
 too: `src/bench/`, `src/config/`, `src/dev/` (the mixer), `src/geometry/`,
 `src/pwa/`, the seven shipped maps' own directories under `src/world/` and the
 proving ground's. X6.1f added `src/viewer/`, whose one Babylon type, the
-camera, became ours.
+camera, became ours. X6.1g added the six that reached the package only through
+the last mesh maker (`world/parts.ts`' `drawnMesh`) or the three effects'
+Babylon geometry routines: `src/entities/`, `src/net/`, `src/systems/`,
+`src/ui/`, the kit (`src/world/kit/`) and the scatter props
+(`src/world/props/`).
 
 ## A map reproduces from its generator: `check-maps.mjs`
 
@@ -417,12 +421,17 @@ arrays; and a hand-copied `Mesh.MergeMeshes` that called
 `VertexData._mergeCoroutine` — an underscore member, which nothing in Babylon's
 semver covers. All three of the last went with X1.4, and so did the mesh they
 served: the world's merges, its vertex bake and its palette run on our own
-buffers, and the world becomes meshes once, at the end of the build.
+buffers, and the world becomes RECORDS once, at the end of the build
+(`worldRecords`, `src/world/parts.ts`), our renderer taking each surface's
+arrays on the way past.
 
-**What is left is no internal at all, only public API**, in one place: **the
-one adapter** — `drawnMesh` (`src/world/parts.ts`), and `worldMeshes` through
-it: `VertexData.applyToMesh` on a fresh `Mesh`, and `Mesh.setVerticesData` to
-make a pane block's positions writable. **The colliders were a second**, until
+**What is left is nothing at all.** What was left until `BABYLON_EXIT.md`
+X6.1g was public API, in one place: **the one adapter** — `drawnMesh`
+(`src/world/parts.ts`), and `worldMeshes` through it: `VertexData.applyToMesh`
+on a fresh `Mesh`, and `Mesh.setVerticesData` to make a pane block's positions
+writable — reached by nothing but a surface our renderer refused, in a world
+that failed anyway. X6.1g deleted it: no build makes a mesh, and a refusal is
+the world's failure alone. **The colliders were a second**, until
 `BABYLON_EXIT.md` X5.3e: `MeshBuilder.CreateBox` boxes merged by
 `Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`), read by nothing
 that moves or shoots since X2.1 and by nothing at all once the map editor's
@@ -436,7 +445,9 @@ the bake, the normals — Babylon 9.28's, operation for operation), and so is th
 math under every transform (`src/math/`). Two scripts compare each copy with
 the INSTALLED Babylon: `scripts/geometry-check.mjs` (the generators, the merge
 — it is now the only caller of `VertexData._mergeCoroutine` in the tree, as the
-reference the copy is checked against — the transform and the normals), and
+reference the copy is checked against — the transform, the normals, and since
+X6.1g the three effects' own calls: the blast's icospheres, a rubble chunk's
+box and a glass shard's float32 normals), and
 `scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
 decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
 `flattenParts` are built from). **Beside it, `scripts/bounds-check.mjs`** holds

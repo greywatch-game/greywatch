@@ -18,7 +18,8 @@
  * - Geometry here is a PART (`world/parts.ts`), not a mesh: a
  *   `GeometryBuffer` built by `src/geometry/` with a name, a local transform
  *   and a material, and no Babylon object under it. `MapBuilder` merges parts
- *   as parts, and they become meshes in one place (`worldMeshes`). Anything
+ *   as parts, and they become records in one place (`worldRecords`), our
+ *   renderer taking their arrays on the way past — no mesh. Anything
  *   new here builds through `src/geometry/` (`createBox`, `createCylinder`,
  *   `computeNormals`, a `GeometryBuffer` of finished vertices) — never through
  *   Babylon's `MeshBuilder` or `VertexData`, whose output is not a part and

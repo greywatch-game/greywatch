@@ -1,7 +1,9 @@
 /**
- * MapBuilder.ts — Turns layout data into a GameMap: merges visual meshes per
- * material (frozen, unpickable) and then again per map block (BlockMerge —
- * neighbouring structures share a draw call), records the colliders as DATA
+ * MapBuilder.ts — Turns layout data into a GameMap: merges visual surfaces per
+ * material and then again per map block (BlockMerge — neighbouring
+ * structures share a draw call), records the drawn world as RECORDS
+ * (`GameMap.world`, handing each surface to our renderer on the way — no
+ * visual is a mesh since `BABYLON_EXIT.md` X6.1g), records the colliders as DATA
  * (`colliderBoxes`, `rayGroups`, `boxGroups`, `terrainGeometry` — no collider
  * is a mesh since `BABYLON_EXIT.md` X5.3e), registers fixture lights, builds
  * NavGrid + ObstacleField (and no CoverMap: the AI that reads one is the
@@ -30,21 +32,22 @@
  * Builders arrive with PARTS (world/parts.ts) — plain geometry, a transform
  * and a material — which enter the merge in one place (`admitStructure`,
  * `admitProp` in world/worldGeometry.ts) as `WorldSurface`s, each minted the
- * BIRTH its mesh will be made in; the floor's patches and the rim's runs are
+ * BIRTH it is handed over in (`WorldSurface.born`); the floor's patches and the rim's runs are
  * surfaces too, minted first. Every merge, and then the vertex bake, runs on
- * those and touches no device; the world becomes meshes once, in `bake`
- * (`worldMeshes`), in birth order, which is the scene order the meshes had
- * when the merge still ran on them — and only the freeze runs on the meshes;
- * a surface our renderer draws whole (`BuildOptions.onSurface`) is made none
- * (`BABYLON_EXIT.md` X3.7b). What the map keeps of the record is
- * `GameMap.world`: everything but the arrays, a record a surface. collider() is
+ * those and touches no device; the world becomes RECORDS once, in `bake`
+ * (`worldRecords`), in birth order, which is the scene order the meshes had
+ * when the merge still ran on them, each surface handed to our renderer at
+ * its turn (`BuildOptions.onSurface`) — which draws it whole or refuses it,
+ * failing the world (`BABYLON_EXIT.md` X3.7b) — and made no mesh: the last
+ * arm that made one, for a refused surface, went at X6.1g. What the map keeps
+ * of the record is `GameMap.world`: everything but the arrays, a record a
+ * surface. collider() is
  * on no path to a mesh at all: the collider meshes' last reader was the map
  * editor's centre-screen pick (`BABYLON_EXIT.md` X5.3c), nothing that moves or
  * shoots read one (`RayWorld`, `CollisionField`), and X5.3e stopped making them.
  * The shapes it builds are `mapTypes.ts` and the merge passes it runs are
  * `merge.ts`; both are re-exported from here, so a reader may name either.
  */
-import { Mesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
@@ -84,10 +87,9 @@ import { ObstacleField } from "./ObstacleField";
 import {
   bakePartTransform,
   Part,
-  type PlainArrays,
   plainGeometryOf,
   worldMatrixOf,
-  worldMeshes,
+  worldRecords,
 } from "./parts";
 import { Color3, Matrix, Vector3 } from "../math";
 import {
@@ -495,13 +497,11 @@ function halfExtentsOf(part: Part): { x: number; y: number; z: number } {
 interface BuildRun {
   layout: MapLayout;
   terrain: TerrainField;
-  /** Becomes `GameMap.visuals`: the meshes the adapter made of `surfaces` — Babylon's alone. */
-  visuals: Mesh[];
   /**
    * Every surface the world draws, in list order — the floor's patches, the
    * rim's runs, then every merged surface — which the vertex bake colours
-   * and `worldMeshes` turns into records, and into meshes where Babylon
-   * draws them, in `bake`.
+   * and `worldRecords` turns into records, handing each to our renderer, in
+   * `bake`.
    */
   surfaces: WorldSurface[];
   /** The build's birth counter — see `WorldSurface.born`. */
@@ -512,13 +512,6 @@ interface BuildRun {
    * `worldGeometry.ts`.
    */
   pieces: ItemRef[];
-  /**
-   * The build's plain-array memo (`PlainArrays`), so the floor's arrays for
-   * `PhysicsWorld` (`GameMap.terrainGeometry`), taken in `buildValley`, and a
-   * floor mesh the adapter makes at the end (where a build makes one) hold
-   * one copy of each array between them.
-   */
-  plain: PlainArrays;
   /** The opaque block merge, fed by the placements and the scatter. */
   blocks: BlockMerge;
   /** The glazing's own, fed by the placements. See `PaneBlocks`. */
@@ -540,8 +533,9 @@ interface BuildRun {
  *
  * So the two roles are split, and nothing does both:
  *
- * - **Visual** meshes are merged per colour, unpickable, non-colliding, and
- *   frozen. They are only ever drawn.
+ * - **Visual** surfaces are merged per colour and kept as RECORDS
+ *   (`GameMap.world`), drawn by our renderer and by nothing else — no mesh
+ *   (`BABYLON_EXIT.md` X6.1g). They are only ever drawn.
  * - **Collider** proxies are boxes as DATA — a `WorldBox` each in
  *   `colliderBoxes`, no mesh (`BABYLON_EXIT.md` X5.3e). They are only ever
  *   tested.
@@ -560,7 +554,6 @@ interface BuildRun {
  */
 export class MapBuilder {
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
     private lighting: LightingSystem,
     private ambience: AmbienceSystem,
@@ -620,7 +613,7 @@ export class MapBuilder {
   private keepClear: { x: number; z: number; r: number }[] = [];
 
   /**
-   * Every pane, in build order, and the merged meshes their vertices live in.
+   * Every pane, in build order, and the merged surfaces their vertices live in.
    * Fed by `paneGroup()` exactly as `boxes` is fed by `collider()`, which is
    * what keeps the index that names a pane the same on both sides of the wire.
    */
@@ -814,10 +807,8 @@ export class MapBuilder {
     const run: BuildRun = {
       layout,
       terrain,
-      visuals: [],
       surfaces: [],
       mint,
-      plain: new WeakMap(),
       pieces: [],
       // One size, handed to both, because the reflection bake asks a glazing
       // group and the wall behind it whether they are the same building by
@@ -826,7 +817,6 @@ export class MapBuilder {
       blocks: new BlockMerge(blockSize, mint),
       paneBlocks: new PaneBlocks(blockSize, mint),
     };
-    const { visuals } = run;
     record("valley", () =>
       this.buildValley(run, size, margin, terrainBlock, env, terrainGeometry),
     );
@@ -872,14 +862,12 @@ export class MapBuilder {
       panes: this.panes,
       paneGroups: this.paneGroups,
       terrainGeometry,
-      visuals,
       world,
       water: layout.water ?? [],
       grass: layout.grass ?? [],
       roads: this.roads,
       terrain,
       dispose: () => {
-        for (const m of visuals) m.dispose();
         this.lighting.clear();
         this.ambience.clear();
       },
@@ -1031,7 +1019,7 @@ export class MapBuilder {
         roads: isRoad ? network.footprint : undefined,
       });
       // Its parts enter the merge here and nowhere else, each minted the birth
-      // its mesh will be made in and filed under this placement's PIECE — a
+      // it is handed over in and filed under this placement's PIECE — a
       // road's included (`worldGeometry.ts`).
       const piece = pieces.push({ list: "placements", index: i }) - 1;
       const admitted = admitStructure(built, piece, mint);
@@ -1146,7 +1134,7 @@ export class MapBuilder {
   /**
    * The second merge pass, over the opaque world and then over the glazing,
    * and the palette the first of them discovers. Hands back the glazing's
-   * groups, which become `GameMap.paneGroups` once their surfaces are meshes.
+   * groups, which become `GameMap.paneGroups` once their surfaces are records.
    */
   private mergeBlocks(
     run: BuildRun,
@@ -1181,9 +1169,9 @@ export class MapBuilder {
     this.mats.setPalette(this.paletteColors);
     this.mats.setEmissivePalette(this.glowColors);
     // And the same pass over the glazing, which keeps its ranges — see
-    // `PaneBlocks`. Its meshes join `visuals` for the AO bake and to be
-    // disposed with the map, and they are the one entry in that list that is
-    // NEITHER outlined NOR a shadow caster.
+    // `PaneBlocks`. Its surfaces join `surfaces` for the AO bake and the
+    // records, and they are the one entry in that list that is NEITHER
+    // outlined NOR a shadow caster.
     //
     // **A pane is transparent, and both of those are things only an opaque
     // surface can afford.** A clear sheet laying a hard black shadow across
@@ -1214,8 +1202,8 @@ export class MapBuilder {
   }
 
   /**
-   * The vertex-colour bake over the finished record, the upload, and the
-   * freeze — and what the map keeps of the record (`GameMap.world`).
+   * The vertex-colour bake over the finished record, and the hand-over to our
+   * renderer — and what the map keeps of the record (`GameMap.world`).
    */
   private bake(
     run: BuildRun,
@@ -1223,7 +1211,7 @@ export class MapBuilder {
     glazing: PaneSurfaceGroup[],
     onSurface: BuildOptions["onSurface"],
   ): WorldGeometry {
-    const { terrain, visuals, surfaces, plain } = run;
+    const { terrain, surfaces } = run;
     // The vertex-colour bake — occlusion, the world mark, the wind's sway
     // weight and the wear ramp — and its position in `build` is the whole of
     // it.
@@ -1235,8 +1223,7 @@ export class MapBuilder {
     // world matrix composed as Babylon composed the mesh's — and the colours
     // it writes are uploaded with everything else.
     //
-    // BEFORE the upload, then, and so before `markVisual`'s freeze; and
-    // before the nav graph, which wants `this.boxes` for its own reasons and
+    // BEFORE the hand-over, then; and before the nav graph, which wants `this.boxes` for its own reasons and
     // is not affected either way.
     //
     // `this.boxes` is complete here — every `collider()` has run — and it is
@@ -1257,27 +1244,20 @@ export class MapBuilder {
       );
     }
 
-    // **The one place the world becomes meshes** (`worldMeshes`): every
-    // surface Babylon draws, made in the order Babylon made them when the
-    // merge still ran on meshes — the floor and the rim first, as they were —
-    // and none for a surface our renderer draws whole (`onSurface`,
-    // `BABYLON_EXIT.md` X3.7b), with each surface's arrays released once it
-    // is past. The glazing groups are handed their surface's index on the way
-    // past, and their mesh where one was made — a round's glazing is our
-    // renderer's (`onSurface`, X4.6e) and made none — which is the shape
+    // **The one place the world becomes records** (`worldRecords`): every
+    // surface handed to our renderer (`onSurface`) in the order Babylon made
+    // their meshes in when the merge still ran on meshes — the floor and the
+    // rim first, as they were — which draws it whole or refuses it, failing
+    // the world (`BABYLON_EXIT.md` X3.7b), with each surface's arrays released
+    // once it is past and no mesh made of any (X6.1g). The glazing groups are
+    // handed their surface's index on the way past, which is the shape
     // `GameMap.paneGroups` and `GlassFx` read.
-    const made = record("upload", () => worldMeshes(surfaces, this.scene, plain, onSurface));
+    const records = record("upload", () => worldRecords(surfaces, onSurface));
     const indexOf = new Map<WorldSurface, number>();
     surfaces.forEach((surface, i) => indexOf.set(surface, i));
-    for (const mesh of made.visuals) visuals.push(mesh);
     this.paneGroups = glazing.map((g) => {
       const at = indexOf.get(g.surface)!;
-      return { mesh: made.meshes[at], record: at, panes: g.panes, block: g.block };
-    });
-    const records = made.records;
-
-    record("markVisual", () => {
-      for (const m of visuals) this.markVisual(m);
+      return { record: at, panes: g.panes, block: g.block };
     });
     return { surfaces: records, pieces: run.pieces };
   }
@@ -1350,7 +1330,7 @@ export class MapBuilder {
     /** The floor's blocks as data — see `GameMap.terrainGeometry`. */
     terrainGeometry: TerrainGeometry[],
   ): void {
-    const { terrain, surfaces, mint, plain } = run;
+    const { terrain, surfaces, mint } = run;
     const ridge = run.layout.ridge;
     const floorMat = floorMaterial(
       this.mats,
@@ -1360,9 +1340,9 @@ export class MapBuilder {
     for (const patch of record("terrainPatches", () =>
       terrainPatches(terrain, size, terrainBlock),
     )) {
-      // A surface of the world's record, minted before anything else so its
-      // mesh is made first, as it always was; the bake colours it and the
-      // adapter makes it a mesh with the rest.
+      // A surface of the world's record, minted before anything else so it is
+      // handed over first, as its mesh was made first; the bake colours it
+      // and it is recorded with the rest.
       const ground = new Part(`terrain-${patch.key}`, patch.data);
       ground.material = floorMat;
       // Receiver only: a floor casting into its own depth map is pure acne.
@@ -1382,10 +1362,8 @@ export class MapBuilder {
       // kept is the block's own arrays, for `PhysicsWorld`, which rests bodies
       // on the floor without reaching a mesh — in the types Babylon was
       // handed them when a clone of this block was a mesh (`BABYLON_EXIT.md`
-      // X5.3e took the mesh away), through the build's memo (`plain`), so a
-      // floor mesh made at the end of the build of the same buffer holds the
-      // very arrays these are — one copy for both.
-      terrainGeometry.push(plainGeometryOf(patch.data, plain));
+      // X5.3e took the mesh away).
+      terrainGeometry.push(plainGeometryOf(patch.data));
     }
 
     // The boundary itself: four boxes, and they are the ONLY thing stopping
@@ -1923,18 +1901,6 @@ export class MapBuilder {
     // clearance.
     const { lx, lz } = rotateToLocalXZ(b, x, z, this.localScratch);
     return Math.abs(lx) <= b.w / 2 + pad && Math.abs(lz) <= b.d / 2 + pad;
-  }
-
-  /**
-   * Drawn, never tested. Unpickable and non-colliding so it stays out of every
-   * ray pick and the collision broadphase; frozen because none of it moves.
-   * A visual has no children to mark: the ink twins that were one went with
-   * the ink hull (`CelInk`).
-   */
-  private markVisual(mesh: Mesh): void {
-    mesh.isPickable = false;
-    mesh.checkCollisions = false;
-    mesh.freezeWorldMatrix();
   }
 
   /** Where a builder's local `BoxSpec` lands once the placement is applied. */

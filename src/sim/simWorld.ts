@@ -7,7 +7,7 @@
  * **There are no collider meshes on this side — nor on the client's since
  * `BABYLON_EXIT.md` X5.3e.** Every ray is a box query (`RayWorld`) and so is
  * every sweep (`CollisionField`), both off `colliderBoxes`. What a client
- * draws or rests a corpse on — `visuals`, `paneGroups`, `terrainGeometry` — is
+ * draws or rests a corpse on — `world`, `paneGroups`, `terrainGeometry` — is
  * EMPTY here: every reader of it is a client view (`GlassFx`, `WorldCulling`,
  * `PhysicsWorld`), and the authority builds none of them.
  * Invariants: this is the collider half of `MapBuilder.build` and nothing else,
@@ -74,8 +74,8 @@ import { TerrainField } from "../world/TerrainField";
  * variant — `BattleSystem.setMap` reads `nav`/`cover`/`obstacles` and
  * `ConquestSystem.start` reads `controlPoints`/`spawns`, and both get exactly
  * what they get on the client. The fields that are genuinely absent are the
- * client views' lists (`visuals`, `paneGroups`, `terrainGeometry` — there is
- * no scene to stand one in and no Havok); all are empty rather than faked.
+ * client views' lists (`world`, `paneGroups`, `terrainGeometry` — there is
+ * nothing drawn here and no Havok); all are empty rather than faked.
  */
 export function buildSimWorld(
   def: MapDef,
@@ -199,7 +199,6 @@ export function buildSimWorld(
     // The floor's blocks as `PhysicsWorld` rests a corpse on them: a client
     // view's, and there is no Havok here — see the header.
     terrainGeometry: [],
-    visuals: [],
     // Empty for `paneGroups`' reason: it is the record the DRAWN world was
     // made of, and there is nothing drawn here.
     world: { surfaces: [], pieces: [] },

@@ -1827,10 +1827,11 @@ is one machine's:
   and the `record bounds` line counts those off identity), and its record's
   arrays against the mesh's buffers (`arrays≠buffers`). The DEV reads X3.7a
   added (`WorldCulling.stats.boundsChecked`, the handover's birth check) went
-  with the meshes at X3.7b. In a scratch page, compare
-  `g.map.world.surfaces[i].bounds` with `g.map.visuals[s.visual]
-  .getBoundingInfo()` by `Object.is`, as it does — `visual` -1 is a surface
-  ours draws, which has no mesh to compare.
+  with the meshes at X3.7b. **There is no mesh to compare a record with since
+  `BABYLON_EXIT.md` X6.1g** (no build makes one, and `GameMap.visuals` and
+  `SurfaceRecord.visual` went with them): `scripts/bounds-check.mjs` holds
+  `boundsOf` to Babylon's `BoundingInfo` in Node, every kind at seeded
+  transforms.
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.pools.glazing[slot]` against `g.map.paneGroups[slot]` (39 on
@@ -1882,7 +1883,10 @@ is one machine's:
     `cam.fov = 2 * atan(k / dist)`, so the only thing changing down the sweep
     is the distance.
   - **Hide the rest of the map rather than hunting for a clear sightline** —
-    `map.visuals`, `setEnabled` on a radius around the target. Above ~100 m
+    `map.visuals`, `setEnabled` on a radius around the target, while the world
+    was Babylon's meshes (a round's world has none since X3.7b, and no build
+    makes one since `BABYLON_EXIT.md` X6.1g: a port hides our renderer's
+    blocks instead). Above ~100 m
     every line across Coldharbour crosses something, and a blocked shot reads
     exactly like a pane that is not drawn. **A radius is not enough and was
     measured not to be**: it leaves another wing of the target's own tower
@@ -1890,9 +1894,9 @@ is one machine's:
     produced a clean zero in the middle of a row of healthy readings. Keep the
     pane's own BUILDING — the visuals whose boxes overlap the group's, padded a
     few metres — and hide everything else at every range.
-  - **`markVisual` freezes the world matrices**, so moving a pane group to test
-    a standoff silently does nothing: `unfreezeWorldMatrix()` and
-    `computeWorldMatrix(true)` first. Measured that way, a pane at 220 m needs
+  - **`markVisual` froze the world matrices** (while there were meshes to
+    freeze, until X6.1g), so moving a pane group to test a standoff silently
+    did nothing: `unfreezeWorldMatrix()` and `computeWorldMatrix(true)` first. Measured that way, a pane at 220 m needs
     ~0.2 m of clear air in front of the wall before the depth buffer can
     separate the two, against the 0.04 m the builder gives it.
 

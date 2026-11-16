@@ -1,47 +1,36 @@
 /**
  * parts.ts — PARTS: the `Part` every kit builder, scatter prop and model
  * (weapon, optic, hull, soldier, thrown thing) builds, what a model and the
- * world's merge do to parts before they are meshes, and the places a part
- * becomes a Babylon mesh.
+ * world's merge do to parts, and where the world's surfaces become RECORDS.
  * Owns: `PartNode` (a local transform and a parent — the frame a group of
  * parts is built in) and `Part` (a node with a `GeometryBuffer`, a material
  * and its metadata); `worldMatrixOf`, `detachPart` (`setParent(null)`),
  * `flattenParts` (a prop's parent links resolved into each part's own
  * transform at EMIT time), `mergeParts` (`MergeMeshes`' geometry) and
- * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); the adapters —
- * `drawnMesh` for a model Babylon draws (a thrown thing, a laid thing — and,
- * in `kit:hash` alone, a viewmodel segment hashed as the mesh it was),
- * `worldMeshes` for the world's surfaces (the
- * floor, the rim and every merged surface — a mesh for each Babylon draws,
- * none for one our renderer draws whole — each surface's arrays released
- * once it is past), `vertexDataOf` for a bare buffer (through a build's
- * `PlainArrays` memo where two holders must share one copy), and
- * `plainGeometryOf` for the floor's positions and indices alone.
- * Invariants: a `Part` is plain data — nothing in it has heard of Babylon but
- * the material it carries — and `drawnMesh` is the ONE place one becomes a
- * mesh (`worldMeshes` makes every world mesh through it), handing Babylon
- * exactly the arrays and the transform it held when the builders and the
- * merges made meshes themselves, so `kit:hash` (and its `--models` half) and
- * `merge:hash` cannot tell the difference. Every routine that moves a vertex
- * or a transform here is Babylon's, step for step, because those oracles
- * compare bits. A part has no parent by the time it is adapted:
- * `flattenParts` or `detachPart` cuts every link first, and every adapter
- * refuses one that is left. `worldMeshes` makes the world's meshes in BIRTH
- * order (`WorldSurface.born`, `worldGeometry.ts`), which is the scene order
- * they had when the merge ran on meshes, and hands them back in list order —
- * skipping, at its turn, every surface `onSurface` says our renderer draws
- * whole (`BABYLON_EXIT.md` X3.7b), so the meshes it does make keep that
- * order among themselves.
+ * `bakePartTransform` (`bakeCurrentTransformIntoVertices`); `worldRecords`,
+ * the world's surfaces (the floor, the rim and every merged surface) turned
+ * into the records `GameMap.world` keeps, each handed to our renderer on the
+ * way past and its arrays released; and `plainGeometryOf` for the floor's
+ * positions and indices alone.
+ * Invariants: a `Part` is plain data — nothing in it has heard of Babylon,
+ * and nothing here makes a mesh (`BABYLON_EXIT.md` X6.1g deleted the last
+ * arm that did, `drawnMesh`, with `vertexDataOf`). Every routine that moves a
+ * vertex or a transform here is Babylon's, step for step, because `kit:hash`
+ * (and its `--models` half) and `merge:hash` compare bits. A part has no
+ * parent by the time it is recorded: `flattenParts` or `detachPart` cuts
+ * every link first. `worldRecords` walks the world's surfaces in BIRTH order
+ * (`WorldSurface.born`, `worldGeometry.ts`), which is the order Babylon made
+ * their meshes in while the merge still ran on meshes, and so the order our
+ * renderer is handed them in (`BuildOptions.onSurface`), and hands the
+ * records back in list order.
  *
- * **Why the geometry is ours and the meshes are still Babylon's.** The kit
- * builds `GeometryBuffer`s through `src/geometry/` (Babylon's generators,
- * copied operation for operation and checked by `scripts/geometry-check.mjs`),
- * every merge runs on those buffers, and Babylon draws the result until the
- * renderer is ours. The adapter is the seam between the two, and it is
- * deliberately dumb: a `Float64Array` goes back as the `number[]` Babylon
- * held, a `Float32Array` as itself, the indices as a plain array — never a
- * `Float64Array` handed to a Babylon buffer, which would upload eight-byte
- * doubles as if they were four.
+ * **Why the geometry is ours.** The kit builds `GeometryBuffer`s through
+ * `src/geometry/` (Babylon's generators, copied operation for operation and
+ * checked by `scripts/geometry-check.mjs`), every merge runs on those
+ * buffers, and our renderer uploads the result itself (`BlockHandover`):
+ * until `BABYLON_EXIT.md` X6.1g a surface it refused was made a Babylon mesh
+ * here, in a world that failed anyway (X3.7c), and since then a refusal is
+ * the world's failure alone.
  *
  * **Why nothing is a mesh until the end: 87% of a 1500 m build was the
  * placement loop, and the placement loop is not what anybody thought it was.**
@@ -69,9 +58,9 @@
  * call that would have created its buffers — a Babylon internal leaned on —
  * and an upload every path out of a merge owed. The second is that there is
  * no mesh at all until the merges and the vertex
- * bake are done: they run on parts, and `worldMeshes` uploads each surface the
- * world keeps, once, through public API. The part mesh, and every helper that
- * kept it honest, is deleted.
+ * bake are done: they run on parts, and each surface the world keeps is
+ * uploaded once, by our renderer, as `worldRecords` hands it over. The part
+ * mesh, and every helper that kept it honest, is deleted.
  *
  * **Colliders are not parts, and not meshes.** A collider is a `WorldBox`
  * (`MapBuilder.collider`), a strut group or the floor's own arrays, and
@@ -79,21 +68,12 @@
  * `CollisionField`); the meshes the map editor's centre-screen pick walked
  * went with their last reader (`BABYLON_EXIT.md` X5.3c, X5.3e).
  */
-import {
-  Mesh,
-  // A Babylon mesh's own rotation, for the arm that still makes one (X6.1g).
-  Quaternion as BabylonQuaternion,
-  VertexBuffer,
-  type Scene,
-  VertexData,
-} from "@babylonjs/core";
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";
-import { isEmissiveWorld } from "../shaders/EmissiveWorld";
 import type { MaterialKey } from "../shaders/MaterialKey";
 import { recordOf, releaseArrays, type SurfaceRecord, type WorldSurface } from "./worldGeometry";
 
-/** A mesh's metadata bag, which is what the merge and the bake read flags off. */
+/** A part's metadata bag, which is what the merge and the bake read flags off. */
 export type PartMetadata = { [flag: string]: unknown };
 
 /**
@@ -167,7 +147,7 @@ const TMP_DECOMPOSED = new Quaternion();
 const TMP_COMPOSED = new Matrix();
 const TMP_DETACHED_SCALE = new Vector3();
 const TMP_DETACHED_POSITION = new Vector3();
-/** `worldMeshes`' scratch: each surface's world matrix, which its record's bounds are taken under. */
+/** `worldRecords`' scratch: each surface's world matrix, which its record's bounds are taken under. */
 const TMP_WORLD = new Matrix();
 
 /**
@@ -249,8 +229,8 @@ export function flattenParts(root: Part): Part[] {
  * `mergeTransformed` in the order given — the first part's precision being
  * the merge's. A new buffer; no part's geometry is touched.
  *
- * What the merge did besides the geometry is its caller's: the mesh it made
- * is `drawnMesh`'s, named, painted and parented as the merged mesh was.
+ * What the merge did besides the geometry is its caller's: the part or the
+ * segment made of it is named, painted and hung as the merged mesh was.
  */
 export function mergeParts(parts: readonly Part[]): GeometryBuffer {
   if (parts.length === 0) throw new Error("mergeParts: nothing to merge");
@@ -283,22 +263,14 @@ export function bakePartTransform(part: Part): Part {
 }
 
 /** A float attribute as Babylon held it: doubles as a `number[]`, float32 as itself. */
-function babylonFloats(a: FloatArray, plain?: PlainArrays): number[] | Float32Array {
-  return a instanceof Float32Array ? a : plainOnce(a, plain);
-}
-
-/** `plainArray`, through the build's memo when there is one. */
-function plainOnce(a: Float64Array | Uint32Array, plain?: PlainArrays): number[] {
-  if (!plain) return plainArray(a);
-  let out = plain.get(a);
-  if (!out) plain.set(a, (out = plainArray(a)));
-  return out;
+function babylonFloats(a: FloatArray): number[] | Float32Array {
+  return a instanceof Float32Array ? a : plainArray(a);
 }
 
 /**
  * A typed array's values as a plain array, by a loop: `Array.from` walks a
  * typed array through its iterator, ~28 times slower measured here, and this
- * runs once per attribute of every part in a map.
+ * runs once per attribute of every floor block in a map.
  */
 function plainArray(a: ArrayLike<number>): number[] {
   const out = new Array<number>(a.length);
@@ -307,205 +279,71 @@ function plainArray(a: ArrayLike<number>): number[] {
 }
 
 /**
- * The plain arrays one build has already made of a buffer's typed arrays,
- * keyed by the typed array — so the floor's arrays `PhysicsWorld` rests bodies
- * on (`plainGeometryOf`, `MapBuilder.buildValley`) and a mesh made of the same
- * buffer hold one `number[]` between them, as the floor's mesh and its
- * collider clone did when both were applied from one `VertexData` (the clone
- * was a mesh until `BABYLON_EXIT.md` X5.3e). Per build, and weak, so it holds
- * nothing once the build's buffers are gone.
+ * A buffer's positions and indices alone, in the types Babylon was handed
+ * them in when a clone of the floor block was a collider mesh — doubles as a
+ * `number[]`, float32 as itself, the indices as a plain array — so
+ * `GameMap.terrainGeometry` (`PhysicsWorld`'s floor) holds the very values,
+ * in the very types, it held then (`BABYLON_EXIT.md` X5.3e took the collider
+ * mesh away, and X6.1g the floor mesh whose arrays these were shared with
+ * through a build's memo). Copies but a `Float32Array`'s, so nothing done to
+ * the buffer later reaches them.
  */
-export type PlainArrays = WeakMap<object, number[]>;
-
-/**
- * A buffer as the `VertexData` Babylon would have built: every array in the
- * type Babylon held (see the header) and every one a COPY but a
- * `Float32Array`'s, so nothing Babylon does to its own arrays in place — a
- * merge extends its first member's indices — reaches a buffer through them.
- *
- * Given `plain`, a typed array this build has already copied comes back as the
- * SAME copy rather than a second one — see `PlainArrays`.
- */
-export function vertexDataOf(buffer: GeometryBuffer, plain?: PlainArrays): VertexData {
-  const data = new VertexData();
-  data.positions = babylonFloats(buffer.positions, plain);
-  if (buffer.normals) data.normals = babylonFloats(buffer.normals, plain);
-  if (buffer.uvs) data.uvs = babylonFloats(buffer.uvs, plain);
-  if (buffer.uvs2) data.uvs2 = babylonFloats(buffer.uvs2, plain);
-  if (buffer.colors) data.colors = babylonFloats(buffer.colors, plain);
-  data.indices = plainOnce(buffer.indices, plain);
-  return data;
+export function plainGeometryOf(buffer: GeometryBuffer): { positions: number[] | Float32Array; indices: number[] } {
+  return { positions: babylonFloats(buffer.positions), indices: plainArray(buffer.indices) };
 }
 
 /**
- * A buffer's positions and indices alone, in the types `vertexDataOf` hands
- * Babylon and through the same memo — what the floor's collider clone was
- * made of when it was a mesh, so `GameMap.terrainGeometry` (`PhysicsWorld`'s
- * floor) holds the very arrays, in the very types, it held then.
+ * The one place the WORLD's surfaces become what the map keeps — the floor,
+ * the rim, and every structure, scatter field, road and glazing block a map
+ * build merged (`merge.ts`) and baked (`vertexShading.ts`): a RECORD each
+ * (`recordOf`, `GameMap.world`), carrying its part's material and metadata
+ * object unchanged, and NO mesh (`BABYLON_EXIT.md` X6.1g; on a shipped build
+ * none was made since X4.6e). `onSurface` (`BuildOptions.onSurface`,
+ * `BlockHandover`) is handed each surface and its index in the list at its
+ * turn, while its ARRAYS can still be read, and takes what our renderer draws;
+ * one it answers `false` for it has REFUSED, and the refusal fails the world
+ * at the install (`BlockHandover.refuse`, `Game.worldFailed`) — nothing here
+ * draws it instead. A build handed no `onSurface` keeps the records and
+ * nothing draws the world.
+ *
+ * **The surfaces are WALKED in birth order (`WorldSurface.born`) and the
+ * records RETURNED in list order**, and the two are not the same: a surface's
+ * birth is when Babylon made its mesh while the merge still ran on meshes,
+ * which was Babylon's candidate order, and it is the order `onSurface` is
+ * handed them in — the order our renderer takes the glazing and the fires in,
+ * and so what breaks a tie in their sorts.
+ *
+ * **A surface's ARRAYS are released at its turn** (`releaseArrays`): the
+ * record is everything else, so the CPU holds the world's geometry once — in
+ * our renderer's buffers — rather than twice. The record's BOUNDS are taken
+ * off the arrays under the part's own world matrix (`worldMatrixOf`), first,
+ * as Babylon's bounding info was for the mesh made of it — which `npm run
+ * merge:hash` held them to while a mesh was made, and `scripts/bounds-check.mjs`
+ * holds `boundsOf` to at every off-identity transform.
  */
-export function plainGeometryOf(
-  buffer: GeometryBuffer,
-  plain: PlainArrays,
-): { positions: number[] | Float32Array; indices: number[] } {
-  return { positions: babylonFloats(buffer.positions, plain), indices: plainOnce(buffer.indices, plain) };
-}
-
-/**
- * The one place a MODEL's surface becomes a Babylon mesh — a thrown thing's,
- * a laid thing's: an ordinary mesh with its
- * buffers on the device, ready to draw, hang off a live joint and move. It is
- * what `MeshBuilder` and `Mesh.MergeMeshes` handed the models when they built
- * meshes themselves — `applyToMesh` on a fresh mesh, with the arrays in the
- * types Babylon held. A soldier's surfaces, a hull's and every one of the
- * weapon's never come here in the game: they are SEGMENTS our renderer draws
- * (`SoldierModel.soldierKits` since `BABYLON_EXIT.md` X4.1d,
- * `vehicleRig.segmentOf` since X4.2b, `viewTree.toSegment` since X4.3c, the
- * optics' glasses and the kit card since X4.3d — a viewmodel segment is a
- * `Part` this would take, which is how `kit:hash --models` hashes one in the
- * mesh's bytes), and no Babylon mesh is made of any.
- *
- * Given a `Part`, it carries the part's transform, material and metadata too,
- * and refuses one that still has a parent: a model's live joints are
- * Babylon's, so a part's build-time frame is detached or baked before it is a
- * mesh. Given a bare buffer (a merge's), the mesh stands at identity.
- */
-export function drawnMesh(part: Part, scene: Scene, plain?: PlainArrays): Mesh;
-export function drawnMesh(name: string, buffer: GeometryBuffer, scene: Scene): Mesh;
-export function drawnMesh(
-  a: Part | string,
-  b: Scene | GeometryBuffer,
-  c?: Scene | PlainArrays,
-): Mesh {
-  if (a instanceof Part) {
-    if (a.parent) throw new Error(`drawnMesh: "${a.name}" still has a parent — detach or bake it first`);
-    const mesh = new Mesh(a.name, b as Scene);
-    vertexDataOf(a.geometry, c as PlainArrays | undefined).applyToMesh(mesh);
-    return dress(mesh, a);
-  }
-  const mesh = new Mesh(a, c as Scene);
-  vertexDataOf(b as GeometryBuffer).applyToMesh(mesh);
-  return mesh;
-}
-
-/**
- * The one place the WORLD's surfaces become Babylon meshes — the floor, the
- * rim, and every structure, scatter field, road and glazing block a map build
- * merged (`merge.ts`) and baked (`vertexShading.ts`), each through
- * `drawnMesh`, carrying its part's transform, material and metadata object
- * unchanged — **but for a surface our renderer draws in every pass**, which
- * `onSurface` (`BuildOptions.onSurface`, `BlockHandover`) answers `true` for
- * and which is made no mesh at all (`BABYLON_EXIT.md` X3.7b): on a shipped
- * build that is every surface but the glazing and the fires, and a build
- * handed no `onSurface` is made a mesh of every one — but for a surface
- * wearing the emissive PALETTE, which is made a mesh in NO build
- * (`EmissiveWorld.ts`; a DEV build throws on one handed no `onSurface`). A surface
- * the bake gave colours is given `hasVertexAlpha = false`, as the bake gave
- * its mesh: the alpha is a lighting term, and the world is opaque.
- *
- * **The meshes are CREATED in birth order (`WorldSurface.born`) and RETURNED
- * in list order**, and the two are not the same: a surface's birth is when
- * Babylon made its mesh while the merge still ran on meshes, and that is the
- * order `scene.meshes` holds them in — the order `WorldCulling` offers
- * candidates in, which reaches the glow mask and the transparent tie-breaks.
- * The list order is `GameMap.visuals`', which holds the meshes made and
- * nothing in the place of one not made; each record names its own
- * (`SurfaceRecord.visual`, -1 for none).
- *
- * A surface whose positions must stay writable (`updatable`, a pane block
- * holding a breakable pane) gets them through `Mesh.setVerticesData(…, true)`,
- * the call that made them writable before.
- *
- * **A surface's ARRAYS are released as its mesh is made** (`releaseArrays`):
- * the record the map keeps (`SurfaceRecord`, `GameMap.world`) is everything
- * else, so the CPU holds the world's geometry once — in the arrays Babylon
- * keeps, or in our renderer's buffers — rather than twice. `plain` is the
- * build's `PlainArrays`, which is how a floor mesh comes out holding the
- * arrays `GameMap.terrainGeometry` was already made of. `onSurface`
- * (`BuildOptions.onSurface`) is handed each surface and its index in the
- * list at its turn, BEFORE any mesh is made of it and before the release,
- * and answers whether our renderer draws it whole; the record's BOUNDS are
- * taken off the arrays under the part's own world matrix (`worldMatrixOf`,
- * the one a mesh made of it has) — Babylon's bounding info, which `npm run
- * merge:hash` checks against every mesh that is made.
- */
-export function worldMeshes(
+export function worldRecords(
   surfaces: readonly WorldSurface[],
-  scene: Scene,
-  plain: PlainArrays,
   onSurface?: (surface: WorldSurface, index: number) => boolean,
-): { visuals: Mesh[]; meshes: (Mesh | null)[]; records: SurfaceRecord[] } {
+): SurfaceRecord[] {
   const order = surfaces.map((_, i) => i).sort((a, b) => surfaces[a].born - surfaces[b].born);
   if (import.meta.env.DEV) {
     for (let k = 1; k < order.length; k++) {
       if (surfaces[order[k]].born === surfaces[order[k - 1]].born) {
         throw new Error(
-          `worldMeshes: "${surfaces[order[k]].part.name}" and "${surfaces[order[k - 1]].part.name}" ` +
+          `worldRecords: "${surfaces[order[k]].part.name}" and "${surfaces[order[k - 1]].part.name}" ` +
             `share birth ${surfaces[order[k]].born} — one surface reached the world twice`,
         );
       }
     }
   }
-  const meshes = new Array<Mesh | null>(surfaces.length).fill(null);
   const records = new Array<SurfaceRecord>(surfaces.length);
   for (const i of order) {
     const surface = surfaces[i];
     records[i] = recordOf(surface, worldMatrixOf(surface.part, TMP_WORLD));
-    // Ours whole, or a mesh for Babylon — asked before a mesh exists, so a
-    // surface our renderer draws is never uploaded twice.
-    const ours = onSurface ? onSurface(surface, i) : false;
-    if (!ours && isEmissiveWorld(surface.part.material)) {
-      // The emissive PALETTE is never made a mesh (`EmissiveWorld.ts`): a
-      // plain `Material` is never ready, so the frame would draw nothing
-      // there, and `GlowPass`, which admits a mesh by its emissive colour,
-      // would bloom its WHITE one over the hole. Handed `onSurface`, the
-      // handover has answered for it already — it takes the palette whole or
-      // refuses it, the refusal failing the world at the install
-      // (`BlockHandover.refuse`) — so it is left meshless with the rest of a
-      // map that is about to be torn down. Handed none, there is no handover
-      // to hold a refusal to (every build the game makes hands one since the
-      // map editor went, `BABYLON_EXIT.md` X5.3c): a DEV build says so here.
-      if (import.meta.env.DEV && !onSurface) {
-        throw new Error(
-          `worldMeshes: "${surface.part.name}" wears the emissive palette, which no Babylon mesh may wear ` +
-            "(a build that merges its blocks hands BuildOptions.onSurface — BABYLON_EXIT.md X3.7c)",
-        );
-      }
-    } else if (!ours) {
-      const mesh = drawnMesh(surface.part, scene, plain);
-      if (surface.part.geometry.colors) mesh.hasVertexAlpha = false;
-      if (surface.updatable) {
-        const positions = mesh.getVerticesData(VertexBuffer.PositionKind);
-        if (positions) mesh.setVerticesData(VertexBuffer.PositionKind, positions, true);
-      }
-      meshes[i] = mesh;
-    }
+    // Ours, or refused: asked before the release, so our renderer takes the
+    // arrays while they can still be read.
+    onSurface?.(surface, i);
     releaseArrays(surface.part, i);
   }
-  // `GameMap.visuals`: the meshes made, in list order, each record naming
-  // its own.
-  const visuals: Mesh[] = [];
-  surfaces.forEach((_, i) => {
-    const mesh = meshes[i];
-    if (!mesh) return;
-    records[i].visual = visuals.length;
-    visuals.push(mesh);
-  });
-  return { visuals, meshes, records };
-}
-
-/**
- * A part's transform and metadata onto the mesh made of it. Its MATERIAL is
- * not: a material is a key of ours (`shaders/MaterialKey.ts`, since
- * `BABYLON_EXIT.md` X6.1c), no Babylon object, and nothing reads a mesh's —
- * the scene is never rendered, and a mesh made here is one the handover
- * refused, in a world that fails (X3.7c).
- */
-function dress(mesh: Mesh, part: Part): Mesh {
-  mesh.position.set(part.position.x, part.position.y, part.position.z);
-  mesh.rotation.set(part.rotation.x, part.rotation.y, part.rotation.z);
-  mesh.scaling.set(part.scaling.x, part.scaling.y, part.scaling.z);
-  const q = part.rotationQuaternion;
-  if (q) mesh.rotationQuaternion = new BabylonQuaternion(q.x, q.y, q.z, q.w);
-  if (part.metadata) mesh.metadata = part.metadata;
-  return mesh;
+  return records;
 }

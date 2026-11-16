@@ -98,7 +98,7 @@
  * and no build or match opened after it, `deviceIsLost`),
  * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
-import { Scene, type SubMesh } from "@babylonjs/core";
+import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Color3, type Color3Like, Color4, Matrix, type Plane, Vector3, type Vector3Like } from "../math";
 import {
@@ -485,7 +485,9 @@ function fireSoundKey(id: number): number {
 
 /**
  * Squared eye distance to a submesh's bounding-sphere centre, for the
- * front-to-back opaque sort installed in the constructor.
+ * front-to-back opaque sort installed in the constructor — asked of anything
+ * that answers a world bounding sphere, so no mesh type is named here
+ * (`BABYLON_EXIT.md` X6.1g: no build makes a mesh, and the sort orders none).
  *
  * Squared because a sort only needs the ORDER, and the centre rather than the
  * near point because this is picking a drawing order rather than measuring
@@ -494,7 +496,10 @@ function fireSoundKey(id: number): number {
  * that pair the wrong way round costs one block's early rejection rather than
  * a wrong picture.
  */
-function eyeDistanceSq(sub: SubMesh, eye: Vector3Like): number {
+function eyeDistanceSq(
+  sub: { getBoundingInfo(): { boundingSphere: { centerWorld: Vector3Like } } },
+  eye: Vector3Like,
+): number {
   const c = sub.getBoundingInfo().boundingSphere.centerWorld;
   const dx = c.x - eye.x;
   const dy = c.y - eye.y;
@@ -2480,7 +2485,7 @@ export class Game {
     // nothing. Nothing it does is visible to a
     // ray, a collision, a shadow caster or a cube probe; see `WorldCulling`,
     // which is the whole argument.
-    this.culling = new WorldCulling(this.scene, this.sceneFrame, this.surface);
+    this.culling = new WorldCulling(this.sceneFrame, this.surface);
     // The world our renderer draws, in every pass, with no fallback: what it
     // cannot draw is the round's end (`worldFailed`).
     this.handover = new BlockHandover(
@@ -2509,7 +2514,6 @@ export class Game {
     // draw counter cannot (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
     this.mapBuilder = new MapBuilder(
-      this.scene,
       this.mats,
       this.lighting,
       this.ambience,
@@ -5982,8 +5986,9 @@ export class Game {
     // authority off its own world (`BuildOptions.navFields`) — in the page's
     // own match, in its host. (The viewer sweeps the fields it draws itself.)
     const navFields = this.remoteRound;
-    // Our renderer draws the world in every pass, and Babylon is made a mesh
-    // of only what it does not (`BABYLON_EXIT.md` X3.7b).
+    // Our renderer draws the world in every pass, and what it cannot draw
+    // fails the world (`BABYLON_EXIT.md` X3.7b): no build makes a mesh of it
+    // (X6.1g).
     const map = this.mapBuilder.build(layout, environment, heights, {
       foliage,
       navFields,
@@ -5996,7 +6001,7 @@ export class Game {
     this.foliageBuilt = this.settings.foliage;
     this.pushProfileGraphics();
     // The shadow camera follows the environment's key light, and its casters
-    // are the fresh map's visuals — last build's meshes are now disposed.
+    // are the fresh map's surfaces, handed over by the handover's install.
     this.shadows.setLightDirection(environment.lighting.direction);
     // The storm, seeded off the map's id so its schedule is the map's own and
     // the same on every client in a match (see `LightningStrikes`).
@@ -6054,9 +6059,9 @@ export class Game {
     this.culling.setHullDrawDistance(hullDrawDistanceOf(environment));
     // And a third reader of the FOG, for the same reason turned inside out:
     // past the fog wall there is nothing to see, so there is nothing to WALK
-    // either. `WorldCulling` files the fresh map's meshes and
-    // decides which of them Babylon's per-frame active-mesh pass is offered —
-    // it writes nothing onto any of them, so unlike the two lines above it,
+    // either. `WorldCulling` grows the fresh map's cells from its records and
+    // decides what our renderer's culls are handed — it writes nothing onto
+    // anything they draw, so unlike the two lines above it,
     // and unlike every other line in this method, nothing downstream can tell
     // it ran. See `ENGINE_UPGRADE.md` wall 1.
     //
@@ -6066,11 +6071,10 @@ export class Game {
     // vanishes out of a skyline the player is looking at. The fog is what makes
     // the second one exact — past it a structure draws `fogColor` in front of
     // ground that draws `fogColor` — and nothing else does.
-    const unfiled = this.culling.setMap(map, environment.fogEnd);
+    this.culling.setMap(map, environment.fogEnd);
     // And the fresh map's world to our renderer, cut against the cells the
-    // cull grew — unless the cull found the build's own contract broken, which
-    // is the world failing rather than a map to cut. Whose world it is, for
-    // its failure: a fresh owner an install, the round's from here on.
+    // cull grew. Whose world it is, for its failure: a fresh owner an
+    // install, the round's from here on.
     const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
     this.roundWorld = owner;
     // The bodies are no part of the world the handover hands over, and have
@@ -6132,11 +6136,7 @@ export class Game {
     this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
     // …and the dome and the moon, on the clouds' terms (X4.5c).
     this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
-    if (unfiled) {
-      this.worldFailed(`the cull refused the build: ${unfiled}`, owner);
-    } else {
-      this.handover.install(map, owner);
-    }
+    this.handover.install(map, owner);
     // The bodies' map is no part of the world the handover hands over, but it
     // has no fallback either: a pipeline of it that cannot be built fails the
     // round as the world's passes do — this install's, and every one after

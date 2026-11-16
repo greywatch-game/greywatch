@@ -107,9 +107,9 @@
  * carrying a second integrator and a terrain pointer for a fall nobody had
  * seen since the engine started shipping with the build.
  */
-import { VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import { computeNormalsInto } from "../geometry/buffer";
 import { Quaternion, Vector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { WorldPane } from "../world/MapBuilder";
@@ -596,7 +596,10 @@ export class DebrisSystem implements PhysicsClient {
     }
     // Computed rather than written out: a degenerate face contributes a zero
     // normal and no more, which is what makes the pad invisible here too.
-    VertexData.ComputeNormals(pos, this.shardIndices as number[], shard.nrm);
+    // `VertexData.ComputeNormals` into the shard's float32 array, summing in
+    // float32 as Babylon's did into the same array — `src/geometry/`'s copy
+    // since `BABYLON_EXIT.md` X6.1g, held to it by `geometry-check`.
+    computeNormalsInto(pos, this.shardIndices, shard.nrm);
     // The bounds come off the new vertices, as `updateVerticesData(…, true)`
     // rebuilt a mesh's: a shard that kept the last piece's would be measured
     // by the outline of a piece that is no longer there.

@@ -17,6 +17,14 @@
  * like it, it fails on an export of `primitives.ts` no case names
  * (`COVERED`), so it cannot quietly fall behind.
  *
+ * **And the three EFFECTS' own calls** (`BABYLON_EXIT.md` X6.1g, which moved
+ * them off Babylon's routines onto these): the blast's two icospheres
+ * (`BlastFx`, radius 1 at subdivisions 8 and 4, smooth), a rubble chunk's box
+ * (`BlastDebrisSystem`, three jittered extents), and a glass shard's normals
+ * computed INTO a float32 array from float32 positions (`DebrisSystem`) —
+ * which rounds every sum as it is stored, on both sides, so it is its own
+ * case beside the doubles' `computeNormals`.
+ *
  * What it compares is VALUES, never array types: a buffer holds a
  * `Float64Array` where Babylon held a `number[]` (see `buffer.ts`), and the
  * type is what the merge cases check separately — a `Float32Array` first
@@ -31,7 +39,7 @@
  */
 import * as B from "@babylonjs/core";
 import * as G from "../src/geometry/primitives.ts";
-import { GeometryBuffer, computeNormals, mergeTransformed } from "../src/geometry/buffer.ts";
+import { GeometryBuffer, computeNormals, computeNormalsInto, mergeTransformed } from "../src/geometry/buffer.ts";
 import { Matrix as OurMatrix, Quaternion as OurQuaternion, Vector3 as OurVector3 } from "../src/math/index.ts";
 import { mulberry32 } from "../src/world/rng.ts";
 
@@ -324,6 +332,28 @@ const BUFFER_CASES = {
     sameData("bake", ours, theirs, { a, f32, m });
     mesh.dispose();
   },
+  computeNormalsIntoFloat32() {
+    // `DebrisSystem`'s call: a shard's float32 positions, its normals summed
+    // INTO its own float32 array (stale values first, as a reused shard's),
+    // degenerate faces and all — the soup repeats indices.
+    const a = soup(false);
+    const positions = new Float32Array(a.positions);
+    const theirs = new Float32Array(positions.length).fill(7);
+    const ours = new Float32Array(positions.length).fill(7);
+    B.VertexData.ComputeNormals(positions, a.indices, theirs);
+    computeNormalsInto(positions, a.indices, ours);
+    sameData("computeNormalsInto (float32, a shard's)", { normals: ours }, { normals: theirs }, a);
+  },
+  chunkBox() {
+    // `BlastDebrisSystem`'s call: a base size in the rubble's band, three
+    // extents jittered off it, the full extents handed to the generator.
+    const base = 0.04 + rand() * 0.16;
+    const hx = base * (0.7 + 0.6 * rand());
+    const hy = base * (0.55 + 0.5 * rand());
+    const hz = base * (0.7 + 0.6 * rand());
+    const o = { width: hx * 2, height: hy * 2, depth: hz * 2 };
+    sameData("createBox (a rubble chunk's)", G.createBox({ ...o }), B.CreateBoxVertexData({ ...o }), o);
+  },
   mergeRefusesMismatch() {
     const a = withNormals(soup(true));
     const b = withNormals(soup(false));
@@ -340,6 +370,13 @@ const BUFFER_CASES = {
 // ---------------------------------------------------------------------------
 
 const missing = Object.keys(G).filter((k) => !COVERED.has(k));
+
+// The blast's two icospheres (`BlastFx`), exactly as it asks for them: once
+// each, since nothing about them is drawn.
+for (const subdivisions of [8, 4]) {
+  const o = { radius: 1, subdivisions, flat: false };
+  sameData(`createIcoSphere (the billow's, ${subdivisions})`, G.createIcoSphere({ ...o }), B.CreateIcoSphereVertexData({ ...o }), o);
+}
 
 for (let t = 0; t < TRIALS; t++) {
   for (const c of CASES) {

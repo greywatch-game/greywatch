@@ -177,9 +177,9 @@ export function toRayGroups(collision: MapCollision): WorldBox[][] {
  * Expands the baked panes into the `WorldPane`s `GlassSystem` sweeps against.
  *
  * The two vertex fields come back as zeroes rather than being made up, and that
- * is honest rather than lossy: they address a merged mesh, the server has none,
- * and `paneGroups` is empty there for the same reason. Anything reading them on
- * this side is reading a mesh it does not have.
+ * is honest rather than lossy: they address a merged glazing surface, the
+ * server has none, and `paneGroups` is empty there for the same reason.
+ * Anything reading them on this side is reading a surface it does not have.
  */
 export function toWorldPanes(collision: MapCollision): WorldPane[] {
   return (collision.panes ?? []).map(

@@ -65,10 +65,9 @@
  * exactly, and for its reason: rubble that vanishes mid-flight is worse than
  * rubble that never flew, while a chunk lying in the road is fair game.
  */
-import { CreateBoxVertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { Fade, fadeKit, type FadeKit, SCORCH } from "../entities/fades";
-import { createDisc } from "../geometry/primitives";
+import { createBox, createDisc } from "../geometry/primitives";
 import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
 import type { OwnTexture } from "../render/HostBindGroup";
 import { newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
@@ -148,8 +147,10 @@ const PARKED_Y = -1000;
 
 /**
  * One chunk's box, as `CreateBox` made its mesh's arrays until
- * `BABYLON_EXIT.md` X4.4c — what our renderer uploads once, a kit for each
- * of the two paints (`Game`).
+ * `BABYLON_EXIT.md` X4.4c (`src/geometry/`'s `createBox` since X6.1g: doubles
+ * in a `Float64Array` and the indices in a `Uint32Array`, where Babylon's
+ * were `number[]`s, which our renderer copies into its buffers the same) —
+ * what our renderer uploads once, a kit for each of the two paints (`Game`).
  */
 export interface ChunkBox {
   readonly positions: ArrayLike<number>;
@@ -549,13 +550,15 @@ export class BlastDebrisSystem implements PhysicsClient {
         const hx = base * (0.7 + 0.6 * this.rand());
         const hy = base * (0.55 + 0.5 * this.rand());
         const hz = base * (0.7 + 0.6 * this.rand());
-        // Its box, as `CreateBox` built the mesh it was until X4.4c.
-        const data = CreateBoxVertexData({ width: hx * 2, height: hy * 2, depth: hz * 2 });
+        // Its box, as `CreateBox` built the mesh it was until X4.4c — by
+        // `src/geometry/`'s copy since `BABYLON_EXIT.md` X6.1g, held to
+        // Babylon's bit for bit by `geometry-check`.
+        const data = createBox({ width: hx * 2, height: hy * 2, depth: hz * 2 });
         const box: ChunkBox = {
-          positions: data.positions!,
+          positions: data.positions,
           normals: data.normals!,
           uvs: data.uvs!,
-          indices: data.indices!,
+          indices: data.indices,
         };
         // No bloom: a chunk is matte cel.
 

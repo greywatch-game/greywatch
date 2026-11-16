@@ -9,8 +9,9 @@
  * block side a map that states none is merged at, is `blocks.ts`'s.
  * Everything here runs on `WorldSurface`s (`worldGeometry.ts`) — `Part`s and
  * their bookkeeping, typed arrays and nothing on the device — and what it
- * hands back is still surfaces: `worldMeshes` (`parts.ts`) is where the world
- * becomes meshes, once, at the end of the build.
+ * hands back is still surfaces: `worldRecords` (`parts.ts`) is where the world
+ * becomes records, once, at the end of the build, handed to our renderer on
+ * the way past.
  * A prop's hierarchy arrives already flattened (`flattenParts` in `parts.ts`).
  * Plus `mergeSurfaces`, the one way two or more surfaces become one: the
  * geometry by `mergeParts`, the PIECE ranges carried across beside it

@@ -40,8 +40,8 @@
  *   (X4.3c the opaque ones; X4.3d the two BLENDED ones, an optic's glass and
  *   the kit card — `ViewSegment.role`): a `ViewSegment` is the arrays, the
  *   transform, the material and the metadata the mesh was made of —
- *   `drawnMesh`'s inputs, which `kit:hash --models` still makes a mesh of to
- *   hash it in the mesh's bytes — and the two flags the frame reads,
+ *   `drawnMesh`'s inputs while there was one (`world/parts.ts`, deleted at
+ *   `BABYLON_EXIT.md` X6.1g) — and the two flags the frame reads,
  *   `isVisible` and its builder's own switch. A glass and the card carry NO
  *   material: the glass's look is `ViewSegment.glass` (`ViewGlass`), the
  *   card's is its canvas (`ViewModel.kitCard`), so no Babylon material is
@@ -123,7 +123,7 @@ export class ViewSegment extends Part {
 /**
  * A part as the segment `drawnMesh` would have made a mesh of: its arrays,
  * transform, material and metadata carried over — `dress`'s copy — and a
- * part that still has a parent refused, as `drawnMesh` refuses one.
+ * part that still has a parent refused, as `drawnMesh` refused one.
  */
 export function toSegment(part: Part): ViewSegment {
   if (part.parent) throw new Error(`toSegment: "${part.name}" still has a parent — detach or bake it first`);
@@ -138,7 +138,7 @@ export function toSegment(part: Part): ViewSegment {
   return s;
 }
 
-/** A bare buffer as a segment at identity — `drawnMesh(name, buffer)`'s. */
+/** A bare buffer as a segment at identity — what `drawnMesh(name, buffer)` made. */
 export function segmentOf(name: string, buffer: GeometryBuffer): ViewSegment {
   return new ViewSegment(name, buffer);
 }

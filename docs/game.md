@@ -344,11 +344,11 @@ had them).
 **The world's drawing is our renderer's, and a failure of it is the ROUND's**
 (`BABYLON_EXIT.md` X3.7b). `installMap` builds the map with
 `BlockHandover.onSurface`, which answers for each surface whether ours draws
-it in every pass — and Babylon is made no mesh of what it does, a round's
-`map.visuals` being the glazing alone (the FIRES are taken for our fire draw
-since `BABYLON_EXIT.md` X4.4d, `render/FlameDraw.ts`, handed it at the
-install and drawn while their block's cell is offered), while `map.world` keeps a
-record of every surface, each naming its mesh if it has one — then files it
+it in every pass, refusing what it cannot — and no build makes a mesh of
+anything (`BABYLON_EXIT.md` X6.1g; a round's was the glazing alone until
+X4.6e, the FIRES being taken for our fire draw since X4.4d,
+`render/FlameDraw.ts`, handed it at the install and drawn while their block's
+cell is offered), while `map.world` keeps a record of every surface — then files it
 (`WorldCulling.setMap`, the cells grown off the records) and hands it over
 (`handover.install`, the cut, and every pass of ours its world). **What ours cannot draw is
 never handed back, there being no mesh to hand it to: it is

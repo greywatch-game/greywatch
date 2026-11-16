@@ -7,8 +7,9 @@
  * `PaneSurfaceGroup` (a glazing surface and the breakable panes that live in
  * it), `SurfaceRecord` and `WorldGeometry` (what `GameMap.world` keeps of a
  * build once its arrays are uploaded — everything but the arrays, since
- * X3.7a the world BOUNDS taken off them, `boundsOf`, and since X3.7b which
- * mesh of `GameMap.visuals` it is, if Babylon was given one), the DEV `SurfaceSink`
+ * X3.7a the world BOUNDS taken off them, `boundsOf`; which mesh of
+ * `GameMap.visuals` it was, if Babylon was given one, it said from X3.7b until
+ * X6.1g, when no build made one), the DEV `SurfaceSink`
  * the arrays pass through as they are released, and
  * ADMISSION: the one place a builder's parts enter the merge
  * (`admitStructure`, `admitProp`), each minted a birth and filed under its
@@ -34,18 +35,19 @@
  * Owns: nothing that outlasts a build but the DEV-only set of admitted
  * arrays. No Babylon — the `Part`, `Structure` and `Material`
  * it names are TYPES — so the merge and the bake that run on these
- * (`merge.ts`, `vertexShading.ts`) move nothing on the device and the one
- * adapter that does (`worldMeshes` in `parts.ts`) is the only crossing.
- * Invariants: `born` is the SCENE ORDER the surface's mesh must be created in
- * — the order Babylon made it when the merge still ran on meshes — and it is
+ * (`merge.ts`, `vertexShading.ts`) move nothing on the device, and the one
+ * place a surface is handed to what does — our renderer, through
+ * `BuildOptions.onSurface` — is `worldRecords` in `parts.ts`.
+ * Invariants: `born` is the order a surface is handed to our renderer in —
+ * the SCENE ORDER Babylon made its mesh in when the merge still ran on meshes,
+ * which was its candidate order — and it is
  * minted from ONE counter per build, at the points Babylon used to create a
  * mesh: every admitted part (a structure's `meshes` then its `paneMeshes`, a
  * prop's parts in `flattenParts` order) and every merge of two or more. A
  * merge of ONE keeps its member's birth, because it keeps its member — and
- * a surface our renderer draws whole is minted one all the same, and made no
- * mesh at its turn (X3.7b). No two
- * surfaces a build hands the adapter share a birth (`worldMeshes` asserts it
- * in DEV). An admitted part's buffer and arrays belong to that part ALONE:
+ * no surface is made a mesh at its turn (none since X6.1g). No two
+ * surfaces a build records share a birth (`worldRecords` asserts it in
+ * DEV). An admitted part's buffer and arrays belong to that part ALONE:
  * the merge bakes a lone part's transform into its own arrays IN PLACE, so a
  * buffer two parts shared would be moved twice, silently — DEV refuses one at
  * admission. A surface's piece ranges are CONTIGUOUS, in order, and cover
@@ -79,14 +81,15 @@ export interface PieceRange {
 }
 
 /**
- * One merged world surface: ONE record in `GameMap.world`, and ONE mesh in
- * `GameMap.visuals` unless our renderer draws it in every pass (X3.7b).
+ * One merged world surface: ONE record in `GameMap.world`, and no mesh
+ * (`BABYLON_EXIT.md` X6.1g): our renderer draws it in every pass, or the
+ * world fails (X3.7b).
  *
  * `part` carries the geometry, the transform (identity once block-merged; a
  * placement's own on a pane block of one), the
  * material, and the METADATA — the contract `CLAUDE.md` names (`block`,
- * `noShadowCaster`, `noGlow`, `noInk`, `sway`), which the adapter
- * hands the mesh unchanged and by identity.
+ * `noShadowCaster`, `noGlow`, `noInk`, `sway`), which the record keeps
+ * unchanged and by identity.
  */
 export interface WorldSurface {
   part: Part;
@@ -98,9 +101,8 @@ export interface WorldSurface {
    * are no block and no scatter, that our renderer draws ahead of rendering
    * group 0's alpha-tested meshes (`BlockHandover`, `WorldBlocks`), and whose
    * reach is none. Marked by the BUILD (`MapBuilder`) where it makes them,
-   * never guessed from a name or a missing block. On the RECORD only and
-   * never in `part.metadata`, so it reaches no mesh and nothing `merge:hash`
-   * fingerprints.
+   * never guessed from a name or a missing block. On the surface only and
+   * never in `part.metadata`, so nothing `merge:hash` fingerprints reads it.
    */
   landform: boolean;
   /** See `PieceRange`. */
@@ -110,13 +112,13 @@ export interface WorldSurface {
    * breakable pane, which `GlassFx` collapses in place.
    */
   updatable: boolean;
-  /** Where its mesh stands in the scene's creation order. See the header. */
+  /** Where its mesh stood in the scene's creation order, while there was one: the order it is handed over in. See the header. */
   born: number;
 }
 
 /**
  * A glazing surface and the breakable panes whose vertex ranges live in it —
- * `PaneGroup` before its surface is a mesh. `panes` index `GameMap.panes`.
+ * `PaneGroup` before its surface is a record. `panes` index `GameMap.panes`.
  */
 export interface PaneSurfaceGroup {
   surface: WorldSurface;
@@ -128,43 +130,35 @@ export interface PaneSurfaceGroup {
 /**
  * What the map KEEPS of a surface once its arrays are uploaded
  * (`GameMap.world`): its name, its world bounds, its material, its METADATA
- * (the very object a mesh made of it carries — `block`, the exemptions,
- * `sway`), its block, its piece ranges, whether its positions
+ * (the very object its part carried — `block`, the exemptions, `sway`), its
+ * block, its piece ranges, whether its positions
  * are writable, how many vertices and indices it holds — which is the
  * merge's KEY (block, material, sway, exemptions) and everything a piece
- * range is measured against — and WHO DRAWS IT (`visual`).
+ * range is measured against. Who draws it is not a field: our renderer, in
+ * every pass, or the world failed (`BABYLON_EXIT.md` X6.1g deleted
+ * `visual`, a mesh's index in `GameMap.visuals`, with the list).
  *
- * **Never the vertex ARRAYS.** Those are the device's — in the arrays
- * Babylon keeps for a mesh, or in our renderer's buffers — and holding them
- * here as well would hold the world's geometry twice on the CPU (Greyfen is
- * ~6 M vertices), and nothing reads them back. `worldMeshes` releases each
- * surface's arrays once it is past (`releaseArrays`). A renderer of our own
- * that draws a surface takes its arrays on the way past instead
+ * **Never the vertex ARRAYS.** Those are the device's — in our renderer's
+ * buffers — and holding them here as well would hold the world's geometry
+ * twice on the CPU (Greyfen is ~6 M vertices), and nothing reads them back.
+ * `worldRecords` releases each surface's arrays once it is past
+ * (`releaseArrays`). Our renderer takes them on the way past
  * (`BuildOptions.onSurface`, just before the release), so they are never
  * kept here either.
  */
 export interface SurfaceRecord {
   name: string;
   /**
-   * Its mesh's index in `GameMap.visuals`, or -1: OUR renderer draws it in
-   * every pass and Babylon was given no mesh of it (`BuildOptions.onSurface`,
-   * `BABYLON_EXIT.md` X3.7b) — on a shipped build every surface but the
-   * glazing and the fires. Every index of `visuals` is named by exactly one
-   * record (`WorldCulling.setMap` checks).
-   */
-  visual: number;
-  /**
    * Its WORLD bounds, taken from its arrays before they are released
    * (`boundsOf`): what `WorldCulling` grows a cell's box from and size-gates a
-   * filed candidate by, in place of the mesh's bounding info, which is the
-   * same numbers bit for bit (`npm run merge:hash` checks every visual that
-   * has a mesh). A cell is grown from EVERY record filed under its block,
-   * mesh or none (`BABYLON_EXIT.md` X3.7b); only a candidate is a mesh.
+   * filed surface by, in place of a mesh's bounding info, which is the
+   * same numbers bit for bit (`scripts/bounds-check.mjs`). A cell is grown
+   * from EVERY record filed under its block (`BABYLON_EXIT.md` X3.7b).
    */
   bounds: SurfaceBounds;
   /**
    * The material the BUILD gave it, and the merge keyed it on. Not
-   * necessarily the mesh's for the life of the map: `ReflectionSystem` hands
+   * necessarily what draws it for the life of the map: `ReflectionSystem` hands
    * each glazing block a probe material of its own once its cube is baked.
    */
   material: MaterialKey | null;
@@ -178,9 +172,8 @@ export interface SurfaceRecord {
 
 /**
  * What a build ends in (`GameMap.world`): a record per surface, in list order
- * (the floor's patches, the rim, then every merged surface) — each naming
- * its mesh in `GameMap.visuals`, if it has one (`SurfaceRecord.visual`) —
- * and what a piece id names. Empty on the authority, which draws nothing.
+ * (the floor's patches, the rim, then every merged surface) — and what a
+ * piece id names. Empty on the authority, which draws nothing.
  */
 export interface WorldGeometry {
   surfaces: SurfaceRecord[];
@@ -219,7 +212,7 @@ const BOUND_SCALE = new Vector3();
 /**
  * The world bounds of `positions` under `world`, as Babylon computes a mesh's
  * — step for step, because `WorldCulling` reads these where it read the
- * mesh's and a DEV build compares the bits: `extractMinAndMax` over every
+ * mesh's and `scripts/bounds-check.mjs` compares the bits: `extractMinAndMax` over every
  * vertex (from the largest float down and up, no bias), then `BoundingBox`'s
  * and `BoundingSphere`'s `reConstruct` and `_update` — the local box copied
  * whole under an identity matrix, else its eight corners transformed in
@@ -293,8 +286,6 @@ export function recordOf(surface: WorldSurface, world: Matrix): SurfaceRecord {
   const { part } = surface;
   return {
     name: part.name,
-    // Who draws it is `worldMeshes`' to write, once it knows.
-    visual: -1,
     bounds: boundsOf(part.geometry.positions, world),
     material: part.material,
     metadata: part.metadata,
@@ -331,7 +322,7 @@ export function releaseArrays(part: Part, surfaceIndex: number): void {
   part.geometry = RELEASED;
 }
 
-/** One build's birth counter: each call is the next mesh the scene would have made. */
+/** One build's birth counter: each call is the next mesh the scene made while the merge ran on meshes. */
 export type Mint = () => number;
 
 /** A fresh counter, for one build. */
