@@ -77,10 +77,10 @@ used to get this guarantee from the absence of the package; now it gets it from
 the empty `types` array, and the guarantee is the same one.
 
 `server/tsconfig.json` opts back into `["node"]` and keeps `DOM` in `lib` — it
-typechecks the whole of `../src` beside this directory, client and Babylon
-types included (a simulation may still NAME a Babylon type with `import type`),
-and Babylon's own types reference `HTMLCanvasElement` and
-`WebGL2RenderingContext` throughout, so it cannot compile without them. That
+typechecks the whole of `../src` beside this directory, client types included
+(a simulation could NAME a Babylon type with `import type` until X6.1i), and
+the client's types reference `HTMLCanvasElement` throughout (Babylon's
+referenced `WebGL2RenderingContext` too), so it cannot compile without them. That
 the DOM types are *available* here does not mean a DOM exists at runtime; it
 does not, and code in this directory must not reach for one.
 
@@ -117,9 +117,9 @@ things to inline.
   simulation (`CLAUDE.md`, "Ownership and wiring"), and a vector is
   `src/math`'s.
 - **No canvas.** There is no DOM at runtime, so anything that reaches
-  `src/world/textures.ts` (a `DynamicTexture`) would fail at construction —
+  `src/world/textures.ts` (a painted canvas) would fail at construction —
   and would have to cross the gate above to get here.
-- **No `MapBuilder`.** It builds meshes and reaches a texture through
+- **No `MapBuilder`.** It builds the drawn world and reaches a texture through
   `floorMaterial`. The solid world is rebuilt as data from the baked boxes in
   `src/world/<map>/collision.ts` instead (`src/sim/simWorld.ts`) — see
   `scripts/bake-collision.mjs` for why that is sound.

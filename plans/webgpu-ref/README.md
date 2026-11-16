@@ -75,16 +75,16 @@ loop, the encoders or the device from Babylon adds OUR arm there, picked first,
 in its own commit, and no probe has to be taught. What a probe measures OF
 Babylon — its `_draw`s (`census`, `drawlog`, `surfaces`), its rendering groups,
 its compiled effects, its engine's statics in `post.mjs`' chain — is not a
-question about the frame: it stays Babylon's, and goes as each thing it reads
-does.
+question about the frame: it stayed Babylon's, and went as each thing it read
+did.
 
 **OUR arm since X5.4f, picked first** (`Game.sceneFrame`, `src/core/SceneFrame.ts`:
-the scene is never rendered). `drawn`/`onDrawn`, `beforeDraw`/`onBeforeDraw` and
+the scene was never rendered). `drawn`/`onDrawn`, `beforeDraw`/`onBeforeDraw` and
 the index are answered off our frame's own points (each an `Observable` —
 Babylon's until X6.1h, its port as written since, `src/core/Observable.ts` —
 named for the scene's it replaces, raised where Babylon raised that one), the
 canvas pass's depth off our pass owner (`Game.chainPasses`); the engine's
-questions (begin, submit, the device, the encoders, the delta) stay Babylon's
+questions (begin, submit, the device, the encoders, the delta) stayed Babylon's
 until X5.4g and X5.4h. It gained one question in the same commit, on both arms:
 **`onDrawPhase(begin, end, endFirst)`**, the frame camera's draw phase, which
 `census.mjs`, `gi.mjs`, `particles.mjs` and `surfaces.mjs` hung off the scene's
@@ -119,7 +119,7 @@ retired it).
 (`Game.surface`, `src/core/CanvasSurface.ts`): Babylon's `WebGPUEngine` is not
 constructed, so `device` is the game's own (`Game.renderer.device`, asked for
 by `main.ts`), `canvas` the surface's, and `host` names the scene's engine (a
-`NullEngine`, `SceneEngine`) beside `webgpu`, whether the frame's device is a
+`NullEngine`, `SceneEngine`, until X6.1h deleted it) beside `webgpu`, whether the frame's device is a
 `GPUDevice`. **"Babylon's engine" in the adapter and in every probe is the
 SCENE's** (`scene.getEngine()`) — at a parent the `WebGPUEngine` the game held
 as `Game.engine`, the same object, so moving the probes onto it moved nothing
@@ -134,7 +134,7 @@ gave it a device half that runs on every tree), and `shaders.mjs`
 skip Babylon's half (no backend to compile against; each material's defines
 still read for ours).
 
-**And it answers with NO SCENE since X6.1a** (for X6.1h, which deletes
+**And it answers with NO SCENE since X6.1a** (for X6.1h, which deleted
 `Game.scene`): **Babylon's arm is built only where `g.scene` exists**, and
 every read a script here made of the scene or its engine is a member of the
 adapter, so no probe names `g.scene` (`harness.mjs`' header lists them): the
@@ -162,7 +162,7 @@ with no scene — what the scene holds (`counts`), the engine's two GLSL fields
 the probes that MEASURE Babylon (`census`, `drawlog`, `surfaces`, `particles`,
 `leaks`, `gi`, `pipelines`, `shaders`' Babylon half, `depth`, `post.mjs`'
 clears), each of which logs nothing of Babylon's when it answers `null`. The
-game's DEV counter of Babylon compiles is `compiles()`. **Proven equal at the
+game's DEV counter of Babylon compiles was `compiles()` (`null` since X6.1c). **Proven equal at the
 parent on the same frames**: `window.__refFrame({ scene: false })` builds the
 adapter as a page with no scene would have it, and every arm off the game's
 objects answered what the scene's read answered on every frame of a session

@@ -1607,7 +1607,7 @@ card on it with no map standing.
   layout freely, in either orientation, and the weapon follows.**
 - **What is left in `CONFIG` is the weapon's own SIZE, and the fit takes the
   worse of two axes.** `frameWidth`/`frameHeight` are the rifle's span as a
-  multiple of the frame's HEIGHT (the axis Babylon's FOV is fixed on, which is
+  multiple of the frame's HEIGHT (the axis the camera's FOV is fixed on, which is
   why the old `aspectReference` could be retired with the anchor), `frameMargin`
   is how much of the bay it may fill, and the weapon is pushed back until both
   fit. The old form could only ever be told about the WIDTH; a measured bay can
@@ -1633,7 +1633,7 @@ card on it with no map standing.
   one.** The carried pose is Euler, composed in the weapon's own frame, so at a
   side-on yaw the pitch a drag asks for arrives as a roll. `endInspect` dropping
   the quaternion is what lets the Euler pose come back at all — while one is set
-  Babylon ignores `rotation` entirely.
+  `rotation` is ignored entirely, as Babylon ignored it.
 - **It rotates about a derived pivot, not the node's origin** (which on a rifle
   is the receiver — a turntable about that would swing the weapon around the
   screen). `applyFit` measures the pivot from the weapon's own muzzle landmark.

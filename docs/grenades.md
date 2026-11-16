@@ -16,8 +16,8 @@ lives there — the authority runs it whole and builds nothing else.
 fire's flames, the `BlastFx` — and it READS the simulation and never writes
 it (a `GrenadeBody` is two PIECES of the frag's and the bottle's kits, which
 OUR renderer draws since `BABYLON_EXIT.md` X4.4b — `docs/rendering.md`,
-"The pools, ours" — and Babylon is made no mesh of either; the flames and the
-billows are still Babylon's, until X4.4d and X4.4c): the pools through `flights` and `fireSlots` (read-only by type) after each
+"The pools, ours" — and neither is a mesh; the flames and the
+billows were Babylon's until X4.4d and X4.4c): the pools through `flights` and `fireSlots` (read-only by type) after each
 `update`, and the rest as calls `Game` makes from the events — `onBlast` (the
 billows), `onIgnited` (the flames and the ignition, ahead of the light and the
 noise, where they always were) and `onBurntOut`. A new flight in a slot is
@@ -155,8 +155,8 @@ wrong first:
 lumped in its vertex stage, painted as `BlastShader` states it — and a billow is
 fire while it is hot and smoke once it is not. **Our renderer draws every one**
 (`render/BlastDraw.ts`, its program `render/blastProgram.ts`, its WGSL
-`shaders/wgsl/blast.ts`) since `BABYLON_EXIT.md` X4.4c, and Babylon is made no
-blast mesh and no blast material: what it drew through a `ShaderMaterial` and a
+`shaders/wgsl/blast.ts`) since `BABYLON_EXIT.md` X4.4c, and there is no
+blast mesh and no blast material: what Babylon drew through a `ShaderMaterial` and a
 mask twin until then, over the same arithmetic, statement for statement. It replaced five flat emissive spheres stepping a
 four-rung colour ladder, a glowing torus, and two pools of soft gradient
 sprites: a photograph's smoke in a frame of flat fills and ink, the mismatch
@@ -440,7 +440,7 @@ burn-out take the new fire's light away.
   `BABYLON_EXIT.md` X4.4d, channel for channel) and our renderer draws it**
   (`render/FlameDraw.ts`, a draw a flame, beside the world's fires, front to
   back as Babylon's queue drew them, `docs/rendering.md`'s "The fires") —
-  Babylon is made no mesh of any. They grow
+  none is a mesh. They grow
   out of the ground
   wider-first and sink back into it (`fireStrength`, one curve that the flames,
   the light and the sound all ride), because the material is hard-banded and

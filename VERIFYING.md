@@ -21,7 +21,7 @@ you are on before you believe anything else in this section.
 | WebGPU adapter | `nvidia/lovelace`, 21 features | `google/swiftshader`, CPU |
 | headless presents a canvas | **yes**, via `channel: "chromium"` | **no**, one frame then device loss |
 | `--enable-unsafe-webgpu` | no-op | **required**, and its absence is invisible |
-| Coldharbour's reflection bake | ours ~41 ms over 5 frames; Babylon's ~1.4 s, one frame | Babylon's takes the device; ours not tried |
+| Coldharbour's reflection bake | ours ~41 ms over 5 frames; Babylon's ~1.4 s, one frame | Babylon's took the device; ours not tried |
 | a round | 46–176 fps | ~0.5–2 fps |
 | the one-second check | — | `ls /dev/dri` |
 
@@ -247,7 +247,7 @@ you are on before you believe anything else in this section.
   the warm-up does not reach — the entry lists them. A compile of OUR
   renderer's in play is named by a DEV build itself (`[pipelines] … compiled
   in play`, the cache's seal, `BABYLON_EXIT.md` X4.4e). To find what compiles and
-  WHO, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
+  WHO at a tree that still had Babylon, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
   `_processRendering` on a mesh's prototype in the page; the mesh being drawn
   when the pipeline is created is the answer, and the profiler names the
   effect and defines. That wrap sees BABYLON's compiles only: our renderer's
@@ -382,7 +382,7 @@ you are on before you believe anything else in this section.
 - **Counting `requestAnimationFrame` callbacks beats the readout's `getFps`
   for anything under a percent** — `g.frameLoop.clock.getFps()` since
   `BABYLON_EXIT.md` X5.4g (`FrameClock`, Babylon's arithmetic ported; the
-  engine's own `getFps()` moves only at a resize now, the engine running no
+  engine's own `getFps()` moved only at a resize until X5.4h, the engine running no
   loop), `Engine.getFps` before. That readout is a 30-frame rolling mean and cannot
   see a fractional-percent change; a rAF count over eight seconds is what
   resolved the profiler's own overhead at all (128.3/128.4/128.8 armed against
@@ -418,7 +418,7 @@ you are on before you believe anything else in this section.
   `DynamicTexture` is not READY until something calls `update()` on it, so a
   material carrying one that has never been uploaded makes
   `StandardMaterial.isReadyForSubMesh` return false before it ever builds an
-  effect — and `scene.isReady()` walks every mesh in the scene, drawn or not.
+  effect — and `scene.isReady()` walked every mesh in the scene, drawn or not.
   It cost two runs and a broken `npm run shots`: `89f592c` moved the kit
   backdrop's paint into `paintKitPool`, which only runs when the kit BAY moves,
   so a session that never opened the loadout screen left `viewmodel_kitBackdrop`
@@ -604,8 +604,8 @@ you are on before you believe anything else in this section.
   Chromebook that is not a preference — headless cannot present a WebGPU canvas
   at all.** In headless, `getContext("webgpu")` and `configure()` both succeed
   and then the FIRST `getCurrentTexture()` destroys the device: `device.lost`
-  resolves `reason: "destroyed"`, Babylon reports "WebGPU context lost", tries
-  to restore, and dies with "Could not retrieve a WebGPU adapter". Measured
+  resolves `reason: "destroyed"`, Babylon reported "WebGPU context lost", tried
+  to restore, and died with "Could not retrieve a WebGPU adapter". Measured
   across seven flag sets, both browser binaries and all three canvas kinds
   (DOM, detached `OffscreenCanvas`, `transferControlToOffscreen`): **one frame,
   every time.** Headed on `:0` runs indefinitely — 1275 frames of the real game
@@ -1258,10 +1258,10 @@ is one machine's:
   of the processor rather than guessed: `preProcessShaderCode` runs
   `RemoveComments` over the whole source before the cursor splits a single
   line, so the comment is gone before anything can find a `;` in it. Comment
-  a WGSL shader freely. The rule stands for the GLSL strings that are left.
+  a WGSL shader freely. The rule stood for the GLSL strings while any were left.
 - **To read what the driver actually saw, hook
   `GPUDevice.prototype.createShaderModule` in an `addInitScript` and keep
-  `descriptor.code`** — a failed effect is not in `engine._compiledEffects`, so
+  `descriptor.code`** — a failed effect was not in `engine._compiledEffects`, so
   there is nothing to read afterwards. This is strictly better than the
   `WebGL2RenderingContext.prototype.shaderSource` hook it replaces, and not only
   because the backend moved: the module you captured answers
@@ -1300,7 +1300,7 @@ is one machine's:
   it pastes in are deleted too, so generate the expanded source from
   `git show HEAD~:` and register it as a throwaway module rather than trying to
   import what is no longer there.
-- **A ShaderMaterial's twin is built the same way and needs one more step:
+- **A ShaderMaterial's twin was built the same way and needed one more step:
   carry the UNIFORMS across.** A second material compiled from the old source
   is born empty, and everything the factory, the environment and the frame have
   pushed into the live one lives in its private stores — so
@@ -1310,7 +1310,7 @@ is one machine's:
   and nothing else. Then swap `mesh.material` between them and diff. The grass
   came back byte-identical this way with eight pushers and four point lights
   forced on, neither of which is in any banked frame.
-- **A whole-scene material swap is the cel shader's version of the same
+- **A whole-scene material swap was the cel shader's version of the same
   technique, and it reaches what a banked frame cannot: `bank.mjs` disables
   every rig and never spawns the player, so no reference frame in the set holds
   a single mesh WITHOUT a vertex colour buffer.** That is `vBaked` reading the
@@ -1377,7 +1377,7 @@ is one machine's:
   global that is not exposed. **Run at M4 for the packed light arrays and both
   shapes came back exact**: `pointPos[3]` and `pointColor[7]` out of an
   `array<vec3f, 16>` filled by `setArray3`, and `pointRange[3]` and `[9]` out
-  of the SCALAR array Babylon rewrites into a `@size(16)` struct with `.el`
+  of the SCALAR array Babylon rewrote into a `@size(16)` struct with `.el`
   patched onto every access — which is the one with no diagnostic if it goes
   wrong, and the reason the check exists. Write the known values as 0..255 and
   divide by 255 in the shader so an 8-bit write round-trips exactly.
@@ -1790,7 +1790,7 @@ is one machine's:
   `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
   frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
   palette into it. **There is no Babylon side of the palette to compare
-  against** (Babylon is made no mesh of it since X3.7b, and its stages and
+  against** (no mesh is made of it since X3.7b, and its stages and
   mask twin went at X3.7c): a mask ours cannot draw FAILS THE WORLD (below),
   and the old A/B — a forced loss, then `g.handover.takePalette()` to take
   it back — is gone with the meshes. A frame of Babylon's palette needs a
@@ -1862,7 +1862,7 @@ is one machine's:
   cube is none of them and reads all zeroes: its raw `GPUTexture` is the
   bake's, `g.probeBake.cubes.find((c) => c.texture.label === "probe bake:
   default").texture`, which is also `g.reflections.defaultCube` since X4.6d (a
-  glazing material holds Babylon's wrapped `BaseTexture` over it, which
+  glazing material held Babylon's wrapped `BaseTexture` over it, which
   `copyTextureToBuffer` cannot take; a round's glazing has no material since
   X4.6e, its group bound to the cube itself, `g.glassDraw.surfaces[i].material`).
   Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
@@ -2147,7 +2147,7 @@ is one machine's:
   blade pixel is a blend of grass and ground. Grab at full canvas size.
 - **A generated texture is inspectable in a second, without booting the game**,
   and the ground surfaces should be looked at both ways. Bundle
-  `src/world/textures.ts` with esbuild (it imports Babylon for a TYPE alone, and
+  `src/world/textures.ts` with esbuild (it imported Babylon for a TYPE alone, and
   since `BABYLON_EXIT.md` X5.4d hands back a `Picture`, its painted `<canvas>`
   and how it is sampled, so no stub `@babylonjs/core` is wanted any more), load the
   bundle into an `about:blank` page with `addScriptTag`, and `toDataURL()` the
@@ -2232,11 +2232,11 @@ is one machine's:
   capture skirt, which you are always inside of near a flag (`g.zones.dispose()`),
   and the **fog**: Greyfen's `fogEnd` is 78 m, so a look down a long reach is a
   uniform wall of fog colour that reads exactly like being stuck inside a mesh. Put
-  the camera within ~30 m of what you are judging. **Every water tunable is a
-  NAMED float uniform**, so `g.water.bodies[i].mat.setFloat("foamDepth", 0.05)` (and
+  the camera within ~30 m of what you are judging. **Every water tunable was a
+  NAMED float uniform** (until X4.6d, a Babylon material), so `g.water.bodies[i].mat.setFloat("foamDepth", 0.05)` (and
   `setColor3` for the palette, off the app's own `Color3` — import
   `@babylonjs_core.js` by the url in `performance.getEntriesByType("resource")` or
-  you get a second Babylon and a class the materials reject) sweeps a whole
+  you got a second Babylon and a class the materials rejected) swept a whole
   parameter space in one page session with no rebuild. Two readings that mean
   something when the water looks wrong: the body's cube,
   `g.reflections.pools.water[0].job.cube.texture`, read back as the glazing

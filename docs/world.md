@@ -1457,12 +1457,12 @@ without a symptom — the same trap `buildBoardwalk` refuses a `height` spinner 
 Butt the top of the run against the deck's edge: the joint is then two neighbouring
 cells within a step, and nothing has to line up more precisely than that.
 
-**Babylon defaults to a LEFT-handed system** (`scene.useRightHandedSystem` is
-false), so a front face is *clockwise* seen from the front. Hand-built `VertexData`
+**The world is LEFT-handed, Babylon's default** (`scene.useRightHandedSystem`
+was false), so a front face is *clockwise* seen from the front. Hand-built geometry
 wound the right-handed way — the order you get working the cross product out on
-paper — fails in the worst possible manner: the meshes build, the shaders compile,
-the console is clean, nav and picking are unaffected (Babylon's triangle picking is
-two-sided), and the only symptom is that `ComputeNormals` derives downward normals,
+paper — fails in the worst possible manner: the parts build, the shaders compile,
+the console is clean, nav and the rays are unaffected (both read the heightfield,
+not its triangles; Babylon's picking was two-sided), and the only symptom is that `computeNormals` derives downward normals,
 so the floor is back-face culled and lit from below. The world looks like it has no
 ground at all and every number you can check still reads correct. `assertFacesUp`
 throws on it in dev builds; trust that over your own derivation.

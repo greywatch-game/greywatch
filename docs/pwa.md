@@ -101,8 +101,8 @@ one reload; the new one spends 7.28 MB and shows the new build. The saving is no
 mainly the copying — it is that the running page's own download of the 7.4 MB entry
 IS the precache's copy, instead of the two fetching it separately. What reliably
 survives a deploy is only the assets that import nothing (Havok's wasm, the water
-textures, the collision chunks — about 2.7 MB); Babylon's lazy shader chunks import
-from the entry, so its new name is in their bytes and re-hashes them. Two deploys
+textures, the collision chunks — about 2.7 MB); Babylon's lazy shader chunks imported
+from the entry, so its new name was in their bytes and re-hashed them. Two deploys
 measured, one kept 50 of 52 asset names and the next kept 9.
 
 **Two numbers bound the shell request, and they are not the same number.** A launch

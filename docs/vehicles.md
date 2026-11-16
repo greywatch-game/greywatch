@@ -227,7 +227,7 @@ to 23.6 k with the mesh count unchanged, and Coldharbour's frame rate at the
 hardstanding did not move outside the run-to-run spread.
 
 **Since `BABYLON_EXIT.md` X4.2b a mesh is a SEGMENT of its kind's KIT, and
-what it costs moved with it.** Babylon is made no mesh of a hull: every hull is
+what it costs moved with it.** No hull is a mesh: every hull is
 an instance of its kind's kit in its side's colours (`render/HullDraw.ts`),
 and a draw is one RANK of every hull — each hull's `r`th segment nearest the
 eye — so a segment is at most ONE draw a frame for the whole fleet rather than
@@ -1129,8 +1129,8 @@ A view owns the rig, the belts' run, the whips (`HullWhips`) and the paint.
 X4.1a's `JointTree`): the tree's first joint is the collider box's frame
 (`rig.body`, what an invisible body box MESH was, the rig its child), each
 world a float32 matrix composed fresh in `src/math`'s copies of Babylon's
-arithmetic. **And since X4.2b the hull is OURS to draw**: Babylon is made no
-mesh of it. A rig is its joints and its SEGMENTS (`HullSegment`: the joint and
+arithmetic. **And since X4.2b the hull is OURS to draw**: none of it is a
+mesh. A rig is its joints and its SEGMENTS (`HullSegment`: the joint and
 the segment's local); what a segment looks like is its kind's KIT in its
 side's colours (`HullKit`), built ONCE a kind and a side — the first rig of
 the pair merges it, every later one hangs it without making a part
@@ -1329,7 +1329,7 @@ the sphere's leading edge is the hull's own nose. Measured: the nose now stops
 
 Three things about that offset, all of them load-bearing:
 
-- **It is world-space and Babylon does not rotate it**, so it is rebuilt every
+- **It is world-space and the sweep does not rotate it**, so it is rebuilt every
   frame the hull STIRS — moves or turns — rather than set once in the
   constructor. Turning is half of that and it was missing; see below.
 - **The sign flips only while the speed passes through zero**, which is the only
@@ -1360,7 +1360,7 @@ finally touched the sphere arrived at its true place in one step. Measured: a
 then **2.37 m in a single frame**. It is aimed on a turn as well now, which
 makes the same swing the continuous 1.26 m/s above.
 
-**And Babylon cannot get out of a sphere that is inside a box.** Its
+**And the sweep (Babylon's, ported) cannot get out of a sphere that is inside a box.** Its
 swept-ellipsoid response ejects one by `CollisionsEpsilon * 10` per frame in the
 space it has SCALED by the ellipsoid — 0.022 m of world at this radius, measured
 as exactly that constant on every frame of every hang, whatever displacement was
@@ -1461,7 +1461,7 @@ walls is what let this one show.
 
 `Player.probeGround` used to be the most expensive thing the game does per frame
 (0.483 ms on real hardware, a third of the game's own JS) because
-`scene.pickWithRay` with a predicate walks every mesh in the scene.
+`scene.pickWithRay` with a predicate walked every mesh in the scene.
 `Vehicle.applyGround` used to cast the same shape of ray and cost the same, and a
 driver therefore paid TWO of the frame's most expensive pick where a body on
 foot paid one — the hull's ground and the chase camera's pull-in. **Neither is

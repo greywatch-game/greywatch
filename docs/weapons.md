@@ -90,8 +90,8 @@ two meshes an arm, one per colour.
   every part — each rig's colour groups, magazines, bolt, slide and warhead,
   each optic's housing, reticle and GLASS, the arms, the fist with its frag or
   bottle, the muzzle flash, and the kit screen's CARD — is a SEGMENT of one kit
-  (`ViewSegment`, `viewTree.ts`, its `role` saying how it is drawn) and Babylon
-  is made no mesh of it. One draw a segment, at the end of rendering group 0:
+  (`ViewSegment`, `viewTree.ts`, its `role` saying how it is drawn) and none of
+  it is a mesh. One draw a segment, at the end of rendering group 0:
   the card first (it covers the world), then the opaque parts in the order
   Babylon's old viewmodel group (1) queued the meshes — the material's
   `uniqueId`, then the order they were made (never the order the evaluation
@@ -251,7 +251,7 @@ two meshes an arm, one per colour.
   moves nothing, while the rotations swing the picture off rounds that still fly
   along the un-nodded `forward`. **The roll needs
   `camera.updateUpVectorFromRotation`**: `rotation.z` reaches the view matrix only
-  through the up vector, which Babylon otherwise refreshes only on frames the roll
+  through the up vector, which the camera (Babylon's, ported) otherwise refreshes only on frames the roll
   *changes*, baking in that frame's yaw and pitch — so the frame a landing settled on
   left a stale up vector for the rest of the round (no tilt where you landed, a
   growing one as you turned away). **The viewmodel's airborne give is sprung for the

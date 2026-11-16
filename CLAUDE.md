@@ -74,7 +74,7 @@ and what it must never do. Read it before editing that file.
 
 **GREYWATCH — Cel-Shaded Conquest**: a browser-based, single-player
 **first-person** Conquest shooter (8v8 vs bots, five control points, ticket
-bleed). **Babylon.js** + **TypeScript** + **Vite**; ES modules, Node 24+,
+bleed). **TypeScript** + **Vite**, the engine ported off **Babylon.js**; ES modules, Node 24+,
 **WebGPU** — there is no WebGL fallback engine in the tree and there must not be
 one. `main.ts` gates the boot on `navigator.gpu` AND an adapter, so a browser
 without one gets a sentence instead of a black page. **A LOST device RELOADS
@@ -548,7 +548,7 @@ layer's three failed readings, the scale gates, the prerender), the gauges'
 four ladders and the touch TRIM, the minimap's backing store, the portrait
 fallback, and the touch controls — with [`docs/pwa.md`](docs/pwa.md) for them
 as a phone.
-### The scene has (almost) no Babylon lights
+### The scene has no Babylon lights
 
 **Every shader in the tree is hand-written WGSL**, and **a texture a program's
 layout DECLARES must be BOUND, used or not** (ours bind exactly what their
@@ -649,8 +649,8 @@ drawn ONCE**, as INSTANCES of its variants. **A block-keyed surface (a pane, a
 fire) is offered only while the camera is inside the map's `fogEnd`**,
 **everything else is ELIGIBLE**, and **anything EMISSIVE is exempt** from the
 size gate. **Nothing pooled may ever be block-keyed.**
-**EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and Babylon is made NO RIG,
-HULL OR VIEWMODEL MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
+**EVERY BODY, HULL AND WEAPON IS OUR RENDERER'S, and NO RIG, HULL OR
+VIEWMODEL IS A MESH** (`render/BodyDraw.ts`, `HullDraw.ts`, `ViewDraw.ts`):
 a body or a hull is an INSTANCE of its kit, drawn while its switch is on and
 the size gate passes it. **A body LEAVES by a FADE at both edges, a hull at its
 map's draw distance only — never a pop** (`WorldCulling.bodyFade`,
@@ -943,7 +943,7 @@ answered analytically, by [`src/world/RayWorld.ts`](src/world/RayWorld.ts), off
 `colliderBoxes`, the strut groups and `TerrainField` — the same geometry the
 colliders were built from. **`map.rays` is where a system gets it**, beside
 `nav`, `cover` and `obstacles`, and the authority builds one off the bake. A NEW
-RAY GOES THERE; nothing may reach for the scene.
+RAY GOES THERE; nothing may reach for the drawn geometry.
 
 **…and NO SWEEP WALKS A MESH EITHER** (`CollisionField.ts`'s header). **There
 are exactly THREE sweeps and all of them go through `CollisionField`**
@@ -1570,7 +1570,7 @@ built.
   projection, transform and six FRUSTUM PLANES are the frame's
   (`SceneFrame.updateTransformMatrix`, `Game.frustumPlanes`) — a new
   reader asks the FRAME. **One of ours handed to a Babylon
-  method reads `_x` and writes NaN without a word**, and since X6.1f there is
+  method read `_x` and wrote NaN without a word**, and since X6.1f there is
   no Babylon method left to hand one to and no crossing (`src/math/babylon.ts`
   is gone). A member a move needs is ADDED to `src/math/` and to `math-check`
   first.

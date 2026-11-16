@@ -623,11 +623,11 @@ src/
                     #   them; the crossing, babylon.ts, went at X6.1f
     index.ts            # The re-exports
     vector.ts           # Vector2, Vector3, Vector4, Quaternion, Matrix, and
-                        #   the parameter types that let a Babylon vector in:
-                        #   Vector3Like (read) and Vector3Ref (written through
-                        #   set alone). One of ours handed to a BABYLON
-                        #   method reads `_x` and gets NaN — the header says
-                        #   which way is safe
+                        #   the parameter types that let a Babylon vector in
+                        #   while there was one: Vector3Like (read) and
+                        #   Vector3Ref (written through set alone). One of ours
+                        #   handed to a BABYLON method read `_x` and got NaN —
+                        #   the header says which way was safe
     color.ts            # Color3 and Color4
     plane.ts            # Plane and Frustum (X6.1f): the frame's six planes,
                         #   Babylon's GetPlanesToRef bit for bit (math-check);
@@ -1209,7 +1209,7 @@ src/
                         #   merges it (`mergeParts`) into SEGMENTS, one a
                         #   colour a call, in the scene order the old meshes
                         #   had — its kind's KIT, built once a model and a view
-                        #   (`segmentOf`; X4.2b: Babylon is made no hull mesh)
+                        #   (`segmentOf`; X4.2b: no hull is a mesh)
                         #   — and one palette over every kit (`hullPalette`).
                         #   The joints are OURS (a `JointTree`, its first joint
                         #   the collider box's frame; BABYLON_EXIT.md X4.2a),
@@ -1725,8 +1725,8 @@ src/
                         #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
                         #   surface, the landform (WorldSurface.landform) and
                         #   the emissive palette are OURS at the build
-                        #   (BuildOptions.onSurface answers true: Babylon is
-                        #   made no mesh of them), on a verdict asked of the
+                        #   (BuildOptions.onSurface answers true: none of
+                        #   them is made a mesh), on a verdict asked of the
                         #   surface's RECORD (X3.7a), handed to
                         #   render/WorldBlocks and cut at install against the
                         #   cells by their blocks; every FIRE (X4.4d) taken
@@ -1898,7 +1898,7 @@ src/
                         #   Part, its block, whether it is the LANDFORM our
                         #   renderer draws ahead of the alpha-tested list, its
                         #   piece ranges, whether its positions stay writable,
-                        #   and its BIRTH — the scene order its mesh is made
+                        #   and its BIRTH — the scene order its mesh was made
                         #   in),
                         #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
                         #   (GameMap.world: everything kept but the arrays,
@@ -3021,7 +3021,7 @@ src/
                         #   after the prepares, with Babylon's load ops and
                         #   clear values), the FrameDraws it
                         #   records at seven points of the MAIN pass — first,
-                        #   ahead of everything of Babylon's (X4.5a; the dome,
+                        #   ahead of everything Babylon drew (X4.5a; the dome,
                         #   X4.5c), and of group 0, needing nothing in it:
                         #   before its alpha-tested meshes (the palette FIRST
                         #   in that draw, X3.6e), after every opaque surface
@@ -3060,7 +3060,8 @@ src/
                         #   (X5.2b); POST_TARGETS, a post chain pool pass's:
                         #   rgba8unorm, no depth, flipY, and canvasTargets(
                         #   format), the canvas's: the swap chain's format,
-                        #   the ENGINE's depth32float, not flipped (X5.2c1);
+                        #   its own depth32float (the ENGINE's until X5.4f),
+                        #   not flipped (X5.2c1);
                         #   SHADOW_TARGETS, a world shadow
                         #   map's: r16float, depth32float, 1 sample, flipY
     frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
@@ -3382,11 +3383,11 @@ src/
     BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
                         #   cleared to lit, drawn whole from the proxies
                         #   BodyShadows hands it each frame it updates
-                        #   (recorded ahead of Babylon's passes), cleared on
+                        #   (recorded ahead of the frame's passes), cleared on
                         #   the same next frame by an update holding none (at
                         #   once, into the host's encoder, in a state that
                         #   prepares nothing); OwnTexture for our
-                        #   frame, a texture for Babylon to wrap; its pipeline
+                        #   frame (Babylon's wrap went at X5.4h); its pipeline
                         #   asked once a session, a failure told to the
                         #   round's failure (Game.worldFailed)
     lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
@@ -3399,11 +3400,11 @@ src/
                         #   view-projection its casters are culled with
     LampAtlas.ts        # The lamps' atlas as OUR texture (X3.6b): made at
                         #   the far value, and each frame LocalShadows hands
-                        #   it (AtlasWork) recorded ahead of Babylon's passes
+                        #   it (AtlasWork) recorded ahead of the frame's passes
                         #   — tiles cleared by a copy, a pass a static face
                         #   off WorldDepth at a cull slot of its own, one
-                        #   instanced proxy pass; OwnTexture for our frame, a
-                        #   texture for Babylon to wrap; casters it cannot draw
+                        #   instanced proxy pass; OwnTexture for our frame
+                        #   (Babylon's wrap went at X5.4h); casters it cannot draw
                         #   (their build, or the proxies' pipeline, asked once
                         #   a session) tell the failure handed with them (the
                         #   handover fails the world)
@@ -3462,8 +3463,8 @@ src/
     WorldShadows.ts     # The world's four directional maps as OUR textures
                         #   (far, near, foliage, flash): made cleared to lit,
                         #   drawn when ShadowSystem asks, recorded ahead of
-                        #   Babylon's passes; OwnTexture for our frame, a
-                        #   texture for Babylon to wrap; casters whose build
+                        #   the frame's passes; OwnTexture for our frame
+                        #   (Babylon's wrap went at X5.4h); casters whose build
                         #   fails tell the failure handed with them (the
                         #   handover fails the world); held on every rung
     scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte

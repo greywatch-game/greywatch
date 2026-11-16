@@ -448,8 +448,8 @@ frame                       the whole tick, wall to wall
    │                        glow's two notifications)
    └─ drawWorld             the camera's DRAW PHASE up to the glow's work
                             (report version 36): Babylon's group 0 when it
-                            visits one, and our draws only QUEUED here at
-                            the group's points on either path — see `view`
+                            visited one, and since X5.4e our main pass's
+                            recording, at the group's points — see `view`
                             below. Entered on every frame the camera draws.
                             (Until v36 the rendering groups alone; and
                             `drawOverlay`, the groups above 0, was retired
@@ -651,7 +651,7 @@ render target's work adds nothing to it and no gate is needed.
 
 Until version 36 it was the rendering GROUPS instead, gated on being in the
 draw phase, and that made it an instrument the exit would empty: Babylon
-visits no empty group, so on a frame with nothing of Babylon's in group 0 —
+visited no empty group, so on a frame with nothing of Babylon's in group 0 —
 the menu, every bank row, and from X4.7c and X4.7d every frame of a round —
 no span opened at all, and our draws queued at the group's points (told then
 by the seam's fallback at the phase's end, `docs/rendering.md`) fell under no
@@ -670,8 +670,8 @@ on every one, at 0.003-0.005 ms; in a live round, where the ash holds group 0
 and the parent opened the span on every frame too, 0.153 and 0.144 ms at the
 parent against 0.132 and 0.144 at the step (Coldharbour, Cinderhaven: the same
 within the clock's grain); and 0.003 ms at the step in a Coldharbour round with
-the particles off, which is the fallback's path. **So in a live round today
-`drawWorld` is Babylon's PARTICLES and, about half of it, OUR OPAQUE
+the particles off, which is the fallback's path. **So in a live round then
+`drawWorld` was Babylon's PARTICLES and, about half of it, OUR OPAQUE
 RECORDING** (X4.7b's review): the particles' compute dispatch ENDS the main
 pass from inside group 0 (`_computeDispatch` calls `_endCurrentRenderPass`,
 `Engines/WebGPU/Extensions/engine.computeShader.pure.js` line 203, Babylon
@@ -689,7 +689,7 @@ whatever the span's form.
 **Measured at X4.7c** (the ash ours, the same captures, parent → step): a live
 Coldharbour round `drawWorld` 0.132 → 0.002 ms, `glow` 0.075 → 0.143, `render`
 0.569 → 0.496; Kurenai 0.125 → 0.004, 0.079 → 0.131, 0.547 → 0.466; Cinderhaven,
-whose rotor wash is still Babylon's and still ends the pass inside group 0,
+whose rotor wash was still Babylon's and still ended the pass inside group 0,
 0.149 → 0.060, 0.075 → 0.116, 0.628 → 0.586. The menu stays at 0.002-0.005.
 The prediction held: about 0.13 ms out of `drawWorld` and about 0.06 into `glow`
 where the ash was the only field, and on Cinderhaven the motes' share alone. The
@@ -1087,10 +1087,10 @@ is the tell that it is not the world: hollowmere 52.5, coldharbour 54.0, sarab
 **The other four fifths.** The fifth that went was `ShaderMaterial.isReady`
 rebuilding every material's define set per submesh per draw, removed by
 freezing every cel material (`docs/rendering.md`, "Frozen materials"). Of what
-is left, Babylon and the builtins it calls are ~64% and our own code ~36%, and
-our share is spread over forty sites with the largest at 4% — a thousand cuts
+is left, Babylon and the builtins it calls were ~64% and our own code ~36%, and
+our share was spread over forty sites with the largest at 4% — a thousand cuts
 rather than an actor. Nothing here has costed the WebGPU backend's own
-per-frame objects (`getBindGroups`, `_startRenderTargetRenderPass`), which are
+per-frame objects (`getBindGroups`, `_startRenderTargetRenderPass`), which were
 the next largest block. **That split predates Babylon 9.28 (96fcd19) and the
 allocation fixes a804a66, 0bbc3c6, 211fdb2 and 7085da7** — re-take it before
 arguing from it.
@@ -1128,7 +1128,7 @@ from a Playwright script over a CDP session:
   saw nothing.
 - **Attribute each sample to the innermost frame under `/src/`**, and keep the
   innermost frame of all beside it: a builtin (`subarray`, `Set`, `add`,
-  `assign`, `hypot`) or a Babylon getter there IS the answer. A
+  `assign`, `hypot`) or a getter there IS the answer. A
   `samplingInterval` of 16 bytes over ten seconds of a round resolves tens of
   bytes a frame. Always run the parent commit the same way — a row present in
   both builds is not the change's.
@@ -1161,7 +1161,7 @@ them**, against a throwaway function forced with `%OptimizeFunctionOnNextCall`
 and one forced with `%OptimizeMaglevOnNextCall`; the layout moves between V8
 versions and a bit read from memory was wrong here. On the mid tier:
 
-- **Every `Vector3` `.x`/`.y`/`.z` read is a boxed number**, because Maglev does
+- **Every `Vector3` `.x`/`.y`/`.z` read was a boxed number**, because Maglev did
   not inline Babylon's getters. Hand-inlining `Vector3.Distance` into
   `chooseFast` as `p.x - eye.x` arithmetic took it from 3.3 kB to 6 kB a frame:
   it traded one boxed return per fixture for six boxed getter reads.
@@ -1247,10 +1247,10 @@ them**. Our renderer's own draws are counted at the capture (`blocks`,
 belong beside it (Windows box, live round, 2026-08-26, before the paint palette —
 `docs/rendering.md`, "Why the frame is draw-call bound"):
 
-- **The game's own JS is a tenth of the frame and the rest is Babylon's** —
+- **The game's own JS was a tenth of the frame and the rest was Babylon's** —
   2.2 ms of a 20.6 ms frame on Coldharbour, 1.7 of 18.8 on Harrowmead — which
   is the number that closes the "move it to workers" question before it is
-  asked: `scene.render` is JS on the thread that owns the device, so an
+  asked: `scene.render` was JS on the thread that owns the device, so an
   `OffscreenCanvas` worker RELOCATES 18 ms rather than removing it, and the
   worker becomes the wall. What is genuinely worker-shaped here is burst work
   and not the frame — `MapBuilder`'s geometry, the AO bake, the
@@ -1337,11 +1337,11 @@ details:
 **From report version 17 a capture says what OUR renderer took and drew**
 (`blocks`, `BABYLON_EXIT.md` X3.3): the surfaces `BlockHandover` took, the
 clusters and material groups they were cut into, and our main-pass draws last
-frame. **Our draws are not in `counters.drawCalls`**, which is Babylon's own
+frame. **Our draws are not in `counters.drawCalls`**, which was Babylon's own
 counter, so a main pass's draws are that plus `blocks.drawn`. Until report
 version 20 it also said how many taken surfaces went back to Babylon
 (`handedBack`, a failed compile of ours or a refused main pass); since X3.7b
-nothing goes back — Babylon is made no mesh of what ours draws, and a world
+nothing goes back — nothing ours draws is a mesh, and a world
 ours cannot draw ends the round (`Game.worldFailed`) — and the field is gone.
 It is read once, at the capture, through a
 reader `Game` pushes (`FrameProfile.setBlocks`), so it describes the end of
@@ -1380,9 +1380,9 @@ mask's (`FrameProfile.setView`). Since X4.3d nothing of the weapon is in
 draws are `counters.drawCalls` plus `blocks.drawn`, `bodies.drawn`,
 `hulls.drawn` and `view.drawn`. Their CPU cost moved spans with them, and
 not to where they are queued: the weapon's draws are QUEUED at the end of
-rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RUNS the
-queue — our recording — when it ends the main pass (`_endCurrentRenderPass`),
-so that cost lands in whichever span is open then, as the bodies' and the
+rendering group 0 (`"afterGroup"`, inside `drawWorld`), but Babylon RAN the
+queue — our recording — when it ended the main pass (`_endCurrentRenderPass`),
+so that cost landed in whichever span was open then, as the bodies' and the
 hulls' does. That is now confirmed by a capture (X4.7b's review, off that
 step's Coldharbour rounds, the measurement above): the ash's compute dispatch
 ends the main pass inside group 0, so the recordings queued ahead of it (`first`,
@@ -1393,9 +1393,9 @@ the glow's mask ended it, inside `glow`. **Since X5.4e every point's recording,
 the weapon's included, is inside `drawWorld`**: the main pass is our renderer's,
 recorded at the draw phase's end ahead of the glow ("From X5.4e", above). The
 viewer prints it as `weapon`.
-**On a frame Babylon visits no group** (`BABYLON_EXIT.md` X4.5a's fallback: the
+**On a frame Babylon visited no group** (`BABYLON_EXIT.md` X4.5a's fallback: the
 menu, and since X4.5c, with no dome to hold the group, any frame of a round with
-nothing of Babylon's in view) the seam tells the group's points at the draw
+nothing of Babylon's in view) the seam told the group's points at the draw
 phase's end instead, and **from report version 36 that is inside `drawWorld`
 too** (X4.7b: the span is the draw phase, not the groups, so it opens on every
 frame the camera draws — "They cannot overlap" above). Before version 36 no

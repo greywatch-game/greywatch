@@ -48,7 +48,7 @@ deploy`, with `roundover` when a side runs out of tickets. The FRAME is drawn
 in **every** state, which is what lets the deploy screen sit over a live view —
 ours since `BABYLON_EXIT.md` X5.4f (`core/SceneFrame.ts`: what `scene.render()`
 did, in its order, called from `tick` where it was; there is no Babylon scene
-since X6.1h, and Babylon begins no pass in any state).
+since X6.1h, and no Babylon pass in any state).
 **In the page's own match that view is HELD**: `deploy` steps no world —
 `tick`'s arm runs the deploy screen and the page's own respawn countdown and
 nothing else, so nothing posts the match an `advance` (`updateWorld` is the one
@@ -230,8 +230,8 @@ skipped while they compile (`docs/rendering.md`). Two rules hold it to
   is long, like the bake's drain: a pipeline of ours past it is a HOLE in the
   frame rather than a hitch, so the cap is a backstop for a compile that never
   settles, never a budget. **A pipeline of ours that FAILS ends `loading` in
-  the MENU** (`Game.worldFailed`, `BABYLON_EXIT.md` X3.7b): Babylon is made no
-  mesh of what ours draws, so there is nothing to fall back on, and
+  the MENU** (`Game.worldFailed`, `BABYLON_EXIT.md` X3.7b): nothing ours draws
+  is a mesh, so there is nothing to fall back on, and
   `enterMenu`'s `go` takes the card and the wait down as it does for a floor
   the network ate.
 

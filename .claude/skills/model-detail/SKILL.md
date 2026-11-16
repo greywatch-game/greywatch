@@ -193,8 +193,8 @@ git stash; node .../perf.mjs <same args>; git stash pop
 
 Report vertices per model (from `--stats`) against the tier, world vertices,
 and the world's draws and fps at each vantage — both counts our renderer's
-(`perf.mjs`' header: Babylon's scene holds no mesh in a round, so its own
-counts read 0). Run-to-run spread is ~3%. The recent bar: the world's draws
+(`perf.mjs`' header: Babylon's scene held no mesh in a round, so its own
+counts read 0, and it is gone since X6.1h). Run-to-run spread is ~3%. The recent bar: the world's draws
 unchanged, fps inside the spread. More than a couple of draw calls, or fps outside the spread, needs
 a reason in the commit or a cheaper drawing.
 

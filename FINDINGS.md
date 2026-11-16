@@ -873,9 +873,9 @@ that with most of these pipelines uncreated.
 **What would settle it** is whether the stall can be moved under the deploy
 screen, where there is already a lid and the player is already waiting. The
 shape is a warm-up pass after `installMap` that draws each material variant
-once off-screen, which is what `scene.isReady()` already tracks per material —
-the same signal `plans/webgpu-ref/harness.mjs` waits on, and it flips on
-exactly the frame a map first draws. Whether that is a few lines or a fight
+once off-screen, which is what `scene.isReady()` tracked per material —
+the same signal `plans/webgpu-ref/harness.mjs` waited on, and it flipped on
+exactly the frame a map first drew. Whether that is a few lines or a fight
 with the variant matrix has not been looked at. Finding 1's first-use pipeline
 hypothesis — pipelines first used in PLAY stalling the frame they are first
 drawn on — is a second reason a warm-up pass would pay.
@@ -891,9 +891,9 @@ the next eight seconds of standing still. What compiled there was the cel
 world (`CEL_PALETTE`), a shadow-map variant (`INSTANCES`/`THIN_INSTANCES`),
 the flame's `GLOW_MASK` twin, and Babylon's own `StandardMaterial` in
 `ALPHABLEND` variants, against an `rgba8unorm` target — the list a warm-up
-would have to draw. Babylon 9.28 also brings the tool for it:
+would have to draw. Babylon 9.28 also brought the tool for it:
 `engine.createRenderPipelineAsync` (backed by
-`WebGPUCacheRenderPipeline.preWarmPipeline`) compiles a variant without
+`WebGPUCacheRenderPipeline.preWarmPipeline`) compiled a variant without
 drawing it, and its creations would show up in the same log, before the round.
 
 **On a phone it is bigger, and it reaches past the spawn** (finding 13's
@@ -1211,8 +1211,8 @@ fields.
 
 **The table's `probes` and the prose's "7 probes" below disagree (17 against
 7), and one of them must be re-counted.** The code cannot settle it after the
-fact: the column is `scene.customRenderTargets.length` (`harness.mjs`), which
-is every released cube on the list — glazing and water alike, and anything
+fact: the column was `scene.customRenderTargets.length` (`harness.mjs`), which
+was every released cube on the list — glazing and water alike, and anything
 else pushed there — rather than glazing probes alone, and the map has gained
 water and changed builders since. A re-count should report the two apart.
 
@@ -1501,9 +1501,9 @@ a light source.)
 ### The bug this had, which the pixel bank could not catch
 
 **The first version deleted the weapon out of the player's hands**, and the bank
-passed anyway. `offer` runs in `Game.tick`, BEFORE `scene.render()` bakes world
-matrices, and the viewmodel hangs off the camera — so its world bounding info is
-still sitting at the ORIGIN when this reads it. Asked for its size, the rifle
+passed anyway. `offer` ran in `Game.tick`, BEFORE `scene.render()` baked world
+matrices, and the viewmodel hung off the camera — so its world bounding info was
+still sitting at the ORIGIN when this read it. Asked for its size, the rifle
 answered **"1.8 px at 726 m"**, which is the distance from the world origin to
 the player, and the gate dropped all fourteen of its meshes.
 
@@ -1744,8 +1744,8 @@ one.
 
 **Since X3.6e the palette's MAIN-pass draw is ours too**, on the same
 decision (`BlockHandover`): the bake's pipeline, one draw a bias, FIRST in our
-`"beforeAlphaTest"` draw, so Babylon's main pass draws no palette mesh while
-ours holds the palette. Over the bank's 61 rows Babylon's main-pass draws fell
+`"beforeAlphaTest"` draw, so Babylon's main pass drew no palette mesh while
+ours held the palette. Over the bank's 61 rows Babylon's main-pass draws fell
 by every palette mesh it had in view — 173 over Coldharbour's nine rows (about
 19 a row), 119 over Hollowmere's 13, 46 over Cinderhaven's four, 55 over
 Harrowmead's 15, 19 over Greyfen's six, 15 over Sarab's 11, 6 over Kurenai's
@@ -2089,7 +2089,7 @@ result decides where `PERF_PLAN.md` Part B stands.
 ## 51. A reflection probe barely draws a FIRE, and nothing says it should not
 
 **Status:** open, cause not found — **and narrowed by X3.6c**. Babylon's bake
-DOES draw a fire, but only far off and only as single dark-red texels: taking
+DID draw a fire, but only far off and only as single dark-red texels: taking
 the `-flame-` merges out of Babylon's lists alone moved **6 texels** in
 X3.6c's cube readback (3 on Sarab, 3 on Cinderhaven) and nothing else.
 **Our renderer's bake leaves every fire out by construction**
@@ -2253,7 +2253,7 @@ What the figures show:
   only the final full-screen quad, which measured 27 µs on the desktop (the
   grade's, our renderer's draw since `BABYLON_EXIT.md` X5.2c1, in the same pass:
   the counter keeps its meaning; every pass of the post chain is ours since
-  X5.2d, the ink last, under shape (A) in passes Babylon opens, so `gpu.frame`
+  X5.2d, the ink last, under shape (A) in passes Babylon opened then, so `gpu.frame`
   and `gpu.mainPass` still read what they read). A
   tiling GPU's pass timestamps may not bracket what they say, so this is a
   lead and not a cost: it points at the post chain.
@@ -2837,8 +2837,8 @@ anything a run draws.
 same loop at 4fd2e85: nothing taken, Babylon drawing every block, the floor
 and the world's shadow maps through its generators — `ours: false` in every
 dump): 5 of 9 runs, all three maps. So the hang is not in anything the
-Babylon exit has drawn, X3.6a or earlier; it is in what Babylon still draws,
-or in the machine. (`?babylonworld` went at X3.7b; that control is a build
+Babylon exit has drawn, X3.6a or earlier; it was in what Babylon still drew
+then, or in the machine. (`?babylonworld` went at X3.7b; that control is a build
 at the tag `exit-babylonworld` now. X3.7b's and X3.7c's own X0.3,
 3440x1440 uncapped, are in `BABYLON_EXIT.md`: X3.7c's eighteen runs, three a
 side on Greyfen, Coldharbour and Cinderhaven, completed with none hung.)
@@ -3140,8 +3140,8 @@ screen in a dev build.
 **Open since `BABYLON_EXIT.md` X5.3e** (recorded by its review). `VERIFYING.md`'s
 canopy recipe made the visual meshes pickable and cast straight up from a grid
 of ground points, the hit fraction being the closure. A round's world has been
-our renderer's since X3.7 and X4.6e, so `scene.meshes` is 0 in `playing` and a
-pick meets nothing; X5.3e took the colliders out of the scene as well, and they
+our renderer's since X3.7 and X4.6e, so `scene.meshes` read 0 in `playing` and a
+pick met nothing (X6.1h took the scene); X5.3e took the colliders out of the scene as well, and they
 were never the answer, since a crown is no collider and `map.rays` cannot see
 it. The figures it took stand as measured (Greyfen's canopy tree ~60-100 m2 of
 effective crown) but cannot be re-taken.

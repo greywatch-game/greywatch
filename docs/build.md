@@ -437,9 +437,9 @@ float32 normals), and
 decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
 `flattenParts` are built from). **Beside it, `scripts/bounds-check.mjs`** holds
 `boundsOf` (`world/worldGeometry.ts`, the bounds `WorldCulling` grows its cells
-from in place of a mesh's bounding info) to the bit against Babylon's
-`BoundingInfo` — a `Mesh` with the same positions frozen at the same sixteen
-floats — over every kit and scatter kind at seeded OFF-identity transforms,
+from in place of a mesh's bounding info) to the bit against what Babylon's
+`BoundingInfo` answered for a `Mesh` with the same positions frozen at the same
+sixteen floats — over every kit and scatter kind at seeded OFF-identity transforms,
 which is the arm no round's build exercises (its visuals are at identity) and
 which `merge:hash --editor` alone covered until the editor's retirement
 (`BABYLON_EXIT.md` X5.3a) — and holds `worldMatrixOf` to Babylon's
