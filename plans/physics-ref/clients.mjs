@@ -245,15 +245,27 @@ function play(page, opts) {
       delete g.debris.burst;
       delete g.blastDebris.burst;
       const M = await import("/src/math/index.ts");
-      const { toBabylon } = await import("/src/math/babylon.ts");
       const SM = await import("/src/entities/SoldierModel.ts");
-      // A Babylon vector from the GAME's copy of Babylon: `toBabylon` is a
-      // game module, so Vite hands this page the instance the game holds.
-      // The two burst entry points take Babylon's vectors and read `_x`.
-      const B3 = (x, y, z) => toBabylon(new M.Vector3(x, y, z));
-      if (B3(0, 0, 0).constructor !== g.cameraSys.camera.position.constructor) {
+      // A Babylon vector from the PAGE's copy of Babylon, imported by the url
+      // the page loaded it from (`VERIFYING.md`; `plans/webgpu-ref/leaks.mjs`
+      // the worked version) and told by a Babylon class the page still holds:
+      // the frame's `Observable` (`SceneFrame`'s points, Babylon's until
+      // X6.1h). Until `BABYLON_EXIT.md` X6.1f this was `/src/math/babylon.ts`'s
+      // `toBabylon`, told by the camera's position — both gone there, the
+      // camera's position being `src/math`'s. Made as `toBabylon` made it
+      // (`copyFromFloats` into a new vector), so the burst entry points are
+      // handed what the banks were taken with; they take `src/math`'s since
+      // X6.1e, and read a Babylon vector through its `x`/`y`/`z`.
+      const url = performance
+        .getEntriesByType("resource")
+        .map((e) => e.name)
+        .find((n) => /babylonjs_core/i.test(n));
+      if (!url) throw new Error("clients.mjs: Babylon's module is not among the page's resources");
+      const BJS = await import(url);
+      if (BJS.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) {
         throw new Error("not the game's copy of @babylonjs/core");
       }
+      const B3 = (x, y, z) => new BJS.Vector3().copyFromFloats(x, y, z);
       const { HK } = ref.hp(g);
       const bodies = ref.clientBodies(g);
 

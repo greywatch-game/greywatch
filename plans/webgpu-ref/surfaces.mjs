@@ -72,7 +72,11 @@
  * `babylon()`: its `Mesh.render`, its fields' `render`, its pipeline states, its
  * `_draw`, its group-0 visits and the size gate's walk of `scene.meshes`): with
  * no scene every one is RETIRED, and the marks of OUR renderer's points are
- * logged as before.
+ * logged as before. **The eye a draw's distance is measured from and the
+ * planes the size gate's walk is tested against are the FRAME's** from X6.1f
+ * on (`SceneFrame.activeCamera`, `Game.frustumPlanes`: the scene's camera is
+ * never assigned then and it computes no planes), and the scene's on a tree
+ * without them.
  */
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -137,7 +141,7 @@ const OVERLAPS = [
 
 /** The wrappers, once a boot. See the header. */
 function hangProbe(page) {
-  return page.evaluate(() => {
+  return page.evaluate(async () => {
     const g = window.__celshock;
     // Babylon's scene and engine through the frame adapter (`harness.mjs`,
     // X6.1a): `Game.engine` at a parent, a `NullEngine` since X5.4h — and with
@@ -176,6 +180,31 @@ function hangProbe(page) {
     };
     window.__surf = s;
     s.classOf = classOf;
+    // The eye a Babylon draw is measured from: the FRAME's camera
+    // (`SceneFrame.activeCamera`, what `scene.activeCamera` was — the scene's
+    // is never assigned from `BABYLON_EXIT.md` X6.1f on), and on a tree
+    // whose frame holds none, the scene's, exactly as before. (The frame
+    // adapter's `camera()` would compose every matrix per draw to say the
+    // same, and hands the position back as an array.)
+    const frame = g.sceneFrame;
+    const eyeCamera = () => (frame && "activeCamera" in frame ? frame.activeCamera : scene.activeCamera);
+    // Babylon's own `Plane`, for the GAME's planes `recordFrame` copies into
+    // it (`isInFrustum` asks a plane's `dotCoordinate`, which `src/math`'s
+    // does not carry): from the page's copy of Babylon by the url the page
+    // loaded (`VERIFYING.md`), told by the frame's `Observable` as
+    // `leaks.mjs` does. Only where there is a scene to walk and the game
+    // holds the planes (X6.1f on).
+    s.BabylonPlane = null;
+    if (scene && g.frustumPlanes !== undefined) {
+      const url = performance
+        .getEntriesByType("resource")
+        .map((r) => r.name)
+        .find((n) => /babylonjs_core/i.test(n));
+      if (!url) throw new Error("surfaces.mjs: Babylon's module is not among the page's resources");
+      const BJS = await import(url);
+      if (BJS.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("surfaces.mjs: not the page's Babylon");
+      s.BabylonPlane = BJS.Plane;
+    }
     // The draw phase's two ends through the frame adapter (`harness.mjs`,
     // X5.4f: the scene's observables on Babylon's arm, our frame's on ours),
     // the end inserted FIRST as it was on the scene's.
@@ -215,7 +244,7 @@ function hangProbe(page) {
         if (s.hide?.has(cls)) return this;
         let entry = null;
         if (s.rec) {
-          const eye = scene.activeCamera.globalPosition;
+          const eye = eyeCamera().globalPosition;
           const c = this.getBoundingInfo().boundingSphere.centerWorld;
           entry = {
             id: this.uniqueId,
@@ -283,7 +312,7 @@ function hangProbe(page) {
           s.inMesh--;
         }
         if (s.rec && !preWarm && out > 0) {
-          const eye = scene.activeCamera.globalPosition;
+          const eye = eyeCamera().globalPosition;
           const c = this.emitter;
           let renderDefines = null;
           try {
@@ -446,6 +475,14 @@ function recordFrame(page) {
     // The frame through the frame adapter (`harness.mjs`, X5.4a): from before
     // its draw to the draw's end, both read synchronously as the frame raises them.
     const F = window.__refFrame();
+    // The planes Babylon's meshes are tested against below: the GAME's own
+    // (`Game.frustumPlanes`, the frame's since `BABYLON_EXIT.md` X6.1f, which
+    // the scene computes none of from then), READ and never re-derived off
+    // the transform (X6.1a's review) — and on a tree without that field the
+    // scene's, exactly as before. Each of the game's is COPIED into Babylon's
+    // own `Plane` (its normal's three doubles and its `d`), which `hangProbe`
+    // fetched so nothing here waits before the frame is hooked.
+    const ours = g.frustumPlanes !== undefined;
     return new Promise((res) => {
       F.beforeDraw(() => {
         s.log = [];
@@ -459,7 +496,11 @@ function recordFrame(page) {
           // Babylon's meshes the frustum kept, through the adapter (X6.1a):
           // none with no scene (RETIRED).
           const B = F.babylon();
-          const planes = B?.scene.frustumPlanes;
+          const planes = !B
+            ? undefined
+            : ours
+              ? g.frustumPlanes?.map((p) => new s.BabylonPlane(p.normal.x, p.normal.y, p.normal.z, p.d))
+              : B.scene.frustumPlanes;
           const gated = {};
           for (const m of B ? B.scene.meshes : []) {
             const cls = s.classOf(m, m.material);

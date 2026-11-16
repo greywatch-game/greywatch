@@ -112,9 +112,8 @@ you are on before you believe anything else in this section.
   worked version. **A script that only needed a Babylon VALUE could skip the
   timeline** by importing a game module that made one — `/src/math/babylon.ts`'s
   `toBabylon`, deleted at X6.1f — because Vite serves each `/src` file at one
-  URL; no game module makes a Babylon vector since, so take the timeline.
-  `plans/physics-ref/clients.mjs` still imports that deleted module and
-  asserts the old identity, and fails on both until it is moved.
+  URL; no game module makes a Babylon vector since, so take the timeline, as
+  `plans/physics-ref/clients.mjs` has since X6.1f's review.
 - **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
   thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
   fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in
