@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717) — **all ten LANDED**, the whole step verified (desktop, 2026-11-16), the phone and the tag owed
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7440,6 +7440,41 @@ Then the cut, then the sweep.
 - X6.1's Verify above, against a BEFORE at 5613d1e, end to end as well as step by step;
 - the census at 0, and `npm ci` with no `@babylonjs/core` in `node_modules`;
 - the phone, as the owner decides (row "X6.1, the phone and a tag").
+
+**The whole step verified (desktop), the phone and the tag owed** (2026-11-16, HEAD 313ca28 against a BEFORE at
+5613d1e, X6.1's parent, in a temporary worktree with its own `npm ci` (Babylon in it) and the bank's `ref/`, removed
+afterwards; HEAD's instruments on both trees where they read the BEFORE; the note "X6.1, the whole step verified
+(desktop)" in `plans/done/babylon_exit_landed.md`). **The AFTER** is a clean checkout of HEAD: `npm ci` clean,
+`node_modules/@babylonjs/` holding `havok` alone, `npm ls @babylonjs/core` empty, `npm run build` clean; **the census
+reads 0** (no file, no `ssrLoadModule`, no page-side load). **The instruments read the old tree as its own did**: the
+BEFORE's bank under HEAD's came out byte-equal to X6.1a's BEFORE (5613d1e's game, its own instruments) — default and
+`=high` 147 of 147, `=low` 146 and the pistol flake. **The bank** by `exact.mjs`: 146 of 147 byte-equal at default,
+`=low` and `=high`, and `harrowmead-view-pistol-reload` within its flake (2 pixels by 1/255) in each; no `sarab-ground`
+residue and no row one-sided. **Every probe equal end to end** but the reads X6.1a named RETIRED with no scene: the
+draw log's `meshes.sizes` `[0]` → `[]` in its nine classes, `post.mjs`' chain `autoClear`, `autoClearDepthAndStencil`
+and `imageProcessing` → `null` in all 17 scenarios at `desk` and `phone` (31,616 values equal a size), `leaks.mjs`'
+Babylon control skipped; `gi.mjs` (914,604 and 254,724 values), `particles.mjs` (45,120), `surfaces.mjs` (5,719),
+`census` (168), `readers.mjs` replay (547 of 547, three origins identical) and both camera logs (120 and 152 frames —
+the planes and the gun marker Babylon's scene and camera at the BEFORE, ours at HEAD — with no `--ignore`) equal;
+`pipelines.mjs` 101 modules and 90 of ours, nothing built in play on either; `leaks.mjs` 0 released and 0 cached, the
+device's bind groups and live buffers the BEFORE's at every step, the heap 12–14 MB lower; `gate` and `shaders` clean
+on seven maps. `kit:hash` (3,722 builds), `--models --strict-order` (244) and `--feet` identical, the BEFORE's taken
+with 1b9e23c's script (HEAD's builds a kit that takes no scene); `merge:hash` identical on eight maps; the four copy
+checks against their tables (342, 1,920, 351, 256 groups; 0 NEW, GONE or STALE) and every `--perturb` failing;
+`maps:check`, parity (eight maps), corecheck; the fight hash equal on four maps (`e57084dd…`, `380fdf6b…`,
+`8e839848…`, `772a08d5…`); the physics clients' oracle identical to its banks on three maps at both trees (the
+BEFORE's own script: HEAD's hands a burst `src/math`'s vector, which 5613d1e's entry points read as Babylon's).
+**Live** at both trees: `live.mjs` 47 of 47, `sarab.mjs` 19 of 19, `cams.mjs` 7 of 7. A DEV session from a cold `.vite`
+cache at HEAD: Havok's `.wasm` 200 off its `node_modules` path, a pane broken, a ragdoll in 26 s, no error. **The
+bundle**: 102 files, 16,846.3 kB raw and 6,027.4 kB gzipped → 56 files, 9,795.8 and 4,449.4 (the JS 12,215.0 and
+3,096.7 → 5,164.4 and 1,518.7; the main chunk 9,358.5 and 2,316.3 → 2,505.4 and 795.0; Babylon's 46 lazy chunks
+(195.7 and 56.4) gone; the local match's Worker 592.8 → 593.4, `src/math`'s members added at X6.1e and X6.1f). **The PWA**: 5613d1e's
+build installed, HEAD's served over it, the old cache pruned, offline warm and cold. **A bench on Sarab**
+(production builds, `--gpu --max`, 3440x1440, eight runs alternated B A A B B A A B): one fight hash on every run, the
+medians of four runs a tree within 2.8% on every group's mean, tick, `render` and `gpu.frame` (`render` +0.8 / +1.2 / +2.4%, the tick −0.3 / −0.2
+/ −0.1%, `gpu.frame` +1.0 / −0.6 / −2.8%, vantages / path / fight), every adjacent pair within 7%. No device hang.
+**Owed**: the phone (row "X6.1, the phone and a tag": a `?bench=<map>&gpu` capture on the preview URL, and the
+home-screen app updating over its installed copy and launching offline), then the tag.
 
 ### X6.2 — Merge to `develop` — **S** (decision)
 

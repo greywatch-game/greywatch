@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245, the owner's answers e1e37ed, 574ab8e, 870ca49, 165a717) — **all ten LANDED**, the whole step verified (desktop, 2026-11-16), the phone and the tag owed
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14385,3 +14385,131 @@ moon's `beforeBlended`); `dist/` differs in that string and the names it ripples
 `index.html`, `sw.js`'s version). (d) `babylonTable.mjs`' `record` option, branch, `fold()` and `frozen` deleted,
 `recorded()` kept for `sweep-check`; no check parsed `--record`. Build, typecheck, corecheck, the four copy checks
 (1,920, 342, 351, 256) and every `--perturb` pass; one ULP in `TransformCoordinatesFromFloatsToRef` fails `math-check`.
+
+**X6.1, the whole step verified (desktop)** (2026-11-16; no change to the game: this note, the plan's Verify paragraph
+and both X6.1 headings). The whole of X6.1a to X6.1j, HEAD 313ca28 against a BEFORE at 5613d1e (X6.1's parent,
+tagged locally `exit-phase-5`), on the Windows box, headless, every GPU run alone on the GPU. The BEFORE was a NEW
+temporary worktree, `greywatch-2-before-x61`, detached at 5613d1e, with its own `npm ci` (which installed
+`@babylonjs/core` there, as it should at that commit) and a copy of the gitignored `plans/webgpu-ref/ref/`; it was
+removed afterwards. `greywatch-2-before-x53a` (8a69f093) and `greywatch-2-before-x36b` were not touched. **No device
+hang** on either tree.
+
+- **The AFTER, a clean checkout**: the main tree at HEAD, `git status` clean, `npm ci` clean — `node_modules/@babylonjs/`
+  holding `havok` alone, `npm ls @babylonjs/core` empty, the lockfile naming no core package — then `npm run build`
+  (every gate) and `npm run build:server` clean. **The census** (`scripts/babylon-census.mjs`): 0 files import the
+  package (0 by value, 0 by type), `ssrLoadModule` 0, page-side loads 0.
+- **The instruments.** As at X5.4's whole step, HEAD's instruments ran on both trees: HEAD's `plans/webgpu-ref/`, its
+  `scripts/lib/frameAdapter.mjs` and `scripts/merge-hash.mjs` laid over the BEFORE after its build (each has a scene
+  arm, picked where `__celshock.scene` exists). Two could not read the BEFORE and were not used there:
+  - `kit:hash`: HEAD's calls every builder `(mats)`, and 5613d1e's builders take a scene (X6.1d). The BEFORE's
+    fingerprint was taken with 1b9e23c's script (X6.1a's review: the restated, Babylon-free format, run on the
+    parent's game), which every sub-step since has compared against identically.
+  - The physics clients' oracle: HEAD's hands the burst entry points `src/math`'s vector (29cc5989), which 5613d1e's
+    entry points read as Babylon's (`_x`), so every body moved. The BEFORE ran its own script, 5613d1e's, against the
+    same committed banks (unchanged since).
+
+  **They read the old tree as its own did**: the BEFORE's three banks under HEAD's instruments against X6.1a's BEFORE
+  (`x61a/before-*`, 0edc6159, whose game is 5613d1e's, taken by its own pre-X6.1a instruments): default and `=high` 147
+  of 147 byte-equal, `=low` 146 and `harrowmead-view-pistol-reload` within its flake.
+- **The bank**, by `exact.mjs`, 147 rows a run, `--check --keep` once at each tree: **default, `volumetrics=low` and
+  `volumetrics=high` each 146 byte-equal and `harrowmead-view-pistol-reload` within its known flake** (2 pixels, worst
+  1/255, mean 0). No row one-sided, no `sarab-ground` residue in any run (so the Sarab procedure was not owed). Each
+  tree's `--check` against the committed `ref/` fails the same Kurenai rows (`kurenai/menu` 3.4542/255 at default,
+  `particles-leaves` 0.9594 and 0.4805 at `=low` and `=high`) at both trees, byte for byte: the reference is older
+  than X6.1, as at X6.1i.
+- **The probes**, HEAD's at each tree, the AFTER `--against` the BEFORE:
+  - **The draw log** (Coldharbour, with the viewer): 9 differences, every one `meshes.sizes` `[0]` → `[]` in its nine
+    classes — the scene's mesh count, which X6.1a's adapter answers RETIRED with no scene.
+  - **`post.mjs`** at `desk` and `phone`: 31,616 values equal a size over its statics and every scenario's passes
+    (the frame's commands item for item); 102 differences, all three of the chain's Babylon fields in each of the 17
+    scenarios at both sizes — `autoClear` and `autoClearDepthAndStencil` (`false` → `null`) and `imageProcessing`
+    (its configuration → `null`): what X6.1a named RETIRED with no scene, and what X6.1h's own comparison read.
+  - **`gi.mjs`**: equal (914,604 values on Hollowmere, 254,724 on Coldharbour). **`particles.mjs`**: equal by
+    `Object.is` (45,120 numbers over 480 frames). **`surfaces.mjs`**: equal (5,719 values). **`census`**: 168 and 168.
+  - **`readers.mjs` replay** of X5.4a's record: equal (frames, readers, digests, ids, ours, origins), 547 of 547 live
+    answers, the three origins (`sendGrenade` 793 and 1413, `sendOrdnance` 1232) identical. **The camera logs**:
+    Hollowmere (120 frames) and Coldharbour with a hull (152) equal with NO `--ignore` — the view, the projection, the
+    six frustum planes and the gun marker's projected point, Babylon's scene and `FreeCamera` at the BEFORE and ours
+    (`core/FreeCamera.ts`, `Game.frustumPlanes`) at HEAD, bit for bit.
+  - **`pipelines.mjs`**: Hollowmere 101 modules, 0 pipelines, 90 of ours at both, nothing a second; Coldharbour
+    `--round` nothing built in play (`{"babylon":0,"ours":0,"modules":0}`) at both, the rounds fired 62 and 60 (the
+    shot counts ride the wall clock, as at every sub-step).
+  - **`leaks.mjs`**: 0 released and 0 cached bind groups in every class at both; the device's bind groups
+    (0/1,851/1,916/1,916/2,084/2,084/2,084/2,084/2,194/2,194) and live buffers (132/395/401/149/401/401/149/149/256/145,
+    the MB equal) the BEFORE's at every step; the heap 12–14 MB lower at every step; Babylon's positive control
+    skipped at both (a `NullEngine` at the BEFORE, no engine at HEAD).
+  - **`gate`**: all seven maps clean, the probe counts equal (its boot and install times the wall clock's, not
+    compared). **`shaders`**: every shader compiled clean on seven maps, the logs identical.
+- **Hashes**: `kit:hash` 3,722 builds of 105 kinds, 0 threw, `identical` (no build added or gone); `--models
+  --strict-order` 244 builds of 20 kinds `identical`; `--feet`'s report byte-identical; `merge:hash` identical on all
+  eight maps (hollowmere, greyfen, coldharbour, harrowmead, sarab, cinderhaven, kurenai, proving), its `info` scene
+  counts `0` → `null`, which it reports as not a failure.
+- **The four copy checks** at HEAD against their tables: `geometry-check` 6,802 answers in 342 of 342 groups,
+  `math-check` 1,920,000 in 1,920 of 1,920, `bounds-check` 185,138 in 351 of 351, `sweep-check` 64,000 in 256 of 256,
+  every group identical; `bounds-check` and `sweep-check` 0 NEW, 0 GONE, 0 STALE (`geometry` and `math` have no
+  content groups); every `--perturb` failing every group it touched (342, 1,920, 351; `sweep-check`'s as recorded).
+- **Map and core checks**: `maps:check` (seven maps reproduce from their generators); parity (eight maps, every
+  field); corecheck (all passed); `check-babylon-free` and `check-webgpu-globals` clean; typecheck clean. **The fight
+  hash** (`dist-server/simulate.js <map> 1 2 4242`), equal at both trees: Hollowmere `e57084ddbf7d69ed`, Coldharbour
+  `380fdf6bec3b2dfb`, Sarab `8e839848a7f77cc4`, Cinderhaven `772a08d599c4c8ec`. **The physics clients' oracle**
+  (`--check`): Coldharbour, Cinderhaven and Harrowmead `identical` to their banks, nodes and every body, at both trees.
+- **Live** at both trees (the X6.1h copies, as X6.1i ran them): `live.mjs` 47 of 47, `sarab.mjs` 19 of 19 (TANK, TRUCK
+  and HELI driven, the gunner's seat, dismounted), `cams.mjs` 7 of 7. Their outputs differ only in what the wall clock
+  decides (frame totals, fps, the distances of real-time key holds, the death cam sampled in real time) and the DEV
+  compile counter (0 at the BEFORE, `null` at HEAD: retired at X6.1c); every frame at both read the live check's
+  `0/0/1/1/1/2`.
+- **A DEV session from a cold `.vite` cache** at HEAD (`devcold.mjs`, `node_modules/.vite` removed): Coldharbour
+  offline, a life, pane 21 broken at 45 m (1 shard set), a ragdoll from the round's own kills within 26 s; Havok's
+  `.wasm` 200 off `/node_modules/@babylonjs/havok/lib/esm/HavokPhysics.wasm` (2,094,563 bytes); 0 page errors, 0
+  console errors.
+- **The bundle**, both trees' `dist/` (KiB, raw and gzipped):
+
+  | file | 5613d1e | HEAD |
+  | --- | ---: | ---: |
+  | `assets/index-*.js` (the main chunk) | 9,358.5 / 2,316.3 | 2,505.4 / 795.0 |
+  | `assets/localMatchWorker-*.js` | 592.8 / 134.2 | 593.4 / 134.4 |
+  | `sw.js` | 21.2 / 8.2 | 18.9 / 7.4 |
+  | Babylon's 46 lazy chunks (shader stores, texture loaders, audio buses, `mesh.vertexData.functions`) | 195.7 / 56.4 | — |
+  | every other file (53: Havok's glue and `.wasm`, the bench, the local match's host, the collision and heights chunks, the CSS, the audio, the photographs, the icons, `index.html`, the manifest, the viewer) | the same | the same |
+  | **total** | **102 files, 16,846.3 / 6,027.4** | **56 files, 9,795.8 / 4,449.4** |
+  | JS | 12,215.0 / 3,096.7 | 5,164.4 / 1,518.7 |
+
+  Those 53 are the same size to 0.1 kB and byte-identical but three: `BenchScript` (the `sky-motes` string, 870ca49), `localMatch` and `index.html` (the chunk names they carry, and the build stamp). The Worker's 0.6 kB is `src/math`'s members added at X6.1e and X6.1f (`Vector3.NormalizeToRef`,
+  `Matrix.OrthoLHToRef`, `invert`, `setTranslation`/`getTranslation`, `Quaternion.FromEulerVectorToRef`): a class's
+  members are not tree-shaken, and the fight hashes say the core is unchanged. `sw.js` is shorter by the 46 precache
+  entries. The full table, every file paired by its name stem, is `x61-whole/bundle-table.md`.
+- **The PWA** (`pwa.mjs`, a persistent headless Chromium, `vite preview` on one origin): 5613d1e's build (`sw.js`
+  version `d0c4eb335849`) installed, worker active, its 101-entry precache complete, the menu; HEAD's (`217a7f8816cd`)
+  served at the same origin and the app opened again: the shell the new one (network-first), the new worker installed,
+  activated and claimed, the old cache pruned (one cache, 55 entries, the new main chunk), the menu; then OFFLINE in
+  that context (the new shell, the menu, a round to deploy off the precache) and offline COLD with no server (the
+  installed app to the menu). 7 of 7.
+- **A bench on Sarab** (`bench.mjs sarab --runs 1 --gpu --max`, 3440x1440, uncapped, each tree's PRODUCTION build
+  served by `vite preview` on its own port, HEAD's `bench.mjs` driving both — unchanged since 5613d1e — a fresh browser
+  a run), eight runs ALTERNATED B A A B B A A B between 10:34 and 10:43 so the machine's drift lands on both. Every run
+  fought fight `986c2e35557fb679`, the canvas 3440x1440 in every group. Medians of four runs a tree, ms, BEFORE →
+  HEAD:
+
+  | group | mean | p95 | tick | render | `gpu.frame` |
+  | --- | --- | --- | --- | --- | --- |
+  | vantages | 3.750 → 3.740 (−0.3%) | 8.20 → 8.05 | 3.333 → 3.324 (−0.3%) | 2.926 → 2.949 (+0.8%) | 3.624 → 3.662 (+1.0%) |
+  | path | 4.135 → 4.149 (+0.3%) | 12.8 → 13.4 | 3.865 → 3.858 (−0.2%) | 2.513 → 2.543 (+1.2%) | 3.933 → 3.910 (−0.6%) |
+  | fight | 3.966 → 3.967 (0.0%) | 7.95 → 8.00 | 3.638 → 3.634 (−0.1%) | 2.733 → 2.798 (+2.4%) | 3.940 → 3.831 (−2.8%) |
+
+  The core's step in the fight 0.2455 → 0.245 ms. By adjacent pair (1–2, 3–4, 5–6, 7–8) `render` moved −1.7/+6.5/+2.2/−1.2%
+  (vantages), +0.4/+7.0/+2.6/−5.0% (path) and +3.5/+2.3/+2.4/+1.2% (fight), the tick within ±5.5%, `gpu.frame` within
+  ±5.5%: everything inside the protocol's 8%. The fight's `render` reads higher in all four pairs, by 1.2–3.5%; under the
+  8% one run a pair resolves, so it is recorded, not credited (X6.1h's review measured the step's own share in tens of
+  microseconds and found no per-frame work removed or added).
+- **Noise, classified**: `harrowmead-view-pistol-reload` within its flake in all three bank runs (and in the BEFORE's
+  `=low` against X6.1a's BEFORE); the Kurenai `--check` rows against the old `ref/`, the same at both trees; the
+  wall clock's counts in `pipelines.mjs --round`, `leaks.mjs`' frames per class, `gate`'s times and the live scripts'.
+  No cross-process residue appeared. **No difference from 5613d1e that is not noise or a read X6.1a named RETIRED**,
+  so no bisection was owed.
+- **Left to the owner** (row "X6.1, the phone and a tag"): the phone on the branch's preview URL — a `?bench=<map>&gpu`
+  capture, and the home-screen app updating over its installed copy and launching offline — and a real desktop install
+  (an installed PWA window updating on relaunch), which the headless context stands in for but is not; then the tag.
+
+Scripts and logs in the session's scratchpad, `x61-whole/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `probes.sh`,
+`bench-alt.sh`, `benchsum.cjs`, `bundlecmp.cjs`, the X6.1h copies of `live.mjs`, `sarab.mjs` and `cams.mjs`,
+`devcold.mjs`, `pwa.mjs`, every log and JSON, the six kept bank directories and both `dist/`s).
