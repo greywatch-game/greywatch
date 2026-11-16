@@ -479,8 +479,9 @@ chains through `flattenParts` → `detachPart` → `worldMatrixOf`), so a copy
 that moved can move it too. Each
 of those two also runs a SEEDED section built from nothing in the game
 (synthetic parts and chains, a synthetic world), and a seeded group — like
-every group of `math-check` and `geometry-check` — added or lost still FAILS.
-Every `--perturb` must fail every group it touches. **Since
+every group of `math-check` and `geometry-check` — added or lost still FAILS,
+and so does one whose INPUT digest moved (the synthetic world carries one):
+only the game's content may read STALE. Every `--perturb` must fail every group it touches. **Since
 nothing can record a new answer, a member ADDED to a copy has no bit-level
 oracle**: `math-check` and `geometry-check` fail on an export no case covers,
 and a case added now has nothing to meet; such a member is proven another way,

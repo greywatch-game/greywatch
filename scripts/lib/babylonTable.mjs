@@ -53,9 +53,12 @@
  * two checks also has a SEEDED section built from nothing in the game
  * (`bounds-check`'s synthetic parts and chains, `sweep-check`'s synthetic
  * world, which a check names to the ledger as `seeded`), so the oracle does
- * not fade as the art moves, and which is never NEW or GONE.
+ * not fade as the art moves, and which is never NEW, GONE or STALE: a seeded
+ * group whose input digest moved FAILS, since its input is built from nothing
+ * in the game and only the check's own world (or what builds it) can move it.
  *
  * **What fails**: an answer digest that differs where the input did not; a
+ * SEEDED group's input digest that differs at all; a
  * group the table has and a whole run did not reach, or the reverse — a new
  * case has nothing recorded to meet, and cannot have — unless the group is
  * the game's content (it carries an INPUT digest and is not `seeded`), when it
@@ -306,11 +309,17 @@ export class Ledger {
     const stale = [];
     const missing = [];
     const gone = [];
+    /** Seeded groups whose input moved: never STALE, always a failure. */
+    const seededMoved = [];
     let compared = 0;
     for (const [g, digest] of Object.entries(table.groups)) {
       const input = table.inputs?.[g];
       if (input !== undefined && mine.inputs[g] !== undefined && mine.inputs[g] !== input) {
-        stale.push(g);
+        // Only the game's content may go STALE. A seeded group's input is
+        // built from nothing in the game, so its moving is the check's own
+        // world (or what builds it) changing, never art landing.
+        if (this.seeded(g)) seededMoved.push(g);
+        else stale.push(g);
         continue;
       }
       if (mine.groups[g] === undefined) {
@@ -349,14 +358,28 @@ export class Ledger {
       const how = this.perturb === "input" ? "the input moved under" : "one value moved in";
       console.log(`perturbed: ${how} ${this.moved.size} groups, ${caught} of them differ`);
       if (uncaught.length) console.log(`  NOT caught: ${summarise(uncaught)}`);
-      return !(this.moved.size > 0 && uncaught.length === 0 && missing.length === 0 && unrecorded.length === 0);
+      if (seededMoved.length) console.log(`FAILED: ${seededMoved.length} seeded groups' input changed: ${summarise(seededMoved)}`);
+      return !(
+        this.moved.size > 0 &&
+        uncaught.length === 0 &&
+        missing.length === 0 &&
+        unrecorded.length === 0 &&
+        seededMoved.length === 0
+      );
+    }
+    if (seededMoved.length) {
+      console.log(
+        `FAILED: ${seededMoved.length} seeded groups' input changed: the seeded world's own inputs moved ` +
+          "(TerrainField's defaults? how RayWorld or the world builder takes its boxes?), so this is not art landing: " +
+          summarise(seededMoved),
+      );
     }
     if (differ.length) console.log(`FAILED: ${differ.length} groups differ: ${summarise(differ)}`);
     if (missing.length) console.log(`FAILED: ${missing.length} recorded groups not reached: ${summarise(missing)}`);
     if (unrecorded.length) {
       console.log(`FAILED: ${unrecorded.length} groups have no recorded answer (a case added after Babylon left): ${summarise(unrecorded)}`);
     }
-    return differ.length > 0 || missing.length > 0 || unrecorded.length > 0;
+    return differ.length > 0 || missing.length > 0 || unrecorded.length > 0 || seededMoved.length > 0;
   }
 }
 

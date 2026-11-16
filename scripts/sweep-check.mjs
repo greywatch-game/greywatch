@@ -53,7 +53,10 @@
  * failed (`scripts/lib/babylonTable.mjs`). So
  * that the oracle does not fade as the maps move, a SEEDED world built from
  * nothing in the game runs after the maps (`synthetic`: see
- * `syntheticWorld`), which is never stale. Each body's samples are a stream
+ * `syntheticWorld`). It carries an input digest as a map does, but it is
+ * named `seeded` to the ledger, so it never reads STALE (or NEW or GONE): an
+ * input of its that moved — `TerrainField`'s defaults, say — FAILS, because
+ * nothing in the game's art can move it. Each body's samples are a stream
  * of their own (the hulls are the map's), so a map or a body named alone draws
  * what the table's run drew and is held to its groups; the seed and the
  * sample count are part of what was recorded. `--perturb` is the negative
