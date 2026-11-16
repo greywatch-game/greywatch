@@ -153,6 +153,10 @@
  *   engine's render size and aspect; the game's reads the transform off the
  *   frame host (`SceneFrame.host.viewProjection`, what every draw of ours is
  *   handed) and the size and the aspect off the surface (`Game.surface`).
+ *   **Where the game has `frustumPlanes`** (X6.1f on: the frame computes the
+ *   transform and the planes itself, and the scene it still has computes
+ *   neither) BOTH arms read the transform off the frame host and the planes
+ *   off `Game.frustumPlanes`; on a tree before it nothing here moved.
  *   **`planes` is READ, never re-derived** (X6.1a's review): with no scene it
  *   is the GAME's own plane array — the very array its culls read, which is
  *   `scene.frustumPlanes` today (`Game.ts`' four readers and `Sky.ts`'s) —
@@ -317,18 +321,25 @@ export function frameAdapter() {
         let renderWidth;
         let renderHeight;
         let aspect;
-        if (scene) {
+        // Whether the GAME computes the frame's transform and planes itself
+        // (the header): from X6.1f on, `Game.frustumPlanes` is a getter — on
+        // both arms, since the scene a page still has computes neither then.
+        const ours = g.frustumPlanes !== undefined;
+        if (scene && !ours) {
           transform = Float32Array.from(scene.getTransformMatrix().m);
           planes = planesOf(scene.frustumPlanes);
-          renderWidth = e.getRenderWidth();
-          renderHeight = e.getRenderHeight();
-          aspect = e.getAspectRatio(cam);
         } else {
           transform = new Float32Array(16);
           g.sceneFrame.host.viewProjection(transform);
           // The GAME's own array (the header), never a restatement: null —
           // UNPROVEN — on every tree before X6.1f gives the game one.
           planes = g.frustumPlanes ? planesOf(g.frustumPlanes) : null;
+        }
+        if (scene) {
+          renderWidth = e.getRenderWidth();
+          renderHeight = e.getRenderHeight();
+          aspect = e.getAspectRatio(cam);
+        } else {
           renderWidth = g.surface.getRenderWidth();
           renderHeight = g.surface.getRenderHeight();
           aspect = g.surface.getAspectRatio(cam);

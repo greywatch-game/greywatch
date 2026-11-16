@@ -117,7 +117,13 @@
  * step's last frame (`n`) rather than counting on past it by however many
  * frames the round trip to Node took; no logged frame's pose moved by that.
  * The default map stays Hollowmere, whose log is the old one's with `planes`
- * and `marker` beside it.
+ * and `marker` beside it. **Since X6.1f** (its Verify: the camera through the
+ * viewer) two steps follow on every map, before the round-over card: the
+ * dev-only map VIEWER raised over the life (`Game.toggleViewer`, as `F2`
+ * raises it — the one lid that moves the camera, its free camera's
+ * `setTarget` every frame under the pin) and lowered again, posed past every
+ * step before them (17 and 18), so a log taken before them compares with
+ * this one step by step.
  *
  * **What makes two runs comparable**: a replay's frames are its record's, the
  * camera log's its steps', and neither depends on how fast the machine ran.
@@ -881,6 +887,14 @@ async function cameraLog(page) {
     await g(() => window.__celshock.setSetting("renderScale", 1));
     await g(() => window.__camHullOff());
   }
+  // The VIEWER (X6.1f's Verify: the one lid that moves the camera), raised
+  // over a life as `F2` raises it and lowered again: its free camera drives
+  // the game's own (`ViewerCamera.update`'s `setTarget`, the pose then pinned
+  // over it as every step's is), and the lid puts the pose back as it comes
+  // down. Posed past every step X6.1a and its review logged (their last is 16
+  // on a map with a hull), so none of theirs moved.
+  await step("the viewer over a life", "viewer", () => g(() => window.__celshock.toggleViewer()), SETTLE, 17);
+  await step("the viewer lowered", "playing", () => g(() => window.__celshock.toggleViewer()), SETTLE, 18);
   await step("the round over", "roundover", () => g(() => window.__celshock.endRound(0)));
   await step("the menu again", "menu", () => g(() => window.__celshock.enterMenu()));
   const log = await page.evaluate(() => window.__cam.log);

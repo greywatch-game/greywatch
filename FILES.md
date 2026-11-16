@@ -409,8 +409,9 @@ plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
                       #   planes and gun marker per frame through every state
                       #   (a hull boarded as driver and gunner on a map with
                       #   one, X6.1a, and at render scale 0.75 and after a
-                      #   resize, its review) with the pose pinned; planes
-                      #   READ off the game's array, "unproven" without one
+                      #   resize, its review; the viewer raised and lowered,
+                      #   X6.1f) with the pose pinned; planes READ off the
+                      #   game's array, "unproven" without one
   leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
                       #   released and cached bind groups made after the boot,
                       #   live GPUBuffers (and their MB) and the heap, over
