@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14115,7 +14115,7 @@ gate (521 modules), corecheck clean; census 2 files (the copy checks).
 - **The NITs (f56f9bf)**: `TextureMaker.ts`' decode-failure comment, `docs/deaths.md`, two lines of `docs/rendering.md`,
   `docs/profiling.md`'s opening (stale since X5.4g), five lines of `VERIFYING.md`, one of `FILES.md`.
 
-**X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut; 2026-11-16; no change to the game). Measured headless on the
+**X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0; 2026-11-16; no change to the game). Measured headless on the
 Windows box against a BEFORE at 4443c417 (X6.1h's review's record) in the worktree `greywatch-2-before-x53a` (moved
 there from 8a69f093, detached, and moved back after; the lockfile unchanged there, so its `node_modules` stood, the
 package in it), every GPU run alone on the GPU.
@@ -14232,3 +14232,30 @@ package in it), every GPU run alone on the GPU.
 Scripts and logs in the session's scratchpad, `x61i/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `probes.sh`,
 `sarab-proc.sh`, `devcold.mjs`, `pwa.mjs`, `bundle.mjs`, the recording runs, every log, JSON and kept bank directory,
 and 5613d1e's `dist-5613/`).
+
+**X6.1i's review** (53c250a, aab036d, 6d858f0; 2026-11-16): **three problems and a fourth the fix found; two owner
+decisions; no picture change.** Re-recorded the four tables at 28dc7f0 with the core installed: byte-identical (line
+endings aside), sweep 64,000 of 64,000 live. At ed0df266 in a clean worktree: `npm ci` leaves `@babylonjs/havok`
+alone, build and corecheck pass, the census 0, the bundle 56 files, 9,795.8 kB raw, 4,449.4 kB gzipped;
+`optimizeDeps.exclude` is Havok. Source plants: `vector.ts` `m[12]` by one ULP fails math (40), bounds (165, 16
+stale) and geometry (80); `boundsOf` radius fails bounds (173); `createDisc` fails geometry (20); `closeDistance`
+fails sweep (114); `worldMatrixOf` by `1 + 2^-22` fails 207, 144 stale. Gate plants refused in every tree
+directory; a computed specifier passes, as designed; `SIMULATIONS` unchanged (15).
+- **The image build** (HIGH): `check-babylon-free.mjs` reported `plans/` and `.claude/skills/` missing in the
+  Dockerfile's build stage, which copies neither, so `docker.yml` would fail on the next push. Owner: skip those two
+  when absent, with a note (`TREE_OPTIONAL`); `src/`, `server/`, `scripts/` still fail when missing. Verified in
+  a worktree with both removed (the gate and `npm run build` pass; HEAD's gate failed there); Docker not installed.
+- **Content added or removed** (MEDIUM): `Ledger.finish()` failed on unrecorded and missing groups. Owner: a group
+  with an input digest that is not SEEDED reads NEW or GONE and is not failed; seeded groups, `math-check` and
+  `geometry-check` still fail. Plants: a new kind 2 NEW (pass), a removed kind 2 GONE (pass), a map swapped 32 NEW
+  and 32 GONE (pass), a renamed seeded case, a new synthetic case and a renamed synthetic world FAIL; partial runs
+  0 GONE. Then 6d858f0: a seeded group whose input digest moved FAILS (`TerrainField`'s `roll` 2.6 → 2.7 fails 32
+  seeded groups while Hollowmere, content, reads 32 STALE).
+- **STALE and the copy under test** (LOW): a one-ULP `TransformCoordinatesFromFloatsToRef` read 16–18 kit groups
+  STALE (the builders' own `src/math` arithmetic); every such run still failed on the chains and seeded sections.
+  The ledger's header now says a sudden mass of STALE is suspect.
+- **`.d.ts`** (LOW): `walkDir` skipped them and `skipLibCheck` hid them from `tsc`; the tree pass now reads them,
+  refusing a type import, a `/// <reference types>` and a `declare module` of the package.
+- **NITs** (53c250a): `licenses/babylonjs.md`'s claim that the ports are the files citing it (X6.1j's), "the version
+  installed then", `sweep-check`'s single mode. Every `--perturb` still catches every group; with `BUILD_COMMIT`
+  fixed the bundle is byte-identical to the review's parent.

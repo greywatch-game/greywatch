@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7323,7 +7323,7 @@ Then the cut, then the sweep.
       and the widening of `check-babylon-free`;
     - `package.json`'s scripts, and `FILES.md`.
 
-  **X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut; 2026-11-16; no change to the game; the full note is in
+  **X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0; 2026-11-16; no change to the game; the full note is in
   `plans/done/babylon_exit_landed.md`). **The tables first** (28dc7f0, the package still installed): each copy check
   gained `--record`, which ran its old live comparison against Babylon 9.28 and wrote `scripts/tables/<check>.json`
   through one ledger (`scripts/lib/babylonTable.mjs`): every answer encoded bit for bit (float64 bits, `-0` and NaN
@@ -7353,6 +7353,26 @@ Then the cut, then the sweep.
   19 of 19, `cams.mjs` 7 of 7 at both trees; a DEV session from a cold `.vite` cache (Coldharbour, a pane broken, a
   ragdoll; Havok's `.wasm` 200 off its `node_modules` path, no error); the PWA updating from 5613d1e's install to
   9f165b3's in a persistent headless Chromium and launching offline warm and cold. No device hang.
+  **Its review** (53c250a the NITs, aab036d and 6d858f0 the fixes): the owner's five decisions carried out, the tables
+  re-recorded against a live Babylon 9.28 byte-identical, every planted import refused (`main.ts`, `scripts/`,
+  `plans/`, `.claude/skills/`, `server/`, `src/`), a clean `npm ci` and build with no core package, and
+  `sweep-check`'s deleted modes no loss. **It found three problems and a fourth the fix found**, and the owner
+  decided two (asked by the orchestrating session, 2026-11-16):
+  - **The image build broke** (HIGH): the whole-tree gate required `plans/` and `.claude/skills/`, which the
+    Dockerfile does not copy. **Owner: the gate SKIPS those two, with a note, when absent** (the image only;
+    `src/`, `server/`, `scripts/` still required; `ci.yml`'s full checkout still gates them).
+  - **The copy checks failed on content added or removed** (MEDIUM): a new kit kind, a removed map or a tier's
+    detail value went red for good, against rule 8. **Owner: a content group that is NEW or GONE is reported,
+    not failed**, as STALE; a SEEDED group, `math-check` and `geometry-check` still fail on any difference,
+    and a seeded group whose own input moved FAILS rather than reading STALE (6d858f0, the gap the fix found).
+  - **STALE can absorb a regression in the copy under test** (LOW): a kind's input digest is partly computed
+    through `src/math` (a one-ULP plant read 16–18 kit groups STALE); the chains, the seeded sections and
+    `math-check` still failed every such run, and the ledger's header now says a mass of STALE is suspect.
+  - **A `.d.ts` escaped the gate** (LOW): now read, with `/// <reference types>` and `declare module` of the
+    package refused too.
+  Left for X6.1j: the ports that do not yet cite `licenses/babylonjs.md` (FXAA, the glow blur, the particles, the
+  canvas surface, the frame and its loop). Docker is not installed on the box, so `docker build` was not run; the
+  image's view was reproduced in a worktree with the two directories removed.
 
 - **X6.1j — the sweep** (no change to the game) — **M** (decision: rows "X6.1, the sweep's
   reach" and "X6.1, the licence").
