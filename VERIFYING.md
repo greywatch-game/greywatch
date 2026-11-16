@@ -104,14 +104,17 @@ you are on before you believe anything else in this section.
   a shape built from it is registered against a plugin the scene has never
   heard of — and `/@id/@babylonjs/core` throws outright, redefining Babylon's
   own observables. `performance.getEntriesByType("resource")` is where the real
-  URL is written down; assert the identity (`B.Vector3 ===
-  camera.position.constructor`) rather than trusting the spelling.
-  `plans/webgpu-ref/depth.mjs` is the worked version. **A script that only
-  needs a Babylon VALUE can skip the timeline** and import a game module that
-  makes one — `/src/math/babylon.ts`'s `toBabylon` — because Vite serves each
-  `/src` file at one URL, so the page gets the module the game already
-  holds and its Babylon with it; `plans/physics-ref/clients.mjs` does that
-  and asserts the same identity.
+  URL is written down; assert the identity against a Babylon class the page
+  still holds (`B.Observable === g.sceneFrame.onBeforeRenderObservable
+  .constructor`, as `plans/webgpu-ref/leaks.mjs` does — the camera's
+  position, which told it until `BABYLON_EXIT.md` X6.1f, is `src/math`'s)
+  rather than trusting the spelling. `plans/webgpu-ref/depth.mjs` is the
+  worked version. **A script that only needed a Babylon VALUE could skip the
+  timeline** by importing a game module that made one — `/src/math/babylon.ts`'s
+  `toBabylon`, deleted at X6.1f — because Vite serves each `/src` file at one
+  URL; no game module makes a Babylon vector since, so take the timeline.
+  `plans/physics-ref/clients.mjs` still imports that deleted module and
+  asserts the old identity, and fails on both until it is moved.
 - **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
   thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
   fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in

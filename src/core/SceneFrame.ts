@@ -150,7 +150,7 @@ export class SceneFrame {
   readonly onAfterCameraRenderObservable = new Observable<void>();
   /** The frame drawn: `Scene.onAfterRenderObservable`'s point. */
   readonly onAfterRenderObservable = new Observable<void>();
-  /** Our renderer's host: the draw phase told here, the matrix and the clear colour the scene's, the device and the encoder the game's. */
+  /** Our renderer's host: the draw phase told here, the matrix the frame's (`updateTransformMatrix`), the clear colour the scene's, the device and the encoder the game's. */
   readonly host: FrameHost;
   /**
    * The particle fields' clock this frame — what `scene.getAnimationRatio()`

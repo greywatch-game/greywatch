@@ -157,19 +157,19 @@
  *   transform and the planes itself, and the scene it still has computes
  *   neither) BOTH arms read the transform off the frame host and the planes
  *   off `Game.frustumPlanes`; on a tree before it nothing here moved.
- *   **`planes` is READ, never re-derived** (X6.1a's review): with no scene it
- *   is the GAME's own plane array — the very array its culls read, which is
- *   `scene.frustumPlanes` today (`Game.ts`' four readers and `Sky.ts`'s) —
- *   reached as `Game.frustumPlanes`, six planes each `{ normal: { x, y, z },
- *   d }` as Babylon's `Plane` is, in the order above. **No tree has that
- *   field before X6.1f**, which ports `Frustum.GetPlanesToRef` and owes it
- *   (or names where its array lives and moves this arm onto it in the same
- *   commit); until then the no-scene arm answers `planes: null` — UNPROVEN,
- *   which `readers.mjs`' camera log spells `"unproven"` and says aloud, so a
- *   comparison against a scene's log FAILS on it unless `--ignore` names it.
- *   Planes restated here off `transform` would be a second copy of the
- *   arithmetic the port is meant to be held to, and would pass a wrong port.
- *   X6.1f ports the camera, and every member here reads ours then.
+ *   **`planes` is READ, never re-derived** (X6.1a's review): off the game it
+ *   is the GAME's own plane array — the very array its culls read
+ *   (`SceneFrame.frustumPlanes` since X6.1f, `scene.frustumPlanes` before it;
+ *   `Game.ts`' four readers and `Sky.ts`'s) — reached as `Game.frustumPlanes`,
+ *   six planes each `{ normal: { x, y, z }, d }` as Babylon's `Plane` is, in
+ *   the order above. **No tree has that field before X6.1f**, which ported
+ *   `Frustum.GetPlanesToRef` and gave it; on such a tree the no-scene arm
+ *   answers `planes: null` — UNPROVEN, which `readers.mjs`' camera log spells
+ *   `"unproven"` and says aloud, so a comparison against a scene's log FAILS
+ *   on it unless `--ignore` names it. Planes restated here off `transform`
+ *   would be a second copy of the arithmetic the port is meant to be held to,
+ *   and would pass a wrong port. The camera is ours from X6.1f, and every
+ *   member here reads ours then.
  * - `fields()` and `particles(on)`: every particle field (ours first, as the
  *   frame steps and draws them, then the scene's `particleSystems`), and the
  *   switch over both (`scene.particlesEnabled` and its twin

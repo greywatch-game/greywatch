@@ -150,11 +150,13 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   chain. Paths on the command line walk from
                               #   those instead (Babylon only).
                               #   Also every file under src/render/ and
-                              #   src/math/ (bar the crossing, math/babylon.ts)
-                              #   and its other DIRECTORIES (src/shaders/wgsl/,
-                              #   X6.1c; src/bench/, src/config/, src/dev/,
-                              #   src/geometry/, src/pwa/, the seven maps' and
-                              #   the proving ground's, X6.1d's review)
+                              #   src/math/ and its other DIRECTORIES
+                              #   (src/shaders/wgsl/, X6.1c; src/bench/,
+                              #   src/config/, src/dev/, src/geometry/,
+                              #   src/pwa/, the seven maps' and the proving
+                              #   ground's, X6.1d's review; src/viewer/,
+                              #   X6.1f, when the crossing math/babylon.ts
+                              #   went and NOT_ROOTS emptied)
   babylon-census.mjs          # X6.1a's CENSUS of what is left of
                               #   @babylonjs/core: every import of it under
                               #   src/, server/, main.ts, scripts/,
