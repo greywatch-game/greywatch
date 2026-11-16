@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13751,7 +13751,7 @@ three translation members had been inserted between `addTranslationFromFloats`' 
 Observed: X6.1f's bullet still lists the gun marker's projection, which X6.1e already moved onto our
 `ProjectToRef` — X6.1f is left `Viewport` alone there.
 
-**X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step; 2026-11-15; no change to the picture). Measured headless
+**X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step, its review ca2b6597; 2026-11-15; no change to the picture). Measured headless
 on the Windows box against a BEFORE at 8a69f093 (the instruments' commit, whose game is 44429ec9's) in the worktree
 `greywatch-2-before-x53a` (moved there, detached; the lockfile unchanged, so its `node_modules` stood), every GPU
 run alone on the GPU.
@@ -13829,3 +13829,38 @@ run alone on the GPU.
 
 Scripts and logs in the session's scratchpad, `x61f/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `retry.sh`,
 `probes.sh`, `cams.mjs`, `live.mjs`, `sarab.mjs`, every log, JSON and kept bank directory).
+
+**X6.1f's review** (ca2b6597; fixes 29cc5989; 2026-11-15): **the port is faithful, four doc NITs fixed, and two
+instruments fixed, with no question about the architecture.** The reviewer read the port against Babylon 9.28's
+`camera.pure.js`, `targetCamera.pure.js`, `freeCamera.pure.js`, `math.plane.js`, `math.frustum.js`,
+`math.vector.pure.js` and `scene.pure.js`. It found every operation, order and cache condition this game reaches
+kept, and the omitted members written by nothing in the tree. `SceneFrame.updateTransformMatrix` drops only
+`setTransformMatrix`'s update-flag skip, which skips a recompute that would give the same numbers. Every reader
+asks the frame, and no Babylon code is handed our camera or a vector of ours. typecheck was clean, and
+`math-check` ran 96 cases and 1,920,000 comparisons.
+
+- **The NITs (ca2b6597)**: four present-tense lines made false by the step. `FILES.md`'s check-babylon-free row,
+  `VERIFYING.md`'s identity advice (now the frame's `Observable`, as `leaks.mjs` uses), the frame adapter's header
+  ("`scene.frustumPlanes` today"), and `SceneFrame.ts`' host doc.
+- **The physics clients oracle could not run (fixed in 29cc5989).** `plans/physics-ref/clients.mjs` imported the
+  deleted `/src/math/babylon.ts` and asserted that `toBabylon`'s vector shared the camera position's constructor.
+  It now imports the page's Babylon by the url off the resource timeline and asserts
+  `B.Observable === g.sceneFrame.onBeforeRenderObservable.constructor`. Its stand-in vector is made as
+  `toBabylon` made it (`copyFromFloats` into a new Babylon vector), so the burst entry points, typed on
+  `src/math` since X6.1e, are handed what the banks were taken with. `--check` at HEAD is identical to the banks
+  on all three maps: the engine (452fc9d44a88e3a6, 5504610c69d82176, 4b1f60f31d44f6f3), the nodes (318 × 601)
+  and every body (174 × 601). The BEFORE's own script at 8a69f093 was identical too, and the two outputs match
+  line for line, the in-process repeat and the probes included. So it ran before X6.1f, and only the deletion
+  stopped it.
+- **`surfaces.mjs` had stale reads (fixed in 29cc5989).** Its `Mesh.render` and particle-field hooks read
+  `scene.activeCamera.globalPosition`, and its size-gate walk handed `scene.frustumPlanes` to `isInFrustum`.
+  Neither is set from X6.1f on, and neither path reaches a draw today. They now read the frame's camera
+  (`SceneFrame.activeCamera`) and `Game.frustumPlanes`. The planes are read, never re-derived, and copied into
+  Babylon's own `Plane` because `isInFrustum` asks `dotCoordinate`. On a tree without those fields the script
+  reads the scene's. The fixed script at HEAD and at the BEFORE is equal (5,719 values), and each is equal to
+  X6.1f's own logs from the unfixed script. The first HEAD attempt lost the device (`DXGI_ERROR_DEVICE_HUNG`,
+  the box's known hang), and the re-run was clean.
+- No other reader of `math/babylon`, `toBabylon`, `scene.activeCamera` or `scene.frustumPlanes` that a run would
+  hit is left in `plans/`, `scripts/` or `.claude/skills/`.
+
+Logs in the session's scratchpad, `x61f-fix/`.

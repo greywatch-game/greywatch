@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7074,7 +7074,7 @@ Then the cut, then the sweep.
     they name the camera's class; `docs/rendering.md`'s frame; `CLAUDE.md` (the viewer's
     one Babylon type); `FILES.md`.
 
-  **X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step; 2026-11-15; no change to the picture; the full
+  **X6.1f LANDED** (8a69f09 the instruments, 95c7122 the step, its review ca2b6597; 2026-11-15; no change to the picture; the full
   note is in `plans/done/babylon_exit_landed.md`). **The instruments first, in their own commit**: the
   frame adapter's `camera()` reads the host's transform and `Game.frustumPlanes` on both arms wherever the
   game has that field, and the camera log gains the viewer raised and lowered (posed 17 and 18).
@@ -7108,6 +7108,17 @@ Then the cut, then the sweep.
   **The census**: 30 files to 19, 21 shrank, 0 grew. The bundle is 16,827.4 kB raw and 6,020.3 kB
   gzipped (from 16,820.3 and 6,018.7): our port is added, and Babylon's camera classes are still bundled
   through the scene until X6.1h.
+  **Its review** (ca2b6597, fixed in 29cc5989): the port is faithful to Babylon 9.28's camera, plane,
+  frustum and scene sources, every operation, order and cache this game reaches, and no question about
+  the architecture. Four stale doc and comment lines were fixed (`FILES.md`, `VERIFYING.md`, the frame
+  adapter's header, `SceneFrame.ts`). Two instruments were left behind. `plans/physics-ref/clients.mjs`
+  still imported the deleted `math/babylon.ts` and asserted the camera-position identity, so the physics
+  clients oracle could not run. It now takes the page's Babylon off the resource timeline, told by the
+  frame's `Observable`, and is identical to its banks on all three maps, as the BEFORE is.
+  `surfaces.mjs` read `scene.activeCamera` and `scene.frustumPlanes`, neither set from X6.1f on, in
+  paths no draw reaches today. It now reads the frame's camera and `Game.frustumPlanes` (copied into
+  Babylon's `Plane`, never re-derived) and falls back to the scene's on an older tree. HEAD and BEFORE
+  are equal (5,719 values).
 
 - **X6.1g — Babylon makes no mesh in any build** (no change to the game) — **S–M**.
   - **`worldMeshes` makes records alone.** Its mesh arm, `drawnMesh`, `vertexDataOf` and
