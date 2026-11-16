@@ -200,7 +200,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   capture-map-shots.mjs       # `npm run shots`: photographs each map from its
                               #   ui/mapShots.ts vantage into shots/<id>.avif,
                               #   the menu's backdrop — no HUD, no bodies, the
-                              #   lamps lit, the scene READY. HEADED, and needs
+                              #   lamps lit, the page READY. HEADED, and needs
                               #   a real GPU
   dev-server.mjs              # Starts a Vite dev server for the browser-driven
                               #   scripts (and plans/webgpu-ref/) and reliably

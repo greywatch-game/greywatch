@@ -13,7 +13,8 @@ Cel materials carry their own `lightDir`/`lightColor`/`ambientColor`/
 `skyLightColor` and a packed array of up to `MAX_POINT_LIGHTS` (16) point lights as
 uniforms; `LightingSystem` is the sole owner of dynamic light and uploads the
 winning slots via `CelMaterialFactory.setPointLights()` once per frame. Adding a
-`PointLight`/`HemisphericLight` to the scene will not affect any cel-shaded mesh.
+`PointLight`/`HemisphericLight` would affect no cel-shaded mesh (and since
+`BABYLON_EXIT.md` X6.1h there is no scene to add one to).
 Effects (sparks, neon, reticles) wear the unlit emissive keys
 `mats.getEmissive()` hands out (unlit `StandardMaterial`s until
 `BABYLON_EXIT.md` X6.1c) and are unaffected by lighting;
@@ -1669,7 +1670,7 @@ them binds on any map that ships**:
   card waited, the frames spending it were the first frames of `deploy` and
   then of the round — 47 of them over 44.8 s at 1500 m on Babylon's bake, with
   the player watching. `Game.bakeWait` holds `loading` — a step where nothing
-  simulates and the scene still renders — until
+  simulates and the frame is still drawn — until
   `ReflectionSystem.bakePending` reaches 0, and hands the building card the
   progress figure it never had. It moves the cost rather than removing it.
   **A queue that cannot drain must not hang the card**, so the wait gives up

@@ -1522,7 +1522,7 @@ is one machine's:
     a single frame has re-posed anything, and what you then measure is the old
     weapon's pose against the new weapon's sight node. Count
     `g.sceneFrame.onAfterRenderObservable` (the frame's own since
-    `BABYLON_EXIT.md` X5.4f: the scene's is never raised) and wait three
+    `BABYLON_EXIT.md` X5.4f: the scene's was never raised, and is gone since X6.1h) and wait three
     frames past the fit change; at
     2 fps that is a real wait, and the tell that you skipped it is
     `view.weapon.position` reading **identical across combinations** while
@@ -1547,8 +1547,8 @@ is one machine's:
   weapon's own stock, which is what the DMR's irons did. `optics.ts`'s
   `ironSightFloor` keeps geometry out of the aperture; what proves it is a grid
   of rays down the sight's own cone, and that needs no round and no map at all —
-  every weapon and every optic is built in `Game`'s constructor, so the rigs are
-  in the scene while the MENU is up. Take the weapon's root joint
+  every weapon and every optic is built in `Game`'s constructor, so the rigs
+  exist while the MENU is up. Take the weapon's root joint
   (`view.rigs[<weapon>].parts.root`, its world composed into scratch as
   above, never through the tree's readers) and its
   `sightCenter` — and note the meshes have no parent since X4.3b: each holds the
@@ -1693,7 +1693,7 @@ is one machine's:
   so 0 steps a whole sixtieth. Freeze with a tiny positive `r` (`1e-6`), and
   step a ring (`updateSpeed` 1/60) to a known age with `r = seconds * 60` for
   exactly one rendered frame (counted on `g.sceneFrame.onAfterRenderObservable`,
-  the frame's own since X5.4f; the scene's is never raised). **Overriding the
+  the frame's own since X5.4f; the scene's was never raised, and is gone since X6.1h). **Overriding the
   CLOCK instead cannot freeze anything**: `render()` clamps the loop's delta to
   `Scene.MinDeltaTime`, 1 ms, so the smallest ratio a clock override reaches
   is 0.06.
@@ -1772,7 +1772,7 @@ is one machine's:
   X5.4g; the engine's never raised in a frame since) to read the frame just drawn. It holds
   bodies only where the window is: re-place it inside the render
   (`g.sceneFrame.onBeforeRenderObservable` — the frame's own since
-  `BABYLON_EXIT.md` X5.4f, the scene's never raised — `g.bodyShadows.update(focus, g.mats,
+  `BABYLON_EXIT.md` X5.4f, the scene's was never raised and is gone since X6.1h — `g.bodyShadows.update(focus, g.mats,
   g.mapBodies(), g.vehicles.hulls)`) on a body or a hull, or it reads lit.
   There is no Babylon side left to compare against; X4.1c's comparison kept
   the deleted generator as a temporary twin fed the same matrices array.
@@ -2118,7 +2118,7 @@ is one machine's:
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
   — **`g.state` is a getter and assigning it throws**, since nothing in the
   codebase assigns a state (see `Game`'s three moves). The lid stops
-  `updateGameplay` while the scene still renders, so nothing overwrites
+  `updateGameplay` while the frame is still drawn, so nothing overwrites
   `cameraSys.camera` and it can be placed by hand — `cam.position.set(...)` plus
   `cam.setTarget(...)` frames a roofline or a shadow edge from anywhere, which
   beats hunting for a vantage by walking the player. The shader's eye follows:

@@ -6,8 +6,9 @@ The contract for [`src/core/FrameProfile.ts`](../src/core/FrameProfile.ts)
 says), [`src/core/profilePhases.ts`](../src/core/profilePhases.ts) (the phase
 list both read), [`src/ui/ProfileChip.ts`](../src/ui/ProfileChip.ts) and
 [`src/config/profiling.ts`](../src/config/profiling.ts), and for the ~22 pairs
-of brackets in `Game.ts` that feed them, plus the three inside `render` that
-`FrameProfile` hangs off the scene itself and the simulation core's timing of
+of brackets in `Game.ts` that feed them, plus the three the frame and the loop
+bracket themselves (`drawWorld` and `glow` inside `render`, `core/SceneFrame.ts`;
+`present` after it, `core/FrameLoop.ts`) and the simulation core's timing of
 its own step (`SimCore.timeSteps`, carried back over the page's own local
 match's owner channel and filed as `sim`) — and for the BENCHMARK that rides
 on all of it, [`src/bench/BenchScript.ts`](../src/bench/BenchScript.ts),

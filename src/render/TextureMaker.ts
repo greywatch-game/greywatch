@@ -342,8 +342,8 @@ export class TextureMaker {
         } catch (error: unknown) {
           // A throw past the decode (the device lost under it) fails as a fetch
           // or a decode does: the stand-in bound, the texture made for it
-          // retired, and `whenReady` told below — or the scene's pending data
-          // is never released and nothing waiting on `isReady` ever runs.
+          // retired, and `whenReady` told below — or the page's pending data
+          // (`Game.pending`) is never released and its readiness never comes.
           made.texture = null;
           made.view = standIn.view;
           made.sampler = standIn.sampler;

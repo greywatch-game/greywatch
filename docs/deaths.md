@@ -96,8 +96,8 @@ every tumble was tuned under, and 57's 100 rad/s is one of them.
 
 **The world is `PhysicsWorld`'s own** — `HP_World_Create` and its gravity, no
 query collector (nothing casts against it: every ray is `RayWorld`'s) — and
-**`scene.getPhysicsEngine()` is null**: there is no physics engine on the scene
-at all. **The step is `death.substep` and it is honoured**, which it was not
+**there is no Babylon physics engine at all** (`scene.getPhysicsEngine()` was
+null until `BABYLON_EXIT.md` X6.1h deleted the scene). **The step is `death.substep` and it is honoured**, which it was not
 before: the engine `enablePhysics` built reset the plugin's step to its own 1/60
 straight after it was set, and `death.substep` is 1/60, which is why the port
 moved no bits.
