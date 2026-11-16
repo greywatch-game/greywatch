@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14114,3 +14114,121 @@ gate (521 modules), corecheck clean; census 2 files (the copy checks).
 - **Noted**: `main.ts` is not a root of the gate (it imports nothing of the package; X6.1i's whole-tree gate covers it).
 - **The NITs (f56f9bf)**: `TextureMaker.ts`' decode-failure comment, `docs/deaths.md`, two lines of `docs/rendering.md`,
   `docs/profiling.md`'s opening (stale since X5.4g), five lines of `VERIFYING.md`, one of `FILES.md`.
+
+**X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut; 2026-11-16; no change to the game). Measured headless on the
+Windows box against a BEFORE at 4443c417 (X6.1h's review's record) in the worktree `greywatch-2-before-x53a` (moved
+there from 8a69f093, detached, and moved back after; the lockfile unchanged there, so its `node_modules` stood, the
+package in it), every GPU run alone on the GPU.
+
+- **The tables, their own commit (28dc7f0), the package still installed** (row "X6.1, the copy checks", option B).
+  - `scripts/lib/babylonTable.mjs` (new): the ledger the four share. A comparison is the exact list its check compared
+    with `Object.is`, encoded bit for bit (each number's float64 bits, so `-0` is not `+0` and a NaN is one NaN;
+    booleans and strings tagged; each comparison closed); a GROUP of comparisons is one SHA-256 kept to 64 bits; the
+    table (`scripts/tables/<check>.json`) holds the groups' digests, a case's blocks on one line, and the knobs the
+    inputs depend on (a run at other knobs is refused). **A digest per group, not the numbers**: a group's digest moves
+    if any bit of any answer in it does, so the check is as strict as the live one; it names the group, never the
+    number. Sizes: `math-check` 41 kB, `bounds-check` 25 kB, `sweep-check` 12 kB, `geometry-check` 7 kB.
+  - **Staleness**: where a group's INPUT is the game's (`bounds-check`'s kit kinds: every part's positions and node
+    chain; `sweep-check`'s maps: boxes, groups, floor and square) the table keeps an input digest beside the answers,
+    and a group whose input moved reads STALE (reported, not compared, not a failure) rather than wrong. So the oracle
+    does not fade as the art moves, each gained a SEEDED section built from nothing in the game: `bounds-check`'s
+    2,000 synthetic parts (float32 positions with zeros of both signs and the odd exact value, under seeded chains one
+    to three deep, both halves) beside its 500 chains, and `sweep-check`'s `synthetic` world (600 boxes on a flat
+    floor in 160 m, square, right-angled and free yaws, a tenth pitched, a twentieth porous, some fifty clusters of two
+    to six small boxes). Draws were made independent where a subset would shift them: a kit kind's transforms are its
+    own stream, each body's sweep samples its own (the hulls stay the map's), so a map or a body named alone meets its
+    groups (a partial run does not count unreached groups as missing). `sweep-check` FREEZES the bodies' numbers in
+    its table (a CONFIG retune is not a sweep change). Proven by planting: a kind's input digest changed read STALE,
+    an answer digest changed failed.
+  - Each check's `--record` ran its old live comparison and wrote the table: `geometry-check` 8,224 comparisons (6,802
+    against Babylon in 342 groups, blocks of 20 trials; the two ours-with-ours cases stay live), `math-check` 1,920,000
+    (1,920 groups, blocks of 1,000; the `mixed` case recorded with Babylon's objects, answered since by ours on our own),
+    `bounds-check` 185,138 (351 groups: 153 kinds a half, chains and synthetic parts in blocks of 100), `sweep-check`
+    exact 64,000 (256 groups: seven maps and `synthetic`, four bodies, blocks of 250) — every answer identical to
+    Babylon live, the tables written identically twice, every check passing against its table, every `--perturb`
+    failing every group it touched (`geometry` and `math`: one value in each group's first answer moved one ULP;
+    `bounds`: our matrix and chain root a millimetre off in X, as before; `sweep`: our start a millimetre off in x),
+    and a source perturbation (`src/math` `Vector2.length` times 1 + 2^-52) failing `math-check`'s 40 groups of it.
+- **The cut (9f165b3)**:
+  - `npm uninstall @babylonjs/core`: `package.json`'s dependency and the lockfile's two entries, nothing else.
+    `check-deep-imports.mjs` deleted and out of `npm run build`. `@babylonjs/havok` kept; `vite.config.ts`'
+    `optimizeDeps.exclude` keeps it (row "X6.1, `optimizeDeps.exclude`").
+  - `check-babylon-free.mjs`: a TREE pass reads every source file under `src/`, `server/`, `scripts/`, `plans/` and
+    `.claude/skills/`, and `main.ts` and the two Vite configs (598 files), and fails any that NAMES the package as a
+    module — an import or export (`import type` too, the package not being installed), an `import()` type, an
+    `import()`, `require()`, `import.meta.resolve()` or `ssrLoadModule()` of it as a literal, or a relative path into
+    `node_modules/@babylonjs/core` — by syntax, so a comment, a header's history or a census's string is not one, and
+    an instrument may compute a specifier; `@babylonjs/havok` is not refused. The GRAPH walk is kept, its roots the
+    whole of `src/` and `server/` and `main.ts` (522 modules; `main.ts` was not one, X6.1h's review); `SIMULATIONS`
+    unchanged (row "X6.1, the gate's simulations"), its re-aim at the picture booked as `FINDINGS.md` 75; the Node
+    walk unchanged. Planted files proved it: a value import, a type import, an `import()` type, a literal `import()`,
+    `ssrLoadModule` and `require` of it and a relative `node_modules` path all refused; a comment, a string, a Havok
+    import and a computed `import()` passed.
+  - `vite.server.config.ts`' `no-babylon` plugin deleted (the gate holds it).
+  - The copy checks' `--record` arms deleted (the last loads of the package): three hold ours to their tables alone,
+    and `sweep-check` is its `exact` mode against the table — its `shipped` and `walk` modes measured against Babylon
+    live and went with it, the header saying what they were. `kit:hash` loaded no Babylon since X6.1a (its header said
+    the game's modules still did).
+  - **The instruments' page-side loads, decided**: deleted rather than left guarded, so nothing in the tree imports the
+    package; each was dead since X6.1h (no page loads Babylon's chunk): `leaks.mjs`' cache hook (its RETIRED line
+    printed as before), `surfaces.mjs`' `Plane` (read only where there is a scene), `depth.mjs`' retired `zoffset`
+    body (the mode still throws, naming why) and the physics clients' oracle's Babylon vector (`src/math`'s, as it was
+    already with no Babylon on the page).
+  - **The licence** (row "X6.1, the licence", option A): `licenses/babylonjs.md` holds Babylon.js 9.28.0's NOTICE
+    and Apache-2.0 licence verbatim (copied from the BEFORE's `node_modules`), and says the list of ports is the files
+    that cite it; NINE headers cited `node_modules/@babylonjs/core/license.md` (the bullet's five, `math/plane.ts`
+    and X6.1f/X6.1h's `core/FreeCamera.ts`, `core/Observable.ts`, `core/PendingData.ts`) and all nine cite it now. The
+    bundle carries no notice.
+  - **Contracts**: `CLAUDE.md` (the overview's GLSL line, the package not a dependency and the gate, Havok's exclusion
+    kept; the table row and pointer for `docs/build.md`; the `merge:hash` command; the gate's sentence in the
+    wiring); `BABYLON_EXIT.md`'s rules 3 to 6, each with a line reading it as history; `docs/build.md` (the opening,
+    the meshes, the two WASMs as history with the CDN tripwire kept, the `optimizeDeps` section naming Havok alone,
+    the deep-import section as the rule the cut retired, the gate's section for the whole tree, "A Babylon upgrade
+    owes…" as what a change to a copy owes); `FILES.md`; `FINDINGS.md` 75; `VERIFYING.md` (the page's-copy bullet,
+    the sweep's and bounds' oracles); `server/README.md`; the CI workflow's comments; the headers of
+    `check-audio.mjs`, `check-webgpu-globals.mjs`, `kit-hash.mjs` and `babylon-census.mjs`. Exit history and
+    provenance kept; the broad present-tense sweep is X6.1j's.
+- **Measured**:
+  - **A clean checkout** (a temporary worktree of 9f165b3): `npm ci` clean, `node_modules/@babylonjs/` holding `havok`
+    alone, then `npm run build` clean. The AFTER tree's own `npm ci` the same.
+  - **The bundle**: byte-identical to the parent's, every file, but `index.html`'s build stamp and `sw.js`' version hash
+    over it: 56 files, 9,795.8 kB raw and 4,449.4 kB gzipped, the JS 5,164.4 and 1,518.7, the main chunk 2,505.4 and
+    795.0. At 5613d1e (X6.1's parent, built in a temporary worktree): 102 files, 16,846.3 kB raw and 6,027.4 kB
+    gzipped, the JS 12,215.0 and 3,096.7, the main chunk 9,358.5 and 2,316.3 (the census's units, KiB).
+  - The census against X6.1h's: 2 files to 0; `ssrLoadModule` 2 to 0; page-side loads 4 to 0; nothing grew.
+  - The bank by `exact.mjs`: `low` and `high` 146 of 147 byte-equal and one known flake each (the pistol; `sarab-shelf`);
+    default 145, the pistol flake and `sarab-ground` (100 pixels by 2/255, mean 0). **The Sarab procedure** (Sarab
+    alone, two processes a tree, default query): the AFTER's frame (`eae1cfe9…`) is the one both of the parent's
+    processes drew, the BEFORE's full bank having drawn another (`22e34470…`) — cross-process residue, not the step.
+  - Equal to the BEFORE: the draw log, `census` (168), `gi.mjs` (914,604 and 254,724 values), `particles.mjs` (45,120
+    numbers), `surfaces.mjs` (5,719), `post.mjs` at `desk` and `phone` (31,667 values each), `readers.mjs` replay (the
+    origins IDENTICAL) and both camera logs (120 and 152 frames); `pipelines.mjs hollowmere` and `coldharbour --round`
+    nothing built in play (the rounds' shot counts the wall clock's); `leaks.mjs` 0 released and 0 cached in every
+    class, the device's bind groups and live buffers the BEFORE's at every step; `gate` all seven clean; `shaders`
+    identical; the physics clients' oracle identical to its banks on all three maps at both trees.
+  - `merge:hash` identical on eight maps; `kit:hash` (3,722 builds) and `--models --strict-order` identical; `--feet`
+    byte-identical. The four copy checks against their tables and every `--perturb` as above; `maps:check`; parity
+    (eight maps); corecheck; the fight hash equal on four maps (`e57084dd…`, `380fdf6b…`, `8e839848…`, `772a08d5…`);
+    typecheck, the gate and `check-webgpu-globals` clean.
+  - **Live** at both trees: `live.mjs` 47 of 47, `sarab.mjs` 19 of 19, `cams.mjs` 7 of 7 (the X6.1h copies of the
+    reusable scripts, which carry the no-scene arm).
+  - **A DEV session from a cold `.vite` cache** (`x61i/devcold.mjs`: `node_modules/.vite` removed, the dev server
+    re-optimizing with the package gone): Coldharbour offline, a life, the nearest breakable pane broken through the
+    page's glass path (`applyBreak`, Havok's shards live), a ragdoll from the round's own kills within 26 s; Havok's
+    `.wasm` fetched 200 off `/node_modules/@babylonjs/havok/lib/esm/HavokPhysics.wasm` (2,094,563 bytes), no 4xx, no
+    page or console error.
+  - **The PWA** (`x61i/pwa.mjs`, a persistent headless Chromium, `vite preview` on one origin): 5613d1e's build
+    installed (worker active, its 101-entry precache complete) and booted to the menu; 9f165b3's served at the same
+    origin and the app opened again: the shell the new one (network-first), the new worker installed, activated and
+    claimed, the old cache pruned (one cache, 55 entries, the new main chunk), the menu; then OFFLINE in that context
+    (the new shell, the menu, a round to deploy off the precache) and offline COLD with no server (the installed app to
+    the menu). **Left to the owner** (row "X6.1, the phone, and a tag"): the phone on the preview URL — a
+    `?bench=<map>&gpu` capture, the home-screen app updating over its installed copy and launching offline — and a
+    real desktop install (an installed PWA window, its own update on relaunch), which a headless context stands in for
+    but is not; and the tag.
+- **Flagged**: no device hang on either tree. The bank's `--check` against its committed reference fails the same
+  three Kurenai rows at both trees (the reference is older than this step; the step's comparison is `exact.mjs`).
+
+Scripts and logs in the session's scratchpad, `x61i/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `probes.sh`,
+`sarab-proc.sh`, `devcold.mjs`, `pwa.mjs`, `bundle.mjs`, the recording runs, every log, JSON and kept bank directory,
+and 5613d1e's `dist-5613/`).

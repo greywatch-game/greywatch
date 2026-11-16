@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7322,6 +7322,37 @@ Then the cut, then the sweep.
     - `docs/build.md`: the deep-import section, the two WASMs, "A Babylon upgrade owes…",
       and the widening of `check-babylon-free`;
     - `package.json`'s scripts, and `FILES.md`.
+
+  **X6.1i LANDED** (28dc7f0 the tables, 9f165b3 the cut; 2026-11-16; no change to the game; the full note is in
+  `plans/done/babylon_exit_landed.md`). **The tables first** (28dc7f0, the package still installed): each copy check
+  gained `--record`, which ran its old live comparison against Babylon 9.28 and wrote `scripts/tables/<check>.json`
+  through one ledger (`scripts/lib/babylonTable.mjs`): every answer encoded bit for bit (float64 bits, `-0` and NaN
+  told apart), a GROUP of answers one SHA-256 kept to 64 bits (a case over a block of trials, a kit kind, a map's body),
+  85 kB for the four where the numbers were millions; a group whose INPUT is the game's (a kit kind, a map) keeps an
+  input digest too and reads STALE, not wrong, once reworked, and `bounds-check` (2,000 synthetic parts) and
+  `sweep-check` (a synthetic world) each gained a SEEDED section that never goes stale. Recorded and passing:
+  `geometry-check` 6,802 answers in 342 groups, `math-check` 1,920,000 in 1,920, `bounds-check` 185,138 in 351,
+  `sweep-check` 64,000 in 256, each identical to Babylon live in the recording run; every `--perturb` fails every group
+  it touches, and a source perturbation (`Vector2.length` times 1 + 2^-52) failed `math-check`'s 40 groups of it.
+  **The cut** (9f165b3): `@babylonjs/core` out of `package.json` and the lockfile (its two entries alone);
+  `check-deep-imports.mjs` deleted and out of `npm run build`; `check-babylon-free.mjs` reads the WHOLE TREE (`src/`,
+  `server/`, `main.ts`, `scripts/`, `plans/`, `.claude/skills/`, the Vite configs) for any file naming the package as
+  a module, a type included, while its graph walk takes the whole of `src/`, `server/` and `main.ts` as roots,
+  `SIMULATIONS` unchanged (its re-aim booked as `FINDINGS.md` 75) and `@babylonjs/havok` not refused; the server
+  build's `no-babylon` plugin deleted; `optimizeDeps.exclude` keeps Havok; the `--record` arms, `sweep-check`'s
+  `shipped` and `walk` modes and the instruments' four dead page-side loads of Babylon's chunk deleted, so nothing in
+  the tree imports the package; `licenses/babylonjs.md` (the NOTICE and licence verbatim) cited by the nine headers
+  that cited `node_modules/@babylonjs/core/license.md`. **Measured** against a BEFORE at 4443c417: the bundle
+  byte-identical but the build stamp (`index.html`'s commit, `sw.js`' version over it), 56 files, 9,795.8 kB raw and
+  4,449.4 kB gzipped (5613d1e: 102 files, 16,846.3 and 6,027.4; the JS 12,215.0 and 3,096.7 to 5,164.4 and 1,518.7);
+  `npm ci` and `npm run build` clean from a clean checkout of 9f165b3, `node_modules` with no `@babylonjs/core`; the
+  bank by `exact.mjs` `low` and `high` 146 of 147 byte-equal and a known flake, default 145, the pistol flake and
+  `sarab-ground` (100 pixels by 2/255), which the Sarab procedure showed is a frame the parent's own processes draw;
+  every probe equal; `kit:hash`, `--models --strict-order`, `--feet` and `merge:hash` identical; the four copy checks
+  against their tables, `maps:check`, parity, corecheck and the fight hash on four maps unchanged; live 47 of 47, Sarab
+  19 of 19, `cams.mjs` 7 of 7 at both trees; a DEV session from a cold `.vite` cache (Coldharbour, a pane broken, a
+  ragdoll; Havok's `.wasm` 200 off its `node_modules` path, no error); the PWA updating from 5613d1e's install to
+  9f165b3's in a persistent headless Chromium and launching offline warm and cold. No device hang.
 
 - **X6.1j — the sweep** (no change to the game) — **M** (decision: rows "X6.1, the sweep's
   reach" and "X6.1, the licence").
