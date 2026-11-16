@@ -10,8 +10,8 @@
  * and must produce exactly its vertex order, normals and UVs** — one vertex
  * out of place moves every building made of it (BABYLON_EXIT.md, "Generator
  * fidelity"). `scripts/geometry-check.mjs` runs every generator against
- * Babylon's over seeded option sets and compares every number with
- * `Object.is`, so a change here owes a run of it.
+ * Babylon's recorded answers over seeded option sets and compares every number
+ * with `Object.is`, so a change here owes a run of it.
  *
  * What is left out is what nothing in the tree passes: `faceUV`,
  * `faceColors`, `frontUVs` and `backUVs` (the defaults Babylon fills them with

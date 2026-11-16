@@ -11,8 +11,8 @@
  * Each surface is a `Part` on a `src/geometry/` buffer: the world's bottle
  * a KIT our renderer draws every thrown bottle as an instance of
  * (`molotovPieceParts`, `entities/pieces.ts`, `BABYLON_EXIT.md` X4.4b) and
- * the fist's a `ViewSegment` (`molotovSegments`, X4.3c) — Babylon is made no
- * mesh of either.
+ * the fist's a `ViewSegment` (`molotovSegments`, X4.3c) — neither is a
+ * mesh.
  *
  * A file of its own for `GrenadeModel`'s reason, and there are THREE builders
  * of it rather than two: `GrenadeFx`'s pool, `net/NetGrenades`' drawn

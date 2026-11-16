@@ -297,7 +297,7 @@ function syntheticWorld(env) {
 
 /**
  * Six hull boxes, two of each kind, each standing on the floor beside a random
- * collider at a random yaw. Babylon gets them as meshes built after the map;
+ * collider at a random yaw. Babylon got them as meshes built after the map;
  * ours as `RayHull`s in `rays.hulls`, which `bodyNear` hands over last.
  */
 function addHulls(env, map, rand, anchors) {

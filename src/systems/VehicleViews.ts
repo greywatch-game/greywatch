@@ -12,7 +12,7 @@
  * `teardownMap` a line, and this is that line for the fleet's drawing. What
  * the views look like is drawn by our renderer off `views`, once a frame
  * immediately before the render (`Game.drawHulls`, `BABYLON_EXIT.md` X4.2b):
- * Babylon has no node and no mesh of a hull.
+ * no hull is a node or a mesh.
  * Invariants:
  * - **One view per hull, by INDEX**: `hulls[i]` was built for
  *   `spawns[i]` (`VehicleSystem.build` walks `vehicleSpawns` in order), so the

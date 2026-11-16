@@ -10,10 +10,10 @@
  * throw between the two would leave sixteen bodies permanently displaced, and
  * nothing would report it — every subsequent shot, every LOS test and every
  * capture-zone check would silently use ghost positions.
- * A body's `center` and `eyePos` are `Vector3Ref` — either library's vector —
- * so they are read through their fields and written through `set` and
- * `copyFromFloats` only, never `copyFrom`: Babylon's reads `_x` off its
- * argument, and one of ours handed to it writes NaN. The saved present is
+ * A body's `center` and `eyePos` are `Vector3Ref` — either library's until
+ * X6.1f — so they are read through their fields and written through `set` and
+ * `copyFromFloats` only, never `copyFrom`: Babylon's read `_x` off its
+ * argument, and one of ours handed to it wrote NaN. The saved present is
  * `src/math`'s.
  *
  * **Why this exists.** A client draws other bodies `CONFIG.net.interpDelay`

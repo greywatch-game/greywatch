@@ -95,7 +95,7 @@
  *   cleared nothing, `autoClear` and `autoClearDepthAndStencil` held false
  *   from X5.4e until it went), the active-mesh walk (`WorldCulling` hands it no
  *   candidates since this step: no Babylon mesh is drawn), particle systems
- *   (none is Babylon's), the rendering manager (Babylon draws nothing), the
+ *   (none is Babylon's), the rendering manager (Babylon drew nothing), the
  *   post-process manager (no Babylon `PostProcess`), the pointer pick,
  *   intersections and the dispose queue.
  * Never: draws, binds or clears (every pass is our renderer's); reads a clock

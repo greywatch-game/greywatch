@@ -11,16 +11,17 @@
  *
  * **It exists so the world's geometry is not Babylon's**: the kit, the
  * scatter props and the models (weapons, optics, hulls, soldiers, throwables)
- * build these, both the models and the world merge on them, and
- * `world/parts.ts` is the one place one becomes a Babylon mesh.
+ * build these, both the models and the world merge on them, and none
+ * becomes a Babylon mesh (`world/parts.ts` was the one place one did, until
+ * X6.1g).
  *
  * ## The one rule: the same bits as Babylon
  *
  * Every oracle that grades the exit compares bits (`kit:hash`, `merge:hash`),
  * so every routine here is Babylon 9.28's, operation for operation
  * (`Meshes/mesh.vertexData.js`), and `scripts/geometry-check.mjs` runs each
- * against Babylon on seeded inputs with `Object.is`. Two things follow that a
- * tidier design would get wrong:
+ * against Babylon's recorded answers on seeded inputs with `Object.is`. Two
+ * things follow that a tidier design would get wrong:
  *
  *   - **A `Float64Array` is where Babylon held a `number[]`, and a
  *     `Float32Array` is where it held one of those.** Babylon keeps whatever

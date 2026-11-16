@@ -350,7 +350,7 @@ export class BlockHandover {
    * Babylon would: block-merged at identity, never `updatable` (its
    * positions are world positions nothing rewrites, drawn under an identity
    * matrix as its frozen mesh was), casting nothing (no shadow pass of ours
-   * draws a fire, and since X4.4d no layer holds a caster Babylon keeps), and
+   * draws a fire, and since X4.4d no layer holds a caster Babylon kept), and
    * with the normals and uvs its vertex stage reads; else REFUSED. It is in
    * no bake, as Babylon's bake left it out of its own (`FINDINGS.md` 51), and
    * in the glow's mask unless it is `noGlow`, read here per surface as
@@ -447,7 +447,7 @@ export class BlockHandover {
    * The passes a surface the main pass does not take is drawn in by our
    * side: its shadow passes, and if it is the emissive PALETTE
    * (`CelMaterialFactory.emissiveRecipe`) with its slots — drawn as Babylon
-   * draws it, at identity, and in rendering group 0 on every camera's layer
+   * drew it, at identity, and in rendering group 0 on every camera's layer
    * mask as every world mesh is (see the header) — a probe's bake
    * (`PASS_PROBE`), `LIGHT_SOURCE` (no size gate drops it, as the frame's
    * mesh walk never gated an emissive), and the glow's mask (`PASS_GLOW`)
@@ -467,7 +467,7 @@ export class BlockHandover {
    * one and its positions are world positions nothing rewrites — a block
    * merge, at identity, never `updatable` — and its index; else null. (A
    * caster Babylon kept was held here for the shadows alone until X4.4d, a
-   * layer no build reached: the one surface Babylon keeps in a round is the
+   * layer no build reached: the one surface Babylon kept in a round was the
    * glazing, which casts nothing.)
    */
   private holdPalette(surface: WorldSurface, atIdentity: boolean, passes: number, key: number): number | null {

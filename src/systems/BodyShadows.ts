@@ -194,11 +194,11 @@ export class BodyShadows {
    * Stands the map up at a rung's size and window, or takes it down.
    *
    * The texture is re-made rather than resized, AFRESH whatever its size:
-   * disposing Babylon's view of the old one destroys the texture it wraps
-   * (at the end of Babylon's frame), so nothing is kept under a view that is
-   * going. The fresh map is drawn from the proxies last packed, from where
-   * the light stands now — what a fresh generator rendered on its first
-   * frame — and the window is invalidated because its texel snap is in
+   * disposing Babylon's view of the old one destroyed the texture it wrapped
+   * (at the end of Babylon's frame, until X5.4h), so nothing was kept under a
+   * view that was going. The fresh map is drawn from the proxies last packed,
+   * from where the light stands now — what a fresh generator rendered on its
+   * first frame — and the window is invalidated because its texel snap is in
    * texels of the size and side that just changed.
    */
   setQuality(quality: ShadowQuality): void {

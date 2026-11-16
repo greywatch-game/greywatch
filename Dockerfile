@@ -119,8 +119,8 @@ FROM node:24-alpine AS server
 
 WORKDIR /app
 
-# `ws` is the only runtime dependency — everything else, Babylon included, is
-# bundled into dist-server by the SSR build.
+# `ws` is the only runtime dependency — everything else is bundled into
+# dist-server by the SSR build.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 

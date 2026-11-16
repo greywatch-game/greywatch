@@ -391,9 +391,10 @@ const PAGES: readonly Page[] = [
         options: OFF_ON,
       },
     ],
-    // What the ladder above actually comes to on this machine. The scene's
+    // What the ladder above actually comes to on this machine. The canvas's
     // backing store is the display's pixels times the ratio times the scale,
-    // and Babylon floors it — the same arithmetic `figureFor` does for the row.
+    // and `CanvasSurface` floors it as Babylon did — the same arithmetic
+    // `figureFor` does for the row.
     facts: () => {
       const dpr = window.devicePixelRatio || 1;
       return [

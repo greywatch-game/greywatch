@@ -141,7 +141,7 @@
  * budget decision as much as a design one.** The old single probe was
  * `scene.pickWithRay` with a `solid` predicate — the same call that used to make
  * `Player.probeGround` the most expensive thing the game did per frame, because
- * Babylon walks every mesh in the scene to answer it. Six of those is not a
+ * Babylon walked every mesh in the scene to answer it. Six of those is not a
  * thing that can be afforded; six bucket lookups over the collider boxes are
  * free by comparison, and the two had already been measured against each
  * other, with a VEHICLE named as the query's better first customer. The one

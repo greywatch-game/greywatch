@@ -100,7 +100,7 @@ export const CEL_FRAGMENT: FragmentProgram = {
   surface: "celSurface",
 };
 
-/** One variant of the cel fragment — a define set Babylon's materials compile — for a pass of `target`'s kind. */
+/** One variant of the cel fragment — a define set Babylon's materials compiled — for a pass of `target`'s kind. */
 export function celFragment(defines: Iterable<string>, target: StageTarget): AssembledModule {
   return assembleFragment(CEL_FRAGMENT, defines, target);
 }

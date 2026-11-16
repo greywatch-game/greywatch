@@ -15,7 +15,7 @@
  *   tree's root, held off its world. **Every surface is a SEGMENT our
  *   renderer draws** (`ViewSegment`, `render/ViewDraw.ts`, `BABYLON_EXIT.md`
  *   X4.3c the opaque parts, X4.3d the optics' two glasses and the kit card)
- *   and Babylon is made no mesh of one: `drawView` (`Game.tick`, immediately
+ *   and none is a mesh: `drawView` (`Game.tick`, immediately
  *   before the render) evaluates every surface on and visible, whatever its
  *   role — what the readers below are stamped by — and our renderer is handed
  *   each one's matrix. Every write to a joint's
@@ -1360,8 +1360,8 @@ export class ViewModel {
    * - The position is the BAY'S CENTRE back-projected to the inspect distance,
    *   so the weapon sits where the DOM says the hole is at any window size,
    *   and the distance is scaled by the live FOV against the hip-fire one so a
-   *   camera left zoomed by the last round frames it the same. (Babylon holds
-   *   the vertical FOV, hence the aspect on x alone.)
+   *   camera left zoomed by the last round frames it the same. (The camera
+   *   holds the vertical FOV, as Babylon's did, hence the aspect on x alone.)
    * - The pivot correction. The node rotates about its own origin, which on a
    *   rifle is the receiver and nowhere near the middle of the model, so a
    *   turntable about it would swing the weapon around the screen. Placing the

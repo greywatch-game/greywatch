@@ -129,9 +129,10 @@ const COINCIDENT = 1e-4;
  * floor's collider clone) and absent everywhere else.
  *
  * `V` is whose vectors `point` and `normal` are. A cast writes them through
- * `set` and nothing else, so it fills either library's; `newRayHit` makes
- * ours, and a caller still reading them with Babylon's methods writes its own
- * literal of Babylon's (`CaptureZoneSystem`'s `MOUNT_HIT`, the last one).
+ * `set` and nothing else, so it filled either library's; `newRayHit` makes
+ * ours, and a caller reading them with Babylon's methods wrote its own
+ * literal of Babylon's (`CaptureZoneSystem`'s `MOUNT_HIT`, the last one, ours
+ * since X6.1f).
  */
 export interface RayHit<V extends Vector3Ref = Vector3> {
   /** Metres along the ray. */
@@ -1034,7 +1035,7 @@ function boxCast(
  * Möller-Trumbore, two-sided, writing the triangle's own upward normal into the
  * module scratch.
  *
- * Two-sided because Babylon's triangle picking is (`assertFacesUp` says so from
+ * Two-sided because Babylon's triangle picking was (`assertFacesUp` says so from
  * the other direction), and the floor is met from underneath by anything
  * standing inside a building cut into a hill. The normal is turned to +Y rather
  * than toward the ray, because a heightfield has no overhangs and so has

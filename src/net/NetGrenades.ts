@@ -39,7 +39,7 @@
  * so the two pools are one object on screen and only the SOURCE differs: a
  * slot read after a step there, an interpolated sample here. Our renderer
  * draws both pools' pieces (`Game.drawPieces`, `BABYLON_EXIT.md` X4.4b) and
- * Babylon is made no mesh of either.
+ * neither is a mesh.
  */
 import { CONFIG } from "../config";
 import type { PieceKits } from "../entities/pieces";

@@ -630,7 +630,7 @@ export class Bot implements Combatant {
     this.alive = true;
     this.state = "advance";
     // By its fields: `scatterSpawn` hands out a `src/math` vector, and
-    // Babylon's `copyFrom` reads `_x` (the NaN trap, `src/math/vector.ts`).
+    // Babylon's `copyFrom` read `_x` (the NaN trap, `src/math/vector.ts`).
     this.position.copyFromFloats(at.x, at.y, at.z);
     this.yaw = yaw;
     this.bodyYaw = yaw;
@@ -2050,7 +2050,7 @@ export class Bot implements Combatant {
    *
    * **Replayed off numbers, never read off the rig** (`soldierMuzzleToRef`):
    * the root `syncTransform` last stood (`rx`..`ryaw`) and the pose last filled
-   * (`solved`), through the same float32 chain Babylon composes — so it is the
+   * (`solved`), through the same float32 chain Babylon composed — so it is the
    * value the rig's muzzle joint composes to (`JointTree.computeChain`, once
    * `rig.muzzle.computeWorldMatrix(true)`) for a rig posed from `joints`, bit
    * for bit (proved against the rig over whole rounds on all

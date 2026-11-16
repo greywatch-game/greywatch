@@ -107,10 +107,10 @@ function moveSeed(team: number, i: number): number {
  * (`NetRoster`) carries the third (the distance LOD):
  *
  * 1. **The pool is built once and never disposed.** A bot is one object and
- *    its RIG — a dozen Babylon meshes and their GPU buffers, a client's
- *    `NetSoldier` — is built on the same terms: in a roguelike that cost landed
- *    twelve times per room load, but Conquest respawns continuously and it
- *    would be a permanent source of frame spikes. Death takes a body out of
+ *    its RIG — a client's `NetSoldier`, a dozen Babylon meshes and their GPU
+ *    buffers until X4.1d — is built on the same terms: in a roguelike that cost
+ *    landed twelve times per room load, but Conquest respawns continuously and
+ *    it would be a permanent source of frame spikes. Death takes a body out of
  *    the world (`Bot.shown`), respawn puts it back.
  * 2. **AI is staggered.** Target acquisition and line-of-sight rays run at
  *    `CONFIG.bots.thinkRate` per bot, round-robin across frames — about three
@@ -1090,7 +1090,8 @@ export class BattleSystem {
    */
   private botFire(bot: Bot, aimAt: Vector3Like, spread: number): boolean {
     const from = bot.eyePos;
-    // `subtract`'s arithmetic, off fields: the aim point may be either library's.
+    // `subtract`'s arithmetic, off fields: the aim point could be either
+    // library's until X6.1f.
     const dir = new Vector3(aimAt.x - from.x, aimAt.y - from.y, aimAt.z - from.z);
     const len = dir.length();
     if (len < 0.01) return false;

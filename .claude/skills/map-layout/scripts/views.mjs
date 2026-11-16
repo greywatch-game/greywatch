@@ -104,7 +104,7 @@ try {
       // chain to settle — capture-map-shots.mjs has the measurement.
       // The frame drawn and the readiness through the frame adapter
       // (`scripts/lib/frameAdapter.mjs`, BABYLON_EXIT.md X6.1a): OUR frame's
-      // point since X5.4f (the scene is never rendered), and the scene's
+      // point since X5.4f (the scene was never rendered), and the scene's
       // readiness while there was one, the game's (`Game.pending`) since
       // X6.1h.
       // The deadline is a TIMER as well as a test read from a frame, so a page

@@ -398,7 +398,7 @@ export class CameraSystem {
     // Fully driven by this system: Babylon's camera had its inputs cleared
     // here, and ours has none (`FreeCamera`'s header).
     // The roll (`rotation.z`, written by the landing absorb) reaches the view
-    // matrix only through the camera's UP VECTOR, and Babylon otherwise keeps
+    // matrix only through the camera's UP VECTOR, and the camera otherwise keeps
     // that vector as state refreshed on the frames `rotation.z` *changes*.
     // Since the refresh bakes the yaw and pitch of that frame in with the
     // roll, the frame a landing settles on leaves a stale up vector standing

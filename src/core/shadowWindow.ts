@@ -113,7 +113,7 @@ export function lightTransformToRef(
 ): Matrix {
   const dir = transformDir;
   Vector3.NormalizeToRef(light.direction, dir);
-  // `UpReadOnly` where Babylon makes a fresh `Up()`: the same numbers, no garbage.
+  // `UpReadOnly` where Babylon made a fresh `Up()`: the same numbers, no garbage.
   if (Math.abs(Vector3.Dot(dir, Vector3.UpReadOnly)) === 1.0) dir.z = 0.0000000000001;
   light.position.addToRef(dir, transformTarget);
   Matrix.LookAtLHToRef(light.position, transformTarget, Vector3.UpReadOnly, transformView);

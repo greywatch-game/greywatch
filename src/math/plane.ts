@@ -9,12 +9,12 @@
  *
  * **The same bits as Babylon** (`vector.ts`' one rule): every body is Babylon
  * 9.28's, operation for operation (`Maths/math.plane.js`,
- * `Maths/math.frustum.js`), and `scripts/math-check.mjs` holds each to the
- * installed package. A plane's normal is a `Vector3` of doubles and its `d` a
- * double, as Babylon's are; `GetPlanesToRef` reads a matrix's float32s through
- * `m` and writes doubles. Its order is Babylon's — near, far, left, right,
- * top, bottom — and every reader indexes it that way (`Game`'s culls,
- * `Sky`'s moon, `GrassSystem`'s patches).
+ * `Maths/math.frustum.js`), and `scripts/math-check.mjs` holds each to
+ * Babylon's recorded answers (`scripts/tables/`). A plane's normal is a
+ * `Vector3` of doubles and its `d` a double, as Babylon's are; `GetPlanesToRef`
+ * reads a matrix's float32s through `m` and writes doubles. Its order is
+ * Babylon's — near, far, left, right, top, bottom — and every reader indexes
+ * it that way (`Game`'s culls, `Sky`'s moon, `GrassSystem`'s patches).
  *
  * Who computes the frame's six: `core/SceneFrame.ts`' `updateTransformMatrix`,
  * where `Scene.setTransformMatrix` computed the scene's (`BABYLON_EXIT.md`

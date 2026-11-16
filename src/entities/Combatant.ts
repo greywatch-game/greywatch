@@ -3,8 +3,8 @@
  * the Team type (0/1 index into CONFIG.teams). Pure types, no runtime logic.
  * CombatSystem.fire() takes a shooter's target list built from Combatants, so
  * friendly fire is excluded by construction, never by a team check inside.
- * `position` is a `Vector3Like` — either library's vector, READ through its
- * fields — so nothing reaching a body through this interface may hand it to
+ * `position` is a `Vector3Like` — either library's until X6.1f, READ through
+ * its fields — so nothing reaching a body through this interface may hand it to
  * a Babylon method (`Hittable`'s note).
  */
 import type { Vector3Like } from "../math";

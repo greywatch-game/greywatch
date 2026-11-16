@@ -872,8 +872,8 @@ export class GrenadeSystem {
    * about the one thing that flies, and a shell does not fly: it is hitscan
    * like every other round in the game, and only its ARRIVAL comes here.
    *
-   * `at` is read through its fields and may be either library's vector or a
-   * live slot's own; what the events keep is a copy.
+   * `at` is read through its fields and may be any vector (either library's
+   * until X6.1f) or a live slot's own; what the events keep is a copy.
    */
   blastAt(
     at: Vector3Like,
@@ -974,7 +974,7 @@ export class GrenadeSystem {
   private visible(from: Vector3Like, to: Vector3Like): boolean {
     if (!this.rays) return true;
     // On the FIELDS of both ends, in Babylon's `subtractToRef`/`addInPlace`
-    // order: the victim's centre may be either library's vector.
+    // order: the victim's centre could be either library's vector until X6.1f.
     _los.copyFromFloats(from.x - to.x, from.y - to.y, from.z - to.z);
     const len = _los.length();
     if (len <= LOS_SKIP) return true;

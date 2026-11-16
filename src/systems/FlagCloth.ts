@@ -6,7 +6,7 @@
  * levels of detail), the particle state under them, and the height the flag
  * is flown at.
  *
- * **Babylon is made no mesh of any of it** (`BABYLON_EXIT.md` X4.6b): every
+ * **No mesh is made of any of it** (`BABYLON_EXIT.md` X4.6b): every
  * surface is `render/ZoneDraw.ts`'s, and this reads no node. The POLE is static
  * geometry, built as `Part`s through `src/geometry/` and merged by
  * `mergeParts`. The CLOTH is the simulation's output, its arrays written into

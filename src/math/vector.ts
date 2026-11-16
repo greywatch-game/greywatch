@@ -50,8 +50,8 @@
  *     `Vector3Ref` (written through `set` and the fields): every method here
  *     reads its other vectors through `x`/`y`/`z` alone, which both libraries'
  *     accessors answer. So a function written over this module that a caller
- *     still on Babylon's math must reach takes those two types, never
- *     `Vector3` — the world's data layer does (`NavGrid.steer`,
+ *     still on Babylon's math had to reach took those two types, never
+ *     `Vector3` — the world's data layer still does (`NavGrid.steer`,
  *     `RayWorld.castRound`, `ObstacleField.resolve`), and so does every reader
  *     of the camera's position (`camera.position`, `globalPosition`), which
  *     was Babylon's until X6.1f. A matrix of Babylon's would be read the same
@@ -63,8 +63,8 @@
  * anything with `m`), so a Babylon matrix can still be READ by these
  * functions. Colours keep plain fields in both libraries (`color.ts`).
  *
- * **`ProjectToRef` assumes WebGPU's depth range** ([0, 1]), where Babylon asks
- * the last engine created. The game has one engine and it is WebGPU.
+ * **`ProjectToRef` assumes WebGPU's depth range** ([0, 1]), where Babylon asked
+ * the last engine created. The game's one device is WebGPU.
  *
  * ## Licence
  *
@@ -92,9 +92,9 @@ export interface Vector3Like {
  * A vector handed in to be WRITTEN, from either library: its fields, and the
  * methods that take nothing but numbers. Those are exactly what is safe on a
  * Babylon vector from here (the header), so a function that only writes its
- * `into` this way can serve a caller still on Babylon's math. Generic over
- * the caller's own class wherever it is handed back, so that caller keeps its
- * type.
+ * `into` this way could serve a caller still on Babylon's math (none since
+ * X6.1f). Generic over the caller's own class wherever it is handed back, so
+ * that caller keeps its type.
  */
 export interface Vector3Ref {
   x: number;
@@ -533,7 +533,7 @@ export class Vector3 {
 }
 
 // ---------------------------------------------------------------------------
-// Vector2 and Vector4 — the two Babylon classes the tree holds a shader's
+// Vector2 and Vector4 — the two classes of Babylon's the tree holds a shader's
 // uniform in. Babylon's `Vector4` keeps `_x`.. behind accessors as its
 // `Vector3` does; these keep plain fields, as every class here does.
 

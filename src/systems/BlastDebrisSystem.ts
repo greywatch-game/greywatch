@@ -11,7 +11,7 @@
  * bodies pass through it. A chunk's place is its body's `pose`, drawn by
  * our renderer straight off it since `BABYLON_EXIT.md` X4.4c, exactly as
  * `DebrisSystem`'s shards are (`Game.drawDebris`,
- * `poseView.writePosedDrawing`): Babylon is made no chunk mesh, a chunk's box
+ * `poseView.writePosedDrawing`): no chunk is a mesh, a chunk's box
  * is its own arrays (`chunkBoxes`), and its switch, its scale and its bounds
  * are its `PosedPiece`'s. **The SCORCH is our renderer's too since
  * `BABYLON_EXIT.md` X4.6e**: each mark a FADE of its kit (`entities/fades.ts`),

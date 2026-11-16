@@ -126,9 +126,9 @@ export const profiling = {
    * is sized for a round rather than for a hitch: an install is ~100 creations
    * and a round in play a handful (6 in 40 s, `docs/profiling.md`,
    * "Compiles"), so 256 holds the whole of a round with an install's worth to
-   * spare. The strings are references Babylon already holds, so the memory is
-   * the arrays — about 5 KB — sized once on arming. Every creation is still COUNTED per frame
-   * whatever falls off the end of this.
+   * spare. The strings are references the descriptor already holds, so the
+   * memory is the arrays — about 5 KB — sized once on arming. Every creation is
+   * still COUNTED per frame whatever falls off the end of this.
    */
   creationsKept: 256,
 

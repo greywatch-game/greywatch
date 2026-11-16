@@ -19,7 +19,7 @@
  * `ParticleFieldOptions`, `ColorStop`, `FactorStop`.
  * Invariants: every number is computed as Babylon computed it — the same
  * expression, in doubles, in the same order — and only on the calls Babylon
- * made it on: `animate` once a frame the scene draws a started field (and once
+ * made it on: `animate` once each frame that draws a started field (and once
  * a pre-warm step), `emit` on a frame its `render` got past the ready gate and
  * the buffers; `currentActiveCount` only GROWS, toward `ceil(emitRate ×
  * maxLifeTime)` under the capacity, and drops on `reset` alone; a stopped field
@@ -308,7 +308,7 @@ export class ParticleField {
   }
 
   /**
-   * `animate(preWarm)`: this frame's step — the field's speed times the scene's
+   * `animate(preWarm)`: this frame's step — the field's speed times the frame's
    * animation ratio (`ratio`, `|| 1` as Babylon wrote it), or times
    * `preWarmStepOffset` for a pre-warm step.
    */

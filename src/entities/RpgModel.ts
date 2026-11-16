@@ -11,8 +11,8 @@
  * `src/geometry/` buffers: the launcher's become SEGMENTS our renderer draws
  * (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the rocket's
  * head, merged tail and flame the KIT our renderer draws every rocket in
- * flight as an instance of (`entities/pieces.ts`, X4.4b) — Babylon is made
- * no mesh of either.
+ * flight as an instance of (`entities/pieces.ts`, X4.4b) — neither is a
+ * mesh.
  *
  * Two builders in one file for the reason `GrenadeModel` is one file: what a
  * rocket looks like and what threw it are the same object seen twice, and the

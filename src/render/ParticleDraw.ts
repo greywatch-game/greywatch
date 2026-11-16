@@ -25,8 +25,8 @@
  * `_create…GradientTexture`), once for the field's life — a reset keeps them,
  * as Babylon's kept them — the colour an `rgba8unorm` of `GRADIENT_WIDTH` × 2,
  * the size and velocity `rg32float` of `GRADIENT_WIDTH` × 1, each written as
- * the field baked it; each frame the scene draws with the switch on, every
- * STARTED field is stepped — `animate` at `ratio`, the scene's animation ratio
+ * the field baked it; each frame drawn with the switch on, every
+ * STARTED field is stepped — `animate` at `ratio`, the frame's animation ratio
  * — then, past the ready gate (`isReady`, the field's texture and both its
  * pipelines, and the update "created" a frame after a create or a reset), its
  * buffers made, its emission run and, with a live count, its update dispatched
@@ -42,7 +42,7 @@
  * is drawn behind every field made before it; each draw is an instanced strip of four, `currentActiveCount`
  * instances, no frustum test and no size gate, as Babylon dispatched it to group
  * 0 by its emitter; the camera's view and projection are handed APART, with the
- * view's inverse and the eye (`ParticleCamera`, read off the scene by `Game` as
+ * view's inverse and the eye (`ParticleCamera`, read off the frame by `Game` as
  * this frame draws it), and every other value is the field's own; no particle is
  * drawn in the glow's mask, a shadow map or a bake; a field's buffers and
  * textures are released by `reset` and `dispose`, which are called only OUTSIDE

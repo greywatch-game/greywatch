@@ -15,7 +15,7 @@
  * into that depth in the mask; the targets are resized here, all six at once,
  * whenever the frame's size or the rung moved, before the mask is asked for;
  * this file imports nothing of `src/render/` (`GlowDraws` is the crossing);
- * and every Babylon call is public API; the render height and the scaling
+ * and it makes no Babylon call (every one was public API); the render height and the scaling
  * level are the canvas's (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h;
  * the engine's until then); the end of the draw phase is the game's own frame's
  * (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f; the scene's observable
@@ -129,14 +129,14 @@
  * world's lit windows and lenses FIRST in the mask's pass, right after the clear —
  * the palette was in Babylon's opaque queue, ahead of every blended mask
  * draw, and first keeps that order. Its MAIN pass is ours too (X3.6e), and
- * Babylon is made no mesh of it, so it has no twin here: a palette surface ours
+ * no mesh is made of it, so it has no twin here: a palette surface ours
  * cannot hold and a mask it cannot draw are the world's failure, and
  * `noGlow` is read per surface at the take. The BODIES' visors are ours too
  * (`render/BodyDraw.ts`, X4.1d: no rig is a Babylon mesh), drawn first in
  * the pass with the palette, each at `GlowRules.colour`'s answer for its
  * body. So are the WEAPON's lit parts (`render/ViewDraw.ts`, X4.3c: no
  * viewmodel part is a Babylon mesh since X4.3d), drawn LAST in the pass — after
- * every mesh of Babylon's, blended ones included — as Babylon's group 1 drew
+ * every other draw, blended ones included — as Babylon's group 1 drew
  * them — at the pass's close, `onMaskCloseObservable` until X5.4e (X4.3c's
  * review, the owner's decision): so a blended emissive that writes no depth (an impact's spark
  * fading) in front of a lit weapon part lands UNDER the weapon's colour, as

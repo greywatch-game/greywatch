@@ -748,8 +748,8 @@ export class CelMaterialFactory {
   /**
    * What every SOLDIER's matte segments are drawn with — `getWorldCel`'s twin
    * for bodies, and since `BABYLON_EXIT.md` X4.1d no material at all: our
-   * renderer draws every body (`render/BodyDraw.ts`) and Babylon is made no
-   * rig mesh, so this is the RECIPE alone — the variant, and the values the
+   * renderer draws every body (`render/BodyDraw.ts`) and no rig is a
+   * mesh, so this is the RECIPE alone — the variant, and the values the
    * `ShaderMaterial` it replaced was born with (no spec, no translucency, no
    * `baseColor`: a matte part off the kit palette is refused at the build,
    * `SoldierModel.paint`).
@@ -782,7 +782,7 @@ export class CelMaterialFactory {
   /**
    * What every HULL is drawn with — `bodyCelRecipe`'s twin, and since
    * `BABYLON_EXIT.md` X4.2b no material either: our renderer draws every hull
-   * (`render/HullDraw.ts`) and Babylon is made no hull mesh, so this is the
+   * (`render/HullDraw.ts`) and no hull is a mesh, so this is the
    * RECIPE alone, its palette every colour a hull kit is painted in and the
    * charred paint (`vehicleRig.hullPalette`). What it replaces is one
    * `get(hex)` material a colour, each born with that hex's `baseColor` and

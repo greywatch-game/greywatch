@@ -24,14 +24,14 @@
  * placement (a turn about Y and a translation, as `MapBuilder` places a
  * structure), and seeded `Compose`s of a scale (negative and zero axes among
  * them), a rotation and a translation — and its bounds are taken by
- * `boundsOf` over `src/math`'s matrix and held to a Babylon `Mesh` holding
- * the same positions with the same sixteen floats frozen as its world matrix
- * (`freezeWorldMatrix`, then `refreshBoundingInfo`: the mesh path itself,
+ * `boundsOf` over `src/math`'s matrix and held to what a Babylon `Mesh` gave
+ * holding the same positions with the same sixteen floats frozen as its world
+ * matrix (`freezeWorldMatrix`, then `refreshBoundingInfo`: the mesh path itself,
  * `extractMinAndMax` and `BoundingInfo.update`). The box (`minimumWorld`,
  * `maximumWorld`) and the sphere (`centerWorld`, `radiusWorld`) are compared
  * by their bits, so a -0 against a +0 fails.
  *
- * The matrix is built ONCE, on our side, and copied to Babylon's float for
+ * The matrix is built ONCE, on our side, and was copied to Babylon's float for
  * float, so the bounds half proves what `boundsOf` does with a matrix it is
  * handed. Both sides read the same positions array. **And a SEEDED section
  * built from nothing in the game** (`--synthetic` parts, X6.1i): float32
@@ -44,11 +44,11 @@
  * implication and `math-check.mjs` does not (it proves `Compose` and the
  * products, not a part's walk: the Euler angles turned into a quaternion, a
  * quaternion preferred when a node has one, the parent chain multiplied in).
- * Every part above has its own matrix compared with a Babylon `TransformNode`
- * chain mirroring its node chain field for field, and so do `--chains` seeded
- * synthetic chains one to four nodes deep (Euler and quaternion turns, the same
- * scales, zero and negative axes among them), each node of a chain compared,
- * all sixteen floats by `Object.is`.
+ * Every part above has its own matrix compared with the answer of a Babylon
+ * `TransformNode` chain mirroring its node chain field for field, and so do
+ * `--chains` seeded synthetic chains one to four nodes deep (Euler and
+ * quaternion turns, the same scales, zero and negative axes among them), each
+ * node of a chain compared, all sixteen floats by `Object.is`.
  *
  * **Babylon's answers are a RECORDED TABLE** (`scripts/tables/bounds-check.json`,
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy

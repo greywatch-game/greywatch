@@ -84,7 +84,8 @@ export type SwayLayer = keyof typeof CONFIG.wind.foliage.layers;
 
 /**
  * Anything that carries the mark: a kit `Part` while it is being built, and
- * the Babylon mesh it becomes and is merged into. Both keep it in `metadata`.
+ * the merged part it becomes (a Babylon mesh until X6.1g). Both keep it in
+ * `metadata`.
  */
 type Marked = { metadata: { [flag: string]: unknown } | null };
 

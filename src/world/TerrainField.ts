@@ -23,7 +23,7 @@
  * level map costs exactly what it used to.
  *
  * This file must NOT create meshes, materials or colliders — it hands back
- * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the scene, and it
+ * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the world, and it
  * imports nothing from Babylon: the server reads it too, and the client hands
  * a patch to our renderer through `world/parts.ts`'s `worldRecords` (a mesh
  * through its `vertexDataOf` until `BABYLON_EXIT.md` X6.1g).
@@ -995,7 +995,7 @@ class Accum {
  * A heightfield has no overhangs, so every normal must point up. If one does
  * not, the winding is inverted — and that failure is completely silent: the
  * meshes are built, the materials compile, nav and picking are unaffected
- * (Babylon's triangle picking is two-sided), and the only symptom is a floor
+ * (Babylon's triangle picking was two-sided), and the only symptom is a floor
  * that is back-face culled and lit from below, i.e. an invisible world with a
  * clean console. Worth a dev-time assertion precisely because nothing else
  * catches it.

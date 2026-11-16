@@ -459,7 +459,7 @@ export class VehicleSystem {
       const tank = stand.tank;
       if (!tank.alive || tank.team === team) continue;
       // On the FIELDS, in Babylon's `DistanceSquared` order: the ordnance's
-      // point is `src/math`'s, and Babylon's static reads `_x` off it.
+      // point is `src/math`'s, and Babylon's static read `_x` off it.
       const c = tank.center;
       const dx = at.x - c.x;
       const dy = at.y - c.y;

@@ -72,7 +72,7 @@
  *   - **Type-only imports are erased and skipped** (the TREE pass refuses
  *     one of the package all the same, above) — `import type`, a named
  *     list whose every specifier is inline `type`, and the same two shapes of
- *     `export … from`. That is what lets a simulation NAME a Babylon type
+ *     `export … from`. That is what let a simulation NAME a Babylon type
  *     (as `GameMap`'s mesh fields did until X6.1g) without loading a byte of it. An import
  *     NOT marked `type` counts as a value even when the bundler would elide it
  *     as unused: the gate reads syntax, not usage, so it is stricter than the
@@ -178,8 +178,8 @@ const SIMULATIONS = [
   "src/systems/PhysicsWorld.ts",
   // Not a simulation, and held as one for the same reason as the two above:
   // a soldier rig's joints as our own hierarchy (`BABYLON_EXIT.md` X4.1a),
-  // whose world matrices Babylon only reads — the half a body is drawn from
-  // once Babylon draws none of it (X4.1d).
+  // whose world matrices Babylon only read — the half a body is drawn from
+  // once Babylon drew none of it (X4.1d).
   "src/entities/rigJoints.ts",
   // Not a simulation, and held as one for the same reason again: what a
   // soldier and a hull are to a shadow (X4.1c), composed in `src/math` off the

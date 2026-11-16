@@ -100,8 +100,8 @@
  *   the turf writes no depth of its own — so the FLOOR it lies on must be in
  *   the depth buffer, and in the picture, before it draws. FIRST of ours here is the
  *   one nearest-first run of the zones, the blades and the water (`NearestRun`,
- *   X4.6d), what stands in Babylon's opaque list's place, which holds only the
- *   `backed` panes in a round now and ties with nothing in it. The world's other
+ *   X4.6d), what stood in Babylon's opaque list's place, which held only the
+ *   `backed` panes in a round by then and tied with nothing in it. The world's other
  *   opaque draws go here too, AHEAD of the floor (`WorldBlocks`): the point
  *   is after the sky dome, which writes no depth, and a building drawn
  *   before the floor behind it spares that floor its shading. The emissive
@@ -520,7 +520,7 @@ export class Renderer {
    * announcements are its two ends: the `addGlowMask` and `addGlowMaskBlended`
    * draws FIRST, where the open was told inside the clear, and the
    * `addGlowMaskLate` draws LAST, where the close was told inside the unbind —
-   * Babylon draws nothing between them since X5.3c. Drawn only on a frame
+   * Babylon has drawn nothing between them since X5.3c. Drawn only on a frame
    * `begin` filled; a mask not made yet (no frame drawn) is a pass that cannot
    * be recorded, and every `onGlowMaskRefused` listener is told, with one
    * console error per change.

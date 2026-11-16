@@ -23,11 +23,12 @@
  *
  * ## The same answers, and the places they differ on purpose
  *
- * The port is held to the BIT against Babylon by `scripts/sweep-check.mjs`,
- * from Babylon's own start against a world of one collider mesh per box made
- * in the client's order. What shipped differs from that reference in three
- * ways, all Babylon artifacts this does not reproduce, and `sweep-check --mode
- * shipped` measures what they come to against the client's real scene:
+ * The port is held to the BIT against Babylon's recorded answers by
+ * `scripts/sweep-check.mjs`, from Babylon's own start against a world of one
+ * collider mesh per box made in the client's order. What shipped differs from
+ * that reference in three ways, all Babylon artifacts this does not reproduce,
+ * and `sweep-check --mode shipped` measured what they came to against the
+ * client's real scene (until X6.1i):
  *
  * - **The start is the body's own position**, float64. Babylon read it out of
  *   the float32 world matrix (`getAbsolutePosition`), a few micrometres off.
@@ -85,7 +86,7 @@ export { COLLISIONS_EPSILON };
 
 /**
  * A body that sweeps: where it is, and the ellipsoid it sweeps as. A Babylon
- * mesh satisfies it as it stands — `position`, `ellipsoid`, `ellipsoidOffset`
+ * mesh satisfied it as it stood — `position`, `ellipsoid`, `ellipsoidOffset`
  * — and so does a plain record of a body's own fields, which is what a hull
  * hands over (`Vehicle.sweeper`, over `Vehicle.pos`): nothing here reads
  * anything else.

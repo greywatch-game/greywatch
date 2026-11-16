@@ -36,7 +36,7 @@
  * - **Every viewmodel joint has one shape** (`viewJoint`, the moment it is
  *   made), so the compose that a rig and a hull also run meets two hidden
  *   classes, not one per order the fields arrived in.
- * - **Our renderer draws every surface and Babylon is made no mesh of one**
+ * - **Our renderer draws every surface and none is a mesh**
  *   (X4.3c the opaque ones; X4.3d the two BLENDED ones, an optic's glass and
  *   the kit card — `ViewSegment.role`): a `ViewSegment` is the arrays, the
  *   transform, the material and the metadata the mesh was made of —

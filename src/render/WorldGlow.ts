@@ -4,7 +4,7 @@
  * lenses, embers and signs of a map's merged world, drawn FIRST into the mask
  * pass Babylon's `GlowPass` opens, from the main pass's own view of the culls
  * (`WorldBlocks.glowView`). The palette's MAIN pass is ours too (X3.6e), and
- * since X3.7b Babylon is made no mesh of it, so no Babylon draw of the
+ * since X3.7b no mesh is made of it, so no Babylon draw of the
  * palette's bloom is left anywhere (X3.7c deleted its twin).
  * Owns: `WorldGlow` — the world it draws (`GlowSource`, the map's
  * `WorldBlocks` while a palette surface of it glows; the handover owns it),
@@ -16,7 +16,7 @@
  * last (`drawn`); `GlowSource`, `GlowWorld` and `GlowWorldRules`.
  * Invariants: it DECIDES NOTHING about what blooms — whether the palette may
  * bloom this frame, and how brightly, are `Game`'s rules (`GlowRules`, the
- * same questions `GlowPass` asks of Babylon's meshes, PULLED once a frame
+ * same questions `GlowPass` asked of Babylon's meshes, PULLED once a frame
  * through `GlowWorldRules`), and which world it holds is the handover's; the
  * verdict is made in a renderer prepare, as the main pass begins — the world
  * held, its pipelines built, the rules admitting the palette and every
@@ -24,7 +24,7 @@
  * palette bloom (a pipeline compiling or a texture unpublished is the
  * warm-up's to prevent, as a block group's hole in the main pass is);
  * the mask is NOT this module's (rule 5):
- * `GlowPass` owns it and its clear, Babylon's effects still draw into it, and
+ * `GlowPass` owns it and its clear, Babylon's effects drew into it until X5.3c, and
  * ours draws FIRST in that pass, right after its clear (`Renderer.addGlowMask`; the
  * weapon's lit parts go LAST, `addGlowMaskLate`) — no depth written, LEQUAL
  * against the depth OUR main pass's palette wrote, by the same vertex module

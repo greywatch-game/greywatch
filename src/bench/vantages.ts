@@ -1069,10 +1069,10 @@ function viewRow(
  *
  * **A row holding a reload is posed off ITS OWN previous frame** (`harness.mjs`'
  * `placeVantage`): the gesture's gravity is the world's down put through the
- * weapon's world matrix (`ViewModel.evaluateReload`), which Babylon answers
- * from its render cache — the matrix the LAST RENDER composed. Posed straight
- * after the row before it, that would be the previous row's weapon; so the
- * pose is run, one frame is rendered with it up, and the pose is run again,
+ * weapon's world matrix (`ViewModel.evaluateReload`), which the render cache
+ * answers (Babylon's, reproduced) — the matrix the LAST RENDER composed. Posed
+ * straight after the row before it, that would be the previous row's weapon; so
+ * the pose is run, one frame is rendered with it up, and the pose is run again,
  * which is what a reload held in a round reads every frame (the weapon's pose
  * does not depend on the gravity, so one frame reaches the fixed point).
  */
@@ -1093,8 +1093,8 @@ function viewmodelRows(): Vantage[] {
   const row = viewRow;
   // A dry reload of the rifle, `reloadTime` its own (1.4 s). Posed off its
   // OWN previous frame, never the row before's: its gravity reads the weapon's
-  // world matrix out of Babylon's render cache (`reloadParams` has the rule,
-  // and `placeVantage` renders the frame).
+  // world matrix out of the render cache, Babylon's reproduced (`reloadParams`
+  // has the rule, and `placeVantage` renders the frame).
   const dry = (reloadPhase: number) => reloadParams(reloadPhase, 1.4, true);
   return [
     row(
@@ -1262,7 +1262,7 @@ function reviewRows(): Vantage[] {
 }
 
 /**
- * The effect pools `BABYLON_EXIT.md` X4.4b-d take off Babylon's scene, each
+ * The effect pools `BABYLON_EXIT.md` X4.4b-d took off Babylon's scene, each
  * raised through the door the game raises it by and posed on a stated clock
  * (`Vantage.fx`): a round's tracer, spark, dust disc and mark; the thrown and
  * laid bodies (a frag, a bottle, a rocket, a mine); the brass; the blast at

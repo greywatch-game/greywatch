@@ -28,11 +28,12 @@
  *
  * Two hard-won details in the button handling, both the editor's:
  *
- * - It listens for **pointerdown/pointerup, not mousedown/mouseup**. Babylon
- *   calls preventDefault() on the pointer event, and a prevented pointerdown
- *   suppresses the compatibility mouse event completely — `mousedown` simply
- *   never arrives. This is the same trap Game's pointer-lock listener and
- *   InputManager's dual mask both document.
+ * - It listens for **pointerdown/pointerup, not mousedown/mouseup**. The canvas
+ *   calls preventDefault() on the pointer event (`CanvasSurface.adoptInput`, as
+ *   Babylon did), and a prevented pointerdown suppresses the compatibility
+ *   mouse event completely — `mousedown` simply never arrives. This is the same
+ *   trap Game's pointer-lock listener and InputManager's dual mask both
+ *   document.
  * - Look does **not** depend on pointer lock being granted. The lock is
  *   requested because it is nicer for long drags (no cursor hitting the screen
  *   edge), but the deltas come from `movementX/movementY`, which the browser

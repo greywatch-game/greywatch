@@ -376,7 +376,7 @@ export class ProbeBake {
     this.viewBuilt = false;
   }
 
-  /** Face `f` of a probe standing at `eye`: Babylon's view and projection, multiplied as the scene does, into `out`. */
+  /** Face `f` of a probe standing at `eye`: Babylon's view and projection, multiplied as the scene did, into `out`. */
   private faceCamera(job: ProbeJob, f: number, out: Float32Array): void {
     const look = FACE_LOOKS[f];
     const eye = job.eye;

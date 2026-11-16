@@ -60,14 +60,14 @@
  * info bit for bit** (`minimumWorld`/`maximumWorld`, `centerWorld`/
  * `radiusWorld`; a failure, named `bounds≠mesh`), over EVERY surface that has
  * a mesh — which on a shipped build (all at identity but the odd loose mesh)
- * leaves `boundsOf`'s transformed path untested. **That coverage is
+ * left `boundsOf`'s transformed path untested, and none has one since X6.1g. **That coverage is
  * `scripts/bounds-check.mjs`'s since `BABYLON_EXIT.md` X5.3a** — `boundsOf`
  * against Babylon's `BoundingInfo` over every kind at seeded off-identity
  * transforms, in Node — the `--editor` arm that used to give it being retired
  * with the editor (X5.3c).
  *
  * **A surface with no mesh** (`BABYLON_EXIT.md` X3.7b: our renderer draws it
- * in every pass, and Babylon is made none — on a shipped build every surface
+ * in every pass, and Babylon was made none — on a shipped build every surface
  * but the glazing and the fires) is fingerprinted off its RECORD alone: its
  * name, material, metadata, counts, piece ranges, bounds and the arrays the
  * sink hashed, and `mesh: false`; a surface WITH a mesh says `mesh: true`.
@@ -100,8 +100,8 @@
  * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
  * a merge that moves onto arrays and uploads at the end can get each wrong
  * without moving a vertex: `sceneRank` (the mesh's rank within its list by its
- * index in `scene.meshes` — creation order, which is the order `WorldCulling`
- * offers candidates in and so reaches the glow mask and the transparent
+ * index in `scene.meshes` — creation order, which was the order `WorldCulling`
+ * offered candidates in and so reached the glow mask and the transparent
  * tie-breaks), `positionUpdatable` (whether the position buffer is writable,
  * which `GlassFx` needs on a pane block holding a breakable pane),
  * `hasVertexAlpha` and `frozen` (`isWorldMatrixFrozen`).
@@ -120,7 +120,7 @@
  *   npm run merge:hash -- --against before.json
  *
  * A pure refactor must come back with nothing changed. **Take the "before" on
- * the same machine and the same Babylon**: the hashes are of floats a browser
+ * the same machine and the same engine code**: the hashes are of floats a browser
  * computed, and nothing promises another GPU vendor's or another engine
  * version's bake reaches the same bits.
  *
@@ -421,9 +421,9 @@ function fingerprintMap() {
  * through as they are released (`SurfaceSink`), hashed there and then — the
  * arrays are not kept — into `window.__surfaceHashes`, by the surface's index
  * in its build's list (`GameMap.world.surfaces` order). The hashing is
- * `fingerprintMap`'s `hashArray`, applied to what the adapter hands Babylon
- * (`world/parts.ts`'s `vertexDataOf`) — or would, for a surface it makes no
- * mesh of: a `Float32Array` as itself, any other array as the doubles of the
+ * `fingerprintMap`'s `hashArray`, applied to what the adapter handed Babylon
+ * (`world/parts.ts`'s `vertexDataOf`, until X6.1g) — or would have, for a
+ * surface it made no mesh of: a `Float32Array` as itself, any other array as the doubles of the
  * plain array Babylon held.
  */
 function installSink() {

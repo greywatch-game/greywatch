@@ -182,8 +182,8 @@ export class CanvasSurface {
 
   /**
    * The canvas element's input defaults, as Babylon's scene input manager set
-   * them (the header). Once, where the scene attached its input — the `Scene`'s
-   * construction (`Game`).
+   * them (the header). Once, in `Game` where the scene attached its input until
+   * X6.1h.
    */
   adoptInput(): void {
     const canvas = this.canvas;

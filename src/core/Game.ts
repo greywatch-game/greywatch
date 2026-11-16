@@ -650,7 +650,7 @@ export class Game {
   readonly renderer: Renderer;
   /**
    * The map's world as `renderer` draws it, in every pass of a round and
-   * never by Babylon, which is made no mesh of it (`BABYLON_EXIT.md` X3.3,
+   * never by Babylon, of which no mesh is made (`BABYLON_EXIT.md` X3.3,
    * X3.7b) — and what it cannot draw, the world's failure (`worldFailed`).
    */
   readonly handover: BlockHandover;
@@ -1019,8 +1019,8 @@ export class Game {
    * the bullet marks' (`markDraw`, fed by `drawMarks`) — both drawn while a
    * ROUND's map is installed, their pipelines asked here once for the
    * session, and one that cannot be built is the round's failure
-   * (`worldFailed`, wired at the install). The sparks and the dust discs are
-   * no part of either: they stay Babylon meshes, fading among the panes in its
+   * (`worldFailed`, wired at the install). The sparks and the dust discs were
+   * no part of either: they stayed Babylon meshes, fading among the panes in its
    * transparent sort, until X4.6 (the owner's decision of 2026-11-01).
    */
   private readonly pieceDraw: PoolDraw;
@@ -1060,7 +1060,7 @@ export class Game {
    * chunk, posed straight off its body's pose. Both drawn while a ROUND's map
    * is installed, their pipelines asked here once for the session, and one
    * that cannot be built is the round's failure, as the pieces' are. The
-   * SCORCH is no part of either: it stays a Babylon mesh, fading among the
+   * SCORCH was no part of either: it stayed a Babylon mesh, fading among the
    * panes, until X4.6 (the owner's decision of 2026-11-01).
    */
   private readonly blastDraw: BlastDraw;
@@ -1261,7 +1261,7 @@ export class Game {
   private atmosphere: Atmosphere;
   /**
    * Every GPU particle field of the game's — the ash since `BABYLON_EXIT.md`
-   * X4.7c, the rotor wash since X4.7d — stepped on the scene's animation ratio
+   * X4.7c, the rotor wash since X4.7d — stepped on the frame's animation ratio
    * and drawn where Babylon's group drew its particles. `Atmosphere` and
    * `RotorWash` decide the fields; this runs and draws them.
    */
@@ -2426,7 +2426,7 @@ export class Game {
       },
     );
     // A capture says what our renderer took and drew, which Babylon's own
-    // draw counter cannot (`ProfileReport.blocks`).
+    // draw counter could not (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
     this.mapBuilder = new MapBuilder(
       this.mats,
@@ -2872,7 +2872,7 @@ export class Game {
    * Whether the WORLD's emissives may bloom this frame, asked by every draw of
    * ours into the mask but the weapon's: the emissive palette (`WorldGlow`),
    * the visors (`BodyDraw`), the pieces, the billows, the sparks and the
-   * fires. Babylon draws nothing into it since `BABYLON_EXIT.md` X5.3d.
+   * fires. Babylon has drawn nothing into it since `BABYLON_EXIT.md` X5.3d.
    *
    * The kit screen hangs a dark card behind the weapon (see
    * `inspect.backdrop`), and the one thing in the game that card cannot
@@ -4841,7 +4841,7 @@ export class Game {
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
     // go stale while the player sits in a menu. Under the viewer the free-fly
-    // cam drives the Babylon camera directly and never touches these angles,
+    // cam drives the camera directly and never touches these angles,
     // so the pass sees no rotation and stays inert — which is what we want in
     // a dev tool.
     this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch, dt);
@@ -11969,7 +11969,7 @@ export class Game {
     this.lighting.update(dt, this.cameraSys.camera.position, this.mats);
     // Which of this frame's winning lights cast, and what their tiles will
     // hold. After `lighting.update`, whose slots these are; the passes
-    // themselves run inside the scene's render (`LocalShadows.render`).
+    // themselves run inside the frame's render (`LocalShadows.render`).
     this.prof.begin(P.localShadows);
     this.localShadows.update(
       this.lighting.activeLights,

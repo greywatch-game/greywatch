@@ -77,7 +77,7 @@ export interface CreationEvent {
    * which draw it was for. Empty for whatever is created unlabelled. Until
    * report version 38 a render pipeline built through Babylon's cache also
    * carried the `effect` it was for and its `defines` (a patch on Babylon's
-   * descriptor builder); no Babylon pipeline is made after the boot, and both
+   * descriptor builder); no Babylon pipeline is made at all since X5.4h, and both
    * are gone.
    */
   label: string;
@@ -246,8 +246,8 @@ export interface ProfileSegment {
 /**
  * One size the window's rows were drawn at — `ProfileReport.viewport`.
  *
- * `expected` is the canvas Babylon's `resize` makes of that window at the
- * scaling level in force: the CSS size over the level, truncated, as
+ * `expected` is the canvas `resize` (Babylon's, ported) makes of that window
+ * at the scaling level in force: the CSS size over the level, truncated, as
  * `setSize` does. **`matched` false is a canvas that did not follow its
  * window**, which is a different workload from the one the window implies —
  * a stale canvas drawn at more rows, or fewer, than the screen shows.
@@ -365,7 +365,7 @@ export interface BenchFacts {
  * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
  * reader `Game` pushes, at the capture or the halt and never per frame. `drawn` is the
  * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
- * own counter) does not see. Before report version 20 it carried
+ * own counter) did not see. Before report version 20 it carried
  * `handedBack` too, how many taken surfaces went back to Babylon's main pass;
  * since X3.7b nothing goes back (a world ours cannot draw is the menu,
  * `Game.worldFailed`), and the field is gone.

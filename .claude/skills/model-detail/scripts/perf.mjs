@@ -11,9 +11,9 @@
 // rate (4 s warm-up, 8 s counted) and the world's draws. Run-to-run spread on
 // one box is about 3%; a change inside that is no change. Needs a GPU.
 //
-// Both counts are OUR renderer's: a round makes Babylon no mesh (the world
+// Both counts are OUR renderer's: a round made Babylon no mesh (the world
 // since BABYLON_EXIT.md X3.7b, the colliders since X5.3e), so the scene's
-// own vertex and active-mesh counts read 0. The vertices are every surface
+// own vertex and active-mesh counts read 0 until it went (X6.1h). The vertices are every surface
 // the build recorded (`GameMap.world`, each `vertexCount` — the blocks, the
 // floor and every scatter placement's copy); the draws are what the main
 // pass's world draw issued on the last frame (`Game.handover.stats.drawn`,

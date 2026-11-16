@@ -6,7 +6,7 @@
  * pass of a round — the main pass (`render/WorldBlocks.ts`), a probe's bake
  * (`render/ProbeBake.ts`) and the glow's mask (`render/WorldGlow.ts`), off
  * the one body in `wgsl/emissiveWorld.ts` (`render/emissiveWorld.ts`
- * assembles it) — and Babylon is made no mesh of it (`BlockHandover`). The
+ * assembles it) — and no mesh is made of it (`BlockHandover`). The
  * key stays: the merge keys on it and the factory hangs the recipe our
  * renderer draws it with off it (`CelMaterialFactory.emissiveRecipe`). A
  * Babylon `Material` until `BABYLON_EXIT.md` X6.1c, one of OUR keys since

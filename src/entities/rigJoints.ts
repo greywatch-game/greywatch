@@ -115,7 +115,7 @@ export class Joint {
   fixedLocal?: Matrix | null;
   /**
    * A root held off an OUTSIDE matrix — the camera's world, read every time
-   * the root is composed, as Babylon's camera hands a child its world. Its own
+   * the root is composed, as Babylon's camera handed a child its world. Its own
    * channels are never read.
    */
   outside?: (() => MatrixLike) | null;

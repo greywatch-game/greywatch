@@ -23,7 +23,7 @@
  * another, so at most two draws a segment for the whole roster — off the
  * matrices `writeRigDrawing` writes once a frame (`Game.drawBodies`): each
  * segment's own local times its joint's world, what Babylon composed for the
- * mesh it was. Babylon is made no rig mesh.
+ * mesh it was. No rig is a mesh.
  * The root is a joint and draws nothing: the body's one MEASURE
  * (`measureRig`, what `WorldCulling` drops a whole rig by) is the capsule it
  * was, composed off it, and the switch every roster writes is `rig.enabled`
@@ -611,8 +611,8 @@ export interface KitDrawing {
 export interface SoldierRig {
   /**
    * Every joint below, parents first: OUR hierarchy (`rigJoints.ts`), each
-   * world matrix a float32 array the rig owns. Babylon draws the meshes off
-   * them and has no node of this rig (`BABYLON_EXIT.md` X4.1a).
+   * world matrix a float32 array the rig owns. Our renderer draws the body off
+   * them, and Babylon had no node of this rig (`BABYLON_EXIT.md` X4.1a).
    */
   tree: JointTree;
   /**

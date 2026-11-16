@@ -6,7 +6,7 @@
  * The one thing that is not the Game's is the service worker (src/pwa): it is
  * what the browser offers to install the page as an app from, and it must
  * survive a Game that never gets built on a machine without WebGPU — which is
- * why it is registered here, before the scene is built, rather than from
+ * why it is registered here, before the Game is built, rather than from
  * inside it.
  *
  * `base.css` is imported FIRST, and from here rather than from a UI module,
@@ -19,7 +19,7 @@
  * THE BOOT SCREEN IS THIS FILE'S, and it is the one piece of interface that is
  * not a `src/ui/` module, because it covers the stretch in which no module has
  * evaluated: the bundle is a couple of megabytes gzipped and the constructor
- * builds a scene and every pool in the game, which together is seconds of a
+ * builds the renderer and every pool in the game, which together is seconds of a
  * black page on a phone. It is markup in `index.html` (see the comment on the
  * `<style>` block there) and this is the only code that ever touches it —
  * told which of its awaits it is waiting on (`bootStage`), faded down after

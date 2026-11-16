@@ -11,7 +11,7 @@
  * world's one fire material, `flameMaterial`, whose values it is drawn
  * with: `Game.drawFires`, `render/FlameDraw.ts`) — the `BlastFx` a blast
  * and an ignition are drawn in, and its own floor probe for the flames. All
- * FIXED SIZE and built once; Babylon is made no mesh of any of it.
+ * FIXED SIZE and built once; no mesh is made of any of it.
  * Invariants: it READS `GrenadeSystem` and never writes it — the pools through
  * `flights` and `fireSlots` (read-only by type), everything else as a call
  * `Game` makes from the simulation's events (`blast` on `onBlast`, `ignite` on
@@ -73,8 +73,8 @@ import {
  * One grenade on screen — a frag with its pip, and a bottle — and the moves a
  * flight makes on it. Both are built into every one and `kind` says which is
  * out, for the reason the simulation's slot serves both. Each is a PIECE of
- * its kit (`entities/pieces.ts`): our renderer draws it, and Babylon is made
- * no mesh of either (`BABYLON_EXIT.md` X4.4b).
+ * its kit (`entities/pieces.ts`): our renderer draws it, and neither is a
+ * mesh (`BABYLON_EXIT.md` X4.4b).
  *
  * Exported because two pools draw a grenade: this file's, from the local
  * simulation, and `net/NetGrenades`', from the wire. They have to be the same

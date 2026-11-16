@@ -1179,9 +1179,9 @@ export class MapBuilder {
     // `noShadowCaster` answers.
     //
     // The ink is the sharper one and it is mechanical rather than a matter of
-    // taste. Babylon draws an outline as an inverted hull BEFORE the mesh
-    // itself, and it keeps that hull out of a transparent mesh's own area with
-    // a STENCIL pass — which this engine has no buffer for (`Game` builds it
+    // taste. Babylon drew an outline as an inverted hull BEFORE the mesh
+    // itself, and it kept that hull out of a transparent mesh's own area with
+    // a STENCIL pass — which this engine has no buffer for (`main.ts` builds it
     // with no stencil, deliberately). So the shell is not a ring around a pane
     // here, it is a dark plate drawn behind the whole of it, and every window
     // in the city goes back to being the opaque slate it was, correctly lit and

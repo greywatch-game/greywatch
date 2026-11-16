@@ -8,8 +8,8 @@
  * `MARK_DEPTH_UNITS`). Nothing else in the game raises one — it is reached
  * only from `CombatFx.spawnImpact`, on the frame the tracer's head arrives,
  * so the mark and the spark and the dust are one event — and our renderer
- * reads the slots (`Game.drawMarks`, `BABYLON_EXIT.md` X4.4b): Babylon is
- * made no mesh of any.
+ * reads the slots (`Game.drawMarks`, `BABYLON_EXIT.md` X4.4b): none is a
+ * mesh.
  * Invariants: it is a POOL and never allocates per shot (the `CombatFx`
  * rule, and this pool's slots are long-lived where the others' are not); it
  * marks the STATIC world only; it holds no clock at all; a slot's matrix and
@@ -225,7 +225,7 @@ export interface MarkSlot {
  * The marks a round leaves on the static world: a ring of pooled decal quads,
  * oldest reused.
  *
- * Built once with the scene and never rebuilt — a map change clears it
+ * Built once with the `Game` and never rebuilt — a map change clears it
  * (`CombatFx.clearTransient`) rather than disposing it, exactly as the
  * tracer, spark and disc pools are.
  */

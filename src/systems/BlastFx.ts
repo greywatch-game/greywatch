@@ -18,7 +18,7 @@
  * made of them for the batch's mesh until `BABYLON_EXIT.md` X4.4c, which our
  * renderer's frustum test, its front-to-back order and the glow's distance
  * fade all read (`Game.blastPull`) — and none is ever a shadow caster. Since
- * X4.4c Babylon is made no mesh here: our renderer draws every batch
+ * X4.4c no mesh is made here: our renderer draws every batch
  * (`render/BlastDraw.ts`, `Game.drawBlasts`), and a batch is drawn exactly
  * while it holds a billow, as its mesh was visible.
  * Contract: `docs/grenades.md`, "The blast is EIGHT layers".

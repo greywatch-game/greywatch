@@ -17,7 +17,7 @@
  * its bloom (rgb, alpha) handed to the pixel FLAT, so each reaches it as the
  * number it was; the frame's eye, fog colour and view-projection are the
  * FRAME's (`render/frame.ts`: the scene's `vEyePosition` and the colour
- * `EmissiveFog` was handed are the same objects `CelMaterialFactory` fills it
+ * `EmissiveFog` was handed were the same objects `CelMaterialFactory` fills it
  * from) and the colours and the band group 1's; group 0 is the cel FRAGMENT's
  * whole group, so the frame's one bind group serves these pipelines as it
  * serves every cel one.

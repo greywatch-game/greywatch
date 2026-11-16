@@ -103,7 +103,7 @@ export const PHASES = [
   "culling",
   /**
    * `LocalShadows.update` — which lamps cast and packing their proxies. CPU
-   * only: the atlas passes are drawn inside `render`, from the scene.
+   * only: the atlas passes are drawn inside `render`, in the frame.
    */
   "localShadows",
   /**

@@ -188,9 +188,10 @@ export class AimAssistSystem {
     let bestDist = 0;
     for (const t of targets) {
       if (t.invulnerable) continue;
-      // A target's centre is a `Vector3Like` — it may be either library's
-      // — so the difference is taken on its fields, in the order Babylon's
-      // `subtract` takes it, and only the scratch meets Babylon's methods.
+      // A target's centre is a `Vector3Like` — it could be either library's
+      // until X6.1f — so the difference is taken on its fields, in the order
+      // Babylon's `subtract` takes it, and only the scratch meets Babylon's
+      // methods.
       const to = this.toTarget.copyFromFloats(
         t.center.x - origin.x,
         t.center.y - origin.y,

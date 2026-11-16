@@ -55,7 +55,7 @@ if (GI_SLOTS !== MAX_POINT_LIGHTS) {
 
 /** Every member of the frame block, in layout order. */
 export const FRAME_FIELDS = [
-  // The camera — filled from the scene's active camera as `viewProjection`
+  // The camera — filled from the frame's active camera as `viewProjection`
   // (what Babylon's `ShaderMaterial` filled it from, while it had one), and
   // the eye the shading reads (and the vertex stage's bough fade).
   { name: "viewProjection", type: "mat4x4f" },

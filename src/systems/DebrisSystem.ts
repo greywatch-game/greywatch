@@ -13,7 +13,7 @@
  * writes it, the step moves it, the sink lowers it — and our renderer draws
  * it straight off that pose (`BABYLON_EXIT.md` X4.4c: `Game.drawDebris`,
  * `poseView.writePosedDrawing`), as Babylon drew the mesh the view wrote it
- * onto until then. Babylon is made no shard mesh: a shard's vertices are its
+ * onto until then. No shard is a mesh: a shard's vertices are its
  * own arrays, handed to our renderer on every cut (`onCut`), and its switch
  * and its bounds are its `PosedPiece`'s.
  *

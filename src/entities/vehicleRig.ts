@@ -23,7 +23,7 @@
  * is a `Part` on `src/geometry/`'s generators, a `Shape` is a `Part` from
  * `facet.ts`, and `mergeParts` is the per-colour merge — one SEGMENT a colour
  * a call, which is what a Babylon mesh of it was until `BABYLON_EXIT.md`
- * X4.2b. **Babylon is made NO mesh of a hull**: what a segment LOOKS like is
+ * X4.2b. **NO hull is a mesh**: what a segment LOOKS like is
  * its KIT's, built once a model and a view — the first rig of that pair
  * merges it, every later one hangs the kit's segments without making a part
  * — and our renderer draws every hull as an instance of its kit
@@ -295,8 +295,8 @@ export interface VehicleRig {
   /**
    * Every joint below, parents first: OUR hierarchy (`rigJoints.ts`), each
    * world a float32 matrix the rig owns (`BABYLON_EXIT.md` X4.2a). Our
-   * renderer draws the segments off them (X4.2b), and Babylon has no node and
-   * no mesh of this rig.
+   * renderer draws the segments off them (X4.2b), and no part of this rig is a
+   * node or a mesh.
    */
   tree: JointTree;
   /**
@@ -396,7 +396,7 @@ export interface VehicleRig {
   antennae: readonly Whip[];
   /**
    * Every segment drawn, in its kit's order, with the joint it hangs off.
-   * See `HullSegment`. Babylon is made no mesh of any of it
+   * See `HullSegment`. No mesh is made of any of it
    * (`BABYLON_EXIT.md` X4.2b): our renderer draws the hull as an instance of
    * its `kit`.
    */

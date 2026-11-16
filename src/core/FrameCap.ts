@@ -15,7 +15,7 @@
  * Never: requests a refresh (the loop does, and re-requests one it refused);
  * allocates per frame (the profiler's rule — `docs/profiling.md`).
  *
- * **Why not `engine.maxFPS`, which Babylon already has.** Read in
+ * **Why not `engine.maxFPS`, which Babylon already had.** Read in
  * `AbstractEngine._isOverFrameTime`: it ADDS each refresh's elapsed time to an
  * accumulator and draws once that reaches `1000 / maxFPS`, carrying the
  * remainder. On a panel whose period is a hair under 16.667 ms — any "60 Hz"

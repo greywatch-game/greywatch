@@ -137,10 +137,10 @@ const DEPLOY_TIMEOUT_MS = 300_000;
  * a month later and waiting two minutes for a message that names nothing.
  *
  * **It ASKS EVERY FRAME rather than once, and that is not politeness.**
- * `Scene.isReady` walks every mesh, and asking is what starts a material
+ * `Scene.isReady` walked every mesh, and asking was what started a material
  * compiling — a mesh with no material of its own (the collider meshes and the
  * effect pools were, before `BABYLON_EXIT.md` X4.6e and X5.3e left a round's
- * scene holding none of either) answers false on the first call and clears
+ * scene holding none of either) answered false on the first call and cleared
  * itself on later ones. A single call could name hundreds of innocent meshes;
  * the poll names the one that is actually stuck, which is what the failure
  * report prints.
@@ -188,7 +188,7 @@ async function inspectClient(browser, url, id) {
         new Promise((resolve) => {
           // The frame drawn and the readiness through the frame adapter
           // (`lib/frameAdapter.mjs`, X6.1a): OUR frame's point since BABYLON_EXIT.md
-          // X5.4f (the scene is never rendered), and the scene's readiness
+          // X5.4f (the scene was never rendered), and the scene's readiness
           // while there is one, the game's (`Game.pending`) after X6.1h.
           const F = window.__refFrame();
           const s = F.babylon()?.scene ?? null;

@@ -3,7 +3,7 @@
  * moon halo), a textured moon disc, and a ring of faceted cloud MASSES lit per
  * facet off the key light. All three are OUR renderer's draws
  * (`render/SkyDraw.ts`, `render/CloudDraw.ts`; `BABYLON_EXIT.md` X4.5b, X4.5c) and
- * Babylon is made no sky mesh and no sky material: `Sky` paints the two textures
+ * no sky mesh and no sky material is made: `Sky` paints the two textures
  * (on canvases, made OUR textures as Babylon's `DynamicTexture`s were,
  * `TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d) and the clouds' shadow
  * field (`TextureMaker.raw`, as its `RawTexture` was) and stays the owner of
@@ -311,12 +311,12 @@ export class Sky {
       // in front of it draws over it. It rode in the viewmodel's group once,
       // after the whole world, and painted itself over anything blended standing
       // against it: none of those write a depth to stop it. PARTICLES are the
-      // exception that place cannot fix — Babylon draws a group's particle
-      // systems before its blended meshes (X4.7's to take up). And the disc's
-      // BLOOM still reaches over all of them: the glow is occluded by depth alone
-      // (`GlowPass`), and at `moonEmissiveBoost` the bloom saturates the disc
-      // white again over a beacon — measured on Cinderhaven, byte-identical in
-      // either group with the glow on, different with it off.
+      // exception that place cannot fix — Babylon drew a group's particle
+      // systems before its blended meshes, and X4.7 kept that order. And the
+      // disc's BLOOM still reaches over all of them: the glow is occluded by
+      // depth alone (`GlowPass`), and at `moonEmissiveBoost` the bloom
+      // saturates the disc white again over a beacon — measured on Cinderhaven,
+      // byte-identical in either group with the glow on, different with it off.
       this.disposables.push({ dispose: () => this.textures.release(moonTex) });
     }
     this.skyDraw.setSky(dome, moon, this.standSky);

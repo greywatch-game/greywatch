@@ -275,7 +275,7 @@ interface GpuFrameTimer extends GpuPassTimer {
  * The device's create methods, by the kind each makes — an index into
  * `profileReport.ts`'s `CREATED`, which is where the kind gets its name and
  * its argument. An ASYNC render pipeline
- * is still a render pipeline — Babylon 9.28's `preWarmPipeline` makes those, and
+ * is still a render pipeline — Babylon 9.28's `preWarmPipeline` made those, and
  * a warm-up built on it should show up here as creations BEFORE the round.
  */
 const DEVICE_CREATES: readonly (readonly [string, number])[] = [
@@ -1056,9 +1056,9 @@ export class FrameProfile {
    * on the frame it was made in — the hook `FINDINGS.md` 1 asked for to settle
    * whether a hitch sits one or two frames after a creation.
    *
-   * **The PROTOTYPE is wrapped, not Babylon's device field**: `GPUDevice` is the
-   * one surface here that a Babylon upgrade cannot move, and the device the
-   * engine already holds picks the wrapper up through its prototype. The
+   * **The PROTOTYPE is wrapped, not the device field Babylon kept**: `GPUDevice`
+   * was the one surface here that a Babylon upgrade could not move, and the device
+   * the boot already holds picks the wrapper up through its prototype. The
    * wrappers are taken off again by `disarm` like every other hook, so a
    * disarmed profiler is not on the device at all. Anything that wrapped the
    * same methods first (`plans/webgpu-ref/pipelines.mjs` does, in an init
@@ -1069,7 +1069,7 @@ export class FrameProfile {
    * where it is made, and the Babylon effect a pipeline built through
    * Babylon's cache was named by (a patch on
    * `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`) names
-   * nothing any more — no Babylon pipeline is made after the boot.
+   * nothing any more — no Babylon pipeline is made at all since X5.4h.
    *
    * One argument and no rest parameter on every wrapper: all five create
    * methods take a single descriptor, and `...args` would be an array per call.

@@ -38,7 +38,7 @@
  * theirs), as Babylon's mask drew the fires after all of ours — by the same
  * vertex module, no depth written, LEQUAL against the depth the main pass
  * wrote — which puts them, with ours at the mask's open, AHEAD of every mesh
- * Babylon's mask still draws (the sparks, the dust discs) and ahead of the
+ * Babylon's mask still drew (the sparks, the dust discs) and ahead of the
  * moon's bloom (ours since X4.5c, `addGlowMaskBlended`), where
  * its queue drew them among those: with no depth written and LEQUAL against
  * the frame's, only an exact tie could differ, and the blended sparks and
@@ -303,8 +303,8 @@ export class FlameDraw {
    * The fires' bloom into the glow's mask from the next frame on, for the
    * install standing — asked AFTER the billows' (`BlastDraw.installMask`),
    * so everything else of ours goes down before these in that pass, as it
-   * did while Babylon drew the fires' meshes after it. Being ours, they go
-   * down AHEAD of every mesh Babylon's mask still draws (the sparks, the
+   * did while Babylon drew the fires' meshes after it. Being ours, they went
+   * down AHEAD of every mesh Babylon's mask still drew (the sparks, the
    * dust discs), where its queue drew them among those — no depth
    * written and LEQUAL against the frame's, so only an exact tie could
    * differ, and the blended sparks and discs drew after the opaque fires

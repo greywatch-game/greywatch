@@ -56,7 +56,7 @@ export interface ViewerDeps {
   /** Registered static fixtures, for the 16-slot light-cluster check. */
   fixtures: readonly { position: Vector3Like }[];
   /**
-   * Pushes an environment into the scene. Game owns the scene and materials;
+   * Pushes an environment into the frame. Game owns the frame and materials;
    * the viewer only ever asks for a spec to be applied.
    */
   applyEnvironment: (env: EnvironmentSpec) => void;

@@ -8,7 +8,7 @@
  * descriptor a slot (made once), and the last reading (`ms`, `count`,
  * `inFlight`); `PassTiming`, what a prepare is handed on a timed frame.
  * Invariants: ONE reading is in flight at a time, as Babylon's whole-frame
- * counter's is — a frame is timed only while nothing is (`open`), its stamps
+ * counter's was — a frame is timed only while nothing is (`open`), its stamps
  * are resolved and copied into the read-back buffer in the same encoder its
  * passes ran in (`close`), and that buffer is MAPPED only from the next main
  * pass on (`settle`), after the submit that carries the copy, because a

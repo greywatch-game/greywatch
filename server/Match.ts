@@ -1478,7 +1478,7 @@ export class Match {
    * What that leaves is not a slow match, it is a broken process: the second
    * assignment to `timer` orphans the first interval, so `stop` can never clear
    * it, the match steps twice per tick for the rest of its life, and the orphan
-   * goes on calling `step` after `retire` has disposed the scene — which throws
+   * goes on calling `step` after `retire` has disposed the world — which throws
    * inside a timer callback and takes down every other match in the process
    * with it.
    *

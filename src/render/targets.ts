@@ -118,7 +118,7 @@ export function canvasTargets(format: GPUTextureFormat): PassTargets {
  * lookup's `textureGather`, the volumetrics' `.x`) — Babylon's map was `rgba16float` with the depth in red and 1 in the
  * other three, which no reader reads, so the one channel is the same numbers
  * in a quarter of the memory; a `depth32float` attachment for the test, as
- * Babylon's; one sample; and drawn upside down as Babylon draws every render
+ * Babylon's; one sample; and drawn upside down as Babylon drew every render
  * target, which is the way up every reader's `clip.xy * 0.5 + 0.5` assumes.
  * The lamps' atlas is drawn into the same (`render/LampAtlas.ts`, X3.6b),
  * its one channel the radial distance its render target held in Babylon's

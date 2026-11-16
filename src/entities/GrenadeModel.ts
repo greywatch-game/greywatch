@@ -8,7 +8,7 @@
  * treats it as cover, and it must stay that way on both sides of the wire.
  * Both parts are `Part`s on `src/geometry/` spheres, the KIT our renderer
  * draws every grenade as an instance of (`entities/pieces.ts`,
- * `BABYLON_EXIT.md` X4.4b) — Babylon is made no mesh of either.
+ * `BABYLON_EXIT.md` X4.4b) — neither is a mesh.
  *
  * It is a file of its own for the reason `SoldierModel` is one: two things
  * draw a grenade, both through `GrenadeFx`'s `GrenadeBody`: `GrenadeFx`

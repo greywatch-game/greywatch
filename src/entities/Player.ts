@@ -28,7 +28,7 @@
  * exported points (`position`, `center`, `eyePos`) are derived in
  * `syncCombatant` and are the only ones anything outside this file may read
  * — and they are `src/math`'s, so they are read by their FIELDS: handed to a
- * Babylon method (`copyFrom`, `Vector3.Distance`) one reads `_x` and writes
+ * Babylon method (`copyFrom`, `Vector3.Distance`) one read `_x` and wrote
  * NaN without a word (since `BABYLON_EXIT.md` X6.1f no Babylon method is
  * handed one: the camera, the last, is ours).
  * There is no collider MESH: the sweep is `CollisionField`'s and takes a
@@ -1414,7 +1414,8 @@ export class Player implements Combatant {
 
   placeAt(spawn: Vector3Like): void {
     // By its fields: a spawn is `scatterSpawn`'s `src/math` vector or the
-    // wire's Babylon one, and `Vector3Like` is all either is read as.
+    // wire's (a Babylon one until X6.1f), and `Vector3Like` is all either is
+    // read as.
     this.mid.copyFromFloats(spawn.x, spawn.y, spawn.z);
     this.mid.y = spawn.y + this.groundY;
     this.velY = 0;

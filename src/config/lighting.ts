@@ -2,8 +2,8 @@
  * config/lighting.ts — the dynamic light budget.
  * Owns: slot counts, ranges and the muzzle-flash budget. Contract:
  * `docs/rendering.md`.
- * Gotcha: cel materials read these as UNIFORMS. Adding a Babylon `PointLight`
- * to the scene will not light a single cel-shaded mesh.
+ * Gotcha: cel materials read these as UNIFORMS. A Babylon `PointLight` never
+ * lit a single cel-shaded mesh, and there is no scene to add one to.
  */
 
 export const lighting = {

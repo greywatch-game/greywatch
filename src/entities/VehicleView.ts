@@ -16,7 +16,7 @@
  *   replays off the record are the muzzles drawn here (`entities/hullFrame.ts`).
  *   The guards stay although a joint costs nothing to write: an unguarded
  *   write of a `-0` over a `0` is a different bit in the drawn matrix.
- * - **The joints are OURS and Babylon has no node and no mesh of a hull**
+ * - **The joints are OURS and no hull is a node or a mesh**
  *   (`BABYLON_EXIT.md` X4.2a, X4.2b, `vehicleRig.ts`' header): `Game`
  *   composes them (`fadeHulls`, `vehicleRig.composeHull`, in the cull span)
  *   and writes the rig's drawing for our renderer (`drawHulls`,

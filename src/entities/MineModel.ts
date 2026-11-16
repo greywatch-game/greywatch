@@ -12,7 +12,7 @@
  * `src/geometry/` buffers: the carried one's become SEGMENTS our renderer
  * draws (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the
  * laid one's the KIT our renderer draws every laid mine as an instance of
- * (`entities/pieces.ts`, X4.4b) — Babylon is made no mesh of either.
+ * (`entities/pieces.ts`, X4.4b) — neither is a mesh.
  *
  * Two builders in one file for the reason `RpgModel` is one: the plate a
  * player is holding and the plate lying in the road are the same object, and

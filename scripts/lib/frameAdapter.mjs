@@ -85,7 +85,7 @@
  * `__refPost()` is, so an arm a sub-step adds can depend on the moment.
  *
  * **OUR arm since X5.4f, picked first** (`Game.sceneFrame`,
- * `src/core/SceneFrame.ts`): the scene is never rendered, so the questions a
+ * `src/core/SceneFrame.ts`): the scene was never rendered, so the questions a
  * scene's render answered are answered off our frame's points, each named for
  * the scene observable it replaces and raised where Babylon raised that one —
  * `drawn`/`onDrawn` off its `onAfterRenderObservable`, `beforeDraw`/
@@ -128,7 +128,7 @@
  * hook at all: `host().engine` is `null` and every such hook is RETIRED.
  *
  * **And it answers with NO SCENE since X6.1a** (`BABYLON_EXIT.md` X6.1a, for
- * X6.1h, which deletes `Game.scene`): **Babylon's arm is built only where
+ * X6.1h, which deleted `Game.scene`): **Babylon's arm is built only where
  * `g.scene` exists**, and every question a probe here asks of the scene or its
  * engine is a member of this adapter, so no probe names `g.scene`. Each
  * member answers off the scene while there is one and off the GAME's own
@@ -160,8 +160,8 @@
  *   frame host (`SceneFrame.host.viewProjection`, what every draw of ours is
  *   handed) and the size and the aspect off the surface (`Game.surface`).
  *   **Where the game has `frustumPlanes`** (X6.1f on: the frame computes the
- *   transform and the planes itself, and the scene it still has computes
- *   neither) BOTH arms read the transform off the frame host and the planes
+ *   transform and the planes itself, and the scene, where it still has one,
+ *   computes neither) BOTH arms read the transform off the frame host and the planes
  *   off `Game.frustumPlanes`; on a tree before it nothing here moved.
  *   **`planes` is READ, never re-derived** (X6.1a's review): off the game it
  *   is the GAME's own plane array — the very array its culls read
@@ -333,7 +333,7 @@ export function frameAdapter() {
         let aspect;
         // Whether the GAME computes the frame's transform and planes itself
         // (the header): from X6.1f on, `Game.frustumPlanes` is a getter — on
-        // both arms, since the scene a page still has computes neither then.
+        // both arms, since the scene a page may still have computes neither then.
         const ours = g.frustumPlanes !== undefined;
         if (scene && !ours) {
           transform = Float32Array.from(scene.getTransformMatrix().m);
@@ -411,7 +411,8 @@ export function frameAdapter() {
     };
     const base = { ...babylon, ...questions };
     // OURS (X5.4f): the frame is the game's (`Game.sceneFrame`), its points
-    // Babylon's observables of its own, named for the scene's they replace.
+    // observables of its own (Babylon's class until X6.1h), named for the
+    // scene's they replace.
     const f = g.sceneFrame;
     if (!f) return base;
     const ours = {
@@ -471,7 +472,8 @@ export function frameAdapter() {
       encoderRole: (enc) => (enc === l.submit.encoder ? "frame" : babylonRole(enc)),
     };
     // OUR DEVICE (X5.4h): the device and the canvas are the game's
-    // (`Game.surface`); Babylon's engine is the scene's `NullEngine`.
+    // (`Game.surface`); Babylon's engine was the scene's `NullEngine` (none
+    // since X6.1h).
     const s = g.surface;
     if (!s) return loop;
     return {

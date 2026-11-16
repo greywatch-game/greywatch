@@ -23,7 +23,7 @@
  *   both — the petals SEGMENTS of the weapon (`toSegment`, `BABYLON_EXIT.md`
  *   X4.3c), each case a PIECE of the casing's kit (`casingKit`,
  *   `entities/pieces.ts`, X4.4b; `Game.drawPieces` hands the pool over) —
- *   and Babylon is made no mesh of either.
+ *   and neither is a mesh.
  * - **The flash is part of the viewmodel's TREE** (`BABYLON_EXIT.md` X4.3b):
  *   its root is a joint hung from the muzzle joint (`ViewModel.tree`), its
  *   petals segments hung from that with no parent of their own, drawn as the

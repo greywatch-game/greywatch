@@ -7,8 +7,9 @@
  * static fixtures compete nearest-first — so fixtures must be hand-placed
  * SPATIALLY SPREAD, and any new per-bot transient light must be budgeted
  * through Game.spendMuzzleLightBudget. update() runs after the camera update
- * (slot selection keys off camera position). Adding a PointLight or
- * HemisphericLight to the scene does nothing to cel-shaded meshes — don't.
+ * (slot selection keys off camera position). A PointLight or
+ * HemisphericLight never lit a cel-shaded mesh, and there is no scene to add
+ * one to.
  */
 import { Color3, Vector3, type Vector3Like } from "../math";
 import {

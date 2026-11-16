@@ -7,8 +7,8 @@
  *
  * **Since `BABYLON_EXIT.md` X6.1f every vector, colour, quaternion, matrix and
  * plane in the tree is one of these** — the camera's included (`core/
- * FreeCamera.ts`, Babylon's camera ported onto them) — but a Babylon mesh's own
- * rotation in `world/parts.ts`' mesh arm (X6.1g).
+ * FreeCamera.ts`, Babylon's camera ported onto them); the last exception, a
+ * Babylon mesh's own rotation in `world/parts.ts`' mesh arm, went at X6.1g.
  *
  * **Nothing under `src/math/` may import `@babylonjs/core`.** The one crossing
  * there was (`babylon.ts`, a copy into Babylon's `Vector3`) was deleted with its

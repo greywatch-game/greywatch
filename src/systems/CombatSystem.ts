@@ -79,7 +79,7 @@ export type DamageKind = "bullet" | "blast" | "shell" | "crush" | "fire";
 /**
  * Anything a hitscan shot can damage.
  *
- * **Its vectors are either library's**: `center` and
+ * **Its vectors were either library's until X6.1f**: `center` and
  * `eyePos` are `Vector3Ref` — read through their fields, and written through
  * `set`/`copyFromFloats` by the one thing that moves them from outside,
  * `src/sim/LagComp.ts`'s rewind — so nothing that reaches a target through
@@ -334,7 +334,7 @@ export class CombatSystem {
    * spread model, same `onRound`; only the target list and the origin differ.
    *
    * Every vector it is handed is read through its FIELDS — the camera's and
-   * the viewmodel's muzzle are still Babylon's — and every vector it makes
+   * the viewmodel's muzzle were once Babylon's — and every vector it makes
    * is `src/math`'s.
    *
    * `targets` is whatever the shooter is allowed to hit, so friendly fire is
@@ -424,8 +424,9 @@ export class CombatSystem {
           // nothing on the common path pays for it. `NEAR_POINT` is module
           // scratch and is handed out rather than copied, so the handler must
           // read it now — which the one handler does.
-          // On the centre's FIELDS, because a target's centre may be either
-          // library's vector — Babylon's `subtractToRef` reads `_x` off it.
+          // On the centre's FIELDS, because a target's centre could be either
+          // library's vector until X6.1f — Babylon's `subtractToRef` read `_x`
+          // off it.
           SCRATCH.copyFromFloats(
             target.center.x - origin.x,
             target.center.y - origin.y,

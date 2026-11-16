@@ -4,7 +4,7 @@
  * Owns: the four pools, the `IMPACTS` look table, the tracer's flight and the
  * impact it spawns on arrival, the tracer's KIT, and the wall query
  * `drawRounds` makes for a round this client did not resolve.
- * **Our renderer draws all four pools, and Babylon is made no mesh of any**:
+ * **Our renderer draws all four pools, and none is a mesh**:
  * each tracer is a PIECE of its kit (`entities/pieces.ts`) and each mark a
  * slot of `BulletMarks` (`Game.drawPieces`, `Game.drawMarks`, `BABYLON_EXIT.md`
  * X4.4b), and since X4.6e each spark and each dust disc a FADE of its kit
@@ -215,7 +215,7 @@ const FORWARD = Vector3.Forward();
 
 /**
  * The transient effects a round throws off, object-pooled. Built once by
- * `Game` with the scene and never rebuilt — a map change clears it.
+ * `Game` and never rebuilt — a map change clears it.
  */
 export class CombatFx {
   private tracers: Tracer[] = [];
@@ -377,8 +377,8 @@ export class CombatFx {
       this.rays !== null &&
       this.rays.castRound(origin, dir, range, this.wall, fromHull);
     const dist = hitWall ? this.wall.distance : range;
-    // On the FIELDS: either library's vector may arrive here. Scratch, and
-    // handed straight to `spawnTracer`, which copies it.
+    // On the FIELDS: either library's vector could arrive here until X6.1f.
+    // Scratch, and handed straight to `spawnTracer`, which copies it.
     DRAWN_TO.copyFromFloats(
       origin.x + dir.x * dist,
       origin.y + dir.y * dist,
@@ -486,7 +486,8 @@ export class CombatFx {
    * `normal` is the surface's, or null where there is no disc to orient (a
    * flesh hit, or a round that stopped on nothing). Every vector is COPIED
    * here, through its fields, rather than held — so nothing in flight
-   * references a query result, and either library's vector may arrive.
+   * references a query result, and either library's vector could arrive (until
+   * X6.1f).
    */
   private spawnTracer(
     from: Vector3Like,

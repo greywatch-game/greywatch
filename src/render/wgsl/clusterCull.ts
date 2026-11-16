@@ -17,9 +17,9 @@
  * by cluster index — through a SCAN, never an atomic append, so the same eye
  * draws the same triangles in the same order and an equal-depth tie is
  * decided the same way every time; the band is the SURFACE's (the distance
- * to its sphere's centre, as Babylon sorts a mesh), so a surface's clusters
+ * to its sphere's centre, as Babylon sorted a mesh), so a surface's clusters
  * keep their own index order whatever the eye does and only whole surfaces
- * trade places as it moves, as Babylon's meshes do; a cluster is dropped
+ * trade places as it moves, as Babylon's meshes did; a cluster is dropped
  * only if it is not drawn in the cull's pass (`passMask`), its block is past
  * the reach (a probe view's: its SURFACE's sphere, `PROBE_SPHERE_REACH`), it
  * is filed under a block the view leaves out (`PROBE_EXCLUDE`), its surface

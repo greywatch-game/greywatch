@@ -25,10 +25,10 @@
  * against.
  * Contract: `docs/rendering.md`, "Hand-written WGSL".
  *
- * WHY THE FLIP IS HERE AND NOT IN A BODY. Babylon draws a pass that renders
+ * WHY THE FLIP IS HERE AND NOT IN A BODY. Babylon drew a pass that rendered
  * to a TEXTURE upside down, so a later sample reads it the GL way up
- * (`render/targets.ts`), and its shader processor writes that into every
- * module it compiles rather than into the source
+ * (`render/targets.ts`), and its shader processor wrote that into every
+ * module it compiled rather than into the source
  * (`webgpuShaderProcessorsWGSL.pure.js`, `finalizeShaders`): the vertex
  * stage's clip y times `yFactor_`, which is -1 into a texture and 1 onto the
  * canvas; and, in a fragment, every `dpdy` — and the position's y, as
@@ -61,11 +61,11 @@
  * WHY `.el`. A uniform-address-space array must have a 16-byte stride, so an
  * `array<f32, N>` cannot be declared there. Babylon lays such an array out as
  * an array of one-member structs padded to 16 bytes and rewrites each index
- * `name[i]` to `name[i].el`; this does the same, which is what keeps one body
- * reading `uniforms.pointRange[i]` on both sides. Unlike Babylon's regex the
+ * `name[i]` to `name[i].el`; this does the same, which is what kept one body
+ * reading `uniforms.pointRange[i]` on both sides until X6.1c. Unlike Babylon's regex the
  * bracket is MATCHED here rather than taken non-greedily, so an index that
  * itself contains a `]` is safe on this side — but a body still may not
- * write one, because the same text goes through Babylon's
+ * write one, because the same text went through Babylon's until X6.1c
  * (`docs/rendering.md` has the trap).
  */
 import { guardHolds } from "./layout";
@@ -336,7 +336,7 @@ export function assembleFragment(
       "var<private> fragmentOutputs: FragmentOutputs;",
     );
   }
-  // Into a texture, Babylon's processor leaves the fragment as written.
+  // Into a texture, Babylon's processor left the fragment as written.
   lines.push(body);
 
   lines.push(
