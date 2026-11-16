@@ -6465,7 +6465,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7386,7 +7386,7 @@ Then the cut, then the sweep.
     "until X6.1", "NullEngine", "the scene's" and `__celshock.scene`, answered line by line.
   - **Rewrites:** what it sweeps.
 
-  **X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments; 2026-11-16; no change to the game;
+  **X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments, its review 5b29245; 2026-11-16; no change to the game;
   the full note is in `plans/done/babylon_exit_landed.md`). **The licence** (241f706, row "X6.1, the licence", (A)):
   eighteen ports gained the `## Licence` section the nine X6.1i citers carry, in their form (the Babylon 9.28 source,
   the Apache-2.0 citation, the NOTICE's line, what changed), found by their headers' port language and by what the
@@ -7415,6 +7415,17 @@ Then the cut, then the sweep.
   sight-occlusion recipe (`scene.pickWithRay` over the weapon's meshes) dead; `babylonTable.mjs`' `record` path
   dead since X6.1i; descriptor-matching files (`ChainPasses`, `FrameTargets`, `FrameSubmit`, `TextureMaker`) and
   three inline formulas (`Game.inFrustum`, `BlastFx`'s and `vehicleRig`'s bounding sphere) not cited as ports.
+
+  **Its review** (5b29245): clean — no over-reach (no rule weakened, provenance and history kept), no code moved (the
+  100 changed `.ts`/`.mjs` print identically without comments, WGSL included; both trees' `dist/` equal under
+  `diff -r`), and the 27 citations true (every cited source path present in 9.28.0; the list in
+  `licenses/babylonjs.md` matches the citing files exactly). Fixed as text: two misses (`VERIFYING.md`'s
+  "`scene.meshes` 0", `props/geometry.ts`' front-face tense); `FINDINGS.md` 68 and 38 deleted (Babylon's latch and
+  the X5.4f candidate list); `VERIFYING.md`'s sight-occlusion recipe marked RETIRED (a replacement is new code);
+  `docs/rendering.md`'s owed fragment flip, stale, rewritten. Left for the owner: the "no Babylon lights" section's
+  cap (195 lines, over before this step and unchanged by it); whether descriptor-matching files and restated shader
+  arithmetic (`sky.ts`, `fade.ts` beside those above) owe a citation; `vantages.ts` 383's string, which ships; and
+  `babylonTable.mjs`' dead `record` branch.
 
 **Verify, the whole step:**
 

@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf), X6.1i **LANDED** (28dc7f0 the tables, 9f165b3 the cut, its review 53c250a, aab036d, 6d858f0), X6.1j **LANDED** (241f706 the licence, 4efc9d1 and 099288d the sweep, its review 5b29245)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -14260,7 +14260,7 @@ directory; a computed specifier passes, as designed; `SIMULATIONS` unchanged (15
   installed then", `sweep-check`'s single mode. Every `--perturb` still catches every group; with `BUILD_COMMIT`
   fixed the bundle is byte-identical to the review's parent.
 
-**X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments; 2026-11-16; no change to the game).
+**X6.1j LANDED** (241f706 the licence, 4efc9d1 the docs and 099288d the comments, its review 5b29245; 2026-11-16; no change to the game).
 Text only, on the Windows box, no GPU run (none was owed: no code moved). Rows "X6.1, the licence" and "X6.1, the
 sweep's reach", both (A).
 
@@ -14351,3 +14351,25 @@ sweep's reach", both (A).
     plans outside the sweep, kept as history.
 - The worktrees `greywatch-2-before-x53a` (8a69f093) and `greywatch-2-before-x36b` untouched; X6.1 as a whole is not
   DONE: the whole step's Verify against 5613d1e and the owner's phone check are still to run.
+
+**X6.1j's review** (5b29245; 2026-11-16): **clean; text fixes only; four questions left for the owner.** Built
+48d7e457 and 59110812 with `BUILD_COMMIT` fixed: every gate passed and `diff -r` of the two `dist/` (56 files)
+is empty. TypeScript's printer, comments removed, finds no difference in any of the 100 changed `.ts`/`.mjs`
+(template literals included). Typecheck, corecheck and the four copy checks (342, 1,920, 351, 256 groups; 0 NEW,
+GONE or STALE) pass.
+- **Over-reach**: `CLAUDE.md` and `docs/rendering.md` read word by word; no rule weakened ("nothing may reach for
+  the scene" became "...the drawn geometry"; "Babylon is made no X mesh" became "no X is a mesh"); the factual
+  rewrites checked against the code (`takeGlass`, the canvas depth, the stencil comment, `computeNormals`, the
+  rig's quaternion, `FrameProfile`'s label, `Sky.ts`'s order).
+- **Under-reach**: no letterless "until X6.1"; the table's sampled "kept" verdicts hold; two misses fixed
+  (`VERIFYING.md` 1417, `world/props/geometry.ts` 25).
+- **Licence**: the 18 new sections in the original nine's form; 32 source paths and five symbols checked in
+  9.28.0; the list matches `git grep -l licenses/babylonjs.md -- src`. Not cited, by judgement: `ChainPasses`,
+  `FrameTargets`, `FrameSubmit`, `TextureMaker`, `GiCompute`, `wgsl/sky.ts`, `wgsl/fade.ts`, `Game.inFrustum`,
+  `vehicleRig`, `BlastFx` (descriptors or a few restated lines).
+- **Fixed** (5b29245): `FINDINGS.md` 68 (its own condition met; its lesson already in `plans/webgpu-ref/README.md`)
+  and 38 (the X5.4f candidate list; 39's open line now says what `offer` does) deleted; `VERIFYING.md`'s
+  sight-occlusion recipe RETIRED with its history; `docs/rendering.md` ~3315's owed fragment flip rewritten.
+- **For the owner**: the "no Babylon lights" section's cap (195 lines, unchanged by the step; trimming rewrites argued
+  rules); the licence edge cases above; `bench/vantages.ts` 383's shipped string; `babylonTable.mjs`' dead `record`
+  branch (no check passes `record`).
