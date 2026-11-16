@@ -154,7 +154,8 @@
  * records it, the mask cleared to black with alpha 1 and the frame's depth
  * loaded, as `onClearObservable` cleared it and `shareDepth` attached it.
  */
-import { type Camera, Observable, type Scene } from "@babylonjs/core";
+import { Observable } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
 import type { SceneFrame } from "../core/SceneFrame";
@@ -259,10 +260,9 @@ export class GlowPass {
   private readonly outH = [0, 0, 0, 0];
 
   constructor(
-    private readonly scene: Scene,
-    /** The frame whose draw phase's end the mask is drawn at (`core/SceneFrame.ts`). */
-    frame: Pick<SceneFrame, "onAfterDrawPhaseObservable">,
-    private readonly camera: Camera,
+    /** The frame whose draw phase's end the mask is drawn at, and whose camera it is (`core/SceneFrame.ts`). */
+    private readonly frame: Pick<SceneFrame, "onAfterDrawPhaseObservable" | "activeCamera">,
+    private readonly camera: FreeCamera,
     /** The canvas: its render height and scaling level (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
     private readonly surface: RenderSurface,
     private readonly draws: GlowDraws,
@@ -299,8 +299,9 @@ export class GlowPass {
     // Only the frame's camera render raises this point (`SceneFrame.render`,
     // where `Scene._renderForCamera` raised the scene's, Babylon 9.28,
     // `scene.pure.js` 4180), so this guards against a camera other than the
-    // frame's being drawn, which nothing does today. Harmless, and kept.
-    if (this.scene.activeCamera !== this.camera) return;
+    // frame's being drawn, which nothing does today. Harmless, and kept: the
+    // frame's active camera, the scene's until `BABYLON_EXIT.md` X6.1f.
+    if (this.frame.activeCamera !== this.camera) return;
     const draws = this.draws;
     const w = draws.frameWidth();
     const h = draws.frameHeight();

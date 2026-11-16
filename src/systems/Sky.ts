@@ -20,9 +20,10 @@
  * Rebuilt from an EnvironmentSpec via apply() — keep it data-driven, no Hollowmere
  * specifics.
  */
-import { Camera, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
+import { FreeCamera } from "../core/FreeCamera";
+import type { SceneFrame } from "../core/SceneFrame";
 import { clamp } from "../core/math";
 import { Color3, Matrix, Quaternion, Vector3, type Vector3Like, Vector4 } from "../math";
 import { BACKSIDE, createDisc, createSphere } from "../geometry/primitives";
@@ -171,7 +172,8 @@ export class Sky {
   private readonly shadeOut = new Color3();
   private readonly litOut = new Color3();
   constructor(
-    private scene: Scene,
+    /** The frame: its camera and the six planes it culls against (`core/SceneFrame.ts`, the scene's until `BABYLON_EXIT.md` X6.1f). */
+    private readonly frame: Pick<SceneFrame, "activeCamera" | "frustumPlanes">,
     /** The ring's draw, for the session: `Sky` hands it each ring and writes it each order. */
     private readonly cloudDraw: CloudDraw,
     /** The dome's and the disc's, for the session: `Sky` hands it each sky. */
@@ -358,12 +360,12 @@ export class Sky {
     // a - (a * n / D) * |ray|, and the two numbers are handed over as a line.
     // Re-derived every frame: the fov moves with every aim, the target with
     // every resize, and the camera could be swapped out from under a cache.
-    const cam = this.scene.activeCamera;
+    const cam = this.frame.activeCamera;
     if (cam) {
       const w = Math.max(1, this.surface.getRenderWidth());
       const h = Math.max(1, this.surface.getRenderHeight());
       const half = Math.tan(cam.fov * 0.5);
-      const horizontal = cam.fovMode === Camera.FOVMODE_HORIZONTAL_FIXED;
+      const horizontal = cam.fovMode === FreeCamera.FOVMODE_HORIZONTAL_FIXED;
       const tanX = horizontal ? half : (half * w) / h;
       const tanY = horizontal ? (half * h) / w : half;
       const n = cam.minZ;
@@ -820,7 +822,7 @@ export class Sky {
    * the target.
    */
   private readonly standSky = (): boolean => {
-    const camera = this.scene.activeCamera;
+    const camera = this.frame.activeCamera;
     if (!camera) return false;
     const m = camera.getWorldMatrix().m;
     const dome = this.domeValues?.skyWorld;
@@ -836,9 +838,9 @@ export class Sky {
     this.moonTranslation.copyFromFloats(p.x + m[12], p.y + m[13], p.z + m[14]);
     Matrix.ComposeToRef(this.moonScaling, MOON_TURN, this.moonTranslation, world);
     world.getTranslationToRef(this.moonStored);
-    // The camera's view by its numbers (the camera's matrices are Babylon's
-    // until `BABYLON_EXIT.md` X6.1f); the flag `copyFrom` would carry is reset
-    // by the next line either way.
+    // The camera's view by its numbers (as since `BABYLON_EXIT.md` X6.1e,
+    // when the camera's matrices were Babylon's); the flag `copyFrom` would
+    // carry is reset by the next line either way.
     Matrix.FromArrayToRef(camera.getViewMatrix().m, 0, this.viewRotation);
     this.viewRotation.setTranslationFromFloats(0, 0, 0);
     this.viewRotation.invertToRef(this.viewInverse);
@@ -852,9 +854,9 @@ export class Sky {
     const reach = this.moonReach;
     Vector3.TransformNormalFromFloatsToRef(1, 1, 1, world, reach);
     const radius = Math.max(Math.abs(reach.x), Math.abs(reach.y), Math.abs(reach.z)) * this.moonRadius;
-    const planes = this.scene.frustumPlanes;
+    const planes = this.frame.frustumPlanes!;
     for (let i = 0; i < 6; i++) {
-      // `Plane.dotCoordinate`, written out: Babylon's plane, `src/math`'s point.
+      // `Plane.dotCoordinate`, written out.
       const pl = planes[i];
       if (pl.normal.x * centre.x + pl.normal.y * centre.y + pl.normal.z * centre.z + pl.d <= -radius) {
         return false;

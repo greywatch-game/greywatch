@@ -164,6 +164,7 @@ import type { Vector3Like } from "../math";
 import type { AbstractMesh, Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { CanvasSurface } from "../core/CanvasSurface";
+import type { SceneFrame } from "../core/SceneFrame";
 import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
 import type { SurfaceRecord } from "../world/worldGeometry";
@@ -346,6 +347,8 @@ export class WorldCulling {
    */
   constructor(
     private scene: Scene,
+    /** The frame whose camera the size gate reads (`activeCamera`, the scene's until `BABYLON_EXIT.md` X6.1f). */
+    private readonly frame: Pick<SceneFrame, "activeCamera">,
     /** The canvas: the render height and the scaling level the size gate reads (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
     private readonly surface: Pick<CanvasSurface, "getRenderHeight" | "getHardwareScalingLevel">,
   ) {}
@@ -798,7 +801,7 @@ export class WorldCulling {
     // is arithmetically the shipped gate on the reference machine and on a
     // fresh install of any density, and only moves once the player has moved
     // the slider.
-    const cam = this.scene.activeCamera;
+    const cam = this.frame.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
     const gate = minPx > 0 && cam !== null;
     const surface = this.surface;

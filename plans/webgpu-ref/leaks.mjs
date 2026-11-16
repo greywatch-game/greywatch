@@ -166,7 +166,10 @@ await page.evaluate(async () => {
   const url = performance.getEntriesByType("resource").map((e) => e.name).find((n) => /babylonjs_core/i.test(n));
   if (!url) throw new Error("leaks.mjs: Babylon's module is not among the page's resources");
   const B = await import(url);
-  if (B.Vector3 !== g.cameraSys.camera.position.constructor) throw new Error("leaks.mjs: not the page's Babylon");
+  // The page's own instance of the package, told by a Babylon class the page
+  // still holds: the frame's `Observable` (`SceneFrame`'s points, Babylon's
+  // until X6.1h). The camera's position, which told it until X6.1f, is ours.
+  if (B.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("leaks.mjs: not the page's Babylon");
   const L = (window.__leaks = { cls: g.state, byClass: {}, cache: B.WebGPUCacheBindGroups });
   const bucket = () => (L.byClass[L.cls] ??= { deletes: 0, deletesWithContext: 0, cacheCreated: 0, cacheCalls: 0, frames: 0 });
   window.__refFrame().onBegin(() => {

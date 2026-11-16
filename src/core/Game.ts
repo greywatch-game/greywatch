@@ -98,9 +98,9 @@
  * and no build or match opened after it, `deviceIsLost`),
  * scene.imageProcessingConfiguration.isEnabled === false, window.__celshock debug handle.
  */
-import { type Plane, Scene, type SubMesh, Viewport } from "@babylonjs/core";
+import { Scene, type SubMesh } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import { Color3, type Color3Like, Color4, Matrix, Vector3, type Vector3Like } from "../math";
+import { Color3, type Color3Like, Color4, Matrix, type Plane, Vector3, type Vector3Like } from "../math";
 import {
   CelMaterialFactory,
   fogAmountAt,
@@ -665,7 +665,8 @@ export class Game {
   /**
    * The engine the Babylon scene stands on until X6.1: a `NullEngine` told
    * WebGPU's depth range and the surface's size (`core/SceneEngine.ts`, row
-   * "X5.4, Babylon's engine"). The scene's and its camera's alone.
+   * "X5.4, Babylon's engine"). The scene's alone: the camera is ours since
+   * X6.1f (`core/FreeCamera.ts`) and asks the surface.
    */
   private readonly sceneEngine: SceneEngine;
   private scene: Scene;
@@ -1297,9 +1298,9 @@ export class Game {
   /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
   private readonly particleInvView = new Matrix();
   /**
-   * The scene's view, copied into `src/math`'s matrix to be inverted there —
-   * the camera's matrices are Babylon's until `BABYLON_EXIT.md` X6.1f, and
-   * ours reads one only by its numbers.
+   * The frame's view, copied into a matrix of its own to be inverted there, as
+   * since `BABYLON_EXIT.md` X6.1e: the copy carries the numbers and none of
+   * the camera matrix's identity flag, which the inversion's shortcut reads.
    */
   private readonly particleView = new Matrix();
   /**
@@ -1377,6 +1378,16 @@ export class Game {
    * (`plans/webgpu-ref/harness.mjs`).
    */
   readonly sceneFrame: SceneFrame;
+  /**
+   * The frame's six FRUSTUM PLANES (`SceneFrame.frustumPlanes`, the scene's
+   * until `BABYLON_EXIT.md` X6.1f): the very array this file's culls and
+   * `Sky`'s moon read, null before the first frame. Public for the frame
+   * adapter (`scripts/lib/frameAdapter.mjs`' `camera()`), which READS it and
+   * never re-derives the planes.
+   */
+  get frustumPlanes(): readonly Plane[] | null {
+    return this.sceneFrame.frustumPlanes;
+  }
   /**
    * THE LOOP, ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
    * animation-frame request `FrameCap` admits, the clock (`getDeltaTime` and
@@ -1920,9 +1931,10 @@ export class Game {
   private readonly ordnanceAt = new Vector3();
   private readonly markerAt = new Vector3();
   private readonly markerOut = new Vector3();
-  /** The scene's transform, copied into `src/math`'s matrix for the projection. */
+  /** The frame's transform, copied into a matrix of its own for the projection. */
   private readonly markerTransform = new Matrix();
-  private readonly markerViewport = new Viewport(0, 0, 1, 1);
+  /** Babylon's `Viewport` as `ProjectToRef` reads it: the render size, set at each projection. */
+  private readonly markerViewport = { x: 0, y: 0, width: 1, height: 1 };
 
   /**
    * What `hullRules` asks of this page — built once in the constructor, after
@@ -2186,7 +2198,7 @@ export class Game {
     // reverses with no error.
     this.gi = new GiVolume(this.renderer, this.mats, this.overrides.gi(this.settings.gi));
     this.input = new InputManager(canvas);
-    this.cameraSys = new CameraSystem(this.scene);
+    this.cameraSys = new CameraSystem(this.sceneFrame, this.surface);
 
     // **Draw the opaque queue front to back**, which Babylon does not do on its
     // own: its default is `PainterSortCompare`, grouping by material id and
@@ -2221,7 +2233,7 @@ export class Game {
     // orders is what Babylon draws — in any state, since X5.3c, nothing — and
     // what is left of the cost of ours coming after it is `FINDINGS.md` 61's.
     this.scene.setRenderingOrder(0, (a, b) => {
-      const eye = this.scene.activeCamera?.globalPosition;
+      const eye = this.sceneFrame.activeCamera?.globalPosition;
       if (!eye) return 0;
       return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
     });
@@ -2271,7 +2283,7 @@ export class Game {
     const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
     this.glowBlur = glowBlur;
     const targets = this.renderer.targets;
-    const glow = new GlowPass(this.scene, this.sceneFrame, this.cameraSys.camera, this.surface, {
+    const glow = new GlowPass(this.sceneFrame, this.cameraSys.camera, this.surface, {
       // The frame's size — its depth's, which the mask borrows. Worth ~20% of
       // the frame on the three big maps against a mask that redrew the whole
       // visible scene to occlude itself (docs/rendering.md, "The glow: what
@@ -2313,7 +2325,7 @@ export class Game {
       // read as Babylon sized a post-process's input
       // (`getRenderWidth(true) * 1 | 0`), named for its reader.
       this.sceneFrame.onBeforeRenderObservable.add(() => {
-        if (this.scene.activeCamera !== camera) return;
+        if (this.sceneFrame.activeCamera !== camera) return;
         chainPasses.prepareFrame(
           surface.getRenderWidth(true) | 0,
           surface.getRenderHeight(true) | 0,
@@ -2322,7 +2334,7 @@ export class Game {
       });
       // After the camera's render: the chain's passes, the frame drawn.
       this.sceneFrame.onAfterCameraRenderObservable.add(() => {
-        if (this.scene.activeCamera !== camera) return;
+        if (this.sceneFrame.activeCamera !== camera) return;
         chainPasses.record(this.postChain);
       });
       // The frame's end: the canvas's pass, on a frame nothing began it.
@@ -2453,7 +2465,7 @@ export class Game {
     // cube, which nothing bakes. (It published that cube to every pane
     // material too, wrapped for Babylon's glazing, which only the map
     // editor's build drew; the wrap went at X5.3d.)
-    this.reflections = new ReflectionSystem(this.scene, this.sceneFrame, this.mats, this.probeBake, this.glassDraw);
+    this.reflections = new ReflectionSystem(this.sceneFrame, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
     // and the shadows it samples, which our renderer draws a frame or more
@@ -2468,7 +2480,7 @@ export class Game {
     // nothing. Nothing it does is visible to a
     // ray, a collision, a shadow caster or a cube probe; see `WorldCulling`,
     // which is the whole argument.
-    this.culling = new WorldCulling(this.scene, this.surface);
+    this.culling = new WorldCulling(this.scene, this.sceneFrame, this.surface);
     // The world our renderer draws, in every pass, with no fallback: what it
     // cannot draw is the round's end (`worldFailed`).
     this.handover = new BlockHandover(
@@ -2859,7 +2871,7 @@ export class Game {
     // The sky is painted once here, the boot map's, and re-applied per round
     // alongside the environment; it is DRAWN only while a map stands
     // (`Sky.setStanding`, from `installMap` and `teardownMap`).
-    this.sky = new Sky(this.scene, this.cloudDraw, this.skyDraw, this.renderer.textureMaker, this.surface);
+    this.sky = new Sky(this.sceneFrame, this.cloudDraw, this.skyDraw, this.renderer.textureMaker, this.surface);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
@@ -4701,18 +4713,19 @@ export class Game {
 
   /**
    * The camera as `GPUParticleSystem._render` bound it, for `ParticleDraw`, asked
-   * as the main pass begins (the scene's transform is the frame's by then, as it
-   * was at the group's draw): the scene's view and projection apart, the view's
+   * as the main pass begins (the frame's transform is this frame's by then, as
+   * the scene's was at the group's draw): the frame's view and projection
+   * apart (`SceneFrame`, the scene's until `BABYLON_EXIT.md` X6.1f), the view's
    * inverse by `Matrix.invertToRef` (the same doubles rounded to the same floats),
    * and the active camera's `globalPosition`.
    */
   private readParticleCamera(out: ParticleCamera): void {
-    const view = this.scene.getViewMatrix();
+    const view = this.sceneFrame.getViewMatrix();
     out.view.set(view.m);
-    out.projection.set(this.scene.getProjectionMatrix().m);
+    out.projection.set(this.sceneFrame.getProjectionMatrix().m);
     Matrix.FromArrayToRef(view.m, 0, this.particleView).invertToRef(this.particleInvView);
     out.invView.set(this.particleInvView.m);
-    const eye = this.scene.activeCamera?.globalPosition;
+    const eye = this.sceneFrame.activeCamera?.globalPosition;
     if (!eye) return;
     out.eye[0] = eye.x;
     out.eye[1] = eye.y;
@@ -7277,7 +7290,7 @@ export class Game {
    */
   private blastPull(into: BlastDraw, glowOn: boolean): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.frustumPlanes;
+    const planes = this.sceneFrame.frustumPlanes;
     const batches = this.grenadeFx.blasts.batches;
     const drawn = this.blastDrawn;
     const keys = this.blastKeys;
@@ -7488,7 +7501,7 @@ export class Game {
    * a surface is to be tested against them: a render has given planes.
    */
   private holdPlanes(): boolean {
-    const planes = this.scene.frustumPlanes;
+    const planes = this.sceneFrame.frustumPlanes;
     const held = this.heldPlanes;
     if (planes) {
       for (let i = 0; i < 6; i++) {
@@ -7709,7 +7722,7 @@ export class Game {
    */
   private flamePull(into: FlameDraw, glowOn: boolean): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.frustumPlanes;
+    const planes = this.sceneFrame.frustumPlanes;
     const flames = this.grenadeFx.flames;
     const shape = this.grenadeFx.flameShape;
     const fires = this.handover.fires;
@@ -7992,7 +8005,7 @@ export class Game {
    * - each segment outside the camera's FRUSTUM switched off for the frame —
    *   its matrix zeroed in `matrices` — by Babylon's own test of a mesh
    *   (`BoundingSphere.isInFrustum`, the default sphere-only strategy) against
-   *   the planes this render computed (`scene.frustumPlanes`);
+   *   the planes this render computed (`Game.frustumPlanes`);
    * - each hull's segments in the ORDER Babylon's queue drew a hull's meshes —
    *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
    *   0's opaque sort, nearest first by `eyeDistanceSq` and, between two at one
@@ -8003,7 +8016,7 @@ export class Game {
    */
   private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
     const eye = this.cameraSys.camera.globalPosition;
-    const planes = this.scene.frustumPlanes;
+    const planes = this.sceneFrame.frustumPlanes;
     const segments = this.hullDraw.segments;
     const c = this.hullSpheres;
     const keys = this.hullKeys;
@@ -12270,7 +12283,7 @@ export class Game {
     Vector3.ProjectToRef(
       this.markerAt,
       Matrix.IdentityReadOnly,
-      Matrix.FromArrayToRef(this.scene.getTransformMatrix().m, 0, this.markerTransform),
+      Matrix.FromArrayToRef(this.sceneFrame.getTransformMatrix().m, 0, this.markerTransform),
       this.markerViewport,
       this.markerOut,
     );

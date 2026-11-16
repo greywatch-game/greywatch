@@ -262,8 +262,7 @@ export class RagdollSystem implements PhysicsClient {
     // in it would fall for ever.
     if (!this.physics.hasWorld || this.slots.length === 0) return false;
     // By fields: a subject's vectors are typed `Vector3Like` (`RagdollSubject`),
-    // and `camPos` is the camera's, Babylon's until `BABYLON_EXIT.md` X6.1f
-    // (the NaN trap, `src/math/vector.ts`, were it handed to that library).
+    // and `camPos` is the camera's (Babylon's until `BABYLON_EXIT.md` X6.1f).
     const gx = subject.position.x - camPos.x;
     const gy = subject.position.y - camPos.y;
     const gz = subject.position.z - camPos.z;

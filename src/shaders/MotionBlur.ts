@@ -25,7 +25,7 @@
  * Never: draws, binds or owns a GPU resource (the host does).
  * Contract: `docs/rendering.md`.
  */
-import type { Camera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import type { PostStage } from "../render/PostChain";
@@ -159,7 +159,7 @@ export class MotionBlur {
   private enabled = true;
 
   constructor(
-    private readonly camera: Camera,
+    private readonly camera: FreeCamera,
     /**
      * The frame's targets, for its own depth image, shared with the ink. It
      * is what names the viewmodel — see the class comment — and it is the

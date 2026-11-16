@@ -29,7 +29,8 @@
  * `syncCombatant` and are the only ones anything outside this file may read
  * — and they are `src/math`'s, so they are read by their FIELDS: handed to a
  * Babylon method (`copyFrom`, `Vector3.Distance`) one reads `_x` and writes
- * NaN without a word, and a crossing is a copy (`src/math/babylon.ts`).
+ * NaN without a word (since `BABYLON_EXIT.md` X6.1f no Babylon method is
+ * handed one: the camera, the last, is ours).
  * There is no collider MESH: the sweep is `CollisionField`'s and takes a
  * `SweepBody` record (`sweepBody`, over `mid` and `ellipsoid`), the probe and
  * the push-out read the same two fields.

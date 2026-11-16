@@ -28,14 +28,11 @@
  * constant number of blades per unit of SCREEN. A hillside costs what can be
  * seen of it, and a map may state as much grass as it likes.
  */
-// The camera's frustum, which is Babylon's with its `Matrix` until
-// `BABYLON_EXIT.md` X6.1f ports the camera; every other vector here is
-// `src/math`'s (X6.1e).
-import { Frustum, Matrix, type Plane, type TargetCamera } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { GrassQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
-import { Color3, type Vector3Like } from "../math";
+import type { FreeCamera } from "../core/FreeCamera";
+import { Color3, Frustum, Matrix, type Plane, type Vector3Like } from "../math";
 import type { GrassDraw, GrassRun } from "../render/GrassDraw";
 import { createGrassValues, PATCH_FLOATS, type GrassValues } from "../render/grassProgram";
 import { MAX_POINT_LIGHTS, type CelMaterialFactory, type PointLightData } from "../shaders/CelShader";
@@ -549,7 +546,7 @@ export class GrassSystem {
    * few-hundred-metre reach is a few hundred blocks rather than ten thousand
    * patches.
    */
-  follow(camera: TargetCamera): void {
+  follow(camera: FreeCamera): void {
     const mask = this.mask;
     const blocks = this.blocks;
     const values = this.values;

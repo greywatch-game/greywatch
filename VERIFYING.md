@@ -1568,7 +1568,9 @@ is one machine's:
   land on the tube — 6 on the 3.5x, 6 on the prism, 10 on the 6x — because a stepped tube circumscribes its own cone and meets it at
   every step's far rim. Only a name that is neither of those is a fault. The launcher's optic read 0 clear of 313
   as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
-  is `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`. A
+  was `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`
+  (no longer: since `BABYLON_EXIT.md` X6.1f the scene holds no camera — the
+  frame does, `SceneFrame.activeCamera`, and it is ours). A
   screenshot at `adsBlend === 1` is worth taking afterwards, and it is the
   slower half: a launcher's swap is over a second of GAME time, which is ~40 s
   of wall clock at 2 fps, and reading `player.swapping` too early shows the
@@ -1598,15 +1600,17 @@ is one machine's:
     than calling it once.
 
   What to READ is the landmark projected to pixels: `Vector3.Project(p,
-  Matrix.Identity(), scene.getTransformMatrix(), viewport)` (the transform is
+  Matrix.Identity(), transform, viewport)` (the transform is
   `window.__refFrame().camera().transform` through the frame adapter since
-  X6.1a, which answers with no scene; its sixteen floats into a matrix of
-  either library), with the point
+  X6.1a, which answers with no scene — the frame's own,
+  `SceneFrame.getTransformMatrix()`, since X6.1f, when the scene's stopped
+  being computed; its sixteen floats into a matrix of either library), with the point
   built by `Vector3.TransformCoordinates(local, node.getWorldMatrix())` so a
   weapon's own coordinates can be named directly (the muzzle at z 1.24, the
   round's nose at 1.2, its motor's tail at 0.44). There is no `BABYLON` global:
   take the classes off live objects (`cameraSys.camera.position.constructor`,
-  `scene.getTransformMatrix().constructor`). The support hand
+  `sceneFrame.getTransformMatrix().constructor` — both `src/math`'s since
+  X6.1f). The support hand
   (`local(supportArm, -0.01, -0.16, 0.64)`) is the self-check — it reads
   **(725, 634)** at rest, which is the figure `docs/antitank.md` recorded when
   the launcher's carry was first framed, so a harness that disagrees with it is

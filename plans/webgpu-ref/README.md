@@ -143,8 +143,10 @@ the camera (`camera()`: its view, projection and transform as float32s, the
 six frustum planes, `globalPosition`, the render size and the aspect — off the
 frame host's `viewProjection` and the surface with no scene, and the planes
 READ off the game's own array, never restated off the transform: with no scene
-that is `Game.frustumPlanes`, which X6.1f owes, so before it they answer `null`,
-UNPROVEN, X6.1a's review); the particle fields and their switch
+that is `Game.frustumPlanes`, which X6.1f gave the game, so before it they
+answer `null`, UNPROVEN, X6.1a's review — and from X6.1f, when the frame computes
+the transform and the planes itself, BOTH arms read the host's transform and
+`Game.frustumPlanes`); the particle fields and their switch
 (`fields`, `particles`) and the frame's constant delta (`constantDelta`, which
 THROWS with no scene until X6.1h); the frame's clear colour (`clearColor`);
 every material on the page (`materials`, the factory's with no scene); the
@@ -584,7 +586,10 @@ grew), which every later sub-step of X6.1 records in its note.
   are READ off the game's own array, `"unproven"` where there is none (no scene,
   before X6.1f), and said aloud. Between steps the pose holds the step's last frame (`n`), since
   the marker reads the PREVIOUS frame's matrices. Its default map stays
-  Hollowmere, whose log is the old one's with the two new fields.
+  Hollowmere, whose log is the old one's with the two new fields. **Since
+  X6.1f** two steps follow on every map before the round-over card: the dev-only
+  map VIEWER raised over the life (`Game.toggleViewer`, the one lid that moves the
+  camera) and lowered, posed past every step before them (17 and 18).
 - **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; the proof X5.4b deleted
   `src/core/webgpuLeaks.ts` on, and the regression read while Babylon's engine
   stands): one Coldharbour page, the boot settled as the

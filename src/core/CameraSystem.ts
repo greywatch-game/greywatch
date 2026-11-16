@@ -1,11 +1,13 @@
 /**
  * CameraSystem.ts — First-person camera: aim yaw/pitch, ADS blend (FOV +
  * sensitivity), recoil, per-shot view punch, head bob.
- * Owns: the scene's active camera. The camera sits AT the player's eye — it
- * never leaves the head, so there is no occlusion pick and no pull-in. The one
- * exception is `place()`, which hands the camera to `DeathCam` when there is no
- * longer a head to sit in; that caller owns its own pull-in, because it is the
- * only thing here that ever looks at the player from outside.
+ * Owns: the frame's camera (`core/FreeCamera.ts`, Babylon's ported, made the
+ * frame's `activeCamera` here as Babylon's was the scene's). The camera sits
+ * AT the player's eye — it never leaves the head, so there is no occlusion
+ * pick and no pull-in. The one exception is `place()`, which hands the camera
+ * to `DeathCam` when there is no longer a head to sit in; that caller owns its
+ * own pull-in, because it is the only thing here that ever looks at the
+ * player from outside.
  * How far ADS zooms, how much it slows the look, and how fast it gets there
  * all belong to the LOADOUT (`setLoadout`), not to CONFIG.camera — the
  * camera's own numbers are the hip-fire ones. Zoom and sensitivity are the
@@ -46,18 +48,14 @@
  * are the only things that write the camera's roll, and they do it through ONE
  * assignment at the end of `update`: a second write site is how a roll becomes
  * whichever contributor happened to run last.
- * **It keeps Babylon's math, because the camera is Babylon's**
- * (`BABYLON_EXIT.md` X6.1e, until X6.1f ports the camera): the `FreeCamera`,
- * the scratch its eye is built in and `lookDirection` are Babylon's vectors,
- * and everything it hands the rest of the game is `src/math`'s — `forward`,
- * `flatForward` and `flatRight`, and the `ToRef`s, which fill either
- * library's through `set`. A vector handed TO the camera arrives as
- * `Vector3Like` and is copied by its numbers (`place`, through `toBabylon`):
- * a Babylon method handed one of ours reads `_x` and writes NaN.
+ * **The camera is the game's own** (`core/FreeCamera.ts`, Babylon 9.28's
+ * `FreeCamera` ported as written onto `src/math/`, `BABYLON_EXIT.md` X6.1f):
+ * its pose, its matrices and everything this hands out are `src/math`'s, so
+ * a vector handed TO it (`place`'s, a `Vector3Like`) is read by its numbers
+ * and nothing crosses a library.
  * Must run before lighting.update()/sfx.setListener() in Game's frame order,
  * and before the shader's eye is pushed on the way into the render.
  */
-import { FreeCamera, Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { hermite, impulse, smoothstep } from "./math";
 import { RecoilAxis, recoilGain, type RecoilShape } from "./recoilCurve";
@@ -75,15 +73,15 @@ import {
   type CarriedId,
 } from "../entities/weapons";
 import type { InputManager } from "./InputManager";
-import { Vector3 as MathVector3, type Vector3Like, type Vector3Ref } from "../math";
-import { toBabylon } from "../math/babylon";
+import { Vector3, type Vector3Like, type Vector3Ref } from "../math";
+import { FreeCamera } from "./FreeCamera";
+import type { CanvasSurface } from "./CanvasSurface";
 import type { GyroMode } from "./settings";
 
 /**
  * The camera's own local forward, for `getDirection` (`lookDirection`). A
  * module constant because a caller runs per frame and `Axis.Z` would be the
- * same object read through another import. Babylon's, as the camera is:
- * `getDirection` reads `_x` off it.
+ * same object read through another import.
  */
 const FORWARD_Z = new Vector3(0, 0, 1);
 
@@ -387,14 +385,18 @@ export class CameraSystem {
 
   /** Scratch for the rendered camera position — no per-frame allocation. */
   private readonly eye = new Vector3();
-  /** `place`'s target, copied into Babylon's vector `setTarget` reads `_x` off. */
-  private readonly placeTarget = new Vector3();
 
-  constructor(scene: Scene) {
-    this.camera = new FreeCamera("mainCamera", new Vector3(0, 3, -8), scene);
+  /**
+   * `frame` is the frame the camera is made the ACTIVE camera of (Babylon's
+   * `FreeCamera` constructor made it the scene's), and `surface` the canvas
+   * its projection's aspect ratio is asked of.
+   */
+  constructor(frame: { activeCamera: FreeCamera | null }, surface: CanvasSurface) {
+    this.camera = new FreeCamera("mainCamera", new Vector3(0, 3, -8), surface);
     this.camera.minZ = 0.05;
     this.camera.fov = CONFIG.camera.fovHip;
-    this.camera.inputs.clear(); // fully driven by this system
+    // Fully driven by this system: Babylon's camera had its inputs cleared
+    // here, and ours has none (`FreeCamera`'s header).
     // The roll (`rotation.z`, written by the landing absorb) reaches the view
     // matrix only through the camera's UP VECTOR, and Babylon otherwise keeps
     // that vector as state refreshed on the frames `rotation.z` *changes*.
@@ -405,7 +407,7 @@ export class CameraSystem {
     // vector from `rotation` every frame instead, which is what the flag is
     // for. Never remove it while anything writes roll.
     this.camera.updateUpVectorFromRotation = true;
-    scene.activeCamera = this.camera;
+    frame.activeCamera = this.camera;
   }
 
   /** Takes the whole loadout. Cheap enough to call on every change. */
@@ -544,17 +546,16 @@ export class CameraSystem {
   /**
    * The CAMERA's own forward, `getDirection` of +z: wherever the last
    * `update` or `place` pointed it, which during a drive is the chase
-   * camera's look rather than the aim. A fresh Babylon vector, as
-   * `getDirection` makes one — read it by its fields or hand it back to the
-   * camera's math, never to `src/math`'s.
+   * camera's look rather than the aim. A fresh vector, as `getDirection`
+   * makes one.
    */
   lookDirection(): Vector3 {
     return this.camera.getDirection(FORWARD_Z);
   }
 
   /** World-space aim direction (the axis the fitted sight sits on). */
-  get forward(): MathVector3 {
-    return this.forwardToRef(new MathVector3());
+  get forward(): Vector3 {
+    return this.forwardToRef(new Vector3());
   }
 
   /**
@@ -600,8 +601,8 @@ export class CameraSystem {
 
   /** Yaw-only forward, for movement on the ground plane. Deliberately the
    * un-recoiled yaw: strafing must not swim while the gun is kicking. */
-  get flatForward(): MathVector3 {
-    return this.flatForwardToRef(new MathVector3());
+  get flatForward(): Vector3 {
+    return this.flatForwardToRef(new Vector3());
   }
 
   /**
@@ -612,8 +613,8 @@ export class CameraSystem {
     return out.set(Math.sin(this.yaw), 0, Math.cos(this.yaw));
   }
 
-  get flatRight(): MathVector3 {
-    return this.flatRightToRef(new MathVector3());
+  get flatRight(): Vector3 {
+    return this.flatRightToRef(new Vector3());
   }
 
   /** As `flatRight`, into `out` — either library's, as `flatForwardToRef`. */
@@ -945,11 +946,10 @@ export class CameraSystem {
     fov: number = CONFIG.camera.fovHip,
     roll = 0,
   ): void {
-    // By their fields: the eye and the target are `src/math`'s (the death
-    // cam's, a hull's chase camera's, the bench's), and Babylon's `copyFrom`
-    // and `setTarget` read `_x`.
+    // By their fields: the eye and the target are any `Vector3Like` (the
+    // death cam's, a hull's chase camera's, the bench's).
     this.camera.position.copyFromFloats(eye.x, eye.y, eye.z);
-    this.camera.setTarget(toBabylon(target, this.placeTarget));
+    this.camera.setTarget(target);
     this.camera.rotation.z = roll;
     this.camera.fov = fov;
   }
@@ -1214,10 +1214,9 @@ export class CameraSystem {
     const bobW = this.bobAmount * (1 - (1 - c.bobAdsMult) * t);
 
     // --- position: the eye, plus the two cosmetic offsets ---
-    // Babylon's vectors, both: they are added into the camera's eye below.
     const dir = this.forwardToRef(new Vector3());
-    // By its fields: the eye is `src/math`'s (`Player.eyePos`, the death
-    // cam's), and Babylon's `copyFrom` reads `_x`.
+    // By its fields: the eye is any `Vector3Like` (`Player.eyePos`, the death
+    // cam's).
     this.eye.copyFromFloats(eyePos.x, eyePos.y, eyePos.z);
     if (bobW > 0.001) {
       // Vertical at twice the lateral rate: one dip per footfall, one sway

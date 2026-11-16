@@ -476,7 +476,8 @@ pause's, for the pause's reasons:
 
 **It is the one lid that MOVES the camera, and so the one that owes the camera
 back.** Its frame (`Game.updateViewer`) is the map editor's camera tail, renamed: the
-free camera (`ViewerCamera`, writing `CameraSystem`'s `FreeCamera`, which the post
+free camera (`ViewerCamera`, writing `CameraSystem`'s camera — `core/FreeCamera.ts`,
+ours since `BABYLON_EXIT.md` X6.1f, the frame's `activeCamera` — which the post
 chain is bound to) is the shadow focus, and the round's own bodies are passed to
 the tail, so what is drawn is the round's frame — its GI, glazing, fires, grass,
 water, bodies and hulls — through the round's path, with no second one. The tail

@@ -8,13 +8,20 @@
  * observable it replaces and raised where `Scene._renderFrame` and
  * `Scene._renderForCamera` raised that one (Babylon 9.28, `scene.pure.js`
  * 4492-4612 and 4055-4198), and the `FrameHost` our renderer is handed
- * (`host`): the draw phase this frame tells, the scene's camera matrix and
- * clear colour, the game's own device (`main.ts`, `BABYLON_EXIT.md` X5.4h),
+ * (`host`): the draw phase this frame tells, the frame's camera matrix and
+ * the scene's clear colour, the game's own device (`main.ts`, `BABYLON_EXIT.md` X5.4h),
  * and the encoder and the end of frame of the game's own loop
  * (`core/FrameLoop.ts`, X5.4g); the
  * particle fields' ANIMATION RATIO (`animationRatio`, what
  * `scene.getAnimationRatio()` answered); and two of the frame profiler's
- * spans, `drawWorld` and `glow`, bracketed here (`timeWith`).
+ * spans, `drawWorld` and `glow`, bracketed here (`timeWith`). **And the
+ * frame's CAMERA and its matrices** (`BABYLON_EXIT.md` X6.1f): the active
+ * camera (`activeCamera`, what `scene.activeCamera` was: `CameraSystem`'s, a
+ * `core/FreeCamera.ts` of ours), the view and projection it handed the frame,
+ * their product (the TRANSFORM every draw of ours is handed) and the six
+ * FRUSTUM PLANES the game culls against (`frustumPlanes`, `Game.frustumPlanes`)
+ * — `Scene.updateTransformMatrix` and `setTransformMatrix` PORTED
+ * (`updateTransformMatrix`), so the scene computes none of them any more.
  * Invariants:
  * - **The order is Babylon's, point for point, read off its source and the
  *   frame's logs** (`plans/webgpu-ref/post.mjs`, `readers.mjs`), and only the
@@ -26,14 +33,17 @@
  *   branch — the engine is never deterministic-lock-step here), the ratio the
  *   particle fields' clock reads (`ParticleDraw`), because the delta
  *   `scene.animate()` read was Babylon's `getDeltaTime()`, which only Babylon's
- *   own frame sampled; the active camera's update (`camera.update()`, public
- *   API); `onBeforeRenderObservable`; `onBeforeRenderTargetsRenderObservable`
+ *   own frame sampled; the active camera's update (`camera.update()`, ours
+ *   since X6.1f); `onBeforeRenderObservable`; `onBeforeRenderTargetsRenderObservable`
  *   (the frame's); the render id's FIRST advance, under
  *   `scene.renderTargetsEnabled`, where `_renderFrame` moved Babylon's after
  *   its custom render targets' block; then the camera's render: the render
- *   id's SECOND advance, `scene.updateTransformMatrix()` (public API: the view,
- *   the projection, the scene's transform matrix and its frustum, computed
- *   exactly as Babylon computed them, because it is Babylon's own call), the
+ *   id's SECOND advance, `updateTransformMatrix()` (the view, the projection,
+ *   the frame's transform matrix and its frustum, computed as
+ *   `scene.updateTransformMatrix()` computed them — Babylon's own call until
+ *   X6.1f, ported then: the camera's two matrices asked, held by REFERENCE as
+ *   the scene held them, multiplied and the planes taken off the product,
+ *   `Frustum.GetPlanesToRef` on `src/math`), the
  *   EVALUATION (`RenderId.evaluated`, where `onAfterActiveMeshesEvaluation`
  *   settled the viewmodel's render cache), `onBeforeRenderTargetsRenderObservable`
  *   again (the camera's: raised TWICE a frame, as Babylon raised it), the draw
@@ -85,6 +95,8 @@
  * ("Our renderer's frame").
  */
 import { Observable, Scene } from "@babylonjs/core";
+import { Frustum, Matrix, type Plane } from "../math";
+import type { FreeCamera } from "./FreeCamera";
 import type { DrawPhaseHooks, FrameHost } from "../render/frameHost";
 import type { FrameLoop } from "./FrameLoop";
 import { P } from "./profilePhases";
@@ -112,6 +124,20 @@ export interface GlowSpans {
 export class SceneFrame {
   /** The frame's index: what `scene.getFrameId()` answered, moved once a `render`. */
   index = 0;
+  /** The frame's camera: what `scene.activeCamera` was — `CameraSystem` sets it, once. */
+  activeCamera: FreeCamera | null = null;
+  /**
+   * The six planes of the frame's frustum (near, far, left, right, top,
+   * bottom), off the last `updateTransformMatrix`: what `scene.frustumPlanes`
+   * answered, null (Babylon's undefined) before the first. The array and its
+   * planes are made once and written in place.
+   */
+  frustumPlanes: Plane[] | null = null;
+  /** The camera's view and projection as the last `updateTransformMatrix` was handed them: the camera's OWN matrices. */
+  private viewMatrix: Matrix | null = null;
+  private projectionMatrix: Matrix | null = null;
+  /** Their product: `scene.getTransformMatrix()`'s, `Matrix.Zero()` until the first frame. */
+  private readonly transformMatrix = new Matrix();
   /** After the camera's update, before any matrix of the frame is computed: `Scene.onBeforeRenderObservable`'s point. */
   readonly onBeforeRenderObservable = new Observable<void>();
   /** Twice a frame, the frame's then the camera's: `Scene.onBeforeRenderTargetsRenderObservable`'s points. */
@@ -155,9 +181,9 @@ export class SceneFrame {
         const o = ends.add(run);
         return { dispose: () => ends.remove(o) };
       },
-      // The scene's transform matrix, public API: what `updateTransformMatrix`
-      // computed this frame, read inside the draw phase.
-      viewProjection: (out) => out.set(scene.getTransformMatrix().m),
+      // The frame's transform matrix: what `updateTransformMatrix` computed
+      // this frame, read inside the draw phase.
+      viewProjection: (out) => out.set(frame.transformMatrix.m),
       // The scene's clear colour, public API: the value Babylon's own clears read.
       clearColor: (out) => {
         const c = scene.clearColor;
@@ -201,6 +227,50 @@ export class SceneFrame {
     glow.onAfterWorkObservable.add(() => spans.endAdd(P.glow));
   }
 
+  /** `scene.getViewMatrix()`: the active camera's view, as the last frame was handed it. */
+  getViewMatrix(): Matrix {
+    return this.viewMatrix!;
+  }
+
+  /** `scene.getProjectionMatrix()`: the active camera's projection, as the last frame was handed it. */
+  getProjectionMatrix(): Matrix {
+    return this.projectionMatrix!;
+  }
+
+  /** `scene.getTransformMatrix()`: the view times the projection, the last frame's. */
+  getTransformMatrix(): Matrix {
+    return this.transformMatrix;
+  }
+
+  /**
+   * `Scene.updateTransformMatrix` and `setTransformMatrix` (Babylon 9.28,
+   * `scene.pure.js` 3993 and 2201), as far as this game reaches them: the
+   * active camera's view and projection asked (each recomputed only if its
+   * cache says so), held by reference, multiplied into the transform, and the
+   * planes taken off it. Babylon skipped the product and the planes when
+   * neither matrix's change counter had moved since the last call: that
+   * skips a recompute that gives the same numbers, and `src/math`'s `Matrix`
+   * keeps no counter (its header), so it is not kept. Nothing reads the
+   * inverse projection the scene also kept, nor its uniform buffer.
+   */
+  private updateTransformMatrix(): void {
+    const camera = this.activeCamera;
+    if (!camera) {
+      return;
+    }
+    const view = camera.getViewMatrix();
+    const projection = camera.getProjectionMatrix();
+    this.viewMatrix = view;
+    this.projectionMatrix = projection;
+    view.multiplyToRef(projection, this.transformMatrix);
+    // Update frustum
+    if (!this.frustumPlanes) {
+      this.frustumPlanes = Frustum.GetPlanes(this.transformMatrix);
+    } else {
+      Frustum.GetPlanesToRef(this.transformMatrix, this.frustumPlanes);
+    }
+  }
+
   /** The frame, in `scene.render()`'s order (the header). */
   render(): void {
     const scene = this.scene;
@@ -211,7 +281,7 @@ export class SceneFrame {
       ? 16
       : Math.max(Scene.MinDeltaTime, Math.min(this.loop.clock.getDeltaTime(), Scene.MaxDeltaTime));
     this.animationRatio = delta * (60.0 / 1000.0);
-    const camera = scene.activeCamera;
+    const camera = this.activeCamera;
     // `_renderFrame`'s camera update (no rig cameras, no `activeCameras`).
     if (camera) camera.update();
     this.onBeforeRenderObservable.notifyObservers();
@@ -222,7 +292,7 @@ export class SceneFrame {
     // The camera's render (`_renderForCamera`): its advance, its matrices,
     // its evaluation, its render targets' point, its draw phase, its end.
     this.ids.advance();
-    scene.updateTransformMatrix();
+    this.updateTransformMatrix();
     this.ids.evaluated();
     this.onBeforeRenderTargetsRenderObservable.notifyObservers();
     this.onBeforeDrawPhaseObservable.notifyObservers();

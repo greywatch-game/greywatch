@@ -26,7 +26,7 @@
  * Never: makes a mesh, a material, a draw or a pipeline (the overlays are a 2D
  * plan in the panel), writes the layout, or owns a camera.
  */
-import type { FreeCamera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import type { InputManager } from "../core/InputManager";
 import { Vector3, type Vector3Like } from "../math";
 import type { EnvironmentSpec } from "../world/environment";

@@ -584,24 +584,23 @@ src/
                         #   figures (the enter radius, the exit offset, the
                         #   respawn and wreck clocks, the AI crew) sit above
                         #   both
-  math/             # The game's own Vector3, Quaternion, Matrix, Color3 and
-                    #   Color4: Babylon's subset under Babylon's names and
-                    #   bit-identical answers (BABYLON_EXIT.md X1.1). All but
-                    #   babylon.ts import nothing and name their .ts imports,
-                    #   so Node loads them
-    index.ts            # The re-exports. NOT babylon.ts
+  math/             # The game's own Vector3, Quaternion, Matrix, Color3,
+                    #   Color4, Plane and Frustum: Babylon's subset under
+                    #   Babylon's names and bit-identical answers
+                    #   (BABYLON_EXIT.md X1.1). They import nothing of
+                    #   Babylon's and name their .ts imports, so Node loads
+                    #   them; the crossing, babylon.ts, went at X6.1f
+    index.ts            # The re-exports
     vector.ts           # Vector2, Vector3, Vector4, Quaternion, Matrix, and
                         #   the parameter types that let a Babylon vector in:
                         #   Vector3Like (read) and Vector3Ref (written through
-                        #   set alone) — the camera's position is the one
-                        #   left (X6.1e). One of ours handed to a BABYLON
+                        #   set alone). One of ours handed to a BABYLON
                         #   method reads `_x` and gets NaN — the header says
                         #   which way is safe
     color.ts            # Color3 and Color4
-    babylon.ts          # THE crossing into Babylon's math (toBabylon). The
-                        #   one file here that imports Babylon; since X6.1e
-                        #   only the camera's owners call it (CameraSystem,
-                        #   the viewer's camera), deleted with them at X6.1f
+    plane.ts            # Plane and Frustum (X6.1f): the frame's six planes,
+                        #   Babylon's GetPlanesToRef bit for bit (math-check);
+                        #   near, far, left, right, top, bottom
   geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2, X1.3):
                     #   what the world kit, the scatter props and the models
                     #   build, Babylon's arithmetic copied bit for bit. Imports nothing but
@@ -667,10 +666,17 @@ src/
                         #   gravity estimate. Reports the sensor's real state
                         #   for the settings row; applies nothing
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
-                        #   the fitted optic, at the weapon's own rate. Keeps
-                        #   Babylon's math for its FreeCamera until X6.1f;
-                        #   what it hands out is src/math's, and `place`
-                        #   copies what it is handed
+                        #   the fitted optic, at the weapon's own rate. Owns
+                        #   the frame's camera (FreeCamera.ts) and makes it
+                        #   the frame's activeCamera
+    FreeCamera.ts       # THE camera (X6.1f): Babylon 9.28's FreeCamera,
+                        #   TargetCamera and Camera PORTED as written onto
+                        #   src/math — setTarget, the view with the roll's up
+                        #   vector, WebGPU's projection at the surface's
+                        #   aspect, the world matrix and globalPosition, and
+                        #   the CACHES that decide when each is recomputed;
+                        #   what this game never reached (inputs, inertia,
+                        #   rigs, ortho) named in its header and not ported
     cameraShake.ts      # The concussion rattle: a two-pole envelope over
                         #   smooth noise, three COSMETIC angles. One each in
                         #   CameraSystem and VehicleCamera; Game.shakeFrom
@@ -768,15 +774,17 @@ src/
                         #   animation ratio (Scene.animate's arithmetic over
                         #   the loop's delta since X5.4g), the camera's
                         #   update, the render id's two advances,
-                        #   scene.updateTransformMatrix (Babylon's matrices,
-                        #   public API), the evaluation, the draw phase, the
+                        #   updateTransformMatrix (scene.updateTransformMatrix
+                        #   ported at X6.1f: the frame's camera, activeCamera,
+                        #   its view and projection held, their product and
+                        #   the six frustum planes), the evaluation, the draw phase, the
                         #   post chain — called from Game.tick in its place,
                         #   so the scene is never rendered. Its points are
                         #   Babylon Observables of its own named for the
                         #   scene's they replace; its host is our renderer's
                         #   FrameHost (the game's device, the loop's encoder
-                        #   and end of frame, the scene's matrix and clear
-                        #   colour). Brackets the profiler's drawWorld and
+                        #   and end of frame, the frame's matrix and the
+                        #   scene's clear colour). Brackets the profiler's drawWorld and
                         #   glow (timeWith, X5.4g)
     CanvasSurface.ts    # THE CANVAS, ours (X5.4h): its WebGPU context and
                         #   format (configured by main.ts), its backing
@@ -794,9 +802,10 @@ src/
     SceneEngine.ts      # The engine the Babylon Scene stands on until X6.1
                         #   (X5.4h, row "X5.4, Babylon's engine"): a
                         #   NullEngine told WebGPU's depth range
-                        #   (isNDCHalfZRange) and the surface's size and level,
-                        #   so the camera's projection and ProjectToRef are
-                        #   Babylon's to the bit. No device, no canvas
+                        #   (isNDCHalfZRange) and the surface's size and level
+                        #   (the camera's projection was Babylon's off it to
+                        #   the bit until X6.1f ported the camera). No
+                        #   device, no canvas
     FrameLoop.ts        # THE LOOP, ours (X5.4g): what runRenderLoop,
                         #   beginFrame and endFrame did — the
                         #   requestAnimationFrame chain FrameCap admits, the
@@ -1732,8 +1741,8 @@ src/
     index.ts            #   The session: what it borrows (the round's camera and
                         #   map), the findings, the toggles, and putting back the
                         #   camera's pose and the map's own environment
-    ViewerCamera.ts     #   Free-fly drive of CameraSystem's FreeCamera: the
-                        #     map editor's camera on src/math vectors
+    ViewerCamera.ts     #   Free-fly drive of CameraSystem's camera (ours,
+                        #     X6.1f): the map editor's camera on src/math vectors
     ViewerPanel.ts      #   The panel: readout, plan, toggles, findings, help
     viewer.css          #   Imported by ViewerPanel so it rides the dynamic
                         #   chunk. Never link it from HTML

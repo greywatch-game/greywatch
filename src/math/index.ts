@@ -1,17 +1,19 @@
 /**
- * math/ — the game's own vector, quaternion, matrix and colour classes, under
- * Babylon's names so that moving a file off Babylon's math is an import change.
- * Owns: nothing of its own; it re-exports `vector.ts` and `color.ts`.
+ * math/ — the game's own vector, quaternion, matrix, colour, plane and frustum
+ * classes, under Babylon's names so that moving a file off Babylon's math is
+ * an import change.
+ * Owns: nothing of its own; it re-exports `vector.ts`, `color.ts` and
+ * `plane.ts`.
  *
- * **Since `BABYLON_EXIT.md` X6.1e every vector, colour, quaternion and matrix
- * in the tree is one of these but the CAMERA's** (`CameraSystem`, the viewer's
- * camera, the scene's matrices and frustum planes), which X6.1f ports, and a
- * Babylon mesh's own rotation in `world/parts.ts`' mesh arm (X6.1g).
+ * **Since `BABYLON_EXIT.md` X6.1f every vector, colour, quaternion, matrix and
+ * plane in the tree is one of these** — the camera's included (`core/
+ * FreeCamera.ts`, Babylon's camera ported onto them) — but a Babylon mesh's own
+ * rotation in `world/parts.ts`' mesh arm (X6.1g).
  *
- * **Nothing under `src/math/` may import `@babylonjs/core`** — except
- * `babylon.ts`, the one crossing, which is NOT re-exported here and is deleted
- * with its last call, the camera's (X6.1f). Every relative import here names its `.ts`, so a Node
- * script can load this directory by type stripping.
+ * **Nothing under `src/math/` may import `@babylonjs/core`.** The one crossing
+ * there was (`babylon.ts`, a copy into Babylon's `Vector3`) was deleted with its
+ * last call, the camera's, at X6.1f. Every relative import here names its
+ * `.ts`, so a Node script can load this directory by type stripping.
  */
 export {
   Epsilon,
@@ -28,3 +30,4 @@ export {
   type ViewportLike,
 } from "./vector.ts";
 export { Color3, Color4, type Color3Like } from "./color.ts";
+export { Frustum, Plane } from "./plane.ts";

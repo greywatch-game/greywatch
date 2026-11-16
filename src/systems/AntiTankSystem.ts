@@ -4,8 +4,8 @@
  * Owns: the rocket pool, the mine pool, the arm clocks and the trigger test.
  * All FIXED SIZE and allocated once, the rule `CombatSystem`'s shot and
  * `GrenadeSystem`'s pool already follow: a firefight must not allocate.
- * Invariants: it imports nothing from `@babylonjs/core` and nothing from
- * `math/babylon.ts`. A rocket's position is its own `pos` field and a mine's
+ * Invariants: it imports nothing from `@babylonjs/core` (nor did it from the
+ * crossing into Babylon's vectors, `math/babylon.ts`, deleted at X6.1f). A rocket's position is its own `pos` field and a mine's
  * likewise, both `src/math`; nothing here builds a mesh. What the two LOOK
  * like — the warhead pointed down its flight, the motor guttering, the fuze
  * lamp — is `AntiTankFx`'s, which only a client builds and which reads

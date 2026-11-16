@@ -21,7 +21,8 @@
  * sphere is never tested, so the bot path pays nothing for it. It is an
  * upgrade to a body hit that already landed, never a separate candidate — the
  * body sphere encloses it and it could not win a nearest-hit search.
- * Never: import `@babylonjs/core` or `math/babylon.ts`, hold a mesh, or draw.
+ * Never: import `@babylonjs/core` (or the crossing into its vectors, gone
+ * since X6.1f), hold a mesh, or draw.
  * Its vectors are `src/math`'s and what it is handed is `Vector3Like`, read
  * through the fields.
  *
@@ -566,7 +567,7 @@ function raySphere(
 function jitterDirection(aim: Vector3Like, halfAngle: number, rand: Rand): Vector3 {
   // Babylon's arithmetic on `src/math`'s vectors, which reproduce it bit for
   // bit (`scripts/math-check.mjs`): the aim is copied off its FIELDS first,
-  // because the camera's forward is still Babylon's.
+  // as it was while the camera's forward was Babylon's (until X6.1f).
   const dir = new Vector3(aim.x, aim.y, aim.z);
   if (halfAngle <= 0) return dir.normalizeToNew();
   let u = Vector3.Cross(dir, Vector3.Up());

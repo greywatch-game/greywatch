@@ -329,7 +329,7 @@
  * composited over it afterwards, without either disturbing the other. The
  * bloom is that afterwards: added to the inked pixel rather than inked over.
  */
-import type { Camera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import { CONFIG } from "../config";
 import type { FrameTargets } from "../render/FrameTargets";
 import type { PostStage } from "../render/PostChain";
@@ -369,7 +369,7 @@ export class CelInk {
   private fadeEnd = 1;
 
   constructor(
-    private readonly camera: Camera,
+    private readonly camera: FreeCamera,
     /** The bloom's rules: the intensity the compose adds (`composeIntensity`). Read, never written. */
     private readonly glow: GlowPass,
     /**

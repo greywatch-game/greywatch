@@ -337,14 +337,16 @@ and the shortest chain from a root to it.
 **It widens on a schedule, not on a whim** (`BABYLON_EXIT.md` rule 6): X3.2
 adds `src/render/` and `src/math/` to its `DIRECTORIES`, naming
 `src/math/babylon.ts` — the crossing X1.1 made — in `NOT_ROOTS`, which exempts a
-file from being a root and never from being REACHED; X6.1 widens it to the
+file from being a root and never from being REACHED (empty since X6.1f deleted
+the crossing with its last call, the camera's); X6.1 widens it to the
 whole tree, the day the package goes — a directory at a time as each of its
 sub-steps empties one (`src/shaders/wgsl/` at X6.1c, whose one Babylon importer,
 the cel program's Babylon declarations, went then). X6.1d's review added the
 thirteen that reached nothing of the package already, so the ratchet holds them
 too: `src/bench/`, `src/config/`, `src/dev/` (the mixer), `src/geometry/`,
 `src/pwa/`, the seven shipped maps' own directories under `src/world/` and the
-proving ground's.
+proving ground's. X6.1f added `src/viewer/`, whose one Babylon type, the
+camera, became ours.
 
 ## A map reproduces from its generator: `check-maps.mjs`
 

@@ -95,7 +95,7 @@
  * slider, and why every rung's stage stands in the chain from the start.
  */
 import { type Matrix, Vector3, Vector4 } from "../math";
-import type { Camera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import { CONFIG } from "../config";
 import { depthBias } from "../core/shadowWindow";
 import type { FrameTargets } from "../render/FrameTargets";
@@ -170,7 +170,7 @@ export class Volumetrics {
   private intensityMult = 1;
 
   constructor(
-    private readonly camera: Camera,
+    private readonly camera: FreeCamera,
     /**
      * The frame's own depth image, shared with the ink and the blur. It is
      * what bounds every ray at the geometry already drawn, and it is why this

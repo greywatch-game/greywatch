@@ -40,10 +40,10 @@
  *
  *   - **One of these may NEVER be handed to a Babylon method** — Babylon would
  *     read `_x` off it, get `undefined`, and write NaN without a word. The
- *     types refuse it (these lack most of Babylon's members), and the crossing
- *     is `src/math/babylon.ts`, which copies. Since `BABYLON_EXIT.md` X6.1e
- *     the only Babylon methods left to hand one to are the CAMERA's (its
- *     `setTarget`, `getDirection`, the scene's frustum), until X6.1f.
+ *     types refuse it (these lack most of Babylon's members). Since
+ *     `BABYLON_EXIT.md` X6.1f no Babylon method is left to hand one to: the
+ *     camera, the last, is ours (`core/FreeCamera.ts`), and the crossing
+ *     that copied into Babylon's vector (`src/math/babylon.ts`) went with it.
  *   - **Nor is a Babylon vector one of these**, and the types refuse that too:
  *     called as one, its `add` would be handed a vector of ours and read `_x`
  *     off it. What a Babylon vector CAN be is a `Vector3Like` (read) or a
@@ -54,8 +54,8 @@
  *     `Vector3` — the world's data layer does (`NavGrid.steer`,
  *     `RayWorld.castRound`, `ObstacleField.resolve`), and so does every reader
  *     of the camera's position (`camera.position`, `globalPosition`), which
- *     is Babylon's until X6.1f. A camera MATRIX is read the same way, by its
- *     numbers: `MatrixLike`, or copied into one of these with
+ *     was Babylon's until X6.1f. A matrix of Babylon's would be read the same
+ *     way, by its numbers: `MatrixLike`, or copied into one of these with
  *     `Matrix.FromArrayToRef` where a method of ours must take it.
  *
  * `Matrix` keeps its identity flag private, which makes its type nominal; a
@@ -790,6 +790,12 @@ export class Quaternion {
     return q;
   }
 
+  /** The camera's up vector off its rotation (`TargetCamera._getViewMatrix`). */
+  static FromEulerVectorToRef<T extends Quaternion>(vec: Vector3Like, result: T): T {
+    Quaternion.RotationYawPitchRollToRef(vec.y, vec.x, vec.z, result);
+    return result;
+  }
+
   static FromUnitVectorsToRef<T extends Quaternion>(
     vecFrom: Vector3Like,
     vecTo: Vector3Like,
@@ -940,6 +946,12 @@ export class Matrix {
 
   asArray(): Readonly<Float32Array> {
     return this._m;
+  }
+
+  /** In place (`TargetCamera.setTarget`'s look matrix). */
+  invert(): this {
+    this.invertToRef(this);
+    return this;
   }
 
   invertToRef<T extends Matrix>(other: T): T {

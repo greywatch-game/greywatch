@@ -29,7 +29,7 @@
  * Contract: `docs/rendering.md`, "Rendering constraints that look like bugs if
  * you undo them" (the grade's bullets) and "Our renderer's frame" (the host).
  */
-import type { Camera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import { CONFIG } from "../config";
 import type { PostStage } from "../render/PostChain";
 import type { EnvironmentSpec } from "../world/environment";
@@ -165,7 +165,7 @@ export class PaperGrain {
   private contrast: number = CONFIG.graphics.contrast;
 
   constructor(
-    private readonly camera: Camera,
+    private readonly camera: FreeCamera,
     /** The frame's targets, for its own depth image — what puts the paper on the surfaces. */
     frame: FrameTargets,
   ) {

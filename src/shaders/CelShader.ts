@@ -1486,7 +1486,8 @@ export class CelMaterialFactory {
    * (`render/Renderer.ts`). Off the FIELDS, never off a material: a material
    * is what this factory writes, and the factory is what holds the values.
    * The camera's matrix is not here — the factory never had it; the
-   * renderer's host fills `viewProjection` from the scene's camera.
+   * renderer's host fills `viewProjection` from the frame's camera
+   * (`SceneFrame`).
    * With `bake`, the clouds' shadow is held off as a reflection bake holds it
    * (`fillBakeFrame`).
    */

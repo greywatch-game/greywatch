@@ -82,9 +82,9 @@ import { PARTICLE_RING_STRIDE, PARTICLE_STRIDE } from "../shaders/wgsl/particles
 
 /** The camera as the frame draws it: what `GPUParticleSystem._render` bound, read by `Game`. */
 export interface ParticleCamera {
-  /** `scene.getViewMatrix().m`. */
+  /** The frame's view, `scene.getViewMatrix().m` until X6.1f (`SceneFrame.getViewMatrix`). */
   readonly view: Float32Array;
-  /** `scene.getProjectionMatrix().m`. */
+  /** The frame's projection, `scene.getProjectionMatrix().m` until X6.1f. */
   readonly projection: Float32Array;
   /** The view's inverse, as `viewMatrix.invertToRef` made it. */
   readonly invView: Float32Array;

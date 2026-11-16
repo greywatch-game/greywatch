@@ -3466,13 +3466,16 @@ the frame's logs (`plans/webgpu-ref/post.mjs`, `readers.mjs`): the frame id;
 the scene's animations — the animation RATIO the particle fields' clock reads,
 `Scene.animate`'s arithmetic PORTED over the loop's delta since X5.4g
 (`SceneFrame.animationRatio`; `scene.animate()`, public API, until then, which
-read Babylon's `getDeltaTime`); the active camera's `update()`; `onBeforeRenderObservable` (the frame
+read Babylon's `getDeltaTime`); the active camera's `update()` (the frame's
+camera, `SceneFrame.activeCamera`, ours since X6.1f — see below); `onBeforeRenderObservable` (the frame
 sized, `ChainPasses.prepareFrame`); `onBeforeRenderTargetsRenderObservable`
 (the reflection bake's share); the render id's first advance (under
 `renderTargetsEnabled`); then the camera's render — the second advance,
-`scene.updateTransformMatrix()` (public API, so the view, the projection and
-the scene's transform matrix are Babylon's own arithmetic, to the bit — the
-camera log, `readers.mjs camera`, holds it), the EVALUATION (the viewmodel's
+`updateTransformMatrix()` (the view, the projection, the frame's transform
+matrix and its six frustum planes — `scene.updateTransformMatrix()`, public
+API, until X6.1f, and since then `SceneFrame`'s port of it — Babylon's own
+arithmetic to the bit, which the camera log, `readers.mjs camera`, holds),
+the EVALUATION (the viewmodel's
 render cache settled, `RenderId.evaluated`), the render targets' point again
 (raised twice a frame, as the scene's was), the draw phase's two ends (our
 renderer's `begin` and `end`, the glow, and the profiler's `drawWorld` and
@@ -3531,7 +3534,22 @@ too — is the surface's too (`adoptInput`).
 `NullEngine` until X6.1 (`core/SceneEngine.ts`, row "X5.4, Babylon's engine"),
 told WebGPU's depth range (`isNDCHalfZRange`, which `Vector3.ProjectToRef`
 reads off the last engine built too) and the surface's size, so the camera's
-projection is Babylon's to the bit (the camera log). Gone with the engine: its
+projection was Babylon's to the bit (the camera log). **Since X6.1f the CAMERA
+is ours** (`core/FreeCamera.ts`: Babylon 9.28's `FreeCamera`, `TargetCamera`
+and `Camera` ported as written onto `src/math/` — `setTarget`, the view and
+the roll's up vector, `PerspectiveFovLH` at WebGPU's depth range and the
+SURFACE's aspect, the world matrix and `globalPosition`, and the CACHES that
+decide when each is recomputed, because a recompute moves `globalPosition` and
+the cache holds the up vector from before it; the inputs, the inertia, rigs
+and the orthographic modes, which this game never reached, are named in its
+header and not ported), it is the FRAME's active camera
+(`SceneFrame.activeCamera`, which `CameraSystem` sets) and the frame computes
+its transform and planes (`SceneFrame.updateTransformMatrix`,
+`Frustum.GetPlanesToRef` on `src/math/plane.ts`), so the scene holds no camera
+and computes neither: **a reader of the view, the projection, the transform or
+the planes asks the frame** (`SceneFrame.getViewMatrix`/`getProjectionMatrix`/
+`getTransformMatrix`, `Game.frustumPlanes`), never the scene. The scene's engine
+now serves nothing of the camera's. Gone with the engine: its
 main depth (the canvas pass's is `ChainPasses`'), its resize frames (a flush,
 a pass on the swap chain's texture that loaded it and cleared that depth, a
 submit), its clear quad, and the shadow maps' wrapped views (`ShadowBindings`
@@ -3973,8 +3991,11 @@ the shader names it, made once and filled in place.
   (`windShape`, `surfaceLook`), and `fillFrame` reads them: one statement
   (the Babylon materials' `applyWind` and `applyEnvironment` read the same
   copies, until X6.1c deleted every push into a material).
-- **`viewProjection` is the host's** (`scene.getTransformMatrix()`), as
-  Babylon's own `ShaderMaterial` took it. The factory never had it.
+- **`viewProjection` is the host's** (the frame's transform,
+  `SceneFrame.getTransformMatrix()` — `scene.getTransformMatrix()` until
+  `BABYLON_EXIT.md` X6.1f ported the camera and the scene's
+  `updateTransformMatrix`), as Babylon's own `ShaderMaterial` took it. The
+  factory never had it.
 
 **The byte layout is computed, never written.** `render/wgsl/layout.ts`
 places each field by WGSL's uniform-address-space rules, from the same data
@@ -5056,7 +5077,7 @@ differs only on the frame a moving part crosses the gate's edge. **The
 FRUSTUM is the render's to answer**, as it was Babylon's for a mesh: the pull
 switches off every segment whose world sphere is outside the camera's planes
 (`Game.hullPull`, `BoundingSphere.isInFrustum` — the default sphere-only
-strategy — against `scene.frustumPlanes`), so a hull out of frame costs no draw and no vertex: without it the
+strategy — against the frame's planes, `Game.frustumPlanes`, the scene's until X6.1f), so a hull out of frame costs no draw and no vertex: without it the
 first cut drew all six of Sarab's hulls at every bank vantage, +25 draws on every
 census row of an armour map that frames none.
 

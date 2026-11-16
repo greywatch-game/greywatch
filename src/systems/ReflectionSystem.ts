@@ -63,7 +63,6 @@
  *   sampled; that view went at `BABYLON_EXIT.md` X5.3d.
  * - A map with no glazing bakes no glazing probe.
  */
-import { type Scene } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { SceneFrame } from "../core/SceneFrame";
 import { Vector3 } from "../math";
@@ -158,9 +157,8 @@ export class ReflectionSystem {
   private plan: InstallPlan | null = null;
 
   constructor(
-    private readonly scene: Scene,
-    /** The frame whose render-target points release the bake (`core/SceneFrame.ts`). */
-    frame: Pick<SceneFrame, "onBeforeRenderTargetsRenderObservable">,
+    /** The frame whose render-target points release the bake, and whose camera's planes each face keeps (`core/SceneFrame.ts`). */
+    private readonly frame: Pick<SceneFrame, "onBeforeRenderTargetsRenderObservable" | "activeCamera">,
     private readonly mats: CelMaterialFactory,
     /** Our renderer's half of the bake: the cubes and their faces. */
     private readonly bake: ProbeBake,
@@ -530,7 +528,7 @@ export class ReflectionSystem {
     }
     if (!this.bakeGate() || !this.bake.ready) return;
     const room = this.bake.perFrame - this.bake.unrecorded;
-    const camera = this.scene.activeCamera;
+    const camera = this.frame.activeCamera;
     let taken = 0;
     for (; taken < room && taken < jobs.length; taken++) {
       const job = jobs[taken];

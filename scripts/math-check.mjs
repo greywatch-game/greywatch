@@ -4,7 +4,8 @@
  *   node scripts/math-check.mjs [--trials 20000] [--seed 1]
  *
  * `src/math/` is a port of the subset of Babylon's `Vector2`, `Vector3`,
- * `Vector4`, `Quaternion`, `Matrix`, `Color3` and `Color4` the tree calls, and
+ * `Vector4`, `Quaternion`, `Matrix`, `Color3`, `Color4`, `Plane` and
+ * `Frustum` the tree calls, and
  * its whole claim is that a file moved onto it computes exactly what it did:
  * every oracle the exit is graded by compares bits, so "close" is a failure.
  * This runs every ported method on seeded random inputs through both and
@@ -224,6 +225,7 @@ caseOf(["Quaternion.FromRotationMatrixToRef"], () => { const r = matRecipe(); re
 caseOf(["Quaternion.Identity"], () => [null, (L) => L.Quaternion.Identity()]);
 caseOf(["Quaternion.RotationAxisToRef"], () => { const a = v3(), t = angle(); return [[a, t], (L) => L.Quaternion.RotationAxisToRef(V(L, a), t, new L.Quaternion())]; });
 caseOf(["Quaternion.FromEulerVector"], () => { const a = [angle(), angle(), angle()]; return [a, (L) => L.Quaternion.FromEulerVector(V(L, a))]; });
+caseOf(["Quaternion.FromEulerVectorToRef"], () => { const a = [angle(), angle(), angle()]; return [a, (L) => L.Quaternion.FromEulerVectorToRef(V(L, a), new L.Quaternion(7, 7, 7, 7))]; });
 caseOf(["Quaternion.FromUnitVectorsToRef"], () => { const a = unit3(); const b = rand() < 0.15 ? a.map((c) => -c) : unit3(); return [[a, b], (L) => L.Quaternion.FromUnitVectorsToRef(V(L, a), V(L, b), new L.Quaternion())]; });
 caseOf(["Quaternion.RotationYawPitchRoll", "Quaternion.RotationYawPitchRollToRef"], () => { const a = [angle(), angle(), angle()]; return [a, (L) => L.Quaternion.RotationYawPitchRoll(...a)]; });
 caseOf(["Quaternion.RotationQuaternionFromAxisToRef"], () => { const a = v3(), b = v3(), c = v3(); return [[a, b, c], (L) => L.Quaternion.RotationQuaternionFromAxisToRef(V(L, a), V(L, b), V(L, c), new L.Quaternion())]; });
@@ -244,6 +246,8 @@ caseOf(["Matrix.FromArrayToRef"], () => {
 });
 caseOf(["Matrix#determinant"], () => { const r = matRecipe(); return [r, (L) => build(L, r).determinant()]; });
 caseOf(["Matrix#asArray", "Matrix#copyToArray"], () => { const r = matRecipe(); return [r, (L) => { const o = new Array(18).fill(7); build(L, r).copyToArray(o, 2); return [o, build(L, r).asArray()]; }]; });
+// In place (the camera's `setTarget`): the same answer and flag as into another.
+caseOf(["Matrix#invert"], () => { const r = matRecipe(), r2 = matRecipe(); return [[r, r2], (L) => { const m = build(L, r).invert(); return [m, m.isIdentity(), m.multiply(build(L, r2))]; }]; });
 caseOf(["Matrix#invertToRef", "invertMatrixToArray"], () => { const r = matRecipe(); return [r, (L) => { const out = build(L, r).invertToRef(new L.Matrix()); return [out, out.isIdentity()]; }]; });
 caseOf(["Matrix#copyFrom"], () => { const r = matRecipe(); return [r, (L) => { const out = new L.Matrix().copyFrom(build(L, r)); return [out, out.isIdentity(), out.multiply(build(L, r))]; }]; });
 caseOf(["Matrix#multiply", "Matrix#multiplyToRef", "Matrix#multiplyToArray"], () => { const a = matRecipe(), b = matRecipe(); return [[a, b], (L) => { const out = build(L, a).multiply(build(L, b)); return [out, out.isIdentity()]; }]; });
@@ -302,11 +306,28 @@ caseOf(["Color3.Black", "Color3.White"], () => [null, (L) => [L.Color3.Black(), 
 caseOf(["Color4#constructor", "Color4#copyFromFloats", "Color4#set"], () => { const a = [...col(), rand()]; return [a, (L) => [new L.Color4(...a), new L.Color4().set(...a)]]; });
 caseOf(["Color4#fromHexString", "Color4.FromHexString"], () => { const h = hexes[Math.floor(rand() * hexes.length)]; return [h, (L) => L.Color4.FromHexString(h)]; });
 
+// Plane / Frustum (X6.1f: the frame's six planes, `SceneFrame`, and the
+// grass's own): off a camera's transform (a view times a projection) as often
+// as not, and off any matrix the rest — a degenerate row's zero norm included.
+const camTransform = (L, e, t, up, fov, aspect, n, f) => L.Matrix.LookAtLHToRef(V(L, e), V(L, t), V(L, up), new L.Matrix()).multiply(L.Matrix.PerspectiveFovLHToRef(fov, aspect, n, f, new L.Matrix(), true, true));
+caseOf(["Plane#constructor", "Plane#normalize"], () => { const a = rand() < 0.1 ? [0, 0, 0, num()] : [num(), num(), num(), num()]; return [a, (L) => { const p = new L.Plane(...a).normalize(); return [p.normal, p.d]; }]; });
+caseOf(["Frustum#constructor", "Frustum.GetPlanes", "Frustum.GetPlanesToRef", "Frustum.GetNearPlaneToRef", "Frustum.GetFarPlaneToRef", "Frustum.GetLeftPlaneToRef", "Frustum.GetRightPlaneToRef", "Frustum.GetTopPlaneToRef", "Frustum.GetBottomPlaneToRef"], () => {
+  const cam = rand() < 0.6;
+  const e = v3(), t = v3(), up = rand() < 0.8 ? [0, 1, 0] : v3(), fov = 0.1 + rand() * 1.5, aspect = 0.3 + rand() * 3, n = 0.05 + rand(), f = n + rand() * 10000, r = matRecipe();
+  return [[cam, e, t, up, fov, aspect, n, f, r], (L) => {
+    const m = cam ? camTransform(L, e, t, up, fov, aspect, n, f) : build(L, r);
+    const fresh = L.Frustum.GetPlanes(m);
+    const into = [0, 1, 2, 3, 4, 5].map(() => new L.Plane(9, 9, 9, 9));
+    L.Frustum.GetPlanesToRef(m, into);
+    return [...fresh, ...into].flatMap((p) => [p.normal, p.d]);
+  }];
+});
+
 // ---------------------------------------------------------------------------
 // Coverage: every member of every class has a case.
 
 const missing = [];
-for (const cls of ["Vector2", "Vector3", "Vector4", "Quaternion", "Matrix", "Color3", "Color4"]) {
+for (const cls of ["Vector2", "Vector3", "Vector4", "Quaternion", "Matrix", "Color3", "Color4", "Plane", "Frustum"]) {
   const C = M[cls];
   const statics = Object.getOwnPropertyNames(C).filter((n) => !["length", "name", "prototype"].includes(n));
   const methods = Object.getOwnPropertyNames(C.prototype);

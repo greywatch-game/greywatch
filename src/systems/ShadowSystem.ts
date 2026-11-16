@@ -764,7 +764,7 @@ export class ShadowSystem {
       at.set(cbt.position.x, groundY + 0.04, cbt.position.z);
     }
     // Off the math's statics, which read a vector by its fields: `camPos` is
-    // the camera's, Babylon's until `BABYLON_EXIT.md` X6.1f.
+    // the camera's (Babylon's until `BABYLON_EXIT.md` X6.1f).
     const dist = Vector3.Distance(camPos, at);
     const fade = Math.min(
       1,

@@ -6,15 +6,15 @@
  * `editor/EditorCamera.ts` nearly as it is (`BABYLON_EXIT.md` X5.3b), its
  * arithmetic on `src/math`'s `Vector3` rather than Babylon's — the same
  * operations in the same order, which `scripts/math-check.mjs` holds to
- * Babylon's bit for bit — so the one Babylon thing it touches is the camera it
- * is handed, through a copy (`toBabylon`) where `setTarget` wants one of
- * Babylon's. The editor's copy went with the editor (X5.3c).
+ * Babylon's bit for bit — and the camera it is handed the game's own since
+ * X6.1f (`core/FreeCamera.ts`, Babylon's ported), so nothing here touches
+ * Babylon. The editor's copy went with the editor (X5.3c).
  *
- * It writes CameraSystem's FreeCamera rather than creating a second one on
+ * It writes CameraSystem's camera rather than creating a second one on
  * purpose: the post chain's pass owner (`ChainPasses` since `BABYLON_EXIT.md`
  * X5.4f, `PostPasses` before it, which sizes the frame and begins every
  * stage's pass, the ink's among them since X5.2d) and the glow are bound to
- * that camera INSTANCE (`scene.activeCamera` is asked to be it), so a second camera would
+ * that camera INSTANCE (the frame's `activeCamera` is asked to be it), so a second camera would
  * render without the chain or the bloom until they were rebound.
  * What it overwrites is put back by the session that made it
  * (`ViewerSession.dispose`), because the viewer is a LID: the deploy screen
@@ -39,14 +39,11 @@
  *   fills in whether or not the lock exists. A tool that stops turning because
  *   a lock request was refused is a tool that looks broken.
  *
- * Never: hands a `src/math` vector to a Babylon
- * method (it would read `_x` and write NaN, CLAUDE.md's "There is ONE math,
- * `src/math/`, and the CAMERA keeps Babylon's").
+ * Never: owns a camera, or writes one the viewer's session does not put back.
  */
-import type { FreeCamera } from "@babylonjs/core";
+import type { FreeCamera } from "../core/FreeCamera";
 import type { InputManager } from "../core/InputManager";
 import { Vector3, type Vector3Like } from "../math";
-import { toBabylon } from "../math/babylon";
 import { VIEWER } from "./tuning";
 
 export class ViewerCamera {
@@ -54,9 +51,8 @@ export class ViewerCamera {
   private pitch = 0.2;
   private speed: number = VIEWER.camera.baseSpeed;
   private velocity = Vector3.Zero();
-  /** Where the camera looks this frame, and Babylon's copy of it for `setTarget`. */
+  /** Where the camera looks this frame. */
   private readonly aim = new Vector3();
-  private readonly target = toBabylon(this.aim);
   private up = false;
   private down = false;
   private looking = false;
@@ -184,7 +180,7 @@ export class ViewerCamera {
     const pos = this.camera.position;
     pos.addInPlaceFromFloats(this.velocity.x * dt, this.velocity.y * dt, this.velocity.z * dt);
     this.aim.copyFromFloats(pos.x + forward.x, pos.y + forward.y, pos.z + forward.z);
-    this.camera.setTarget(toBabylon(this.aim, this.target));
+    this.camera.setTarget(this.aim);
   }
 
   /** The view direction, for the shadow focus bias. */

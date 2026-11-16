@@ -54,13 +54,13 @@
  *
  * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
  * in the commit that made the directory, X3.2 added `src/math/` to
- * `DIRECTORIES` with `src/math/babylon.ts` — the crossing, deleted at X6.1 —
- * named in `NOT_ROOTS`, and X6.1 widens it to the whole tree, a directory at
- * a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`; X6.1d's
- * review: the thirteen that were already clean). **An entry in
- * `NOT_ROOTS` is exempt from being a root, never from being REACHED**: a
- * simulation that imports the crossing still fails, which is the point of
- * having one door.
+ * `DIRECTORIES` with `src/math/babylon.ts` — the crossing — named in
+ * `NOT_ROOTS` until X6.1f deleted it, and X6.1 widens it to the whole tree, a
+ * directory at a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`;
+ * X6.1d's review: the thirteen that were already clean; X6.1f: `src/viewer/`).
+ * **An entry in `NOT_ROOTS` is exempt from being a root, never from being
+ * REACHED**: a simulation that reaches one still fails, which is the point
+ * of having one door.
  *
  * What counts as an import, and why:
  *
@@ -122,7 +122,7 @@ const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
  */
 const DIRECTORIES = [
   "server", "src/sim", "src/render", "src/math", "src/shaders/wgsl",
-  "src/bench", "src/config", "src/dev", "src/geometry", "src/pwa",
+  "src/bench", "src/config", "src/dev", "src/geometry", "src/pwa", "src/viewer",
   "src/world/cinderhaven", "src/world/coldharbour", "src/world/greyfen", "src/world/harrowmead",
   "src/world/hollowmere", "src/world/kurenai", "src/world/sarab", "src/world/proving",
 ];
@@ -165,11 +165,12 @@ const SIMULATIONS = [
 ];
 
 /**
- * Files under a `DIRECTORIES` entry that are not roots themselves: the one
- * crossing between our vectors and Babylon's (`src/math/babylon.ts`), deleted
- * at X6.1. Never exempt from being reached — see the header.
+ * Files under a `DIRECTORIES` entry that are not roots themselves. Empty since
+ * `BABYLON_EXIT.md` X6.1f deleted the one there was, the crossing between our
+ * vectors and Babylon's (`src/math/babylon.ts`). Never exempt from being
+ * reached — see the header.
  */
-const NOT_ROOTS = ["src/math/babylon.ts"];
+const NOT_ROOTS = [];
 
 const SOURCE = [".ts", ".tsx", ".mts", ".js", ".mjs"];
 const BANNED = /^@babylonjs\/core(?:\/|$)/;

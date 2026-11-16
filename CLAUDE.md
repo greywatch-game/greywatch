@@ -94,10 +94,11 @@ COPY_SRC`, premultiplied — because a shader moves if it does not (the glow
 blur's text reads a device limit), and the canvas's size, scaling level and
 aspect ratio are `core/CanvasSurface.ts`'s (Babylon's `resize`/`setSize`
 ported). **Babylon's `WebGPUEngine` is not constructed**: the scene stands on a
-`NullEngine` until X6.1 (`core/SceneEngine.ts`), told WebGPU's depth range and
-the canvas's size so the camera's projection is Babylon's to the bit — **a
-reader of a render size, a scaling level or an aspect ratio asks the SURFACE,
-never the scene's engine**.
+`NullEngine` until X6.1 (`core/SceneEngine.ts`), and the CAMERA is ours
+(`core/FreeCamera.ts`, Babylon's ported as written, X6.1f), its projection at
+WebGPU's depth range off the surface's aspect ratio, to the bit — **a reader of
+a render size, a scaling level or an aspect ratio asks the SURFACE, never the
+scene's engine**.
 
 **Zero model files, and SEVENTEEN audio files** — every mesh is built from
 primitives at runtime (for the world kit, the scatter props and every model
@@ -1549,19 +1550,20 @@ built.
 - `CONFIG` is `as const`, so a field like `bots.engageRange` has a *literal* type.
   `let x = CONFIG.bots.engageRange` then reassigning it fails to compile — annotate
   `let x: number` instead.
-- **There is ONE math, `src/math/`, and the CAMERA keeps Babylon's until the
-  exit's X6.1f.** `src/math/` is the game's own — Babylon's subset under
-  Babylon's names, bit for bit (`scripts/math-check.mjs`) — and every vector,
-  colour, quaternion and matrix in the tree is made of it (X6.1e) but the
-  camera's: `CameraSystem` (its `FreeCamera`, its eye, `lookDirection`), the
-  viewer's camera, the scene's matrices and frustum planes (`GrassSystem`'s
-  `Frustum`), and a mesh's own rotation in `parts.ts`' mesh arm (X6.1g).
-  **One of ours handed to a Babylon method reads `_x` and writes NaN without
-  a word**, so a value handed TO the camera is copied through
-  `src/math/babylon.ts`, and a reader of the camera takes `Vector3Like`
-  (`camera.position`, which Babylon's satisfies) or copies a matrix by its
-  numbers (`Matrix.FromArrayToRef`). A member a move needs is ADDED to
-  `src/math/` and to `math-check` first. The types catch every crossing.
+- **There is ONE math, `src/math/`, and the CAMERA is made of it.**
+  `src/math/` is the game's own — Babylon's subset under Babylon's names, bit
+  for bit (`scripts/math-check.mjs`) — and every vector, colour, quaternion,
+  matrix and plane in the tree is made of it but a mesh's own rotation in
+  `parts.ts`' mesh arm (X6.1g). **The camera is OURS** (`core/FreeCamera.ts`,
+  Babylon 9.28's `FreeCamera` ported as written, its caches with it, X6.1f):
+  the frame's camera is `SceneFrame.activeCamera`, and the frame's view,
+  projection, transform and six FRUSTUM PLANES are the frame's
+  (`SceneFrame.updateTransformMatrix`, `Game.frustumPlanes`), never the
+  scene's — a new reader asks the FRAME. **One of ours handed to a Babylon
+  method reads `_x` and writes NaN without a word**, and since X6.1f there is
+  no Babylon method left to hand one to and no crossing (`src/math/babylon.ts`
+  is gone). A member a move needs is ADDED to `src/math/` and to `math-check`
+  first.
 - Smoothing is normally the frame-lerp idiom `Math.min(1, dt * rate)`. **Anything
   that moves where bullets go, or that a player will read as recoil, is stepped
   EXACTLY instead**, because burst climb must not vary with frame rate.

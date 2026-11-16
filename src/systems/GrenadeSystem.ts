@@ -5,8 +5,8 @@
  * broken bottle burns in, and the ground probe under a blast. All FIXED SIZE
  * and allocated once — this is the same rule `CombatSystem`'s shot follows,
  * and for the same reason: a firefight must not allocate.
- * Invariants: it imports nothing from `@babylonjs/core` and nothing from
- * `math/babylon.ts`. A flight's position is its own `pos` field and a fire's
+ * Invariants: it imports nothing from `@babylonjs/core` (nor did it from the
+ * crossing into Babylon's vectors, `math/babylon.ts`, deleted at X6.1f). A flight's position is its own `pos` field and a fire's
  * is its `at`, both `src/math`; nothing here builds a mesh, draws a billow or
  * reads a random, so the authority runs this file whole. What a grenade, a
  * fire and a blast LOOK like is `GrenadeFx`'s, which only a client builds and
