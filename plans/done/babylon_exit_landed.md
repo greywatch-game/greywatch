@@ -13865,7 +13865,7 @@ asks the frame, and no Babylon code is handed our camera or a vector of ours. ty
 
 Logs in the session's scratchpad, `x61f-fix/`.
 
-**X6.1g LANDED** (236c0e8 the instrument, b5e176a the step; 2026-11-16; no change to the game). Measured headless on
+**X6.1g LANDED** (236c0e8 the instrument, b5e176a the step, its review 9578708; 2026-11-16; no change to the game). Measured headless on
 the Windows box against a BEFORE at 3af4776f in the worktree `greywatch-2-before-x53a` (moved there from 8a69f093,
 detached, and moved back after; the lockfile unchanged, so its `node_modules` stood), every GPU run alone on the GPU.
 
@@ -13965,3 +13965,24 @@ detached, and moved back after; the lockfile unchanged, so its `node_modules` st
 Scripts and logs in the session's scratchpad, `x61g/` (`before.sh`, `after-cpu.sh`, `after-gpu.sh`, `retry*.sh`,
 `sarabproc.sh`, `cold.sh`, `probes.sh`, `live.mjs`, `sarab.mjs`, `cams.mjs`, `cmp*.cjs`, every log, JSON and kept bank
 directory).
+
+**X6.1g's review** (9578708; 2026-11-16): **clean, one comment NIT fixed, no architectural question.**
+- **The refusal**: every `false` exit of `BlockHandover.onSurface` (fire, glass, palette, caster, and the new
+  "can hold in no way" arm) goes through `refuse()`, and `install` still calls `fail(refusal)` to `Game.worldFailed`
+  (a DEV throw). Stricter in one case: a surface `isEmissiveWorld` flagged and `emissiveRecipe` did not, until now
+  given no mesh and no refusal, is refused. With several refusals the first in birth order is now the one told
+  (`strayMesh`'s came last).
+- **Readers**: none live of `GameMap.visuals`, `SurfaceRecord.visual`, `paneGroups[].mesh` or `markVisual`;
+  `merge-hash.mjs` guards `map.visuals ?? []`; the gitignored `plans/webgpu-ref/depth.mjs` glass mode reads `grp.mesh`
+  and throws "retired" without one, loudly. `setMap`'s dropped refusal compared only `visuals` against `record.visual`.
+- **The effects**: the `geometry-check` cases are each call site's exact options; a perturbed copy (an icosphere offset
+  at subdivisions 8, a box at 1+1e-15, float32 normals summed in doubles) fails each. Uploads `.set` into a
+  `Float32Array` and rebase indices into a `Uint32Array`, rounding as before.
+- **The gate**: the six new `DIRECTORIES` hold only erased `import { type Scene }`.
+- **Measured by the review**: typecheck, the gate, `geometry-check` (8,224) clean; `kit:hash` (3,722) and `--models`
+  (244) identical against baselines taken at 3af4776f. The `low` bank's `sarab-ground` judged residue (the Sarab-alone
+  images `cmp`-identical at both trees; two BEFORE runs disagree on `sarab-shelf` among themselves) and the slow
+  `render` run noise (the Coldharbour-only pairs 0.52/0.47/1.04 against 0.52/0.48/1.04; no changed line runs per frame
+  but one deleted read).
+- **The NIT (9578708)**: `parts.ts`' header said a mesh is made at the end of the build and named the deleted
+  "adapters"; reworded.

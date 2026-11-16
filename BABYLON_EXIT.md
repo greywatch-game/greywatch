@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7143,7 +7143,7 @@ Then the cut, then the sweep.
     - the headers of `parts.ts`, `MapBuilder.ts` and `mapTypes.ts`;
     - `FILES.md`.
 
-  **X6.1g LANDED** (236c0e8 the instrument, b5e176a the step; 2026-11-16; no change to the game; the full
+  **X6.1g LANDED** (236c0e8 the instrument, b5e176a the step, its review 9578708; 2026-11-16; no change to the game; the full
   note is in `plans/done/babylon_exit_landed.md`). **The instrument first**: `merge-hash.mjs` fingerprints a
   build with no `GameMap.visuals` and no `SurfaceRecord.visual` as it did a shipped one, every surface
   `mesh: false`. **The step**: `worldMeshes` is `worldRecords` and makes records alone, walked in birth order,
@@ -7177,6 +7177,16 @@ Then the cut, then the sweep.
   the capped bench — so the `low` bank's BEFORE took three runs and the bench's second pair was taken on
   Coldharbour alone. **The census**: 19 files to 11, 15 shrank, 0 grew; the bundle 16,824.9 kB raw and
   6,019.5 kB gzipped (from 16,827.4 and 6,020.3).
+  **Its review** (9578708): clean, one comment NIT fixed (`parts.ts`' header still said a mesh is made at
+  the end of the build and named the deleted adapters), and no question about the architecture. Every `false`
+  exit of `BlockHandover.onSurface` goes through `refuse()` and on to `Game.worldFailed`, nothing dropped in
+  silence; one case is stricter than before (a surface `isEmissiveWorld` flagged and `emissiveRecipe` did not,
+  until now left with no mesh and no refusal, is refused), and with several refusals the first in birth order
+  is the one told. No live reader of a deleted field is left; the three effects' `geometry-check` cases are the
+  call sites' exact options, each failing on a perturbed copy, and the uploads round as before. `kit:hash` and
+  `--models` re-taken against the parent were identical; the `low` bank's `sarab-ground` and the one slow
+  `render` run were judged residue (the Sarab-alone images byte-identical at both trees; nothing changed runs
+  per frame).
 
 - **X6.1h — the scene, its engine and Babylon's `Observable` go** (no change to the
   picture) — **M**.
