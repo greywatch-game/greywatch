@@ -1414,8 +1414,8 @@ is one machine's:
   screenshot** — and **the recipe owes a PORT** (`FINDINGS.md` 72). It made the
   visual meshes pickable, sampled a grid of ground points inside the stand and
   cast straight up, and the hit fraction was the closure. A round makes no
-  visual mesh to pick any more (the world is our renderer's, `scene.meshes` 0
-  in `playing`), and `map.rays` cannot stand in: a crown is no collider. Pair
+  visual mesh to pick any more (the world is our renderer's, and since
+  `BABYLON_EXIT.md` X6.1h there is no scene to pick through), and `map.rays` cannot stand in: a crown is no collider. Pair
   it with the local stem density off `map.colliderBoxes` and the
   two give the crown's effective area: for randomly placed crowns
   `closure = 1 - exp(-rho * Aeff)`, so `Aeff = -ln(1 - closure) / rho` — which is
@@ -1551,7 +1551,15 @@ is one machine's:
     measures 3.8.
   **Alignment is not occlusion, and the second is a MEASUREMENT and not a
   picture**: a sight can read a perfect zero and still be looking at the
-  weapon's own stock, which is what the DMR's irons did. `optics.ts`'s
+  weapon's own stock, which is what the DMR's irons did. **The recipe below is
+  RETIRED and cannot be run as written**: it picks the viewmodel's MESHES
+  through `scene.pickWithRay`, and since `BABYLON_EXIT.md` X4.3d no viewmodel
+  part is a mesh (a SEGMENT of one kit, `render/ViewDraw.ts`) and since X6.1h
+  there is no scene to pick through. No replacement is written: one owes a ray
+  test against the weapon kit's own triangles, which nothing in the tree
+  offers. It is kept as the record of what the method found and of the traps a
+  successor still owes — the other five sights excluded, a disc dense enough
+  for a wedge, the names read rather than the count. `optics.ts`'s
   `ironSightFloor` keeps geometry out of the aperture; what proves it is a grid
   of rays down the sight's own cone, and that needs no round and no map at all —
   every weapon and every optic is built in `Game`'s constructor, so the rigs

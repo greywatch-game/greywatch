@@ -22,7 +22,8 @@ export interface Ring {
 }
 
 /**
- * One triangle, wound the way Babylon drew a FRONT face: the one whose
+ * One triangle, wound as a FRONT face is (Babylon's convention, which our
+ * renderer keeps): the one whose
  * `(b - a) x (c - a)` points INTO the solid, which is the box's own convention
  * and `convexSolid`'s. Asked of the normal rather than assumed, so no caller
  * has to know which way round its outline runs.

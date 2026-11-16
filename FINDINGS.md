@@ -1387,33 +1387,6 @@ moved across, so the workaround above still stands.
 
 ---
 
-## 38. `WorldCulling.offer`: who the disabled candidates are, and its own per-frame cost
-
-**Status:** the drop landed (`docs/rendering.md`, the size gate). Two things
-about it are open.
-
-- **Who the disabled candidates ARE has still not been counted — and how many
-  there are has to be re-counted first.** The "~420" this entry carried was
-  counted on Cinderhaven when the drop landed (f7f515e, 2026-09-07), and three
-  things have moved it since: 00105a4 filed the death cam's rig, cada131 cut a
-  rig from 22 meshes to 14, and 42d831d drops a body whole off its root.
-  `setPools` already keeps an idle rig out of the list by its root, so a
-  disabled mesh still being offered is either a pool never filed or a part
-  disabled under an enabled root.
-- **`offer` is `O(eligible)` every frame, and it does more per candidate than
-  it did.** `isEnabled()` walks ancestors; the size gate adds a bounding-sphere
-  read per candidate; and every body pays a fresh compose of its root joint
-  and its capsule's sphere (`PooledBody.measure`; a forced `computeWorldMatrix`
-  on the rig root MESH until `BABYLON_EXIT.md` X4.1a) — up to 48 a frame on
-  the densest map. At 2 px the gate does not repay its own read
-  on any map measured; it is only worth having because 3 px does on the biggest
-  one, and a `sqrt` per candidate measured as a LOSS, so it compares squared.
-  A pool that told `WorldCulling` when it went live would cost nothing per
-  frame, but it cannot use `setPools`' transition-marks-dirty route, because
-  `rebuildList` is a full scene walk and effect pools toggle many times a frame.
-
----
-
 ## 39. Cinderhaven does not fit in a 144 Hz frame, and the only geometry with no LOD at all is a vehicle's — **the size gate is LANDED; the big levers are look decisions and are not**
 
 **Status:** the gate is in (`WorldCulling.offer`, `CONFIG.graphics.culling.minPixels`).
@@ -1548,7 +1521,11 @@ Both are larger than what landed, and both change what a player sees:
   user's set, swapped at 32 projected px of a whole-hull measure in our
   renderer; what it bought against this entry's +6.5% / -0.55 ms at 300 m is
   in that step's note). ~~The draw distance~~ — **landed** as X4.2d (above).
-- **The gate's own per-frame cost** is finding 38's.
+- ~~The gate's own per-frame cost~~ — finding 38's, deleted at `BABYLON_EXIT.md`
+  X6.1j's review: what it priced (`isEnabled()` walking ancestors, a sphere
+  read per candidate, `rebuildList` walking the scene) was the candidate list,
+  retired at X5.4f; what `offer` does a frame now is one root compose a live
+  body (`PooledBody.measure`), which the fade needs.
 
 ---
 
@@ -2982,51 +2959,6 @@ exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
 fix is per device, since the Intel Xe-LPG laptop needs the plain draw
 (`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
 INDIRECT").
-
-## 68. The bank cannot see a Babylon size-gate latch, and has missed three
-
-**Open, recorded and not tooled, by the owner's decision of 2026-11-06**
-(`BABYLON_EXIT.md` X4.6e's review). While a surface was a Babylon mesh, the
-size gate (`WorldCulling.offer`) read the mesh's bounds as of the last time its
-world was COMPUTED, and `_evaluateActiveMeshes` computed only a candidate the
-gate kept, so a drop LATCHED (`docs/rendering.md`, "A WRONG DROP LATCHES"). The
-bank waited on `scene.isReady()` (`harness.mjs`' `waitUntilDrawn`; the page's
-pending data since `BABYLON_EXIT.md` X6.1h), and
-`Mesh.isReady(true)` computed every mesh's world, so every banked frame was
-drawn with every mesh's bounds fresh, and a port that gates on this frame's
-sphere comes back byte-equal to a BEFORE that latched. **Structurally blind,
-not unlucky**: it missed the pieces (X4.4b), the debris (X4.4c) and the scorch
-and the blobs (X4.6e, whose note said Babylon's gate read "the last frame's"
-sphere; its review found the latch).
-
-### What is measured
-
-- X4.6e's review, a live probe on Sarab at 832x384, eye 446 m from the origin,
-  a real `explode` event 6 m ahead and a stand-in body through
-  `ShadowSystem.updateBlobs`: at 8bf7789 the mark and the blob were in no
-  candidate list on any frame, and X4.6e (35b97b2) drew both; the bank
-  byte-equal across the two. The port matched Babylon on every frame of ten
-  cases, a release by a larger viewport and a second round's warm-up among
-  them, and was then dropped (its note).
-
-### What to use instead
-
-A LIVE probe, the review's shape (and X4.4b's and X4.4c's before it): the
-render loop running, no `scene.isReady()`, no freeze; the surface raised by the
-game's own door (a real event, `updateBlobs`) far from where its mesh was last
-computed; read per frame — on Babylon the active list and `WorldCulling`'s
-candidates, on ours what the draw was handed — at the BEFORE and on the port,
-at a phone-height viewport and at 1080p, with a case that releases the latch
-(the viewport grown, the eye walked back) and one across a second round.
-
-### How to settle it
-
-It ended with Babylon's meshes: nothing of ours latches, every pool being gated
-on the sphere it is drawn with, and no Babylon surface is gated since X5.3c
-deleted the map editor's build, whose glazing was the last (X5.3d deleting what
-Babylon kept for it). What is left is the lesson for any later port that gates
-on bounds it did not compute this frame: a live probe, above, never the bank.
-Delete the entry with Babylon (X6.1).
 
 ## 69. `depth.mjs glass` throws: the `GLASS_DEPTH_UNITS` sweep owes a port to our glazing
 

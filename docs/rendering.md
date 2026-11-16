@@ -3313,13 +3313,14 @@ the split landed it was proven by dumping every module Babylon compiled on
 every map, before and after. Up to comments and order, the only change was
 the cel fragment's `main` becoming a call to `celSurface()`.
 
-**What our side does not do yet** is Babylon's flip of `fragmentInputs.position`
-for a pass that draws into a texture (`internals.yFactor_`, injected before
-the body runs). The dither is keyed on that position, so a pass of ours that
-renders to a texture owes the same flip in its `main`. The frame's MAIN pass is
-one of those: it draws into the post chain's first target (see "Our renderer's
-frame" below), so the first cel draw (X3.3) owes the flip. The vertex half of
-the same flip is already the renderer's (`PassTargets.flipY`).
+**What X3.1 recorded as owed here was owed the other way round** ("The y
+flip is the PASS's", above): it read Babylon's flip of `fragmentInputs.position`
+(`internals.yFactor_`) as applied for a pass that draws into a texture, so that
+the dither, keyed on that position, would owe the same flip in a texture
+pass's `main` and the first cel draw (X3.3) would owe it. The processor turned
+the position around onto the CANVAS alone, so a fragment for a texture pass —
+the frame's MAIN pass among them — needs nothing, and the flip ours owes is the
+vertex half, which is the renderer's (`PassTargets.flipY`).
 
 **Every entry is prefixed `cel`, and the prefix is a collision guard rather than
 a style.** Babylon registered an include first-writer-wins and its own library

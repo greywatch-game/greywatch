@@ -773,7 +773,8 @@ lamp or a reflection. See the floor, below.
   **So the bank is BLIND to a Babylon size-gate latch, by construction, and
   "no change to the picture" for a size-gated Babylon mesh is not something
   it can say** — it missed the pieces, the debris and the scorch
-  (`FINDINGS.md` 68). Ask a LIVE probe instead: the render loop running, no
+  (`FINDINGS.md` 68 recorded it until `BABYLON_EXIT.md` X6.1j's review deleted
+  it, nothing of ours latching). Ask a LIVE probe instead: the render loop running, no
   `scene.isReady()` and no freeze, the surface raised through the game's own
   door far from where its mesh was last computed, the active and candidate
   lists read per frame on Babylon's side and the draw's on ours, at a
