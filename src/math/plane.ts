@@ -24,7 +24,7 @@
  * ## Licence
  *
  * The method bodies are copied from Babylon.js 9.28, which is licensed under
- * the Apache License, Version 2.0 (`node_modules/@babylonjs/core/license.md`;
+ * the Apache License, Version 2.0 (`licenses/babylonjs.md`;
  * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
  * The Babylon.js team" (its NOTICE). Changes from the original: the subset
  * trimmed to what this tree calls.

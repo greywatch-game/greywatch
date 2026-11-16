@@ -23,11 +23,12 @@
  *   `import "@babylonjs/core"` the name `(side effect)`, and a string-literal
  *   `import("@babylonjs/core")` the name `(dynamic)` — all values.
  * - **every `ssrLoadModule("@babylonjs/core…")`**: a Node script that loads
- *   the package through Vite's SSR loader (`bounds-check.mjs`,
- *   `sweep-check.mjs`), which no import statement shows.
+ *   the package through Vite's SSR loader (`bounds-check.mjs` and
+ *   `sweep-check.mjs` did until X6.1i), which no import statement shows.
  * - **every page-side load of Babylon's module**: a probe that finds the
  *   page's own `babylonjs_core` chunk among its resources and imports it by
- *   URL (`leaks.mjs`, `depth.mjs`) — counted by the literal, file and line.
+ *   URL (`leaks.mjs`, `depth.mjs`, `surfaces.mjs` and the physics clients'
+ *   oracle did until X6.1i) — counted by the literal, file and line.
  * - **the BUNDLE**: every file under `dist/`, its bytes raw and gzipped
  *   (`zlib`'s default level, as Vite's report gzips), and the totals.
  *

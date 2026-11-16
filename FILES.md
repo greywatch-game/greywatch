@@ -132,37 +132,30 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   file and the first line. A map is authored in
                               #   its generator only (BABYLON_EXIT.md X5.3), so
                               #   a new map owes one, or the build fails
-  check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
-                              #   @babylonjs/core under src/ and main.ts — an
-                              #   absolute rule tsc cannot see
   check-webgpu-globals.mjs    # BUILD GATE: refuses a WebGPU global (`GPU` and
                               #   a capital) READ at a module's top level under
                               #   src/ and main.ts, which throws before main.ts'
                               #   WebGPU gate runs. TypeScript's parser alone;
                               #   function bodies and instance fields exempt
-  check-babylon-free.mjs      # BUILD GATE: refuses any VALUE import path to
-                              #   @babylonjs/core from server/, src/sim/ or a
-                              #   simulation module (its SIMULATIONS list,
-                              #   which a new simulation joins); and, a
-                              #   second walk, any path to Node (`node:*`, `ws`,
-                              #   a built-in) from the local match's two
-                              #   entries, which run in a browser. Prints the
-                              #   chain. Paths on the command line walk from
-                              #   those instead (Babylon only).
-                              #   Also every file under src/render/ and
-                              #   src/math/ and its other DIRECTORIES
-                              #   (src/shaders/wgsl/, X6.1c; src/bench/,
-                              #   src/config/, src/dev/, src/geometry/,
-                              #   src/pwa/, the seven maps' and the proving
-                              #   ground's, X6.1d's review; src/viewer/,
-                              #   X6.1f, when the crossing math/babylon.ts
-                              #   went and NOT_ROOTS emptied; src/entities/,
-                              #   src/net/, src/systems/, src/ui/,
-                              #   src/world/kit/ and src/world/props/, X6.1g,
-                              #   when the last mesh maker went; src/core/,
-                              #   src/shaders/ and src/world/, X6.1h, when the
-                              #   scene and Babylon's Observable went — every
-                              #   directory under src/)
+  check-babylon-free.mjs      # BUILD GATE: refuses any import of
+                              #   @babylonjs/core ANYWHERE in the tree (src/,
+                              #   server/, main.ts, scripts/, plans/,
+                              #   .claude/skills/, the Vite configs: an
+                              #   import or export, a type included, an
+                              #   import()/require()/ssrLoadModule() of it as a
+                              #   literal, a path into its node_modules) —
+                              #   the package is not a dependency since X6.1i,
+                              #   when this replaced check-deep-imports.mjs
+                              #   and the server build's no-babylon plugin.
+                              #   Walks too: any VALUE import path to it from
+                              #   src/, server/, main.ts or a simulation module
+                              #   (its SIMULATIONS list, unchanged, which a new
+                              #   simulation joins), printing the chain; and
+                              #   any path to Node (`node:*`, `ws`, a
+                              #   built-in) from the local match's two
+                              #   entries, which run in a browser. Paths on
+                              #   the command line walk from those instead.
+                              #   @babylonjs/havok is not refused
   babylon-census.mjs          # X6.1a's CENSUS of what is left of
                               #   @babylonjs/core: every import of it under
                               #   src/, server/, main.ts, scripts/,
@@ -171,7 +164,8 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   ssrLoadModule of it, every page-side load of
                               #   its chunk, and dist/'s every file raw and
                               #   gzipped. `--against` fails if anything grew.
-                              #   Not a gate; each X6.1 sub-step records it
+                              #   Not a gate; each X6.1 sub-step recorded it,
+                              #   and since X6.1i it reads 0
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
                               #   samples.ts does not load (or a url it loads
@@ -267,7 +261,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   boxGroups as indices, each strut group and
                               #   floor block (terrainGeometry) hashed.
                               #   `--profile` prints the build's phases. Same
-                              #   machine and Babylon only. Not a gate
+                              #   machine only. Not a gate
   geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
                               #   generator in src/geometry/ over seeded
                               #   options, and runs merge (with and without
@@ -302,23 +296,19 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   Not a gate
   sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
                               #   the player and every hull kind's ellipsoid by
-                              #   Babylon's moveWithCollisions and by the
-                              #   production sweep (CollisionField over
+                              #   the production sweep (CollisionField over
                               #   src/world/ellipsoidSweep.ts) from seeded
-                              #   starts on every map. Three modes: `exact`
-                              #   (default) fails on any answer not
-                              #   BIT-identical to one mesh per box from
-                              #   Babylon's float32 start; `shipped` measures
-                              #   against the client's real merged scene and
-                              #   diagnoses every miss over 1 mm; `walk` chains
-                              #   fixed-step trajectories and reports drift.
-                              #   `--tight` forces the re-gathers, `--reference
-                              #   server` the authority's pre-X2.3 scene,
-                              #   rebuilt here (clusters first). `exact` is
-                              #   held to Babylon 9.28's answers RECORDED in
-                              #   tables/ (X6.1i), a re-laid map read STALE,
-                              #   plus a seeded `synthetic` world no map moves;
-                              #   `--perturb` its negative test. Not a gate
+                              #   starts on every map, and holds every answer
+                              #   BIT for bit to Babylon 9.28's
+                              #   moveWithCollisions (one mesh per box, its
+                              #   float32 start), RECORDED in tables/ (X6.1i);
+                              #   a re-laid map reads STALE, and a seeded
+                              #   `synthetic` world no map moves runs after
+                              #   them. `--tight` forces the re-gathers,
+                              #   `--perturb` is its negative test. Its
+                              #   `shipped` and `walk` modes, which measured
+                              #   against Babylon live, went with the package
+                              #   (X6.1i). Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map
@@ -390,7 +380,9 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   tables/                     # <check>.json: Babylon 9.28's answers to the
                               #   four copy checks as digests, recorded by each
                               #   check's `--record` while the package was
-                              #   installed (X6.1i) and never re-recordable.
+                              #   installed (X6.1i, the first of its commits;
+                              #   the `--record` arms went in the next) and
+                              #   never re-recordable.
                               #   ~85 kB in all
   lib/mapgen.mjs              # What the seven generators share: the seeded
                               #   stream (world/rng.ts's mulberry32), the
@@ -494,7 +486,15 @@ vite.server.config.ts # Builds server/ into dist-server/, for
                     #   `npm run build:server`, `simulate` and `corecheck` — and with
                     #   `--mode development` into dist-server-dev/ with
                     #   import.meta.env.DEV forced true, the only way the
-                    #   authority runs the proving ground (`simulate:dev`)
+                    #   authority runs the proving ground (`simulate:dev`).
+                    #   Its no-babylon plugin went at X6.1i
+                    #   (check-babylon-free.mjs holds the whole tree)
+licenses/           # Third-party licences the tree's PORTS owe, kept in the
+  babylonjs.md      #   repository (the shipped bundle carries none: the
+                    #   owner's, X6.1i): Babylon.js 9.28.0's Apache-2.0
+                    #   licence and NOTICE, verbatim, which every file
+                    #   copying Babylon's code cites in its header — the
+                    #   list of ports is the files that cite it
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
   profile_viewer.html # Where a frame-profiler capture is READ: paste or drop a

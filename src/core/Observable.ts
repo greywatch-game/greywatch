@@ -37,7 +37,7 @@
  *
  * The class bodies are copied from Babylon.js 9.28 (`Misc/observable.pure.js`),
  * which is licensed under the Apache License, Version 2.0
- * (`node_modules/@babylonjs/core/license.md`;
+ * (`licenses/babylonjs.md`;
  * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
  * The Babylon.js team" (its NOTICE). Changes from the original: the types
  * written into the bodies (Babylon's `.d.ts` beside its `.js`), and the

@@ -97,8 +97,8 @@
  * frame's `Observable` are gone, so its module is not among the page's
  * resources) the cache's hook is RETIRED too — there is no
  * `WebGPUCacheBindGroups` to count, and its count reads 0, as it read since
- * X5.4h — said once at the baseline; where the module is loaded it is
- * hooked as before, told by the frame's `Observable` while that is Babylon's.
+ * X5.4h — said once at the baseline. The arm that loaded the page's copy of
+ * the module where there was one went with the package (X6.1i).
  */
 import { bootMap, hardLimit, installRound, launchClient, MAP_IDS, root, startDevServer } from "./harness.mjs";
 
@@ -169,14 +169,10 @@ await frames(60);
 // The hooks, at the baseline.
 await page.evaluate(async () => {
   const g = window.__celshock;
-  const url = performance.getEntriesByType("resource").map((e) => e.name).find((n) => /babylonjs_core/i.test(n));
-  // No Babylon on the page (the header, X6.1h): the cache's hook is RETIRED.
-  const B = url ? await import(url) : null;
-  // The page's own instance of the package, told by a Babylon class the page
-  // still holds: the frame's `Observable` (`SceneFrame`'s points, Babylon's
-  // until X6.1h). The camera's position, which told it until X6.1f, is ours.
-  if (B && B.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("leaks.mjs: not the page's Babylon");
-  const L = (window.__leaks = { cls: g.state, byClass: {}, cache: B?.WebGPUCacheBindGroups ?? null });
+  // No Babylon on the page (the header, X6.1h), and none in the tree since
+  // X6.1i: the cache's hook is RETIRED, and the load of the page's copy that
+  // found it went with the package.
+  const L = (window.__leaks = { cls: g.state, byClass: {}, cache: null });
   const bucket = () => (L.byClass[L.cls] ??= { deletes: 0, deletesWithContext: 0, cacheCreated: 0, cacheCalls: 0, frames: 0 });
   window.__refFrame().onBegin(() => {
     L.cls = g.state;
@@ -192,20 +188,9 @@ await page.evaluate(async () => {
     if (ctx) b.deletesWithContext++;
     return del.call(this, ctx, ...rest);
   };
-  const Cache = B?.WebGPUCacheBindGroups ?? null;
-  if (!Cache) return null;
-  const get = Cache.prototype.getBindGroups;
-  Cache.prototype.getBindGroups = function (...a) {
-    const before = Cache.NumBindGroupsCreatedTotal;
-    bucket().cacheCalls++;
-    const r = get.apply(this, a);
-    const after = Cache.NumBindGroupsCreatedTotal;
-    bucket().cacheCreated += after >= before ? after - before : after;
-    return r;
-  };
-  // What the BOOT made, so a count of zero after it reads against a counter
-  // that is live: Babylon's cache's own total at the baseline.
-  return Cache.NumBindGroupsCreatedTotal;
+  // Babylon's cache (`WebGPUCacheBindGroups`) was hooked here while the page
+  // loaded the package; RETIRED (X6.1h), its count 0.
+  return null;
 }).then((n) =>
   console.log(
     n === null

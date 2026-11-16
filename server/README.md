@@ -101,9 +101,9 @@ for two reasons that bite otherwise:
 There used to be two more. `CelShader.ts` imported
 `@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration` with no file
 extension, which bare Node could not resolve — the WGSL port deleted the last
-of those and `scripts/check-deep-imports.mjs` fails the build on a new one. And
-Babylon was 7 MB of which the server reached a fraction; the server reaches
-none of it now.
+of those, and since `BABYLON_EXIT.md` X6.1i `scripts/check-babylon-free.mjs`
+fails the build on any import of the package at all. And Babylon was 7 MB of
+which the server reached a fraction; the package is not in the tree now.
 
 `ws` and Node builtins stay external — they are runtime dependencies, not
 things to inline.

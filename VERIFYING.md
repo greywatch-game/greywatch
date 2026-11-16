@@ -96,12 +96,16 @@ you are on before you believe anything else in this section.
   through `browser.close()`, which can hang on the same GPU. **An outer `timeout -k` is
   the last resort**: its SIGKILL skips those handlers and can leave a Chromium tree
   standing, idle, in the next run's way, so check for one before you measure anything.
-- **A script that needs Babylon's own classes must import the URL the PAGE
-  loaded, and find it off the resource timeline — and since `BABYLON_EXIT.md`
+- **A script that needed Babylon's own classes had to import the URL the PAGE
+  loaded, and find it off the resource timeline — since `BABYLON_EXIT.md`
   X6.1h the page loads NONE** (no scene, no engine, the frame's `Observable`
-  ours), so the timeline has no Babylon entry and such a script RETIRES that
-  half (`leaks.mjs`' cache hook) or takes `src/math`'s own value
-  (`plans/physics-ref/clients.mjs`' stand-in vector). On an older tree: Vite pre-bundles
+  ours), **and since X6.1i the package is not in the tree**, so no script
+  here loads it: the four that did where a page had it (`leaks.mjs`' cache
+  hook, `surfaces.mjs`' `Plane`, `depth.mjs`' retired `zoffset` rig and
+  `plans/physics-ref/clients.mjs`' stand-in vector, `src/math`'s now) had
+  those arms deleted, and `scripts/check-babylon-free.mjs` refuses an import
+  of it anywhere. What follows is how it was done, for a tree before X6.1i.
+  On an older tree: Vite pre-bundles
   `@babylonjs/core` into `/node_modules/.vite/deps/@babylonjs_core.js` under a
   content hash that moves with the lockfile; importing the package by its own
   path gives a SECOND copy of the library, whose classes are not the game's —
@@ -112,8 +116,8 @@ you are on before you believe anything else in this section.
   still holds (`B.Observable === g.sceneFrame.onBeforeRenderObservable
   .constructor`, as `plans/webgpu-ref/leaks.mjs` does, until X6.1h — the
   camera's position, which told it until `BABYLON_EXIT.md` X6.1f, is `src/math`'s)
-  rather than trusting the spelling. `plans/webgpu-ref/depth.mjs` is the
-  worked version. **A script that only needed a Babylon VALUE could skip the
+  rather than trusting the spelling. `plans/webgpu-ref/depth.mjs` was the
+  worked version (its `zoffset` body, at a tree before X6.1i). **A script that only needed a Babylon VALUE could skip the
   timeline** by importing a game module that made one — `/src/math/babylon.ts`'s
   `toBabylon`, deleted at X6.1f — because Vite serves each `/src` file at one
   URL; no game module makes a Babylon vector since, so take the timeline, as
@@ -968,7 +972,9 @@ is one machine's:
   build a harness in the page.** Since `BABYLON_EXIT.md` X2.1 the sweep is
   ours (`CollisionField` over `ellipsoidSweep.ts`) and there is no
   `surroundingMeshes`, no `narrowedMove` and no collidable mesh to walk, so
-  Babylon's `moveWithCollisions` survives only as the oracle's reference.
+  Babylon's `moveWithCollisions` survives only as the oracle's reference —
+  since X6.1i its RECORDED answers (`scripts/tables/sweep-check.json`), the
+  package gone.
   (Under Babylon, an A/B that nulled the field without clearing the mesh's
   `surroundingMeshes` walked the narrow list in BOTH arms and read 0.022 ms a
   frame either side, against a true **2.21 ms against 0.036**.)
@@ -1397,7 +1403,8 @@ is one machine's:
 - **A "does this stop a body" test is a direct call now.** The sweep is plain
   numbers since X2.1, so `g.map.collidables.move(body, step)` (any object with
   `position`, `ellipsoid` and `ellipsoidOffset`) works headless and in the
-  page alike, and `scripts/sweep-check.mjs` is the oracle against Babylon.
+  page alike, and `scripts/sweep-check.mjs` is the oracle against Babylon's
+  recorded answers.
   Babylon's own `moveWithCollisions` was inert in a headless page — a body
   pushed 10 m into a `checkCollisions` box travelled the full 10 — which is why
   the merged scatter colliders were once verified for BODIES only by
@@ -1844,7 +1851,7 @@ is one machine's:
   `BABYLON_EXIT.md` X6.1g** (no build makes one, and `GameMap.visuals` and
   `SurfaceRecord.visual` went with them): `scripts/bounds-check.mjs` holds
   `boundsOf` to Babylon's `BoundingInfo` in Node, every kind at seeded
-  transforms.
+  transforms — its answers recorded since X6.1i (`scripts/tables/`).
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
   `g.reflections.pools.glazing[slot]` against `g.map.paneGroups[slot]` (39 on

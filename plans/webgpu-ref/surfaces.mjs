@@ -188,23 +188,13 @@ function hangProbe(page) {
     // same, and hands the position back as an array.)
     const frame = g.sceneFrame;
     const eyeCamera = () => (frame && "activeCamera" in frame ? frame.activeCamera : scene.activeCamera);
-    // Babylon's own `Plane`, for the GAME's planes `recordFrame` copies into
-    // it (`isInFrustum` asks a plane's `dotCoordinate`, which `src/math`'s
-    // does not carry): from the page's copy of Babylon by the url the page
-    // loaded (`VERIFYING.md`), told by the frame's `Observable` as
-    // `leaks.mjs` does. Only where there is a scene to walk and the game
-    // holds the planes (X6.1f on).
+    // Babylon's own `Plane`, for the GAME's planes `recordFrame` copied into
+    // it where there was a scene to walk and the game held the planes (X6.1f
+    // to X6.1g: `isInFrustum` asks a plane's `dotCoordinate`, which
+    // `src/math`'s does not carry), taken from the page's copy of Babylon.
+    // No page has a scene since X6.1h and the package left the tree at X6.1i,
+    // so that load went with it; nothing reads this with no scene.
     s.BabylonPlane = null;
-    if (scene && g.frustumPlanes !== undefined) {
-      const url = performance
-        .getEntriesByType("resource")
-        .map((r) => r.name)
-        .find((n) => /babylonjs_core/i.test(n));
-      if (!url) throw new Error("surfaces.mjs: Babylon's module is not among the page's resources");
-      const BJS = await import(url);
-      if (BJS.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) throw new Error("surfaces.mjs: not the page's Babylon");
-      s.BabylonPlane = BJS.Plane;
-    }
     // The draw phase's two ends through the frame adapter (`harness.mjs`,
     // X5.4f: the scene's observables on Babylon's arm, our frame's on ours),
     // the end inserted FIRST as it was on the scene's.

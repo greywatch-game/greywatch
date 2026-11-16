@@ -27,7 +27,7 @@ substitute: read the companion before changing that subsystem.
 | [`docs/pwa.md`](docs/pwa.md) | `public/`, `src/pwa/`, the service worker |
 | [`docs/multiplayer.md`](docs/multiplayer.md) | anything under `server/` or `src/net/`, the roster, the collision bake, the regions, the two images and the proxy in front of them |
 | [`docs/game.md`](docs/game.md) | extracting anything from `Game.ts`, `installMap`, what a frame owes |
-| [`docs/build.md`](docs/build.md) | adding a generated asset, `vite.config.ts`, anything importing from `@babylonjs/*` |
+| [`docs/build.md`](docs/build.md) | adding a generated asset, `vite.config.ts`, `@babylonjs/havok`, a port of anything of Babylon's |
 | [`docs/profiling.md`](docs/profiling.md) | the frame profiler, a new phase, anything measuring a frame |
 
 Three more companions carry what is looked up rather than reasoned about.
@@ -134,21 +134,23 @@ thing** (`ReportVoice.mix`, `EngineKind.mix`, `AmbienceKind.mix`).
 **Havok's `.wasm` (~2 MB) is the one binary that ships**, never named by path
 and never also hand-placed in `public/`. **It is REQUIRED**: `main.ts` awaits
 `loadHavok()` before it constructs `Game`, so nothing downstream asks whether
-physics has arrived. **No shader in `src/` may be GLSL** — Babylon's
-`WebGPUEngine` fetched two more WASMs the moment one was — and since X6.1c
-every shader is our renderer's own, no Babylon declaration of one being left
-in the tree. **Never add a deep static import into
-`@babylonjs/core`, and never drop `optimizeDeps.exclude` from `vite.config.ts`**
-— both break a DEV session only; `npm run build` fails on the first. **There is
-no rigged character asset in the tree**: do not reintroduce a GLB body, and do
-not extend that approach to bots or weapons.
+physics has arrived. **No shader in `src/` may be GLSL** — every shader is
+our renderer's own WGSL, and nothing in the tree could compile another.
+**`@babylonjs/core` is not a dependency** (`BABYLON_EXIT.md` X6.1i): nothing
+in the tree imports it, a type included, and `npm run build` fails on one
+(`scripts/check-babylon-free.mjs`); what is Babylon's in the tree is PORTED,
+and its licence is `licenses/babylonjs.md`. **`@babylonjs/havok` stays, and
+never drop it from `optimizeDeps.exclude` in `vite.config.ts`** — that breaks
+a DEV session only, and the production build hides it. **There is no rigged
+character asset in the tree**: do not reintroduce a GLB body, and do not
+extend that approach to bots or weapons.
 
 → **[`docs/audio.md`](docs/audio.md)** — the seventeen rows and what makes each
 admissible, the three budgets, the ambience's ranking and both water fits, the
 mixer's two tiers and pair buses, `F4`, the pipeline and every trim.
 **[`docs/build.md`](docs/build.md)** — the generated assets and the test a sixth
-owes, Havok's path, the dev-only 404, the two WASMs' tripwires, the deep-import
-trap in full, and what the WebGPU gate cost in reach.
+owes, Havok's path, the dev-only 404, the gate that keeps the package out,
+the copy checks' recorded tables, and what the WebGPU gate cost in reach.
 ## Commands
 
 ```bash
@@ -189,8 +191,8 @@ npm run merge:hash # kit:hash's other half: builds every map in a real browser
                    #   merged visual, the box lists and the collider DATA
                    #   (`boxGroups` as indices, each strut group and floor
                    #   block hashed) — and fails on any mesh left a PART. Proves a
-                   #   change to how parts are built or merged moved nothing,
-                   #   and is owed by every Babylon upgrade (docs/build.md).
+                   #   change to how parts are built or merged moved nothing
+                   #   (docs/build.md).
                    #   `-- --out f.json`, `--against f.json`, `--maps a,b`
 npm run maps:check # every map's generator re-run into scratch (`--out`) and
                    #   its layout.ts and heights.ts held to the committed
@@ -269,9 +271,10 @@ Babylon; its PICTURE is a view module beside it (`CombatFx`, `GrenadeFx`,
 builds the simulations, `Game` the views (and the page's predictions),
 so nothing that decides an outcome may read a node — a throw's, a rocket's and
 a mine's start point are command INPUTS the page computes (`FINDINGS.md` 55).
-`scripts/check-babylon-free.mjs` fails the build on any value import path from
-`server/`, `src/sim/` or a simulation to `@babylonjs/core`, so **a new
-simulation joins its `SIMULATIONS` list** (`docs/build.md`).
+`scripts/check-babylon-free.mjs` fails the build on any import of
+`@babylonjs/core` anywhere in the tree and on any value import path to it from
+the game, `server/` or a simulation, so **a new simulation joins its
+`SIMULATIONS` list** (`docs/build.md`).
 
 **`Game.ts` is long on purpose**: what may leave it is a cluster of **private
 fields that answers only to itself** (`net/RegionBook.ts`), never anything

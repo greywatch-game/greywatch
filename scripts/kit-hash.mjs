@@ -11,9 +11,9 @@
  *
  * **It runs with NO BABYLON** (`BABYLON_EXIT.md` X6.1a): no `NullEngine`, no
  * `Scene`, no `StandardMaterial`, no `Mesh`, `TransformNode` or
- * `BoundingInfo` is made, and the package is not loaded by this script (the
- * game's modules it loads still import it until X6.1's later sub-steps take
- * it out of them). A builder takes no scene (X6.1d): its pictures are
+ * `BoundingInfo` is made, and the package is not loaded by this script — nor,
+ * since X6.1h, by any game module it loads, and since X6.1i it is not in the
+ * tree. A builder takes no scene (X6.1d): its pictures are
  * cached under the material factory it is handed (`world/textures.ts`), here
  * the stub factory, and a material is a plain named object (`StubMaterial`).
  *

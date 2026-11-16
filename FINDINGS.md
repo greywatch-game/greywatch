@@ -3243,3 +3243,32 @@ has a dispose path that has ever been called.
 - If it is built: `lost.mjs --twice` grades it as it grades (A), with the verdict
   turned round — no reload, the round still standing, frames drawn on a NEW device —
   and every bank row taken after a restore against one taken without.
+
+## 75. The gate's SIMULATIONS list says nothing a whole-tree ban does not: re-aim it at the picture
+
+**Recorded by `BABYLON_EXIT.md` X6.1i** (row "X6.1, the gate's simulations", the
+owner's decision of 2026-11-12: (C) for the exit, the list kept walking for
+`@babylonjs/core` unchanged, and this — (B) — for after it). Not measured: a gate
+that is not built.
+
+**What the list does since X6.1i**: `scripts/check-babylon-free.mjs` refuses any
+import of the package anywhere in the tree, so walking each SIMULATION module's
+value graph for it can no longer find anything the tree pass has not refused
+already. The rule the list stood for — **a simulation never reaches its picture**
+(`CLAUDE.md`, "Ownership and wiring") — was held by "never reaches Babylon" while
+every picture was Babylon's. Pictures are our renderer's and our views' now, and
+nothing mechanical holds a simulation away from them.
+
+**What (B) would be**: the same list, walked for a different ban — no value path
+from a simulation (or from `server/`) to `src/render/`, `src/ui/` or a view module
+(`CombatFx`, `GrenadeFx`, `VehicleView`, `PlayerView`, …). A new contract, so its
+exceptions have to be found first: modules both halves legitimately share (the
+bone table, the hull frames, `proxyBoxes.ts`, whatever `SIMULATIONS` already holds
+"for the same reason") and any view a simulation reaches today.
+
+### How to settle it
+
+- Run the walk with the new ban as a diagnostic (paths on the command line) and
+  list what it reaches; each hit is either an exception to name or a leak to fix.
+- Land it as the gate's ban for `SIMULATIONS` and `server/`, the exceptions named
+  in the gate as `NOT_ROOTS` is, never as a silent skip.

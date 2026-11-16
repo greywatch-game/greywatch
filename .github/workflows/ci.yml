@@ -66,7 +66,7 @@ jobs:
       - name: typecheck (client + server)
         run: npm run typecheck
 
-      # The collision-bake staleness guard, the deep-import guard, the client
+      # The collision-bake staleness guard, the import gates, the client
       # bundle and the proving-ground sentinel check, in that order — this is
       # `npm run build`, and it is the first Dockerfile RUN line verbatim.
       #
@@ -76,7 +76,7 @@ jobs:
       # without tripping it. `npm run parity` is what actually catches that, and
       # it is NOT in this workflow — see the block at the foot of the file for
       # why, and run it by hand after anything touching the world layer.
-      - name: build (collision + deep-import gates, typecheck, bundle)
+      - name: build (collision + import gates, typecheck, bundle)
         run: npm run build
 
       # The second Dockerfile RUN line. Transpile-only — it proves the server

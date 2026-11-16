@@ -10,11 +10,10 @@
  * **The bundle carries no Babylon and loads none** (`BABYLON_EXIT.md` X2.3).
  * It used to import `@babylonjs/core` and `Engines/nullEngine.js` at runtime —
  * an SSR build leaves a dependency external — for a scene whose collider
- * meshes nothing read. The source gate is `scripts/check-babylon-free.mjs`,
- * run by `npm run build`; the `no-babylon` plugin below is the same rule at
- * the BUNDLER, so `npm run build:server` and `npm run simulate` refuse too.
- * It sees only what esbuild left after stripping types, so it is the runtime
- * truth where the gate is the stricter syntactic one.
+ * meshes nothing read. Since X6.1i the package is not in the tree at all, and
+ * `scripts/check-babylon-free.mjs` (run by `npm run build`) refuses any import
+ * of it anywhere in the tree, so the `no-babylon` plugin that held the same
+ * rule at the bundler went with it.
  *
  * **There are TWO builds out of this file and the second one is a measuring
  * instrument.** `--mode development` emits to `dist-server-dev/` with
@@ -38,23 +37,6 @@
 import { defineConfig } from "vite";
 
 export default defineConfig(({ mode }) => ({
-  plugins: [
-    {
-      name: "no-babylon",
-      // Before Vite's own resolver, which marks a dependency EXTERNAL in an SSR
-      // build without asking any later plugin.
-      enforce: "pre" as const,
-      resolveId(id: string, importer?: string) {
-        if (/^@babylonjs\/core(?:\/|$)/.test(id)) {
-          this.error(
-            `${importer ?? "?"} imports "${id}": the authority imports no Babylon ` +
-              "(BABYLON_EXIT.md X2.3). Run node scripts/check-babylon-free.mjs for the chain.",
-          );
-        }
-        return null;
-      },
-    },
-  ],
   // Written as a replacement rather than left to the mode, for the reason in
   // the header: `vite build` pins NODE_ENV to production and `isProduction`
   // reads that and not `mode`. `PROD` moves with it, so nothing downstream can

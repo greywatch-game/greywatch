@@ -116,7 +116,10 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
 3. **Babylon stays at 9.28 for the duration.** An upgrade during the exit
    re-opens every seam and every copied internal at once. If one becomes
    unavoidable it is its own step, with `merge:hash` against the version
-   before (`docs/build.md`).
+   before (`docs/build.md`). **Read since X6.1i as history**: the package left
+   the tree at 9.28, never upgraded, and there is no version left to move. What
+   stays of 9.28 is its arithmetic, as the copies and the answers recorded for
+   them (`scripts/tables/`, the four copy checks).
 4. **Every touch of a Babylon internal lives in one file**,
    `src/render/babylonSeam.ts`, created by X3.2. Its header keeps a numbered
    list of what it reaches into. The list may grow through Phase 3 and must
@@ -126,7 +129,8 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
    when Babylon's `WebGPUEngine` stopped being constructed (the scene stands on
    a `NullEngine` through public API alone, `src/core/SceneEngine.ts`), and a
    step that needs an internal before X6.1 brings the seam back as a step that
-   has gone wrong.
+   has gone wrong. **Read since X6.1i as history**: the package is gone, so
+   there is no internal left to touch.
 5. **A GPU resource lives with whatever produces it.** While both renderers
    run, the side that does not own a texture or buffer reads a wrapped view of
    it through the seam. It never copies it and never owns a second one.
@@ -136,12 +140,18 @@ then the frame loop itself, at which point taking the frame is mostly deletion.
    `NullEngine` cannot wrap a GPU texture, and their readers were cel materials
    that never draw) — and the seam they were read through was deleted with its
    last item, the device (rule 4). Every resource a frame binds is our
-   renderer's own, bound where it lies.
+   renderer's own, bound where it lies. **Read since X6.1i as history**: there
+   is one renderer, and no second side left to hold a view.
 6. **`src/render/` and `src/math/` never import `@babylonjs/core`.** X2.3 adds
    a build gate for `server/` and the simulation; X3.2 adds these two
    directories to it; X6.1 widens it to the whole tree. The one exception is
    `src/math/babylon.ts`, the crossing X1.1 made: the gate names it, and it is
-   deleted at X6.1.
+   deleted at X6.1. **Read since X6.1i as history**: the crossing went at X6.1f,
+   every directory under `src/` joined the gate by X6.1h, and X6.1i took the
+   package out of `package.json` and turned the gate on the whole tree —
+   `scripts/check-babylon-free.mjs` reads every file of `src/`, `server/`,
+   `main.ts`, `scripts/`, `plans/` and `.claude/skills/` and refuses any import
+   of the package, so NOTHING in the tree imports it.
 7. **A step that breaks a contract rewrites it in the same commit** —
    `CLAUDE.md`, the companion under `docs/`, `FILES.md`, and any contract
    header it invalidates. "Contracts this plan rewrites" below lists where.

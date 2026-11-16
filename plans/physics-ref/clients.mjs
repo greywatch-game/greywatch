@@ -246,33 +246,15 @@ function play(page, opts) {
       delete g.blastDebris.burst;
       const M = await import("/src/math/index.ts");
       const SM = await import("/src/entities/SoldierModel.ts");
-      // A Babylon vector from the PAGE's copy of Babylon, imported by the url
-      // the page loaded it from (`VERIFYING.md`; `plans/webgpu-ref/leaks.mjs`
-      // the worked version) and told by a Babylon class the page still holds:
-      // the frame's `Observable` (`SceneFrame`'s points, Babylon's until
-      // X6.1h). Until `BABYLON_EXIT.md` X6.1f this was `/src/math/babylon.ts`'s
-      // `toBabylon`, told by the camera's position — both gone there, the
-      // camera's position being `src/math`'s. Made as `toBabylon` made it
-      // (`copyFromFloats` into a new vector), so the burst entry points are
-      // handed what the banks were taken with; they take `src/math`'s since
-      // X6.1e, and read a Babylon vector through its `x`/`y`/`z`. **With no
-      // Babylon on the page** (`BABYLON_EXIT.md` X6.1h: nothing the page
-      // loads imports the package once the scene and the frame's
-      // `Observable` are gone) the stand-in is `src/math`'s own vector, made
-      // the same way — the type the entry points are declared on, whose
-      // `copyFromFloats` and `normalize` `scripts/math-check.mjs` holds to
-      // Babylon's bit for bit.
-      const url = performance
-        .getEntriesByType("resource")
-        .map((e) => e.name)
-        .find((n) => /babylonjs_core/i.test(n));
-      const BJS = url ? await import(url) : null;
-      if (BJS && BJS.Observable !== g.sceneFrame.onBeforeRenderObservable.constructor) {
-        throw new Error("not the game's copy of @babylonjs/core");
-      }
-      const B3 = BJS
-        ? (x, y, z) => new BJS.Vector3().copyFromFloats(x, y, z)
-        : (x, y, z) => new M.Vector3().copyFromFloats(x, y, z);
+      // The stand-in vector the burst entry points are handed: `src/math`'s,
+      // made as `toBabylon` made Babylon's until `BABYLON_EXIT.md` X6.1f
+      // (`copyFromFloats` into a new vector) — the type the entry points are
+      // declared on since X6.1e, whose `copyFromFloats` and `normalize`
+      // `scripts/math-check.mjs` holds to Babylon's bit for bit. Where the
+      // page still loaded Babylon (until X6.1h) the banks were taken with
+      // Babylon's own vector, from the page's copy; the package left the tree
+      // at X6.1i, and that arm with it.
+      const B3 = (x, y, z) => new M.Vector3().copyFromFloats(x, y, z);
       const { HK } = ref.hp(g);
       const bodies = ref.clientBodies(g);
 

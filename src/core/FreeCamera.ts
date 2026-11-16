@@ -61,7 +61,7 @@
  *
  * The method bodies are copied from Babylon.js 9.28 (`Cameras/camera.pure.js`,
  * `targetCamera.pure.js`, `freeCamera.pure.js`), which is licensed under the
- * Apache License, Version 2.0 (`node_modules/@babylonjs/core/license.md`;
+ * Apache License, Version 2.0 (`licenses/babylonjs.md`;
  * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
  * The Babylon.js team" (its NOTICE). Changes from the original: the three
  * classes collapsed into one, and the parts listed above removed.

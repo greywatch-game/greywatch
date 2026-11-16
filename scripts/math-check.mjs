@@ -2,7 +2,6 @@
  * math-check.mjs — proves `src/math/` gives Babylon's answers BIT FOR BIT.
  *
  *   node scripts/math-check.mjs [--perturb]
- *   node scripts/math-check.mjs --record   (only where Babylon 9.28 is installed)
  *
  * `src/math/` is a port of the subset of Babylon's `Vector2`, `Vector3`,
  * `Vector4`, `Quaternion`, `Matrix`, `Color3`, `Color4`, `Plane` and
@@ -19,8 +18,8 @@
  * `scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
  * checks"): each case's answers over a block of a thousand trials are one
  * digest of Babylon 9.28's, captured by `--record` while the package was
- * installed (X6.1i's first commit, which also compared every answer live), and
- * a run now holds ours to them. So the inputs may never change: the seed, the
+ * installed (X6.1i's first commit, which also compared every answer live; the
+ * arm went with the package in the next), and a run holds ours to them. So the inputs may never change: the seed, the
  * trial count and every draw below are part of what was recorded.
  * `--perturb` is the negative test: one value in the first answer of every
  * group moved one ULP, and every group must then fail.
@@ -45,20 +44,11 @@ const arg = (name, dflt) => {
 };
 const TRIALS = arg("--trials", 20000);
 const SEED = arg("--seed", 1);
-const RECORD = args.includes("--record");
 /** A table group is one case over this many trials. */
 const BLOCK = 1000;
 const ledger = new Ledger("math-check", { seed: SEED, trials: TRIALS, block: BLOCK }, {
-  record: RECORD,
   perturb: args.includes("--perturb") && "output",
 });
-
-/** Babylon, when recording: the reference the table is taken from. */
-const B = RECORD ? await import("@babylonjs/core") : null;
-// Babylon's ProjectToRef reads the depth range off the last engine built, and
-// the game's one engine is WebGPU's, whose range is [0, 1] — so this stands
-// one in that says so.
-if (B) Object.defineProperty(new B.NullEngine(), "isNDCHalfZRange", { value: true });
 const rand = mulberry32(SEED);
 
 // ---------------------------------------------------------------------------
@@ -136,21 +126,6 @@ function flat(x) {
   throw new Error(`cannot read ${x}`);
 }
 
-let failures = 0;
-let checks = 0;
-const failedNames = new Map();
-/** Recording only: ours against Babylon's live, as the check ran before the table. */
-function same(name, fa, fb, input) {
-  checks++;
-  const ok = fa.length === fb.length && fa.every((v, i) => Object.is(v, fb[i]));
-  if (ok) return;
-  failures++;
-  failedNames.set(name, (failedNames.get(name) ?? 0) + 1);
-  if (failedNames.get(name) <= 3) {
-    console.log(`DIFF ${name}\n  input ${JSON.stringify(input)}\n  babylon ${JSON.stringify(fb)}\n  ours    ${JSON.stringify(fa)}`);
-  }
-}
-
 // ---------------------------------------------------------------------------
 // The cases. Each is run once per trial on fresh inputs; `run(L)` builds its
 // inputs from the plain arrays and returns what to compare.
@@ -211,8 +186,9 @@ caseOf(["Vector3.RotationFromAxis", "Vector3.RotationFromAxisToRef"], () => { co
 caseOf(["Vector3.ProjectToRef"], () => {
   const a = v3(), w = matRecipe(), t = matRecipe(), vp = [num(100), num(100), 1 + rand() * 1000, 1 + rand() * 1000];
   return [[a, w, t, vp], (L) => {
-    // Babylon reads the depth range off the last engine; ours is WebGPU's.
-    const view = L === B ? new B.Viewport(...vp) : { x: vp[0], y: vp[1], width: vp[2], height: vp[3] };
+    // Recorded with Babylon's `Viewport` and its last engine's depth range
+    // stood in as WebGPU's [0, 1], which ours is.
+    const view = { x: vp[0], y: vp[1], width: vp[2], height: vp[3] };
     return L.Vector3.ProjectToRef(V(L, a), build(L, w), build(L, t), view, new L.Vector3());
   }];
 });
@@ -359,30 +335,16 @@ for (const cls of ["Vector2", "Vector3", "Vector4", "Quaternion", "Matrix", "Col
 // A Babylon object handed to ours had to work too, the direction the header
 // promised was safe: recorded with Babylon's objects on its own side, and
 // since the package left (X6.1i) answered by ours on our own objects.
-caseOf(["mixed"], () => { const a = v3(), b = v3(), q = quat(); return [[a, b, q], (L) => {
-  if (L === B) return [B.Vector3.Cross(V(B, a), V(B, b)), V(B, a).rotateByQuaternionToRef(Q(B, q), new B.Vector3())];
-  return [M.Vector3.Cross(V(M, a), V(M, b)), V(M, a).rotateByQuaternionToRef(Q(M, q), new M.Vector3())];
-}]; });
+caseOf(["mixed"], () => { const a = v3(), b = v3(), q = quat(); return [[a, b, q], (L) => [L.Vector3.Cross(V(L, a), V(L, b)), V(L, a).rotateByQuaternionToRef(Q(L, q), new L.Vector3())]]; });
 
 for (let t = 0; t < TRIALS; t++) {
   const block = Math.floor(t / BLOCK);
   for (const [name, make] of Object.entries(CASES)) {
-    const [input, run] = make();
-    const ours = flat(run(M));
-    if (B) {
-      const theirs = flat(run(B));
-      same(name, ours, theirs, input);
-      ledger.answer(`${name} @${block}`, theirs);
-    } else {
-      ledger.answer(`${name} @${block}`, ours);
-    }
+    const [, run] = make();
+    ledger.answer(`${name} @${block}`, flat(run(M)));
   }
 }
 
-if (B) console.log(`math-check: ${checks} comparisons over ${Object.keys(CASES).length} cases, ${TRIALS} trials each, against Babylon live`);
 if (missing.length) console.log(`UNCOVERED (a member with no case): ${missing.join(", ")}`);
-if (failures) {
-  console.log(`FAILED: ${failures} differing answers in ${[...failedNames.keys()].join(", ")}`);
-}
 const failed = ledger.finish();
-process.exit(failures || missing.length || failed ? 1 : 0);
+process.exit(missing.length || failed ? 1 : 0);

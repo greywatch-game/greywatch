@@ -2,7 +2,7 @@
  * Refuses a build whose audio is stale, over budget, or wired to nothing.
  *
  * Runs on the front of `npm run build` beside `check-collision.mjs` and
- * `check-deep-imports.mjs`, and it is the reason the budget in
+ * `check-babylon-free.mjs`, and it is the reason the budget in
  * `audio/manifest.json` is a fact rather than a paragraph. The pipeline it
  * guards LOWERS the friction of adding a sound, and the friction was doing
  * some of the enforcing — so this has to do the rest.

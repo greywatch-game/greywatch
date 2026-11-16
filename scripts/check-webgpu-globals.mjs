@@ -1,7 +1,7 @@
 /**
  * Fails the build on a WebGPU global named at a module's TOP LEVEL.
  *
- * Run from `npm run build`, beside `check-deep-imports.mjs`, and by hand as
+ * Run from `npm run build`, beside `check-babylon-free.mjs`, and by hand as
  * `node scripts/check-webgpu-globals.mjs`. `main.ts` gates the boot on
  * `navigator.gpu` and an adapter, but the gate runs AFTER the module graph is
  * evaluated (`main.ts` imports `Game` statically, and everything under it), and
@@ -37,8 +37,8 @@
  * catches where it reaches. Any identifier spelled `GPU` and a capital is held
  * to the rule, so a new WebGPU global needs no list kept.
  *
- * **Scoped to `src/` and `main.ts`**, which is what ships to a browser
- * (`check-deep-imports.mjs`' roots): `server/` touches no GPU.
+ * **Scoped to `src/` and `main.ts`**, which is what ships to a browser:
+ * `server/` touches no GPU.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join } from "node:path";

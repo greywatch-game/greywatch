@@ -1,83 +1,70 @@
 /**
- * Fails the build on any VALUE import path from the authority or from a
- * simulation module that reaches `@babylonjs/core` — and on any from the
- * LOCAL MATCH's two entries that reaches Node.
+ * Fails the build on any import of `@babylonjs/core` ANYWHERE in the tree —
+ * the package is not a dependency since `BABYLON_EXIT.md` X6.1i — on any
+ * VALUE import path to it from the game, the authority or a simulation module,
+ * and on any path from the LOCAL MATCH's two entries that reaches Node.
  *
- * Run from `npm run build`, beside `check-deep-imports.mjs`, and by hand as
+ * Run from `npm run build` (which it joined at X2.3, and where since X6.1i it
+ * stands in for `check-deep-imports.mjs`, deleted then: an import of a package
+ * that is not there is the deep import's rule and more), and by hand as
  * `node scripts/check-babylon-free.mjs` (pass paths to walk from those roots
- * instead, which is how a step finds out how far it has to go). The simulation
- * is off the scene and the authority runs without an engine; **this is what
- * keeps them there**, because the way
- * back in is one innocent import. A simulation module that imports a helper
- * that imports a mesh builder typechecks, plays, and passes review — and puts
- * Babylon back in the match server's bundle and a node back under an outcome,
- * which is the class of bug Phase 2 spent eleven commits taking out
- * (`CLAUDE.md`, "Ownership and wiring": a system that SIMULATES never imports
- * Babylon). `tsc` cannot see it: it is a property of the import GRAPH, not of
- * any one file.
+ * instead, a diagnostic). The simulation is off the scene, the authority runs
+ * without an engine, and since X6.1i nothing in the tree imports the package;
+ * **this is what keeps it that way**, because the way back in is one
+ * innocent import. A simulation module that imports a helper that imports a
+ * mesh builder typechecks, plays, and passes review — and puts Babylon back
+ * in the match server's bundle and a node back under an outcome, which is the
+ * class of bug Phase 2 spent eleven commits taking out (`CLAUDE.md`,
+ * "Ownership and wiring": a system that SIMULATES never imports Babylon).
+ * `tsc` cannot see it: it is a property of the import GRAPH, not of any one
+ * file — and `tsc` sees none of the tree's scripts at all.
  *
- * **The roots are two kinds, and the rule for adding one is mechanical.**
+ * **Three passes for the package** (and a fourth for Node, below).
  *
- *   - `server/`, every file in it: the authority imports no Babylon at all.
- *   - `src/sim/`, every file in it: the simulation core every `Match` runs,
- *     the page's own included (`SimCore`, `SimPlayer`, `LagComp`,
- *     `buildSimWorld`), so a file added there is held whoever builds it.
- *   - `src/render/`, every file in it: our own renderer, which takes a GPU
- *     device and never a Babylon value (`BABYLON_EXIT.md` rule 6) — and,
- *     since X5.4h deleted its seam with Babylon's engine, names none of
- *     Babylon's types either — and what it reaches, so the shared shader bodies it
- *     assembles (`src/shaders/wgsl/chunks.ts`) are held Babylon-free by the
- *     same walk.
- *   - `src/math/`, every file in it but the crossing (`NOT_ROOTS`): the
- *     game's own vectors, which a layout and the world's data are made of.
- *   - `src/shaders/wgsl/`, every file in it: the shader BODIES as plain
- *     strings, which `src/render/` reaches anyway — a root since
- *     `BABYLON_EXIT.md` X6.1c deleted its one Babylon importer
- *     (`includes.ts`, the cel program's Babylon declarations), so a body no
- *     program of ours assembles yet is held too (X6.1's ratchet: a sub-step
- *     adds every directory it leaves with no value path to the package).
- *   - The directories that reached nothing of the package already, added
- *     together at X6.1d's review so the ratchet holds them too: `src/bench/`,
- *     `src/config/`, `src/dev/` (the mixer), `src/geometry/`, `src/pwa/`, the
- *     seven shipped maps' own directories under `src/world/` and the proving
- *     ground's (`src/world/proving/`) — a map's layout, heights and collision
- *     bake being data on `src/math/`.
- *   - The directories X6.1g emptied, when the last mesh maker went
- *     (`world/parts.ts`' `drawnMesh`, which every one of them reached) and the
- *     three effects took their geometry from `src/geometry/`: `src/entities/`,
- *     `src/net/`, `src/systems/`, `src/ui/`, the kit (`src/world/kit/`, every
- *     set under it) and the scatter props (`src/world/props/`).
- *   - The three X6.1h emptied, when the scene, its engine and Babylon's
- *     `Observable` went (`core/SceneFrame.ts`, `core/FrameLoop.ts`,
- *     `shaders/GlowPass.ts`, `world/environment.ts` and `Game` their last
- *     importers): `src/core/`, `src/shaders/` (`wgsl/` with it) and
- *     `src/world/` (the maps, the kit and the props with it) — so every
- *     directory under `src/` is a root, and nothing under it or in `main.ts`
- *     reaches the package.
- *   - Every SIMULATION module, named one by one (`SIMULATIONS`,
- *     `docs/build.md`). Most of them the server reaches anyway,
- *     and they are listed regardless, so a simulation is held because it IS
- *     one rather than because the authority happens to build it today:
- *     `Player` is the case that proves the point, a simulation only a client
- *     ever constructs. **A new module that simulates — or a system split into
- *     a simulation and a view — joins `SIMULATIONS` in the commit that makes
- *     it**; its view never does. A root that does not exist FAILS, so a
- *     rename cannot quietly drop one out.
+ *   - **The TREE, file by file** (`TREE`, and the three files at the root,
+ *     `TREE_FILES`): `src/`, `server/`, `main.ts`, `scripts/`, `plans/` and
+ *     `.claude/skills/` (`BABYLON_EXIT.md` rule 6's last turn, X6.1i), and
+ *     the two Vite configs beside `main.ts`. Every file there that NAMES the
+ *     package as a module fails: an `import` or `export … from` of it
+ *     (`import type` too — the package is not installed, so even a type is a
+ *     dangling name), an `import()`, a `require()`, an
+ *     `import.meta.resolve()` and a Vite `ssrLoadModule()` taking it as a
+ *     literal, or a relative path into `node_modules/@babylonjs/core`. Text
+ *     that only MENTIONS the package — a comment, the history in a header, a
+ *     string a census greps for — is not an import and is not read. The
+ *     instruments may compute a specifier (a probe importing a page's module
+ *     by its url): nothing the package could answer is installed to load.
+ *   - **The GRAPH, walked** (`DIRECTORIES`, `ROOT_FILES`, `SIMULATIONS`):
+ *     every VALUE import followed from every file under `src/` and `server/`
+ *     and from `main.ts`, so a path to the package by any route — a
+ *     relative path into `node_modules`, which the resolved file betrays
+ *     where the specifier does not — is printed with its chain. Until X6.1i
+ *     this was the gate's whole job and it widened a directory at a time as
+ *     the sub-steps emptied them (rule 6: X3.1 `src/render/`, X3.2
+ *     `src/math/` with the crossing `math/babylon.ts` in `NOT_ROOTS`, X6.1c
+ *     `src/shaders/wgsl/`, X6.1d's review the thirteen already clean, X6.1f
+ *     `src/viewer/` when the crossing went, X6.1g six, X6.1h the last three
+ *     under `src/`); since X6.1i its roots are the whole of `src/` and
+ *     `server/` and `main.ts`.
+ *   - **Every SIMULATION module, named one by one** (`SIMULATIONS`,
+ *     `docs/build.md`), walked the same way. The tree pass already refuses
+ *     the package everywhere, so this list says nothing more about Babylon
+ *     today; it is kept as it was (the owner's, row "X6.1, the gate's
+ *     simulations": re-aiming it at what a PICTURE is made of now — no value
+ *     path from a simulation to `src/render/`, `src/ui/` or a view module —
+ *     is booked for after the exit, `FINDINGS.md` 75). **A new module that
+ *     simulates — or a system split into a simulation and a view — joins
+ *     `SIMULATIONS` in the commit that makes it**; its view never does. A
+ *     root that does not exist FAILS, so a rename cannot quietly drop one
+ *     out.
  *
- * `BABYLON_EXIT.md` rule 6 widens this three times: X3.1 added `src/render/`
- * in the commit that made the directory, X3.2 added `src/math/` to
- * `DIRECTORIES` with `src/math/babylon.ts` — the crossing — named in
- * `NOT_ROOTS` until X6.1f deleted it, and X6.1 widens it to the whole tree, a
- * directory at a time as each sub-step empties one (X6.1c: `src/shaders/wgsl/`;
- * X6.1d's review: the thirteen that were already clean; X6.1f: `src/viewer/`;
- * X6.1g: the six above; X6.1h: the last three under `src/`).
  * **An entry in `NOT_ROOTS` is exempt from being a root, never from being
- * REACHED**: a simulation that reaches one still fails, which is the point
- * of having one door.
+ * REACHED** (empty since X6.1f).
  *
- * What counts as an import, and why:
+ * What counts as an import on the two WALKS, and why:
  *
- *   - **Type-only imports are erased and skipped** — `import type`, a named
+ *   - **Type-only imports are erased and skipped** (the TREE pass refuses
+ *     one of the package all the same, above) — `import type`, a named
  *     list whose every specifier is inline `type`, and the same two shapes of
  *     `export … from`. That is what lets a simulation NAME a Babylon type
  *     (as `GameMap`'s mesh fields did until X6.1g) without loading a byte of it. An import
@@ -86,10 +73,12 @@
  *     runtime and never looser. Mark it `type`.
  *   - **`export … from` and `export * from` count**, as values, since a
  *     re-export loads its module exactly as an import does.
- *   - **A dynamic `import()` counts**, and must take a string literal: a lazy
- *     import still lands in the bundle and still loads, and one the gate
- *     cannot follow is a hole in it, so a computed specifier fails. So does
- *     Vite's `import.meta.glob`, whose pattern nothing here can resolve.
+ *   - **A dynamic `import()` counts**, and on the GRAPH must take a string
+ *     literal: a lazy import still lands in the bundle and still loads, and
+ *     one the gate cannot follow is a hole in it, so a computed specifier
+ *     fails. So does Vite's `import.meta.glob`, whose pattern nothing here
+ *     can resolve. (The TREE pass reads a literal where there is one and
+ *     lets an instrument compute one, above.)
  *   - **A relative specifier that does not resolve fails** for the same
  *     reason. Resolution is the bundler's, minus aliases (the tree has none):
  *     the name as written (so `src/math`'s `./vector.ts` resolves as is), `.js`
@@ -97,8 +86,10 @@
  *   - **Bare specifiers are leaves**, and the one refused is `@babylonjs/core`
  *     and its subpaths — and the same package reached by a RELATIVE path into
  *     `node_modules`, which the resolved file betrays where the specifier does
- *     not. `@babylonjs/havok` (a standalone WASM) is not this gate's
- *     business, and neither is Node — on THIS walk (below).
+ *     not. **`@babylonjs/havok` is KEPT and is not refused**: a standalone
+ *     WASM and its glue, which depends on nothing of the core's and is the
+ *     one binary that ships (`docs/build.md`). Neither is Node this walk's
+ *     business (below).
  *
  * **The second walk is NODE, from the local match's two entries.**
  * `server/localMatchWorker.ts` and
@@ -114,10 +105,11 @@
  * the Worker's chunk, only at `vite build`, and as a resolution error naming
  * no chain; this names the line that brought it in.
  *
- * Prints one line per walk on success. On failure prints every module that
- * imports what its walk refuses, the line, and the shortest chain from a root
- * to it, and exits 1. Paths on the command line replace the BABYLON walk's
- * roots and skip the Node walk: a diagnostic, never the gate.
+ * Prints one line per pass on success. On failure prints every file that
+ * imports what its pass refuses, the line, and (on a walk) the shortest chain
+ * from a root to it, and exits 1. Paths on the command line replace the
+ * GRAPH walk's roots and skip the other two passes: a diagnostic, never the
+ * gate.
  */
 import ts from "typescript";
 import { builtinModules } from "node:module";
@@ -128,21 +120,20 @@ import { fileURLToPath } from "node:url";
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 /**
- * Every source file under these is a root (a directory's subdirectories with
- * it: `src/dev` holds `src/dev/mixer`). The second line is X6.1d's review
- * (`BABYLON_EXIT.md`): every directory that already reached nothing of the
- * package at its parent, ac96836e, added at once so the ratchet holds them;
- * the fourth is X6.1g's, the six it emptied, and the last X6.1h's, the three
- * it emptied — every directory under `src/` now.
+ * The GRAPH's roots: every source file under these (subdirectories with
+ * them), and the root files beside them. Every directory under `src/` was
+ * listed one by one as the sub-steps of X6.1 emptied it (the header); since
+ * X6.1i, the whole of `src/` and `server/`, and `main.ts`.
  */
-const DIRECTORIES = [
-  "server", "src/sim", "src/render", "src/math", "src/shaders/wgsl",
-  "src/bench", "src/config", "src/dev", "src/geometry", "src/pwa", "src/viewer",
-  "src/world/cinderhaven", "src/world/coldharbour", "src/world/greyfen", "src/world/harrowmead",
-  "src/world/hollowmere", "src/world/kurenai", "src/world/sarab", "src/world/proving",
-  "src/entities", "src/net", "src/systems", "src/ui", "src/world/kit", "src/world/props",
-  "src/core", "src/shaders", "src/world",
-];
+const DIRECTORIES = ["src", "server"];
+const ROOT_FILES = ["main.ts"];
+
+/**
+ * The TREE: every source file under these, and the files at the repository's
+ * root, is read for an import naming the package (the header).
+ */
+const TREE = ["src", "server", "scripts", "plans", ".claude/skills"];
+const TREE_FILES = ["main.ts", "vite.config.ts", "vite.server.config.ts"];
 
 /**
  * The simulation modules, one by one.
@@ -189,7 +180,7 @@ const SIMULATIONS = [
  */
 const NOT_ROOTS = [];
 
-const SOURCE = [".ts", ".tsx", ".mts", ".js", ".mjs"];
+const SOURCE = [".ts", ".tsx", ".mts", ".cts", ".js", ".mjs", ".cjs"];
 const BANNED = /^@babylonjs\/core(?:\/|$)/;
 /** The same package found by resolving a relative path into node_modules. */
 const BANNED_FILE = /\/node_modules\/@babylonjs\/core\//;
@@ -212,7 +203,7 @@ const rel = (p) => relative(REPO, p).replaceAll("\\", "/");
 
 function walkDir(path, out) {
   if (statSync(path).isDirectory()) {
-    for (const entry of readdirSync(path)) walkDir(join(path, entry), out);
+    for (const entry of readdirSync(path)) if (entry !== "node_modules") walkDir(join(path, entry), out);
   } else if (SOURCE.includes(extname(path)) && !path.endsWith(".d.ts")) {
     out.push(path);
   }
@@ -287,10 +278,55 @@ function valueImports(file) {
   return out;
 }
 
+/** The literal a call names a module by, for the four calls that load one. */
+function loadsModule(n) {
+  const e = n.expression;
+  if (e.kind === ts.SyntaxKind.ImportKeyword) return true;
+  if (ts.isIdentifier(e) && e.text === "require") return true;
+  if (ts.isPropertyAccessExpression(e)) {
+    const name = e.name.text;
+    if (name === "ssrLoadModule") return true;
+    // `import.meta.resolve`.
+    if (name === "resolve" && ts.isMetaProperty(e.expression)) return true;
+  }
+  return false;
+}
+
+/**
+ * Every place a file NAMES the package as a module — type-only imports
+ * included, and the calls above with a literal — as `{ line, spec }`. Read by
+ * syntax, so a comment or a string that only mentions it is not one.
+ */
+function namesPackage(file) {
+  const text = readFileSync(file, "utf8");
+  if (!text.includes("@babylonjs/core")) return [];
+  const src = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
+  const out = [];
+  const lineOf = (node) => src.getLineAndCharacterOfPosition(node.getStart(src)).line + 1;
+  const banned = (spec) => BANNED.test(spec) || BANNED_FILE.test(`/${spec.replaceAll("\\", "/")}`);
+  const visit = (n) => {
+    let spec = null;
+    if ((ts.isImportDeclaration(n) || ts.isExportDeclaration(n)) && n.moduleSpecifier && ts.isStringLiteral(n.moduleSpecifier)) {
+      spec = n.moduleSpecifier.text;
+    } else if (ts.isImportEqualsDeclaration(n) && ts.isExternalModuleReference(n.moduleReference) && ts.isStringLiteral(n.moduleReference.expression)) {
+      spec = n.moduleReference.expression.text;
+    } else if (ts.isImportTypeNode(n) && ts.isLiteralTypeNode(n.argument) && ts.isStringLiteral(n.argument.literal)) {
+      spec = n.argument.literal.text;
+    } else if (ts.isCallExpression(n) && loadsModule(n)) {
+      const arg = n.arguments[0];
+      if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) spec = arg.text;
+    }
+    if (spec !== null && banned(spec)) out.push({ line: lineOf(n), spec });
+    ts.forEachChild(n, visit);
+  };
+  visit(src);
+  return out;
+}
+
 // Paths on the command line replace the roots: a diagnostic, never the gate.
 const asked = process.argv.slice(2);
 const dirs = asked.length ? asked.filter((p) => existsSync(abs(p)) && statSync(abs(p)).isDirectory()) : DIRECTORIES;
-const files = asked.length ? asked.filter((p) => !dirs.includes(p)) : SIMULATIONS;
+const files = asked.length ? asked.filter((p) => !dirs.includes(p)) : [...ROOT_FILES, ...SIMULATIONS];
 
 /**
  * One walk: every value import reachable from `roots` (absolute paths),
@@ -355,6 +391,25 @@ for (const file of files) {
 }
 const babylon = walk(roots, (spec) => BANNED.test(spec), BANNED_FILE);
 
+// The tree, file by file — skipped for a diagnostic run.
+const named = [];
+let scanned = 0;
+if (!asked.length) {
+  const treeFiles = [];
+  for (const dir of TREE) {
+    if (!existsSync(abs(dir))) problems.push({ root: dir, why: "tree directory does not exist" });
+    else walkDir(abs(dir), treeFiles);
+  }
+  for (const file of TREE_FILES) {
+    if (!existsSync(abs(file))) problems.push({ root: file, why: "tree file does not exist" });
+    else treeFiles.push(abs(file));
+  }
+  for (const file of treeFiles) {
+    scanned++;
+    for (const hit of namesPackage(file)) named.push({ file, ...hit });
+  }
+}
+
 // The Node walk, from the local match's entries — skipped for a diagnostic
 // run, whose paths name Babylon roots.
 const nodeRoots = [];
@@ -373,9 +428,18 @@ const printProblems = (list, chain) => {
 };
 
 const problemCount = problems.length + babylon.problems.length + (node?.problems.length ?? 0);
-if (babylon.hits.length || node?.hits.length || problemCount) {
+if (named.length || babylon.hits.length || node?.hits.length || problemCount) {
+  if (named.length) {
+    console.error("\nA file in the tree names @babylonjs/core as a module:\n");
+    for (const { file, line, spec } of named) console.error(`  ${rel(file)}:${line}  "${spec}"`);
+    console.error(
+      "\nThe package left the tree at BABYLON_EXIT.md X6.1i and is not a dependency: nothing" +
+        "\nimports it, a type included. A copy of something of Babylon's is ported into the tree" +
+        "\n(licenses/babylonjs.md), never imported.\n",
+    );
+  }
   if (babylon.hits.length) {
-    console.error("\nA value import path from the authority or a simulation reaches @babylonjs/core:\n");
+    console.error("\nA value import path from the game, the authority or a simulation reaches @babylonjs/core:\n");
     for (const { file, line, spec } of babylon.hits) {
       console.error(`  ${rel(file)}:${line}  imports "${spec}"`);
       console.error(`    via ${babylon.chain(file)}\n`);
@@ -408,10 +472,13 @@ if (babylon.hits.length || node?.hits.length || problemCount) {
   process.exit(1);
 }
 
-const named = asked.length
+const from = asked.length
   ? asked.join(", ")
-  : `${DIRECTORIES.map((d) => `${d}/`).join(", ")} or the ${SIMULATIONS.length} simulations`;
-console.log(`no path to @babylonjs/core from ${named} (${babylon.walked} modules walked)`);
+  : `${DIRECTORIES.map((d) => `${d}/`).join(", ")}, ${ROOT_FILES.join(", ")} or the ${SIMULATIONS.length} simulations`;
+if (!asked.length) {
+  console.log(`no import of @babylonjs/core in ${TREE.map((d) => `${d}/`).join(", ")} or ${TREE_FILES.join(", ")} (${scanned} files read)`);
+}
+console.log(`no path to @babylonjs/core from ${from} (${babylon.walked} modules walked)`);
 if (node) {
   console.log(`no path to Node from the local match's host, ${BROWSER_HOSTS.join(" or ")} (${node.walked} modules walked)`);
 }
