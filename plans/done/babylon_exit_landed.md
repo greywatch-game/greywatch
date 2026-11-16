@@ -13135,7 +13135,7 @@ DPR 2.8125, an 832x384 window) on Chrome 157 where the last were 156.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf)
 
 The plan's `BABYLON_EXIT.md` holds X6.1's brief, "What Babylon still is in the tree", its ONE RULE,
 the step's own four rules, "Every sub-step owes" and the ten sub-steps.
@@ -13987,7 +13987,7 @@ directory).
 - **The NIT (9578708)**: `parts.ts`' header said a mesh is made at the end of the build and named the deleted
   "adapters"; reworded.
 
-**X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step; 2026-11-16; no change to the picture). Measured headless on the
+**X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step, its review f56f9bf; 2026-11-16; no change to the picture). Measured headless on the
 Windows box against a BEFORE at ef69ef3 (the hook's commit: bb3f7fe's game with the game's readiness beside the scene's,
 and the instruments' arms for the step) in the worktree `greywatch-2-before-x53a` (moved there from 8a69f093, detached,
 and moved back after; the lockfile unchanged, so its `node_modules` stood), every GPU run alone on the GPU.
@@ -14088,3 +14088,29 @@ and moved back after; the lockfile unchanged, so its `node_modules` stood), ever
 Scripts and logs in the session's scratchpad, `x61h/` (`readycheck.mjs`, `before.sh`, `after-cpu.sh`, `after-gpu.sh`,
 `retry*.sh`, `shots2.sh`, `probes.sh`, `live.mjs`, `sarab.mjs`, `cams.mjs`, `menu.mjs`, `shotcmp.mjs`, `cmpbench.cjs`,
 every log, JSON, kept bank directory and photograph).
+
+**X6.1h's review** (f56f9bf; 2026-11-16): **clean, comment and doc NITs fixed, no architectural question.** Typecheck, the
+gate (521 modules), corecheck clean; census 2 files (the copy checks).
+- **The BEFORE**: ef69ef3 only adds the foam to the new list beside the scene's, in the same callback, and nothing in the
+  game reads that list, so a BEFORE there stands for bb3f7fe6.
+- **`Observable`**: line for line against `observable.pure.js` — add, addOnce, insertFirst, mask and scope, the WeakRef
+  remove closure, the deferred unregister, removeCallback, the notify walk over the live list with `skipNextObservers`,
+  notifyObserver, notifyIfTriggered, hasObservers, clear. No `instanceof` probe; the three importers use ours.
+- **The frame without a scene**: Min/Max delta 1 and 1000 clamped `max(min, min(d, max))` as Babylon; the default slate
+  (0.2, 0.2, 0.3, 1); `renderTargetsEnabled` true; `HALF_Z_RANGE` true as `SceneEngine` forced. At bb3f7fe6 nothing was
+  rendered, animated or disposed, and the canvas-less `NullEngine` never ran `_CommonInit` (no window listeners, no audio
+  engine); the scene's input manager attached nothing.
+- **The readiness**: at bb3f7fe6 no Babylon mesh, camera, particle system or effect existed, so `isReady` was the pending
+  list. The foam is its one holder; `TextureMaker.image` calls `whenReady` on success, on a fetch or decode rejection and
+  on a throw after the decode, so a failed decode cannot hang the card.
+- **The `render` timing**: mostly the machine. The `sim` span (Hollowmere 0.095 to 0.084, Coldharbour 0.134 to 0.121)
+  and `tick` fell 9–12% as well, though `sim` runs in the Worker, whose bundle (`localMatchWorker-DZgI3FeU.js`) is
+  byte-identical at both trees; the BEFORE benches ran 01:18–01:30 and the AFTER 02:24–02:35, two blocks, not
+  alternated. The step's share is 17–53 µs a frame against three dropped property reads; no per-frame work the game
+  needed was removed.
+- **The deletions**: no live reader of `__celshock.scene`, `getEngine`, `SceneEngine` or `NullEngine` but guarded arms in
+  the instruments and the copy checks; the plugin-era branch in `physics-ref/lib.mjs` is unreachable;
+  `setRenderingOrder` sorted only Babylon's queue, empty since X5.3c, so no draw of ours moved.
+- **Noted**: `main.ts` is not a root of the gate (it imports nothing of the package; X6.1i's whole-tree gate covers it).
+- **The NITs (f56f9bf)**: `TextureMaker.ts`' decode-failure comment, `docs/deaths.md`, two lines of `docs/rendering.md`,
+  `docs/profiling.md`'s opening (stale since X5.4g), five lines of `VERIFYING.md`, one of `FILES.md`.

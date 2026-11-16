@@ -6455,7 +6455,7 @@ installed app. **Owed**: the `exit-phase-5` tag.
 
 ## Phase 6 — The cut
 
-### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407)
+### X6.1 — Remove `@babylonjs/core` — **L, as ten sub-steps** (split 2026-11-13: the owner instructed that X6.1 be implemented in sub-steps, each implemented, reviewed and fixed by agents; the split was proposed by a planning agent's read at 5613d1e; it was sized **S–M** before the split, and the read below re-sizes it) — seven rows of its own in "Decisions that are yours", six of them OPEN (X6.1i and X6.1j are marked decision) — X6.1a **LANDED** (1d13c83, its review f8f6525..1b9e23c), X6.1b **LANDED** (47eca5d, its review 07b99a0), X6.1c **LANDED** (7b35c21, its review 4e4c3cb), X6.1d **LANDED** (40c058a, its review 75926dc), X6.1e **LANDED** (91fbd70, its review f92038f), X6.1f **LANDED** (8a69f09, 95c7122, its review ca2b6597), X6.1g **LANDED** (236c0e8, b5e176a, its review 9578708), X6.1h **LANDED** (ef69ef3, a3a3407, its review f56f9bf)
 
 - **Do:**
   - Delete `babylonSeam.ts`, `src/math/babylon.ts` and every adapter.
@@ -7231,7 +7231,7 @@ Then the cut, then the sweep.
     - the headers of `SceneFrame.ts` and `FrameLoop.ts`;
     - `FILES.md`.
 
-  **X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step; 2026-11-16; no change to the picture; the full note
+  **X6.1h LANDED** (ef69ef3 the hook, a3a3407 the step, its review f56f9bf; 2026-11-16; no change to the picture; the full note
   is in `plans/done/babylon_exit_landed.md`). **The hook first** (ef69ef3, as at X5.4a): `core/PendingData.ts` ports
   the scene's pending-data list (`addPendingData`, `removePendingData`, `getWaitingItemsCount`, `isLoading`) with
   `isReady`, `Game.pending` holds it, and `WaterSystem` told it beside the scene's; the adapter's `ready` reads it
@@ -7266,6 +7266,16 @@ Then the cut, then the sweep.
   56, 16,825.3 to 9,795.8 kB raw and 6,019.6 to 4,449.4 kB gzipped (the JS 12,193.9 to 5,164.4 and 3,089.0 to
   1,518.7). **Flagged**: two device hangs (`DXGI_ERROR_DEVICE_HUNG`), both on the BEFORE (the `low` bank,
   `surfaces.mjs`), each re-run clean; the `render` speed-up is outside the 8% band on the fast side.
+  **Its review** (f56f9bf): clean, comment and doc NITs fixed (present-tense scene mentions the sweep left in
+  `TextureMaker.ts`, `docs/deaths.md`, `docs/rendering.md`, `docs/profiling.md`'s opening, `VERIFYING.md` and
+  `FILES.md`), and no question about the architecture. The BEFORE at ef69ef3 stands for bb3f7fe6 (the hook's list
+  is read by nothing in the game); `core/Observable.ts` is Babylon's line for line; the frame's constants are
+  Babylon's (deltas 1 and 1000 clamped in the same order, the slate, `renderTargetsEnabled`, half-Z); at
+  bb3f7fe6 `isReady` reduced to the pending list, whose one holder, the foam, is released on every path,
+  failure included. **The `render` speed-up is mostly the machine**: the `sim` span, run in a Worker whose bundle is
+  byte-identical at both trees, fell 9–12% too, and the BEFORE and AFTER benches ran as two blocks an hour apart,
+  not alternated; the step's own share is tens of microseconds, with no per-frame work the game needed removed.
+  Noted for X6.1i: `main.ts` is not a root of the gate, which the whole-tree gate covers.
 
 - **X6.1i — the cut** (no change to the game) — **S–M** (decision: rows "X6.1, the copy
   checks", "X6.1, `optimizeDeps.exclude`", "X6.1, the gate's simulations" and "X6.1, the
