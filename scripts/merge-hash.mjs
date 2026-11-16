@@ -79,6 +79,10 @@
  * **Against a baseline that records `mesh` (X3.7b's on), a surface that
  * GAINS or LOSES its mesh is a difference** (`mesh` moved), whatever else
  * matches — a fire made meshless would otherwise pass on its record alone.
+ * **A build that makes no mesh at all** (`BABYLON_EXIT.md` X6.1g: no
+ * `GameMap.visuals`, no `SurfaceRecord.visual`) is fingerprinted the same
+ * way, every surface `mesh: false` — which is what a shipped build already
+ * said of every surface since X4.6e, so its fingerprint does not move.
  * A surface WITH a mesh is compared field for field as before, its
  * `sceneRank` against the baseline's ranks re-ranked over the surfaces that
  * still have one (and that had one in the scene: a baseline rank of -1 takes
@@ -314,9 +318,13 @@ function fingerprintMap() {
   // `visuals`, one for one.
   const surfaces = map.world?.surfaces;
   const sunk = window.__surfaceHashes;
-  const visualOf = (r, i) => (r && typeof r.visual === "number" ? r.visual : i);
-  const meshRecords = records(map.visuals);
-  const visuals = (surfaces ?? map.visuals).map((s, i) => {
+  // A build that makes NO mesh (`BABYLON_EXIT.md` X6.1g on: no `visuals`
+  // and no `SurfaceRecord.visual`) has every surface on its record alone.
+  const meshList = map.visuals ?? [];
+  const visualOf = (r, i) =>
+    !map.visuals ? -1 : r && typeof r.visual === "number" ? r.visual : i;
+  const meshRecords = records(meshList);
+  const visuals = (surfaces ?? meshList).map((s, i) => {
     const v = surfaces ? visualOf(s, i) : i;
     const out =
       v >= 0
