@@ -32,6 +32,20 @@
  * changes a character without the probe's `--against` its parent and the
  * bank's `exact.mjs` saying it moved nothing.
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced".
+ *
+ * ## Licence
+ *
+ * The modules, and the arithmetic that writes the blur's, are copied from
+ * Babylon.js 9.28 (`ShadersWGSL/kernelBlur.vertex.js`,
+ * `kernelBlur.fragment.js` and `postprocess.vertex.js` as its WGSL processor
+ * compiled them, and `PostProcesses/thinBlurPostProcess.js`'
+ * `_nearestBestKernel` and `_updateParameters`), which is licensed under the
+ * Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: a kernel's
+ * text written by `glowBlurModules` rather than by the processor, character
+ * for character; the box filter's fragment is the game's own `glowDown`, as
+ * that processor compiled it.
  */
 
 /** `_nearestBestKernel`'s candidates about the rounded width, in its order: v, v - 1, v + 1, v - 2, v + 2. */

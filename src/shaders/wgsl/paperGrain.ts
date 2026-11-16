@@ -28,6 +28,17 @@
  * made in its own commit, and the readable account of what each line does
  * is `PaperGrain.ts`' header and `docs/rendering.md`'s grade bullets.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
+ *
+ * ## Licence
+ *
+ * The `postprocess` vertex stage and what Babylon's WGSL processor wrote into
+ * both modules are copied from Babylon.js 9.28
+ * (`ShadersWGSL/postprocess.vertex.js`,
+ * `Engines/WebGPU/webgpuShaderProcessorsWGSL.pure.js`), which is licensed
+ * under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: none to that
+ * text; the fragment's own source is the game's.
  */
 import { CONFIG } from "../../config";
 import type { AssembledBinding } from "../../render/wgsl/assemble";

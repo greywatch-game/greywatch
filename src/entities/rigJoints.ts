@@ -59,6 +59,17 @@
  * Never: imports Babylon, allocates per compute, or reads a node's matrix —
  * the one matrix it reads from outside is the camera's world, handed in as a
  * function by the viewmodel's root (`Joint.outside`), never fetched here.
+ *
+ * ## Licence
+ *
+ * A joint's compose and `RenderCache` are ported from Babylon.js 9.28
+ * (`TransformNode.computeWorldMatrix` and its render-id cache,
+ * `Meshes/transformNode.pure.js`), which is licensed under the Apache License,
+ * Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: plain joints
+ * in place of nodes, the cache keyed on a render id of ours, and only the four
+ * things above modelled.
  */
 import { Matrix, Quaternion, Vector3, type MatrixLike, type Vector3Like } from "../math";
 

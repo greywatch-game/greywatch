@@ -50,6 +50,17 @@
  * does not wait for them, and a round that reaches play before they are
  * built skips the blur the same way.
  * Contract: `docs/rendering.md`, "The glow: what the depth share replaced".
+ *
+ * ## Licence
+ *
+ * The draws are ported from Babylon.js 9.28
+ * (`PostProcesses/thinBlurPostProcess.js`, and
+ * `Materials/effectRenderer.pure.js` for the quad), which is licensed under
+ * the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: each pass
+ * begun by our renderer, and a width's pipeline compiled off the frame (the
+ * difference above).
  */
 import type { FrameTarget } from "./FrameTargets";
 import type { BuiltPipeline, PipelineSpec, ShaderSource } from "./PipelineCache";

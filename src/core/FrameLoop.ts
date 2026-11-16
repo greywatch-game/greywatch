@@ -60,6 +60,16 @@
  * `start`; requests a second refresh while one is pending.
  * Contract: `docs/game.md` ("What a frame owes"), `docs/profiling.md`
  * ("`present`, and the three roots").
+ *
+ * ## Licence
+ *
+ * Ported from Babylon.js 9.28 (`Engines/abstractEngine.pure.js`,
+ * `webgpuEngine.pure.js` and `Misc/performanceMonitor.js`), which is licensed
+ * under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the loop and
+ * the clock taken out of the engine, and the lost device's restore not kept
+ * (above).
  */
 import { Observable } from "./Observable";
 import { FrameSubmit } from "../render/FrameSubmit";

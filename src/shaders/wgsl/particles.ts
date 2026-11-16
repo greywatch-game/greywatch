@@ -37,6 +37,18 @@
  * shared bodies; changes an expression without the bank's `exact.mjs` and the
  * particle probe saying it moved nothing.
  * Contract: `docs/rendering.md`, "The particles".
+ *
+ * ## Licence
+ *
+ * The modules are copied from Babylon.js 9.28
+ * (`ShadersWGSL/gpuUpdateParticles.compute.js`, `gpuRenderParticles.vertex.js`
+ * and `gpuRenderParticles.fragment.js`, as its WGSL processor compiled them
+ * for `Particles/gpuParticleSystem.pure.js` on
+ * `computeShaderParticleSystem.pure.js`), which is licensed under the Apache
+ * License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: only how a
+ * value arrives, and the fragment's unused declarations dropped, as above.
  */
 
 /** Floats in one slot of the motes' feature set (`_initialize`'s stride, its `alignDataInBuffer` padding in). */

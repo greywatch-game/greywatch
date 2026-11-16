@@ -104,6 +104,15 @@
  * advances the render id anywhere but the two points; allocates on a frame.
  * Contract: `docs/game.md` ("What a frame owes") and `docs/rendering.md`
  * ("Our renderer's frame").
+ *
+ * ## Licence
+ *
+ * Ported from Babylon.js 9.28 (`scene.pure.js`), which is licensed under the
+ * Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the steps
+ * listed above taken out of the scene into a frame of the game's own, and the
+ * rest not kept.
  */
 import { Color4, Frustum, Matrix, type Plane } from "../math";
 import { Observable } from "./Observable";

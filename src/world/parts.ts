@@ -67,6 +67,16 @@
  * nothing that moves or shoots reads anything else (`RayWorld`,
  * `CollisionField`); the meshes the map editor's centre-screen pick walked
  * went with their last reader (`BABYLON_EXIT.md` X5.3c, X5.3e).
+ *
+ * ## Licence
+ *
+ * `worldMatrixOf` and `detachPart` are ported from Babylon.js 9.28
+ * (`TransformNode.computeWorldMatrix` and `setParent`,
+ * `Meshes/transformNode.pure.js`), which is licensed under the Apache License,
+ * Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: a part's
+ * channels in place of a node's, and only the paths a part takes.
  */
 import { mergeTransformed, type FloatArray, type GeometryBuffer } from "../geometry/buffer";
 import { Matrix, Quaternion, Vector3 } from "../math";

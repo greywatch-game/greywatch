@@ -4,21 +4,40 @@ Parts of this tree are COPIED from Babylon.js 9.28.0 (`@babylonjs/core`), which
 is licensed under the Apache License, Version 2.0. The game ran on Babylon until
 `BABYLON_EXIT.md` took it off, and where Babylon's arithmetic had to be kept to
 the bit — the math, the primitive generators and the merge, the body sweep, the
-camera, the observables, the readiness list — the code was ported rather than
-rewritten. The package itself left the tree at `BABYLON_EXIT.md` X6.1i, and with
+camera, the observables, the readiness list, the frame, its loop and the
+canvas, the particles, and the shader text its processor compiled — the code
+was ported rather than rewritten. The package itself left the tree at `BABYLON_EXIT.md` X6.1i, and with
 it the copy of its licence a checkout used to carry in `node_modules/`; this file
 is that licence and NOTICE, verbatim, kept in the repository (the owner's
 decision, row "X6.1, the licence": the repository carries the notice, the
 shipped bundle does not).
 
-**Which files are ports**: every file whose header cites this file. At X6.1i
-those are the nine whose headers cited the package's own copy of this licence;
-other ports in the tree (the post chain's FXAA and glow blur, the particles,
-the canvas surface, the frame and its loop) say so in their headers but do not
-cite it yet, and pointing them here is `BABYLON_EXIT.md` X6.1j's (its row "X6.1,
-the licence"). A new port
-of anything of Babylon's says so in its header, names the source file and the
-version, states what it changed, and cites `licenses/babylonjs.md`.
+**Which files are ports**: every file whose header cites this file, in a
+`## Licence` section naming the Babylon source it came from and what it
+changed. They are the nine whose headers cited the package's own copy of this
+licence at X6.1i and the eighteen `BABYLON_EXIT.md` X6.1j pointed here (its row
+"X6.1, the licence"), twenty-seven in all:
+
+- the math: `src/math/vector.ts`, `color.ts`, `plane.ts`;
+- the geometry: `src/geometry/buffer.ts`, `primitives.ts`; a part's world
+  matrix (`src/world/parts.ts`), the world bounds
+  (`src/world/worldGeometry.ts`) and a joint's compose
+  (`src/entities/rigJoints.ts`);
+- the body sweep: `src/world/ellipsoidSweep.ts`;
+- the camera, the observables and the readiness: `src/core/FreeCamera.ts`,
+  `Observable.ts`, `PendingData.ts`;
+- the frame, its loop and the canvas: `src/core/SceneFrame.ts`,
+  `FrameLoop.ts`, `CanvasSurface.ts`;
+- the particles: `src/render/ParticleField.ts`, `ParticleDraw.ts`,
+  `src/shaders/wgsl/particles.ts`;
+- the post chain and the glow: `src/shaders/Fxaa.ts`,
+  `src/shaders/wgsl/fxaa.ts`, `glowBlur.ts`, `celInk.ts`, `motionBlur.ts`,
+  `paperGrain.ts`, `volumetrics.ts`, `src/render/GlowBlur.ts`;
+- the mip chains: `src/render/cubeMips.ts`.
+
+`git grep -l licenses/babylonjs.md -- src` lists them. A new port of anything
+of Babylon's says so in its header, names the source file and the version,
+states what it changed, cites `licenses/babylonjs.md`, and joins this list.
 
 The NOTICE below lists components bundled with the `@babylonjs/core` package
 (Draco, Basis, GLSLang, TWGSL, meshoptimizer); none of them is copied into this

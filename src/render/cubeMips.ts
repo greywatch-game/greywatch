@@ -22,6 +22,17 @@
  * Never: imports Babylon; reads a node; allocates on a frame once a cube has
  * been chained once.
  * Contract: `docs/rendering.md`, "The glazing and the reflection bake".
+ *
+ * ## Licence
+ *
+ * The shader and the chain's passes are copied from Babylon.js 9.28
+ * (`Engines/WebGPU/webgpuTextureManager.js`: `mipmapVertexSource`,
+ * `mipmapFragmentSource`, `generateCubeMipmaps` and `generateMipmaps`), which
+ * is licensed under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the two stages
+ * in one module of plain WGSL, and the passes recorded into the encoder handed
+ * in.
  */
 import type { PassTargets } from "./frameHost";
 import type { BuiltPipeline, PipelineCache, ShaderSource } from "./PipelineCache";

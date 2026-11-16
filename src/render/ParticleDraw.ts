@@ -52,6 +52,16 @@
  * outside `create` and a field's first update; decides what a field emits (its
  * owner's: `systems/Atmosphere.ts`, `systems/RotorWash.ts`).
  * Contract: `docs/rendering.md`, "The particles".
+ *
+ * ## Licence
+ *
+ * Ported from Babylon.js 9.28 (`Particles/gpuParticleSystem.pure.js` and
+ * `computeShaderParticleSystem.pure.js`), which is licensed under the Apache
+ * License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the GPU work
+ * recorded by our renderer on buffers, textures and pipelines of its own, and
+ * only the two feature sets the game's fields use.
  */
 import { HostBindGroup, OwnTexture, type TextureHandles } from "./HostBindGroup";
 import type { BuiltPipeline } from "./PipelineCache";

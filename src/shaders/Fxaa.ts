@@ -39,6 +39,17 @@
  * (`BABYLON_EXIT.md` X5.2a measured it), so the arm was compiled out on every
  * phone, Mali or not. The text ported is the one the parent's device was
  * handed, the early exit at the top.
+ *
+ * ## Licence
+ *
+ * The stage, its block and its binding are ported from Babylon.js 9.28
+ * (`PostProcesses/fxaaPostProcess.pure.js`, `thinFXAAPostProcess.js`), and its
+ * program is `wgsl/fxaa.ts`' copy of Babylon's, which is licensed under the
+ * Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the stage
+ * drawn by our post chain rather than Babylon's post-process manager, and the
+ * program's changes as `wgsl/fxaa.ts` lists them.
  */
 import type { PostStage } from "../render/PostChain";
 import {

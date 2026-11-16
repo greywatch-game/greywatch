@@ -26,6 +26,17 @@
  * its own commit, and the readable account is `shaders/Fxaa.ts`' header and
  * `CONFIG.graphics.fxaa`'s comments.
  * Contract: `docs/rendering.md`, "Our renderer's frame".
+ *
+ * ## Licence
+ *
+ * The two modules are copied from Babylon.js 9.28
+ * (`ShadersWGSL/fxaa.vertex.js` and `fxaa.fragment.js`, as its WGSL processor
+ * compiled them for `PostProcesses/thinFXAAPostProcess.js`), which is licensed
+ * under the Apache License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: the three
+ * tuning constants folded in from `CONFIG.graphics.fxaa`, and the `#ifdef
+ * MALI` arm resolved as above.
  */
 import { CONFIG } from "../../config";
 import type { AssembledBinding } from "../../render/wgsl/assemble";

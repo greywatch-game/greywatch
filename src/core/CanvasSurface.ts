@@ -78,6 +78,17 @@
  * frame.
  * Contract: `docs/rendering.md` ("Our renderer's frame"), `docs/pwa.md` (the
  * canvas a phone resizes).
+ *
+ * ## Licence
+ *
+ * Ported from Babylon.js 9.28 (`Engines/abstractEngine.pure.js`,
+ * `Engines/AbstractEngine/abstractEngine.dom.pure.js`, `webgpuEngine.pure.js`,
+ * `Inputs/scene.inputManager.js` and `DeviceInput/webDeviceInputSystem.js`),
+ * which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes from
+ * the original: the parts listed above taken out of the engine and the scene's
+ * input manager into one class, and the rest not kept.
  */
 
 /** What `getAspectRatio` reads off a camera: its viewport, as fractions of the canvas. */
