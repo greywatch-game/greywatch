@@ -565,13 +565,13 @@ export class AmbienceVoices {
       // a magic one — and here that is simply the depth, because the buffer
       // is unit RMS by construction.
       //
-      // It is worth knowing WHY that matters, because the term once did
+      // It is worth knowing WHY that matters, because without it the term does
       // nothing at all: a modulator arriving at ~0.023 RMS swings a bed by
       // about one per cent, and a depth stated as a plain multiplier is
       // invisible in a listen and invisible in a diff — rendered, the fire's
       // hump depth at 0.55 and at 1.0 gave a bed breathing 1.51x and 1.50x.
-      // What used to divide it back out was an ESTIMATE of the filter's own
-      // noise bandwidth, 4 to 10% out where it was measured; normalising the
+      // Dividing it back out by an ESTIMATE of the filter's own noise
+      // bandwidth is 4 to 10% out where it was measured; normalising the
       // buffer instead makes it exact.
       kind.bands.forEach((band, i) => {
         const depth = ctx.createGain();
@@ -763,11 +763,10 @@ export class AmbienceVoices {
    * already plays on the shared noise buffer — and 0.28 Hz is nothing
    * special to a buffer read slowly.
    *
-   * **Normalised to unit RMS, which retires the estimate the makeup used to
-   * divide by.** That estimate (`0.577 * sqrt(...)`) was the noise-bandwidth
-   * arithmetic for the filter it no longer has, and it was 4 to 10% out
-   * where it was measured — so `BandSpec.breath` and `breathRoarDepth` are
-   * now exactly the fraction of their own level that they say they are.
+   * **Normalised to unit RMS, so the makeup divides by no estimate.** A
+   * noise-bandwidth estimate (`0.577 * sqrt(...)`) is 4 to 10% out where it
+   * was measured — so normalising is what makes `BandSpec.breath` and
+   * `breathRoarDepth` exactly the fraction of their own level that they say they are.
    */
   buildBreathBuffer(): void {
     if (!this.core.ctx) return;

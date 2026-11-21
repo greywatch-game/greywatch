@@ -21,30 +21,18 @@
  * wait that cannot settle must not hang the card any more than the
  * reflection drain may. A group of ours still compiling draws NOTHING, so the
  * round must not open on one; a compile of ours that FAILS fails the world
- * under the card (`BABYLON_EXIT.md` X3.7b: `Game.worldFailed`). "Ours" is the
+ * under the card (`Game.worldFailed`). "Ours" is the
  * whole of our renderer's cache, so a compile a torn-down map left in flight
  * holds the wait too — at worst a slower card, since a later map reuses what
  * it built.
- * Never: reads the scene, touches the GPU, stands the camera anywhere, or
+ * Never: touches the GPU, stands the camera anywhere, or
  * allocates per frame.
  *
  * **Nothing is DRAWN for a pipeline's sake, because ours are not compiled by
  * drawing.** Our renderer states every field of a pipeline itself and asks for
  * it ahead of the frame (`render/PipelineCache.ts`), so the card only has to
  * wait for them; and once it is down the cache is SEALED (`PipelineCache.seal`),
- * so a compile in play is a DEV warning naming what the list missed. **There
- * were VANTAGES here until `BABYLON_EXIT.md` X5.4c**: the card stood the camera
- * at each home spawn and each flag in turn and drew the whole map from there,
- * frustum and cull cells off, until a frame compiled nothing — because Babylon
- * compiled a pipeline on the first draw that needed one, and a restatement of
- * every field by hand (`engine.createRenderPipelineAsync`) that was wrong in one
- * would have built a pipeline nothing asked for and left the stall where it
- * was. As Babylon's draws left the round (the post chain's last at X5.2d, the
- * irradiance volume's computes at X5.1b, every pool by X4.6e), the vantages had
- * less and less to compile, and X5.4a's log and X5.4c's showed them compiling
- * NOTHING in either cache on all seven shipped maps — fifteen installs, eleven
- * vantages each — so X5.4c retired them, and with them the read of Babylon's
- * pipeline cache's miss count, the quiet-frame rule and its two caps.
+ * so a compile in play is a DEV warning naming what the list missed.
  */
 import { CONFIG } from "../config";
 import type { CompileProgress } from "../render/PipelineCache";

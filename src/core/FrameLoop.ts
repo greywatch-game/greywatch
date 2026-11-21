@@ -1,17 +1,15 @@
 /**
- * FrameLoop.ts — the game's RENDER LOOP and its clock (`BABYLON_EXIT.md`
- * X5.4g): what Babylon's engine ran for it until then — `runRenderLoop`, the
- * animation-frame request, `beginFrame`, `endFrame` and its submit,
- * `getDeltaTime` and `getFps` — done by the game, in Babylon's order.
+ * FrameLoop.ts — the game's RENDER LOOP and its clock: what Babylon's engine
+ * ran for it — `runRenderLoop`, the animation-frame request, `beginFrame`,
+ * `endFrame` and its submit, `getDeltaTime` and `getFps` — ported and done by
+ * the game, in Babylon's order.
  * Owns: `FrameLoop` — the `requestAnimationFrame` chain (and `stop`, its
- * end), `FrameCap` asked of every refresh (its ADMITTER, no longer a
- * requester Babylon calls), the
- * frame's begin and end as OBSERVABLES of its own (`core/Observable.ts`,
- * Babylon's ported as written since `BABYLON_EXIT.md` X6.1h, Babylon's own
- * before), each named for the engine's it replaces
+ * end), `FrameCap` asked of every refresh (its ADMITTER), the
+ * frame's begin and end as OBSERVABLES of its own (`core/Observable.ts`),
+ * each named for the engine's it ports
  * (`onBeginFrameObservable`, `onEndFrameObservable`),
- * the frame's id (what `engine.frameId` was: moved once a frame, after its
- * submit, as `endFrame` moved Babylon's), the frame's ONE encoder and ONE
+ * the frame's id (moved once a frame, after its submit, as `endFrame` moved
+ * Babylon's), the frame's ONE encoder and ONE
  * submit (`render/FrameSubmit.ts`), and the profiler's `present`, the span
  * around that submit; and `FrameClock`, the frame's delta and its frame rate.
  * Invariants:
@@ -31,27 +29,22 @@
  *   delta the newest gap and the rate 1000 over the window's mean — so the
  *   readout and the profiler's real delta read what Babylon's `getDeltaTime`
  *   and `getFps` did. **It is sampled where Babylon's monitor was**: at every
- *   frame's begin, and wherever Babylon's engine ran a `beginFrame` of its
- *   own, which since X5.4g was only the one inside
- *   `_initializeMainAttachments` — once as the boot's device came up,
- *   whatever the size, and at every size of the canvas that took after it.
- *   Since `BABYLON_EXIT.md` X5.4h those points are the game's: the boot's
- *   sample once the context is configured, and the canvas's `onSized`
+ *   frame's begin, and where Babylon's engine ran a `beginFrame` outside the
+ *   loop (the one inside `_initializeMainAttachments`): the boot's sample
+ *   once the context is configured, whatever the size, and the canvas's
+ *   `onSized` at every size of the canvas that takes after it
  *   (`core/CanvasSurface.ts`, `main.ts`).
  * - **A lost device ENDS the loop** (`stop`, the first thing `Game`'s
- *   answer to a loss does, `BABYLON_EXIT.md` X5.4i): no frame is drawn on a
- *   lost device and none is resumed — the page reloads to the menu, or stands
- *   under the boot's plate. So there is no hold any more (`held`, X5.4h's,
- *   which held the loop for the task Babylon's engine took to flag a restore
- *   and then drew on the lost device), and the two things a hold owed the
- *   parent are moot: whether the loss is tested ahead of the cap or after it
- *   (Babylon's `_renderLoop` tested `_contextWasLost` inside a refresh the
- *   cap had admitted, so its first frame after a restore read one refresh of
- *   `FrameCap.elapsed`), and the one clock sample Babylon's restore took
+ *   answer to a loss does): no frame is drawn on a lost device and none is
+ *   resumed — the page reloads to the menu, or stands under the boot's plate
+ *   — so the loop has no hold. If a loss is ever survived in place
+ *   (`FINDINGS.md` 74), the frame it resumes owes two things Babylon's
+ *   restore did: the cap asked ahead of the hold (Babylon's `_renderLoop`
+ *   tested `_contextWasLost` inside a refresh the cap had admitted, so its
+ *   first frame after a restore read one refresh of `FrameCap.elapsed`), and
+ *   the one clock sample Babylon's restore took
  *   (`_restoreEngineAfterContextLost`, `initAsync`,
- *   `_initializeMainAttachments`, `beginFrame`). If a loss is ever survived
- *   in place (`FINDINGS.md` 74), the frame it resumes owes both: the cap
- *   asked ahead of the hold, as Babylon's order had it, and that sample.
+ *   `_initializeMainAttachments`, `beginFrame`).
  * - The world is NOT stepped by this clock: `Game.tick` steps it by
  *   `FrameCap.elapsed`, the refresh stamps (`FrameCap`'s header); this delta
  *   is what the readout, the profiler and the particle fields' animation
@@ -155,7 +148,7 @@ export class FrameLoop {
   readonly onBeginFrameObservable = new Observable<void>();
   /** A frame's commands submitted and its id moved: Babylon's `engine.onEndFrameObservable`'s point. */
   readonly onEndFrameObservable = new Observable<void>();
-  /** Frames submitted: what `engine.frameId` answered, moved at each end. */
+  /** Frames submitted, moved at each end. */
   frameId = 0;
   /** The frame's encoder and its submit. */
   readonly submit: FrameSubmit;
@@ -192,7 +185,7 @@ export class FrameLoop {
    * refresh cancelled and none requested again — a frame running when it is
    * called (from inside `tick` or an observer) completes, and requests no
    * next one. The game calls it once, first in a lost device's teardown
-   * (`Game.deviceLost`, `BABYLON_EXIT.md` X5.4i); a script may too. Not
+   * (`Game.deviceLost`); a script may too. Not
    * restartable.
    */
   stop(): void {

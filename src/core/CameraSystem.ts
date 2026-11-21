@@ -1,8 +1,8 @@
 /**
  * CameraSystem.ts — First-person camera: aim yaw/pitch, ADS blend (FOV +
  * sensitivity), recoil, per-shot view punch, head bob.
- * Owns: the frame's camera (`core/FreeCamera.ts`, Babylon's ported, made the
- * frame's `activeCamera` here as Babylon's was the scene's). The camera sits
+ * Owns: the frame's camera (`core/FreeCamera.ts`, made the frame's
+ * `activeCamera` here). The camera sits
  * AT the player's eye — it never leaves the head, so there is no occlusion
  * pick and no pull-in. The one exception is `place()`, which hands the camera
  * to `DeathCam` when there is no longer a head to sit in; that caller owns its
@@ -49,7 +49,7 @@
  * assignment at the end of `update`: a second write site is how a roll becomes
  * whichever contributor happened to run last.
  * **The camera is the game's own** (`core/FreeCamera.ts`, Babylon 9.28's
- * `FreeCamera` ported as written onto `src/math/`, `BABYLON_EXIT.md` X6.1f):
+ * `FreeCamera` ported as written onto `src/math/`):
  * its pose, its matrices and everything this hands out are `src/math`'s, so
  * a vector handed TO it (`place`'s, a `Vector3Like`) is read by its numbers
  * and nothing crosses a library.
@@ -193,9 +193,9 @@ export class CameraSystem {
    * two mechanical systems.** Aimed, the weapon is in a three-point lock —
    * shoulder pocket, cheek weld, support hand — which is stiff and which a
    * braced shooter drives back at once. At the hip it hangs on two arms: a
-   * long, soft lever with nothing constraining it. Under the old spring the
-   * stance was one amplitude multiplier and the SHAPE was identical, so hip
-   * fire was aimed fire turned up, which is the one thing it is not.
+   * long, soft lever with nothing constraining it. One amplitude multiplier
+   * over one SHAPE would make hip fire aimed fire turned up, which is the one
+   * thing it is not.
    */
   private readonly shapeHip: RecoilShape = {
     grip: CONFIG.recoil.settle.gripHip,
@@ -271,7 +271,7 @@ export class CameraSystem {
    * clock rather than `punchT`'s, because the twist outlives the punch: it
    * rises to `rollBeat.peakAt` and dies `fall` after it, which is past the
    * envelope's own peak, and its amplitude is a fixed torque rather than
-   * something the punch's scale should be allowed to reshape. The two now
+   * something the punch's scale should be allowed to reshape. The two
    * peak within a dozen milliseconds of each other on purpose — one event
    * arriving once — but they are still two clocks.
    *
@@ -387,16 +387,15 @@ export class CameraSystem {
   private readonly eye = new Vector3();
 
   /**
-   * `frame` is the frame the camera is made the ACTIVE camera of (Babylon's
-   * `FreeCamera` constructor made it the scene's), and `surface` the canvas
-   * its projection's aspect ratio is asked of.
+   * `frame` is the frame the camera is made the ACTIVE camera of, and
+   * `surface` the canvas its projection's aspect ratio is asked of.
    */
   constructor(frame: { activeCamera: FreeCamera | null }, surface: CanvasSurface) {
     this.camera = new FreeCamera("mainCamera", new Vector3(0, 3, -8), surface);
     this.camera.minZ = 0.05;
     this.camera.fov = CONFIG.camera.fovHip;
-    // Fully driven by this system: Babylon's camera had its inputs cleared
-    // here, and ours has none (`FreeCamera`'s header).
+    // Fully driven by this system: the camera has no inputs of its own
+    // (`FreeCamera`'s header).
     // The roll (`rotation.z`, written by the landing absorb) reaches the view
     // matrix only through the camera's UP VECTOR, and the camera otherwise keeps
     // that vector as state refreshed on the frames `rotation.z` *changes*.
@@ -525,10 +524,9 @@ export class CameraSystem {
    *
    * The `ToRef` form exists because the getter below it is the most-read API in
    * the frame — the aim assist, the shadow focus, the audio listener and the
-   * camera's own update each take it once per frame, and every one of those
-   * reads used to mint a `Vector3`. This file's own scratch comment three
-   * dozen lines up says it does not allocate per frame; the accessors were the
-   * one place that was not true.
+   * camera's own update each take it once per frame, and a getter mints a
+   * `Vector3` on every one of those reads — in a file whose scratch fields
+   * exist so that nothing here allocates per frame.
    *
    * The plain getters are kept for the per-EVENT callers (a shot, a throw, a
    * grenade release), where an allocation is free and a scratch would be a trap
@@ -786,9 +784,9 @@ export class CameraSystem {
     this.punchScale = shock;
     const d = Math.max(-1, Math.min(1, drift));
     this.punchPitch = (0.6 + Math.random() * 0.4) * lift;
-    // Mostly the shot's OWN lateral, with a quarter of noise on top. It was an
-    // even split, and against a `kickDrift` that now sweeps rather than being
-    // redrawn per round (`recoil.pattern.sweepShots`) an even split is half
+    // Mostly the shot's OWN lateral, with a quarter of noise on top. Against
+    // a `kickDrift` that sweeps rather than being redrawn per round
+    // (`recoil.pattern.sweepShots`), an even split is half
     // the punch disagreeing with the muzzle about which way the round went —
     // which is the reading "the aim jumps in random directions" describes.
     //
@@ -811,10 +809,10 @@ export class CameraSystem {
    * same idiom and the same argument as the viewmodel's kick one layer down:
    * the rise, the peak and the slight settle below the line then come out of
    * the mechanism instead of being authored, and a round arriving on an aim
-   * that has not come home adds to what is already there. What it replaced was
-   * a step to full amplitude and a first-order fade from it, which gave every
-   * weapon in the kit the same instantaneous attack — and nothing with mass
-   * behind it moves like that.
+   * that has not come home adds to what is already there. A step to full
+   * amplitude and a first-order fade from it would give every weapon in the
+   * kit the same instantaneous attack — and nothing with mass behind it moves
+   * like that.
    *
    * Each kick is still split: most of it settles out on its own, and
    * `1 - recoverFraction` of it is owed to the player's own aim and never
@@ -844,7 +842,7 @@ export class CameraSystem {
     // The gain is taken for the stance the shot was FIRED in, and the bleed
     // term is the share of `owed` that will have been handed over by the time
     // the muzzle reaches the top of its travel — without it the two sum past
-    // the kick the table states. It is per AXIS now for the same reason the
+    // the kick the table states. It is per AXIS for the same reason the
     // share is: a yaw gain carrying the pitch's bleed would quietly overshoot
     // the horizontal the table states by the difference between them.
     const shape = this.shapeAt(this.adsBlend);
@@ -897,7 +895,7 @@ export class CameraSystem {
    * part of what absorbs it.
    *
    * **It hands a velocity and queues nothing**, which is how the 100%-springy
-   * invariant is now stated: `owedPitch`/`owedYaw` are the only route into
+   * invariant is stated: `owedPitch`/`owedYaw` are the only route into
    * `pitch`/`yaw`, and this method does not touch them.
    */
   addFlinch(pitch: number, yaw: number): void {
@@ -1232,9 +1230,8 @@ export class CameraSystem {
     // metre of parallax and nothing else, so the bullets are untouched.
     this.eye.y += this.landDip;
     const r = CONFIG.recoil;
-    // Read straight, not squared: the envelope carries its own attack now, and
-    // squaring it was what put the spike on the impact frame when there was no
-    // attack to put it anywhere else.
+    // Read straight, not squared: the envelope carries its own attack, and
+    // squaring it would put a spike on the impact frame.
     const punch = this.punchT * this.punchScale;
     if (punch > 0) {
       this.eye.subtractInPlace(dir.scale(r.camPush * punch));

@@ -6,10 +6,8 @@
  * `?bench=<map>`, which overrides the session itself: the page plays the
  * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
  * and `?nocull` and `?nofrustum`, which take our renderer's culls out, for an
- * A/B on a device (`BABYLON_EXIT.md`), and `?cullcheck`, which reads those
- * culls back on the device. (`?babylonworld`, the A/B against Babylon's
- * world, went with Babylon's world meshes at X3.7b; the last build that has
- * it is tagged `exit-babylonworld`.)
+ * A/B on a device, and `?cullcheck`, which reads those
+ * culls back on the device.
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses

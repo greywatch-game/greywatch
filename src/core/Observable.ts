@@ -1,5 +1,5 @@
 /**
- * Observable.ts — the frame's NOTIFICATIONS (`BABYLON_EXIT.md` X6.1h):
+ * Observable.ts — the frame's NOTIFICATIONS:
  * Babylon 9.28's `Observable`, its `Observer` and its `EventState` PORTED as
  * written (`Misc/observable.pure.js`, every member), so an observer added,
  * added once, inserted first, removed — inside a notification or out of one —

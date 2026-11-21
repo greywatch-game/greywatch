@@ -1,6 +1,6 @@
 /**
- * CanvasSurface.ts — THE CANVAS as the game's (`BABYLON_EXIT.md` X5.4h): what
- * Babylon's `WebGPUEngine` held for it until then — the WebGPU context the
+ * CanvasSurface.ts — THE CANVAS as the game's: what
+ * Babylon's `WebGPUEngine` held for it — the WebGPU context the
  * boot configured on the canvas, the backing store's size, and the scaling
  * level that size is read through — PORTED as Babylon 9.28 wrote it, plus what
  * Babylon's engine and its scene's input manager did to the canvas ELEMENT.
@@ -23,7 +23,7 @@
  *   device-ratio branch never ran: it is not ported).
  * - **The render size is the canvas's backing store** — what
  *   `WebGPUEngine.getRenderWidth`/`getRenderHeight` answered with no render
- *   target of Babylon's bound, which no frame has had since X5.4f — and the
+ *   target of Babylon's bound, the one branch ported — and the
  *   aspect ratio is `AbstractEngine.getAspectRatio`'s arithmetic over it
  *   (`abstractEngine.dom.pure.js` 28).
  * - **`onSized` is told where `WebGPUEngine.setSize` ran
@@ -33,9 +33,9 @@
  *   frame's clock there (`main.ts`, `FrameClock`) and the clock reads Babylon's
  *   samples, sample for sample. What else Babylon did there — flushed its two
  *   encoders, re-made its own main depth and cleared it in a pass on the swap
- *   chain's texture, submitted — went with the engine: the canvas pass's depth
- *   is `ChainPasses`' (X5.4f), and nothing of the game's was on Babylon's
- *   encoders since X5.4g. What `AbstractEngine.setSize` did beside it reached
+ *   chain's texture, submitted — is not ported: the canvas pass's depth is
+ *   `ChainPasses`', and the game's one encoder is the frame's
+ *   (`render/FrameSubmit.ts`). What `AbstractEngine.setSize` did beside it reached
  *   nothing: it zeroed each camera's `_currentRenderId` (which a `Camera` only
  *   writes) and raised `onResizeObservable` (no observer).
  * - **`adoptInput` is what Babylon's scene input manager did to the canvas**
@@ -182,8 +182,8 @@ export class CanvasSurface {
 
   /**
    * The canvas element's input defaults, as Babylon's scene input manager set
-   * them (the header). Once, in `Game` where the scene attached its input until
-   * X6.1h.
+   * them (the header). Once, in `Game`, before the frame is built: the order
+   * Babylon's scene attached it in.
    */
   adoptInput(): void {
     const canvas = this.canvas;

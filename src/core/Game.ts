@@ -50,8 +50,8 @@
  * pick — and it neither stores nor draws, for the same split: `setRegion` here
  * is what writes the pref and what tells the lobby screen.
  * State machine: menu -> deploy -> playing (deploy re-entered on each death)
- * -> roundover. The frame is drawn live behind every state (ours since
- * `BABYLON_EXIT.md` X5.4f, `core/SceneFrame.ts`: there is no Babylon scene since X6.1h). The SHAPE of it
+ * -> roundover. The frame is drawn live behind every state (ours,
+ * `core/SceneFrame.ts`: there is no Babylon scene). The SHAPE of it
  * is `ScreenStack.ts` and not this file: what a screen may cover, what it holds
  * in the page's own match, what it owes a server's round and whether the
  * scoreboard is owed to
@@ -85,14 +85,12 @@
  * to fog — one statement each, `glowAdmits` and `bloomColour`, asked by every
  * draw of ours into the glow's mask (the emissive palette's `WorldGlow`, the
  * visors, the pieces, the billows, the fires) and of the moon by `SkyDraw`,
- * which `admits` alone reaches, a moon having no fade; `GlowPass` asked them
- * of Babylon's meshes through an interface of that name until
- * `BABYLON_EXIT.md` X5.3d),
+ * which `admits` alone reaches, a moon having no fade),
  * ShadowSystem wiring (told per round when the handover has its casters),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
- * every state beside the shader's own — it decides how much of the map Babylon
- * walks each frame and writes nothing onto any mesh),
- * the answer to a LOST graphics device (`deviceLost`, `BABYLON_EXIT.md` X5.4i:
+ * every state beside the shader's own — it decides how much of the map is
+ * drawn each frame and writes nothing onto any mesh),
+ * the answer to a LOST graphics device (`deviceLost`:
  * the teardown between frames, then the page reloaded to the menu, or the
  * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
  * and no build or match opened after it, `deviceIsLost`),
@@ -468,13 +466,13 @@ interface Seat {
 const MINE_LIFT = 0.04;
 
 /**
- * The most hulls one frame draws (`hullDraw`, `BABYLON_EXIT.md` X4.2b): what
+ * The most hulls one frame draws (`hullDraw`): what
  * its staging arrays and buffers are sized to, not a rule about a map. The
  * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws,
  * each frame, the first sixteen hulls that are PRESENT and not faded out by
  * the map's draw distance, those drawn whole first and the fading ones after
  * them, each in hardstanding order (`drawHulls` skips a hidden or faded-out
- * one before it counts, X4.2d), so which hulls go undrawn moves as hulls are
+ * one before it counts), so which hulls go undrawn moves as hulls are
  * hidden, placed again and driven through the fade — and says so on the
  * console at the install (`installMap`).
  */
@@ -600,8 +598,8 @@ function burstSpacing(rounds: number): number {
  * and the per-frame update loop. The DEVICE and the CANVAS are the things here
  * it does not make — `main.ts` asks for the device (WebGPU's is async),
  * configures the canvas's context and hands both in as the device and the
- * `CanvasSurface`, exactly as it hands in Havok (`BABYLON_EXIT.md` X5.4h).
- * There is no Babylon scene and no engine under one (X6.1h).
+ * `CanvasSurface`, exactly as it hands in Havok.
+ * There is no Babylon scene and no engine under one.
  *
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
@@ -645,7 +643,7 @@ function eachStep(what: string, steps: readonly (() => void)[]): void {
 
 export class Game {
   /**
-   * THE CANVAS (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h): its WebGPU
+   * THE CANVAS (`core/CanvasSurface.ts`): its WebGPU
    * context, its backing store's size and the scaling level that size is read
    * through — what every reader of a render size, a scaling level or an
    * aspect ratio asks. The render-scale setting's setter is
@@ -655,14 +653,14 @@ export class Game {
   private mats: CelMaterialFactory;
   /**
    * OUR renderer (`src/render/`), every pass of the frame on the game's own
-   * device (`BABYLON_EXIT.md` X5.4f to X5.4h). Built once with the factory
+   * device. Built once with the factory
    * whose fields fill its frame.
    */
   readonly renderer: Renderer;
   /**
-   * The map's world as `renderer` draws it, in every pass of a round and
-   * never by Babylon, of which no mesh is made (`BABYLON_EXIT.md` X3.3,
-   * X3.7b) — and what it cannot draw, the world's failure (`worldFailed`).
+   * The map's world as `renderer` draws it, in every pass of a round, no
+   * mesh being made of any of it — and what it cannot draw, the world's
+   * failure (`worldFailed`).
    */
   readonly handover: BlockHandover;
   /** A `worldFailed` is waiting for the task in hand to end: a second is the same failure. */
@@ -827,29 +825,29 @@ export class Game {
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
   /**
-   * The rings' and the flags' draw (`BABYLON_EXIT.md` X4.6b): every surface of
+   * The rings' and the flags' draw: every surface of
    * `zones`, fed by `drawZones` and ordered by `nearestPull` inside the render.
    */
   private readonly zoneDraw: ZoneDraw;
   /**
-   * The grass field as our renderer draws it (`BABYLON_EXIT.md` X4.6c);
+   * The grass field as our renderer draws it;
    * `grass` writes its runs and values, and `drawGrass` passes it through the
    * size gate.
    */
   private readonly grassDraw: GrassDraw;
   /**
-   * The water as our renderer draws it (`BABYLON_EXIT.md` X4.6d); `water`
+   * The water as our renderer draws it; `water`
    * writes its values and which shape each body takes, and `drawWater` passes
    * each through the size gate.
    */
   private readonly waterDraw: WaterDraw;
   /**
-   * The one nearest-first run of the zones, the blades and the water (X4.6d): where
+   * The one nearest-first run of the zones, the blades and the water: where
    * each falls among the rest, ordered by `nearestPull` inside the render.
    */
   private readonly nearestRun: NearestRun;
   /**
-   * A round's glazing as our renderer draws it (`BABYLON_EXIT.md` X4.6e): the
+   * A round's glazing as our renderer draws it: the
    * handover hands it the map's glass, the reflection bake points each group
    * at its cube, `glassFx` collapses a broken pane in it, and `farthestPull`
    * says which groups draw, in what order.
@@ -857,12 +855,12 @@ export class Game {
   private readonly glassDraw: GlassDraw;
   /**
    * The fading pools — every spark, dust disc, scorch and blob — as our
-   * renderer draws them (X4.6e), their members read inside the render by
+   * renderer draws them, their members read inside the render by
    * `farthestPull`.
    */
   private readonly fadeDraw: FadeDraw;
   /**
-   * The one back-to-front run of the see-through panes and the fades (X4.6e):
+   * The one back-to-front run of the see-through panes and the fades:
    * where each falls among the rest, ordered by `farthestPull` inside the render.
    */
   private readonly farthestRun: FarthestRun;
@@ -919,13 +917,13 @@ export class Game {
    */
   private bodyShadows: BodyShadows;
   /**
-   * The bodies' map as our renderer owns it, in every state (`BABYLON_EXIT.md`
-   * X4.1c): no generator is kept for it, so one it cannot draw is the round's
+   * The bodies' map as our renderer owns it, in every state: no generator is
+   * kept for it, so one it cannot draw is the round's
    * failure (`worldFailed`, wired at the install).
    */
   private readonly bodyShadowMap: BodyShadowMap;
   /**
-   * Every BODY as our renderer draws it (`BABYLON_EXIT.md` X4.1d): each
+   * Every BODY as our renderer draws it: each
    * side's kit on the GPU once, and each frame's bodies as instances of it —
    * fed by `drawBodies`, drawn while a ROUND's map is installed. Its
    * pipelines are asked here, once for the session, and one that cannot be
@@ -953,7 +951,7 @@ export class Game {
   private readonly visorMaterials = VISOR_COLORS.map((emissiveColor) => ({ emissiveColor, alpha: 1 }));
   private readonly visorBloom = new Color4();
   /**
-   * Every HULL as our renderer draws it (`BABYLON_EXIT.md` X4.2b): every
+   * Every HULL as our renderer draws it: every
    * kind's kit in both views' colours on the GPU once, and each frame's
    * hulls as instances of it — fed by `drawHulls`, drawn while a ROUND's map
    * is installed. Its pipeline is asked here, once for the session, and one
@@ -962,8 +960,8 @@ export class Game {
    */
   private readonly hullDraw: HullDraw;
   /**
-   * The player's own WEAPON as our renderer draws it (`BABYLON_EXIT.md`
-   * X4.3c, X4.3d): every segment of the viewmodel on the GPU once — the
+   * The player's own WEAPON as our renderer draws it: every segment of the
+   * viewmodel on the GPU once — the
    * opaque parts, the optics' glasses and the kit card — and each frame's
    * drawn segments one draw apiece, the card first, the opaque parts in
    * Babylon's group-1 order, the glasses back to front — fed by `drawView`,
@@ -975,13 +973,13 @@ export class Game {
    */
   private readonly viewDraw: ViewDraw;
   /**
-   * The cloud ring's draw, OUR renderer's for the SESSION (`BABYLON_EXIT.md`
-   * X4.5b), as the weapon's is: `Sky` stands each ring on it and writes it each
+   * The cloud ring's draw, OUR renderer's for the SESSION, as the weapon's
+   * is: `Sky` stands each ring on it and writes it each
    * order. Whoever hears of a failure is `onFailed`'s, as the weapon's, but only
    * while a ring stands: a map stating none has no draw to refuse it for.
    */
   private readonly cloudDraw: CloudDraw;
-  /** The dome's and the moon's draws, on the same terms (`BABYLON_EXIT.md` X4.5c). */
+  /** The dome's and the moon's draws, on the same terms. */
   private readonly skyDraw: SkyDraw;
   /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
   private readonly viewDrawn: ViewMesh[] = [];
@@ -1005,11 +1003,11 @@ export class Game {
   /** `hullPull`'s scratch: one hull's segment keys. */
   private hullKeys = new Float64Array(0);
   /**
-   * Each hull's draw-distance FADE this frame (`WorldCulling.hullFade`,
-   * `BABYLON_EXIT.md` X4.2d), by its index in the fleet — the view's and the
+   * Each hull's draw-distance FADE this frame (`WorldCulling.hullFade`), by
+   * its index in the fleet — the view's and the
    * hull's, `VehicleViews`' invariant — written by `fadeHulls` in the cull
    * span and read twice after it: by `RotorWash.update` (the wash fades with
-   * its hull, the post-commit review's owner decision) and by `drawHulls`.
+   * its hull) and by `drawHulls`.
    * 1 for a hull not composed this frame — not present, or no draw
    * installed — and for every hull on a map that states no distance, so a
    * reader multiplying by it changes nothing there. Grown to the fleet's
@@ -1020,19 +1018,18 @@ export class Game {
   private readonly hullMeasure = { x: 0, y: 0, z: 0, radius: 0 };
   /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
   private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
-  /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`, X4.2c). */
+  /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`). */
   private readonly keepsHullDetail: SphereGate = (x, y, z, radius) => this.culling.keepsDetail(x, y, z, radius);
   /**
-   * The effect POOLS' pieces as our renderer draws them (`BABYLON_EXIT.md`
-   * X4.4b): every kit a pool puts in the world — the tracer, the spent case,
+   * The effect POOLS' pieces as our renderer draws them: every kit a pool
+   * puts in the world — the tracer, the spent case,
    * the frag and the bottle, the rocket and the mine — on the GPU once, and
    * each frame's drawn pieces as instances of them, fed by `drawPieces`; and
    * the bullet marks' (`markDraw`, fed by `drawMarks`) — both drawn while a
    * ROUND's map is installed, their pipelines asked here once for the
    * session, and one that cannot be built is the round's failure
-   * (`worldFailed`, wired at the install). The sparks and the dust discs were
-   * no part of either: they stayed Babylon meshes, fading among the panes in its
-   * transparent sort, until X4.6 (the owner's decision of 2026-11-01).
+   * (`worldFailed`, wired at the install). The sparks and the dust discs are
+   * no part of either: they fade among the panes (`fadeDraw`).
    */
   private readonly pieceDraw: PoolDraw;
   private readonly markDraw: PoolDraw;
@@ -1062,7 +1059,7 @@ export class Game {
   private markDrawn = new Int32Array(0);
   private markKeys = new Float64Array(0);
   /**
-   * The blast's BILLOWS as our renderer draws them (`BABYLON_EXIT.md` X4.4c):
+   * The blast's BILLOWS as our renderer draws them:
    * every batch `BlastFx` poses — a slot each, and the sparks' and trails'
    * — one draw, its billows instances of one of two icospheres, into the main
    * pass and the glow's mask, fed by `drawBlasts` and pulled inside the
@@ -1071,8 +1068,7 @@ export class Game {
    * chunk, posed straight off its body's pose. Both drawn while a ROUND's map
    * is installed, their pipelines asked here once for the session, and one
    * that cannot be built is the round's failure, as the pieces' are. The
-   * SCORCH was no part of either: it stayed a Babylon mesh, fading among the
-   * panes, until X4.6 (the owner's decision of 2026-11-01).
+   * SCORCH is no part of either: it fades among the panes (`fadeDraw`).
    */
   private readonly blastDraw: BlastDraw;
   private readonly debrisDraw: PoolDraw;
@@ -1083,7 +1079,7 @@ export class Game {
   private blastDrawn = new Int32Array(0);
   private blastKeys = new Float64Array(0);
   /**
-   * The FIRES as our renderer draws them (`BABYLON_EXIT.md` X4.4d): every
+   * The FIRES as our renderer draws them: every
    * world fire the handover took — a block's merge of flame surfaces — and
    * every flame of a burning molotov (`GrenadeFx.flames`), each one draw of
    * its surface under its matrix, into the main pass and the glow's mask,
@@ -1094,23 +1090,22 @@ export class Game {
    */
   private readonly flameDraw: FlameDraw;
   /**
-   * THE ROUND'S DECLARED PIPELINES (`BABYLON_EXIT.md` X4.4e): every draw of
+   * THE ROUND'S DECLARED PIPELINES: every draw of
    * ours a round can use whatever its map, each of whose pipelines is asked
    * ONCE, here at construction, for the session — the bodies, the hulls,
    * the weapon, the bodies' shadow map, the lamps' proxies (the atlas's
    * moving casters; its static ones are the map's, asked at its install)
    * and every effect pool of ours (the pieces: the tracers, the brass, the
    * thrown and laid bodies of both sides of the wire; the marks; the
-   * billows; the shards and the rubble; the fires; and since X4.6e the
+   * billows; the shards and the rubble; the fires; and the
    * sparks, the dust discs, the scorch and the blobs) and the glazing. The building card
    * waits on this list by name (`core/PipelineWarmup.ts`), beside the map's
    * own pipelines, which its install asked — and on nothing else: nothing is
-   * drawn for a pipeline's sake (no vantage since X5.4c) — and our cache is
+   * drawn for a pipeline's sake — and our cache is
    * SEALED once the card is down (`PipelineCache.seal`), so a compile in play
    * is a DEV warning naming what this list missed — but for the glow blur's
    * new widths on a device-pixel-ratio change (`applyRenderScale`), the one
-   * ask the seal allows. **This is what the `warm(on)` poses of the pools
-   * that are ours became** (X4.4e). A new draw of ours joins it, or its first
+   * ask the seal allows. A new draw of ours joins it, or its first
    * use compiles in the round.
    */
   private readonly roundPipelines: readonly DeclaredPipelines[];
@@ -1163,11 +1158,11 @@ export class Game {
   private localShadows: LocalShadows;
   /** The lamps' atlas as our renderer owns it: every round's. */
   private readonly lampAtlas: LampAtlas;
-  /** The reflection bake as our renderer draws it: every round's (X3.6c). */
+  /** The reflection bake as our renderer draws it: every round's. */
   private readonly probeBake: ProbeBake;
   /**
    * The emissive palette's share of the glow's mask as our renderer draws it:
-   * every round's whose palette glows (X3.6d). Public for the
+   * every round's whose palette glows. Public for the
    * reason `glow` is: the smoke scripts that read the mask back ask it
    * whether it is drawing (`drawing`, `drawn`).
    */
@@ -1207,9 +1202,8 @@ export class Game {
    * where nothing simulates and the scene still renders, which is exactly the
    * shape of frame this needs, so the card stays up until the queue is empty.
    *
-   * It moves the cost rather than removing it — Babylon's bake's per-face
-   * cull was the half that removed it, and our bake culls each face too —
-   * and what it buys is that a round is a round when it starts.
+   * It moves the cost rather than removing it — the bake's per-face cull is
+   * the half that removes it — and what it buys is that a round is a round when it starts.
    * `ENGINE_UPGRADE.md` S0c.
    */
   private bakeWait: {
@@ -1264,15 +1258,15 @@ export class Game {
    */
   private pendingSpawn: { pos: Vector3Like; yaw: number } | null = null;
   /**
-   * How much of the map the frame's own mesh walk is offered. Owns nothing
+   * How much of the map the frame's draws are offered. Owns nothing
    * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
    * `ENGINE_UPGRADE.md` S1.
    */
   private culling: WorldCulling;
   private atmosphere: Atmosphere;
   /**
-   * Every GPU particle field of the game's — the ash since `BABYLON_EXIT.md`
-   * X4.7c, the rotor wash since X4.7d — stepped on the frame's animation ratio
+   * Every GPU particle field of the game's — the ash and the rotor wash —
+   * stepped on the frame's animation ratio
    * and drawn where Babylon's group drew its particles. `Atmosphere` and
    * `RotorWash` decide the fields; this runs and draws them.
    */
@@ -1280,9 +1274,9 @@ export class Game {
   /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
   private readonly particleInvView = new Matrix();
   /**
-   * The frame's view, copied into a matrix of its own to be inverted there, as
-   * since `BABYLON_EXIT.md` X6.1e: the copy carries the numbers and none of
-   * the camera matrix's identity flag, which the inversion's shortcut reads.
+   * The frame's view, copied into a matrix of its own to be inverted there:
+   * the copy carries the numbers and none of the camera matrix's identity
+   * flag, which the inversion's shortcut reads.
    */
   private readonly particleView = new Matrix();
   /**
@@ -1315,15 +1309,15 @@ export class Game {
   private volumetricsRung: VolumetricRung | null = null;
   /**
    * Whether the shafts' stage draws this frame: latched by `syncVolumetrics`
-   * once every input the pass reads exists, which is where Babylon's pass
-   * used to be attached. For a pass `setVolumetrics` has just built that is
-   * the same frame (every input is standing); only the session's first render,
-   * before the frame's depth exists, has no shafts — as with Babylon's pass.
+   * once every input the pass reads exists — Babylon's attach point, kept.
+   * For a pass `setVolumetrics` has just built that is the same frame (every
+   * input is standing); only the session's first render, before the frame's
+   * depth exists, has no shafts.
    */
   private volumetricsAttached = false;
   /**
    * FXAA's CPU half and the post chain's stage it is drawn as
-   * (`shaders/Fxaa.ts`, `BABYLON_EXIT.md` X5.2c2): the chain's first stage of
+   * (`shaders/Fxaa.ts`): the chain's first stage of
    * ours, straight after the ink. See `setFxaaEnabled`.
    */
   private fxaa: Fxaa;
@@ -1346,32 +1340,32 @@ export class Game {
   private playerView: PlayerView;
   /**
    * The RENDER ID the viewmodel's render cache is keyed on — ours, with
-   * Babylon's meaning (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b), moved by
-   * our frame where `scene.render` moved Babylon's (`sceneFrame`, X5.4f).
+   * Babylon's meaning (`core/renderId.ts`), moved by our frame
+   * (`sceneFrame`) at the two points Babylon's render moved its own.
    * Public for a probe (`plans/webgpu-ref/readers.mjs`).
    */
   readonly renderId = new RenderId();
   /**
-   * THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
-   * `scene.render()` did, in its order, called from `tick` in its place —
-   * there is no scene since X6.1h. Its points are where every module that
-   * hung off a scene observable hangs now, and our renderer's host is its
+   * THE FRAME, ours (`core/SceneFrame.ts`): what Babylon's `scene.render()`
+   * did, in its order, called from `tick` — there is no scene. Its points
+   * are where every module that hooks a frame point hangs, and our
+   * renderer's host is its
    * (`SceneFrame.host`). Public for the harness's frame adapter
    * (`plans/webgpu-ref/harness.mjs`).
    */
   readonly sceneFrame: SceneFrame;
   /**
-   * The page's READINESS (`core/PendingData.ts`, `BABYLON_EXIT.md` X6.1h):
-   * what is still being waited on — the water's foam mask while it decodes —
-   * and `isReady`, what `scene.isReady()` answered until the scene went. Read
+   * The page's READINESS (`core/PendingData.ts`, the scene's pending data
+   * ported): what is still being waited on — the water's foam mask while it
+   * decodes — and `isReady`, whether anything is. Read
    * by nothing in the game; public for the frame adapter's `ready`
    * (`scripts/lib/frameAdapter.mjs`), which the bank, `npm run shots` and the
    * skills' scripts wait on.
    */
   readonly pending = new PendingData();
   /**
-   * The frame's six FRUSTUM PLANES (`SceneFrame.frustumPlanes`, the scene's
-   * until `BABYLON_EXIT.md` X6.1f): the very array this file's culls and
+   * The frame's six FRUSTUM PLANES (`SceneFrame.frustumPlanes`): the very
+   * array this file's culls and
    * `Sky`'s moon read, null before the first frame. Public for the frame
    * adapter (`scripts/lib/frameAdapter.mjs`' `camera()`), which READS it and
    * never re-derives the planes.
@@ -1380,11 +1374,11 @@ export class Game {
     return this.sceneFrame.frustumPlanes;
   }
   /**
-   * THE LOOP, ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+   * THE LOOP, ours (`core/FrameLoop.ts`): the
    * animation-frame request `FrameCap` admits, the clock (`getDeltaTime` and
    * `getFps`, Babylon's arithmetic), the frame's one encoder and one submit,
-   * and the frame's begin and end — what Babylon's `runRenderLoop`,
-   * `beginFrame` and `endFrame` were. Public for the harness's frame adapter
+   * and the frame's begin and end, named for Babylon's engine's `beginFrame`
+   * and `endFrame`. Public for the harness's frame adapter
    * (`plans/webgpu-ref/harness.mjs`).
    */
   readonly frameLoop: FrameLoop;
@@ -1407,12 +1401,12 @@ export class Game {
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
-   * Held for the profiler, and public for the reason `scene` is: the smoke
+   * Held for the profiler, and public because the smoke
    * scripts that check the glow read its mask off `window.__celshock`.
    */
   readonly glow: GlowPass;
   /**
-   * The bloom's blur and box filter as OUR draws (`BABYLON_EXIT.md` X5.2b), in
+   * The bloom's blur and box filter as OUR draws, in
    * the passes `GlowPass` binds on its own targets; its pipelines are on the
    * round's declared list, every rung's at every render scale at the current
    * device pixel ratio (`glowKernels`), and declared again when that ratio
@@ -1421,12 +1415,11 @@ export class Game {
    */
   readonly glowBlur: GlowBlur;
   /**
-   * The post chain's stages, every one OUR draw since `BABYLON_EXIT.md`
-   * X5.2d (the ink, FXAA, the shafts, the blur, the grade), the host that
+   * The post chain's stages, every one OUR draw (the ink, FXAA, the shafts,
+   * the blur, the grade), the host that
    * routes them (`render/PostChain.ts`) and the owner that sizes the frame
    * our renderer draws and begins every pass of theirs after the camera's
-   * render, into its pool and the canvas (`render/ChainPasses.ts`, ours since
-   * X5.4f; `shaders/PostPasses.ts`, with Babylon's public API, before). Public
+   * render, into its pool and the canvas (`render/ChainPasses.ts`). Public
    * for the harness's and the probe's adapters (`plans/webgpu-ref/harness.mjs`,
    * `post.mjs`).
    */
@@ -1447,8 +1440,8 @@ export class Game {
   private mixerLoading = false;
 
   /**
-   * The dev-only map viewer's session (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
-   * X5.3b), non-null only while its lid is up. A LID, unlike the mixer:
+   * The dev-only map viewer's session (`F2`, `src/viewer/`), non-null only
+   * while its lid is up. A LID, unlike the mixer:
    * `toggleViewer` raises it over a round and `takeDown` puts it away, however
    * it comes down.
    */
@@ -1616,10 +1609,8 @@ export class Game {
   private readonly fireLightAt = new Vector3();
   /**
    * A fire's floor, copied for its readers — the noise, the scorch, the light
-   * and the held-open sound — into a scratch of the page's own. A COPY since
-   * the readers were on Babylon's math, kept at `BABYLON_EXIT.md` X6.1e (which
-   * moved them onto `src/math`) so no reader is handed the simulation's own
-   * vector. Read inside the call.
+   * and the held-open sound — into a scratch of the page's own. A COPY so no
+   * reader is handed the simulation's own vector. Read inside the call.
    */
   private readonly fireAt = new Vector3();
   /** A blast's point, copied for `onExplosion`'s readers on the same terms. */
@@ -1947,22 +1938,22 @@ export class Game {
   private readonly deathFeet = new Vector3();
 
   /**
-   * **The two things the game cannot start without are both arguments now, and
+   * **The two things the game cannot start without are both arguments, and
    * they are arguments for the same reason.** `havok` is the instantiated WASM
    * module (see `PhysicsWorld`); `device` is the `GPUDevice` and `surface` the
    * canvas its WebGPU context is configured on (`core/CanvasSurface.ts`), both
-   * the GAME's since `BABYLON_EXIT.md` X5.4h, asked for and configured by
+   * the GAME's, asked for and configured by
    * `main.ts` as Babylon's `WebGPUEngine` asked for and configured its own.
    * All are REQUIRED, all are awaited by `main.ts` before this constructor is
    * reached, and a failure of any is the boot screen's business — so nothing
    * in here has to be written twice for a machine that never got one.
    *
-   * What did NOT change is that this constructor stays synchronous — `Game`
+   * This constructor stays synchronous — `Game`
    * is not a `static async create()`, because `window.__celshock` existing
    * with every pool non-null the moment the constructor returns is what ~40
    * smoke scripts rest on (`VERIFYING.md`). Awaiting in `main.ts` and
-   * injecting the result is what keeps both of those true at once, and it is
-   * the move `havok` already made.
+   * injecting the result is what keeps both of those true at once, as it
+   * does for `havok`.
    */
   constructor(
     canvas: HTMLCanvasElement,
@@ -2001,42 +1992,39 @@ export class Game {
       replaced: (host) => this.prof.setSimMode(host.mode),
     });
     this.prof.setSimMode(local.mode);
-    // THE LOOP is ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+    // THE LOOP is ours (`core/FrameLoop.ts`): the
     // refresh `FrameCap` admits, the clock, the frame's one encoder and its
     // one submit — `?gpu` times the whole frame on it (`gpu.frame`; `main.ts`
     // asked the device for `timestamp-query`). Started at the constructor's
-    // end, where `runRenderLoop` was.
+    // end.
     // The clock is the boot's (`main.ts`), sampled at every size of the
-    // canvas that took too (`CanvasSurface.onSized`, X5.4h), where Babylon's
+    // canvas that took too (`CanvasSurface.onSized`), where Babylon's
     // engine ran `_initializeMainAttachments` and its performance monitor took
     // a sample — so the delta and the rate are Babylon's sample for sample.
     this.frameLoop = new FrameLoop(this.frameCap, device, this.prof, clock, urlFlag("gpu"));
-    // A LOST device (`BABYLON_EXIT.md` X5.4i, row "X5.4, a lost device"):
-    // the teardown, then the page RELOADED to the menu — or, a second time
-    // inside the window, the boot's plate (`deviceLost`). Every reason is
+    // A LOST device: the teardown, then the page RELOADED to the menu — or,
+    // a second time inside the window, the boot's plate (`deviceLost`). Every reason is
     // answered, `"destroyed"` with the rest: a device of ours is never
     // destroyed on purpose, and `lost.mjs` loses one by destroying it. A
     // promise settles once, so nothing in the answer re-enters it.
     void device.lost.then((info) => this.deviceLost(info));
     this.prof.setFrameTimer(this.frameLoop.submit.timer);
-    // What Babylon's scene input manager did to the canvas when a scene
-    // attached it, on Babylon's engine, until `BABYLON_EXIT.md` X5.4h
+    // The canvas's input setup, as Babylon's scene input manager made it
     // (`CanvasSurface.adoptInput`): the tab index, the press and release
-    // default-prevented and focusing, the pointer captured, and the release
-    // it made on a blur or a cancel with a press held. Where the scene was
-    // built until X6.1h, so in the order it was.
+    // default-prevented and focusing, the pointer captured, and the release on
+    // a blur or a cancel with a press held. Here, before the frame is built,
+    // which is the order Babylon's scene attached it in.
     surface.adoptInput();
-    // THE FRAME is ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
-    // `scene.render()` did, in its order — and since X6.1h there is no scene
-    // at all. Before anything hangs on its points, and before our renderer,
-    // whose host it is.
+    // THE FRAME is ours (`core/SceneFrame.ts`): what Babylon's
+    // `scene.render()` did, in its order. Built before anything hangs on its
+    // points, and before our renderer, whose host it is.
     this.sceneFrame = new SceneFrame(this.renderId, device, this.frameLoop);
     // There are no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
     // Our renderer first: the factory makes a ground's textures, and its
     // shadows their lit and no-cloud texels, through the renderer's maker
-    // (`TextureMaker`, `BABYLON_EXIT.md` X5.4d). The two pulls below read the
+    // (`TextureMaker`). The two pulls below read the
     // factory only once a frame is drawn.
     this.renderer = new Renderer(
       this.sceneFrame.host,
@@ -2049,7 +2037,7 @@ export class Game {
     this.mats = new CelMaterialFactory(this.renderer.textureMaker);
     this.prof.setCullTimer(this.renderer.timer);
     // The world's four directional maps as our renderer draws them, in every
-    // round (`BABYLON_EXIT.md` X3.6a, X3.7b).
+    // round.
     this.worldShadows = new WorldShadows(this.renderer);
     // Stepped moon shadows + contact blobs. Must exist before the first frame,
     // so the frame's shadow map is bound from the first.
@@ -2058,11 +2046,11 @@ export class Game {
     // DECLARES: the frame's textures list `bodyShadowMap`, and a frame with
     // one unbound draws nothing. So this exists before the first frame does,
     // and there is no state in which it does not. Its map is
-    // our renderer's in every state, a pass of its own (`BABYLON_EXIT.md`
-    // X4.1c), and its pipeline is asked here, once for the session.
+    // our renderer's in every state, a pass of its own, and its pipeline is
+    // asked here, once for the session.
     this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
     this.bodyShadows = new BodyShadows(this.mats, this.shadowQuality, this.bodyShadowMap);
-    // Every body, ours in every round (`BABYLON_EXIT.md` X4.1d): each side's
+    // Every body, ours in every round: each side's
     // kit built here, once, and its six pipelines (three plain, three behind
     // the fade's screen door) asked for the session, so the building card's
     // warm-up waits for them like any of ours. The
@@ -2086,7 +2074,7 @@ export class Game {
     this.segmentCentres = new Float64Array(this.bodyDraw.capacity * this.bodyDraw.segments * 3);
     this.segmentKeys = new Float64Array(this.bodyDraw.segments);
     this.visorSegment = soldierKits()[0].visor;
-    // Every hull, ours in every round (`BABYLON_EXIT.md` X4.2b), on the
+    // Every hull, ours in every round, on the
     // bodies' terms: every kind's kit in both views' colours built here,
     // once — a segment's vertices carrying its colour's slot in the hulls'
     // one palette, which the charred paint is a slot of too — and its
@@ -2116,15 +2104,13 @@ export class Game {
     this.hullSpheres = new Float64Array(this.hullDraw.capacity * this.hullDraw.segments * 4);
     this.hullKeys = new Float64Array(this.hullDraw.segments);
     // …and what it drew, for the same reason as the bodies' below
-    // (`ProfileReport.hulls`): Babylon's counter has counted no hull since
-    // X4.2b.
+    // (`ProfileReport.hulls`).
     this.prof.setHulls(() => {
       const { drawn, instances } = this.hullDraw.stats;
       return { drawn, instances };
     });
-    // A capture says what the body draw drew, which Babylon's draw counter
-    // has not counted since X4.1d (`ProfileReport.bodies`) — a COPY, which a
-    // halted ring keeps.
+    // A capture says what the body draw drew, which no other counter counts
+    // (`ProfileReport.bodies`) — a COPY, which a halted ring keeps.
     this.prof.setBodies(() => {
       const { drawn, masked, instances } = this.bodyDraw.stats;
       return { drawn, masked, instances };
@@ -2132,16 +2118,14 @@ export class Game {
     // The lamps' atlas, for the same rule: the frame's textures list it, so
     // it is bound before the first frame — the lit 1x1 on a rung that has
     // none.
-    // Its atlas is our renderer's in every round, as the world's maps are
-    // (`BABYLON_EXIT.md` X3.6b, X3.7b).
+    // Its atlas is our renderer's in every round, as the world's maps are.
     this.lampAtlas = new LampAtlas(
       this.renderer,
       CONFIG.graphics.localShadows.staticFacesPerFrame,
       CONFIG.graphics.localShadows.maxProxies,
     );
     this.localShadows = new LocalShadows(this.mats, this.shadowQuality, this.lampAtlas);
-    // The reflection probes' cubes as our renderer bakes them, in every round
-    // (`BABYLON_EXIT.md` X3.6c, X3.7b):
+    // The reflection probes' cubes as our renderer bakes them, in every round:
     // the probe's eye is PASSED in a frame of the bake's own, which the
     // factory fills, rather than moved onto every material.
     this.probeBake = new ProbeBake(
@@ -2151,9 +2135,8 @@ export class Game {
       CONFIG.graphics.reflection.probesPerFrame,
     );
     // The emissive palette's share of the glow's mask as our renderer draws
-    // it, in every round whose palette glows (`BABYLON_EXIT.md` X3.6d,
-    // X3.7b) — with its main pass (X3.6e): drawn first in `GlowPass`'s mask,
-    // which stays Babylon's. The rules are the glow's own two (below), asked
+    // it, in every round whose palette glows — with its main pass: drawn
+    // first in `GlowPass`'s mask. The rules are the glow's own two (below), asked
     // of the palette's materials.
     this.worldGlow = new WorldGlow(this.renderer, {
       admits: () => this.glowAdmits(),
@@ -2171,7 +2154,7 @@ export class Game {
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
     // exists and stay published whatever the setting says. Its GPU half is
-    // OUR renderer's (`render/GiCompute.ts`, `BABYLON_EXIT.md` X5.1b), whose
+    // OUR renderer's (`render/GiCompute.ts`), whose
     // dispatch is a LATE prepare pushed in this constructor — AFTER
     // `ProbeBake`'s, above, which is the whole of why the bake reads the
     // previous frame's compose: the late list runs in push order. Build the
@@ -2183,12 +2166,10 @@ export class Game {
 
     // **ONE depth image for the frame** — the world and the gun together —
     // which every post stage reads (`FrameTargets.depth`, our renderer's), and
-    // which the glow's mask occludes the bloom against. The viewmodel had a rendering group of its
-    // own until `BABYLON_EXIT.md` X4.3d, whose depth clear (Babylon's default
-    // for every group above 0) was switched off here so the three readers saw
-    // more than the gun; every surface of it is our renderer's now, drawn at
-    // the END of group 0 into the same depth (`ViewDraw`), and no group above
-    // 0 holds anything.
+    // which the glow's mask occludes the bloom against. Every surface of the
+    // viewmodel is drawn at the END of group 0 into the same depth
+    // (`ViewDraw`), so the three readers see more than the gun, and no group
+    // above 0 holds anything.
 
     // Post-processing: FXAA smooths the hard cel/outline edges. Glow comes
     // from an emissive MASK rather than threshold bloom — it keys off material
@@ -2202,8 +2183,7 @@ export class Game {
     // The RULES are this file's, because both are questions about the game
     // (`glowAdmits`, `bloomColour`, which every draw of ours into the mask
     // asks, each with the distance it measured: the "`GlowRules`" the
-    // comments here name, the interface `GlowPass` took for its own mesh path
-    // until `BABYLON_EXIT.md` X5.3d).
+    // comments here name).
     //
     // The bloom is the ONE pass that reads a material and never asks where the
     // surface carrying it stands, so without the fade a glow is the last thing left
@@ -2218,8 +2198,8 @@ export class Game {
     // texture with a glow: the moon is the one textured emissive, and it is no
     // mesh here (`SkyDraw`). It is also the one glowing thing that must never
     // fog, not being in the valley, so it is handed no fade at all.
-    // The blur and the box filter are OUR draws (X5.2b), declared at the
-    // device pixel ratio the page boots at; and since X5.4e every pass of the
+    // The blur and the box filter are OUR draws, declared at the
+    // device pixel ratio the page boots at; and every pass of the
     // glow is our renderer's, on its own targets (`Renderer.targets`): the
     // mask (`recordGlowMask`: the palette, the visors, the pools FIRST, the
     // weapon's lit parts LAST) and the blur's five. `GlowPass` keeps the RULES
@@ -2244,16 +2224,14 @@ export class Game {
     });
     this.glow = glow;
     // The two spans inside the frame's render are the FRAME's to bracket
-    // (`SceneFrame.timeWith`, `BABYLON_EXIT.md` X5.4g): `drawWorld` in its
+    // (`SceneFrame.timeWith`): `drawWorld` in its
     // draw phase and `glow` around this pass's work.
     this.sceneFrame.timeWith(this.prof, glow);
     // THE FRAME: our renderer's target (`Renderer.targets.frame`, with its
-    // depth, X5.4e), which its own passes clear and draw — sized as the frame
-    // starts by the post chain's pass owner, `ChainPasses` (ours since X5.4f),
+    // depth), which its own passes clear and draw — sized as the frame
+    // starts by the post chain's pass owner, `ChainPasses`,
     // which begins every pass of the chain after the camera's render, into
-    // its pool and the canvas. No Babylon `PostProcess` stands on the camera
-    // since X5.2d, no `outputRenderTarget` since X5.4e, and there is no
-    // scene since X6.1h.
+    // its pool and the canvas. No Babylon `PostProcess` stands on the camera.
     const chainPasses = new ChainPasses(
       this.renderer.device,
       this.sceneFrame.host,
@@ -2264,8 +2242,8 @@ export class Game {
     this.chainPasses = chainPasses;
     {
       const camera = this.cameraSys.camera;
-      // Before anything in the frame draws (`onBeforeRenderObservable`, where
-      // `PostPasses.prepareFrame` hung): the frame at this frame's render size,
+      // Before anything in the frame draws (`onBeforeRenderObservable`): the
+      // frame at this frame's render size,
       // read as Babylon sized a post-process's input
       // (`getRenderWidth(true) * 1 | 0`), named for its reader.
       this.sceneFrame.onBeforeRenderObservable.add(() => {
@@ -2284,8 +2262,8 @@ export class Game {
       // The frame's end: the canvas's pass, on a frame nothing began it.
       this.sceneFrame.finishWith(() => chainPasses.finishFrame());
     }
-    // THE INK GOES FIRST: our post chain's first stage (X5.2d), reading the
-    // frame the scene drew. It is part of the PICTURE and not a grade over
+    // THE INK GOES FIRST: our post chain's first stage, reading the
+    // frame our renderer drew. It is part of the PICTURE and not a grade over
     // one: FXAA below then antialiases the lines it draws (they come off a
     // depth buffer, which has no antialiasing of its own), and the shafts,
     // the smear and the grain all land on top of inked geometry rather than
@@ -2296,12 +2274,11 @@ export class Game {
     this.celInk = new CelInk(this.cameraSys.camera, glow, targets);
     // The frame's clear — its colour to the frame's clear colour and its
     // depth, then its depth again — is our renderer's own opening pass and
-    // main pass (`Renderer.end`, `BABYLON_EXIT.md` X5.4e), and nothing else
-    // clears. The canvas's boot frames keep X5.2d's state (no clear: what the
-    // swap chain hands over, the owner's decision, row "X5.2, the boot
-    // canvas"), and every frame the chain draws its last stage overwrites the
-    // canvas whole.
-    // FXAA: OUR draw since X5.2c2, the post chain's stage after the ink it
+    // main pass (`Renderer.end`), and nothing else
+    // clears. The canvas's boot frames are not cleared (they show what the
+    // swap chain hands over, accepted as the picture), and every frame the
+    // chain draws its last stage overwrites the canvas whole.
+    // FXAA: OUR draw, the post chain's stage after the ink it
     // antialiases (`shaders/Fxaa.ts`).
     this.fxaa = new Fxaa();
     // The light shafts: volumetric moonlight marched through the shadow
@@ -2322,8 +2299,8 @@ export class Game {
     this.motionBlur = new MotionBlur(this.cameraSys.camera, targets);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    // The ink (X5.2d), FXAA, the shafts, the blur (X5.2c2) and the grade
-    // (X5.2c1) are OUR draws: the post chain's host, its stages in THIS
+    // The ink, FXAA, the shafts, the blur and the grade
+    // are OUR draws: the post chain's host, its stages in THIS
     // order over the frame our renderer drew, whose passes `ChainPasses` begins
     // after the camera's render. The order is the host's list, not an
     // append, and a setting turns a stage off rather than taking a pass off a
@@ -2360,10 +2337,10 @@ export class Game {
     // Thunder is the strike's own event, raised the frame its flash starts;
     // `Sfx` delays it by the distance on the audio clock.
     this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
-    // Every particle field's update and draw is our renderer's (X4.7c the ash,
-    // X4.7d the rotor wash), on Babylon's clock:
+    // Every particle field's update and draw is our renderer's (the ash and
+    // the rotor wash), on Babylon's clock:
     // the frame's animation ratio (`SceneFrame.animationRatio`,
-    // `Scene.animate`'s arithmetic over our loop's delta since X5.4g), read as
+    // `Scene.animate`'s arithmetic over our loop's delta), read as
     // the frame draws, which is when `GPUParticleSystem.animate` read it; and
     // the camera as `_render` bound it, the view and the projection APART, the
     // view's inverse and the eye.
@@ -2375,7 +2352,7 @@ export class Game {
     this.atmosphere = new Atmosphere(this.particleDraw, this.renderer.textureMaker);
     // Beside the mote field because it is the same kind of thing — a standing
     // GPU emitter driven off where something is, its rings fields of ours on
-    // the same `ParticleDraw` (X4.7d) — and NOT beside the fleet, which it
+    // the same `ParticleDraw` — and NOT beside the fleet, which it
     // never touches. The server builds no such class at all.
     this.rotorWash = new RotorWash(this.particleDraw, this.renderer.textureMaker);
     // `mats` is not for building materials here — both systems' pictures are our
@@ -2386,16 +2363,14 @@ export class Game {
     this.water = new WaterSystem(this.pending, this.mats, this.waterDraw, this.renderer.textureMaker);
     this.grassDraw = new GrassDraw(this.renderer);
     this.grass = new GrassSystem(this.grassDraw, this.mats);
-    // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the
+    // A round's GLAZING is our renderer's: the
     // handover takes it from the build, the reflection bake points each group
     // at its cube, and a break collapses a pane in its buffer.
     this.glassDraw = new GlassDraw(this.renderer, (into) => this.glassPull(into));
     // Same relationship to `mats` as the two above, in the other direction:
     // this one reads it — each glazing group's recipe — and points a round's
     // glazing at the cubes it bakes from the map itself, or at its default
-    // cube, which nothing bakes. (It published that cube to every pane
-    // material too, wrapped for Babylon's glazing, which only the map
-    // editor's build drew; the wrap went at X5.3d.)
+    // cube, which nothing bakes.
     this.reflections = new ReflectionSystem(this.sceneFrame, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
     // under, so the bake waits for the volume `installMap` has just cleared —
@@ -2404,8 +2379,7 @@ export class Game {
     this.reflections.setBakeGate(() => this.gi.converged && this.shadows.ready);
     // Decides what our renderer's draws are offered — the map's cull cells
     // and their reach, the size gate, the pooled bodies' verdicts and fades,
-    // the hulls' — and hooks nothing of the scene's (its candidate list for
-    // Babylon's mesh walk went with the walk, `BABYLON_EXIT.md` X5.4f). It
+    // the hulls' — and keeps no candidate list of meshes. It
     // holds no cell until `installMap` hands it a map and no body until the
     // pools are installed, so where in this constructor it stands decides
     // nothing. Nothing it does is visible to a
@@ -2436,8 +2410,8 @@ export class Game {
         report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
       },
     );
-    // A capture says what our renderer took and drew, which Babylon's own
-    // draw counter could not (`ProfileReport.blocks`).
+    // A capture says what our renderer took and drew, which no other counter
+    // does (`ProfileReport.blocks`).
     this.prof.setBlocks(() => this.handover.stats);
     this.mapBuilder = new MapBuilder(
       this.mats,
@@ -2478,7 +2452,7 @@ export class Game {
     // that line's reason: the simulation keeps the panes, the boxes and the
     // nav graph and draws nothing; the view collapses the glazing when a pane
     // goes (by any path, a late joiner's catch-up included). There is no
-    // collider mesh to tell (`BABYLON_EXIT.md` X5.3e): the box leaving every
+    // collider mesh to tell: the box leaving every
     // query is the simulation's one write, `RayWorld.remove`.
     this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
     this.deathCam = new DeathCam();
@@ -2493,7 +2467,7 @@ export class Game {
     this.antiTankFx = new AntiTankFx(this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
     this.conquest = new ConquestSystem(this.random);
-    // The rings and the flags are OUR renderer's (`BABYLON_EXIT.md` X4.6b).
+    // The rings and the flags are OUR renderer's.
     this.zoneDraw = new ZoneDraw(this.renderer, zoneRecipes(this.mats));
     this.zones = new CaptureZoneSystem(
       this.mats,
@@ -2505,21 +2479,20 @@ export class Game {
     );
     // The weapon hangs from the camera (its tree's root reads the camera's
     // world, `ViewModel.tree`), so the camera has to exist first. Its render
-    // cache is keyed on OUR render id, moved by our frame where the scene's
-    // render moved Babylon's (`core/renderId.ts`, `SceneFrame.render`).
+    // cache is keyed on OUR render id, moved by our frame at the points
+    // Babylon's render moved its own (`core/renderId.ts`, `SceneFrame.render`).
     this.playerView = new PlayerView(this.mats, this.cameraSys.camera, this.renderId);
     this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts
     this.viewDraw = this.buildViewDraw();
-    // …and what it drew, for the bodies' reason (`ProfileReport.view`):
-    // Babylon's counter has counted no opaque part of the weapon since X4.3c.
+    // …and what it drew, for the bodies' reason (`ProfileReport.view`).
     this.prof.setView(() => {
       const { drawn, masked } = this.viewDraw.stats;
       return { drawn, masked };
     });
-    // The effect pools' pieces and the bullet marks, ours in every round
-    // (`BABYLON_EXIT.md` X4.4b), on the bodies' terms: every kit built by the
+    // The effect pools' pieces and the bullet marks, ours in every round,
+    // on the bodies' terms: every kit built by the
     // view that made the first of its meshes (above, so each material was
     // asked of the factory where it always was), uploaded here once, and the
     // draws' pipelines asked for the session — so the building card's warm-up
@@ -2617,7 +2590,7 @@ export class Game {
     );
     this.markDrawn = new Int32Array(this.markDraw.capacity);
     this.markKeys = new Float64Array(this.markDraw.capacity);
-    // The fires (`BABYLON_EXIT.md` X4.4d): the molotov's one flame uploaded
+    // The fires: the molotov's one flame uploaded
     // with each map's world fires (the handover's, at its install), a draw a
     // fire, on the world's one fire material (`GrenadeFx.flameMaterial`).
     const flameMaterial = this.grenadeFx.flameMaterial;
@@ -2629,7 +2602,7 @@ export class Game {
       flameMaterial,
       (into, glowOn) => this.flamePull(into, glowOn),
     );
-    // The blast's billows (`BABYLON_EXIT.md` X4.4c): the two icospheres
+    // The blast's billows: the two icospheres
     // uploaded once, every batch `BlastFx` holds a draw, its paint the
     // factory's (`getBlast`).
     const blasts = this.grenadeFx.blasts;
@@ -2645,7 +2618,7 @@ export class Game {
     );
     this.blastDrawn = new Int32Array(blasts.batches.length);
     this.blastKeys = new Float64Array(blasts.batches.length);
-    // The debris (X4.4c): a kit a SHARD (its vertices rewritten on every cut,
+    // The debris: a kit a SHARD (its vertices rewritten on every cut,
     // so the draw is built dynamic) and a kit a CHUNK in each of its two
     // paints — the stone and the map's earth, a slot written per map
     // (`installMap`) — at the cel palette of the three `get` materials they
@@ -2684,8 +2657,7 @@ export class Game {
       (order, _glow, n) => this.debrisPull(order, n),
       true,
     );
-    // A cut writes its shard's vertices over our copy, as it wrote them onto
-    // the mesh it was (`updateVerticesData`).
+    // A cut writes its shard's vertices over our copy.
     this.debris.onCut = (shard, positions, normals) => this.debrisDraw.rewrite(shard, 0, positions, normals);
     // `debrisPull` writes a piece's world at `k * 16`: every debris kit is
     // ONE segment, which that stride rests on.
@@ -2694,9 +2666,9 @@ export class Game {
     }
     this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
     this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
-    // The fading pools (`BABYLON_EXIT.md` X4.6e): the four kits each pool
-    // made its meshes of, the sparks' and the discs' colours a slot each, the
-    // scorch's and the blob's maps (ours, `TextureMaker`'s since X5.4d).
+    // The fading pools: the four kits each pool
+    // draws, the sparks' and the discs' colours a slot each, the
+    // scorch's and the blob's maps (ours, `TextureMaker`'s).
     this.fadeKits = [this.combatFx.sparkKit, this.combatFx.discKit, this.blastDebris.scorchKit, this.shadows.blobKit];
     this.fadePools = [this.combatFx.fades, this.blastDebris.scorchFades, this.shadows.blobFades];
     this.fadeDraw = new FadeDraw(
@@ -2714,15 +2686,12 @@ export class Game {
       (into) => this.farthestPull(into),
       (k) => this.fadeDraw.kit[k] === SPARK,
     );
-    // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
-    // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
-    // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
-    // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
-    // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
-    // water since X4.6d, nor the glazing, a spark, a disc, a scorch or a blob
-    // since X4.6e (pools, those last four, but the rest's draws owe the sum too),
-    // nor the ash since X4.7c, nor the rotor wash since X4.7d (a draw a field,
-    // no pool).
+    // …and what all five drew (`ProfileReport.pools`), which no other counter
+    // counts: every tracer, mark, thrown or laid body and case, every billow,
+    // shard and chunk, every fire, the cloud ring, the dome and the moon, the
+    // rings and the flags, the grass, the water, the glazing, every spark,
+    // disc, scorch and blob (pools, those last four, but the rest's draws owe
+    // the sum too), and the ash and the rotor wash (a draw a field, no pool).
     this.prof.setPools(() => ({
       drawn:
         this.pieceDraw.stats.drawn +
@@ -2760,7 +2729,7 @@ export class Game {
       fades: this.fadeDraw.stats.drawn,
       particles: this.particleDraw.stats.drawn,
     }));
-    // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
+    // The sky's ring is OUR renderer's, its dome and moon too, and
     // `Sky` is handed them below.
     this.cloudDraw = new CloudDraw(this.renderer, cloudsFailedOverMenu);
     this.skyDraw = new SkyDraw(this.renderer, () => this.glowAdmits(), skyFailedOverMenu);
@@ -2785,16 +2754,16 @@ export class Game {
       { name: "the glazing", ready: this.glassDraw.ready },
       { name: "the sparks, dust discs, scorch and blobs", ready: this.fadeDraw.ready },
       // The ash's update and both its blends (a map change can flip one,
-      // `Atmosphere.apply`), and the rotor wash's update and draw (X4.7d).
+      // `Atmosphere.apply`), and the rotor wash's update and draw.
       { name: "the ash and the rotor wash", ready: this.particleDraw.ready },
-      // The volume's trace and compose at every tier and its vis pass (X5.1b):
+      // The volume's trace and compose at every tier and its vis pass:
       // a tier changed in a round compiles nothing.
       { name: "the irradiance volume", ready: this.gi.ready },
       // The bloom's box filter and its blur at every rung and render scale at
-      // the boot's device pixel ratio (X5.2b): a Glow or Render Scale setting
+      // the boot's device pixel ratio: a Glow or Render Scale setting
       // changed in a round compiles nothing.
       { name: "the glow's blur", ready: this.glowBlur.ready },
-      // The post chain's stages of ours (X5.2c1: the grade), into the canvas
+      // The post chain's stages of ours, into the canvas
       // and, for a stage another follows, into the chain's pool.
       { name: "the post chain", ready: this.postChain.ready },
     ];
@@ -2803,11 +2772,10 @@ export class Game {
     // (`Sky.setStanding`, from `installMap` and `teardownMap`).
     this.sky = new Sky(this.sceneFrame, this.cloudDraw, this.skyDraw, this.renderer.textureMaker, this.surface);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
-    // life of the process and rewrites it as the ring drifts. Until now every
-    // material held `ShadowBindings`' own "no cloud" texel.
+    // life of the process and rewrites it as the ring drifts.
     this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
     // The frame under the boot's fade, the sky being undrawn with no map
-    // standing (`BABYLON_EXIT.md` X4.5c). Nothing has applied an environment
+    // standing. Nothing has applied an environment
     // yet, and the menu's photograph is of this same map.
     applyClearColor(this.sceneFrame.clearColor, this.mapDef.environment);
     this.applySky();
@@ -2886,7 +2854,7 @@ export class Game {
    * Whether the WORLD's emissives may bloom this frame, asked by every draw of
    * ours into the mask but the weapon's: the emissive palette (`WorldGlow`),
    * the visors (`BodyDraw`), the pieces, the billows, the sparks and the
-   * fires. Babylon has drawn nothing into it since `BABYLON_EXIT.md` X5.3d.
+   * fires.
    *
    * The kit screen hangs a dark card behind the weapon (see
    * `inspect.backdrop`), and the one thing in the game that card cannot
@@ -2895,9 +2863,8 @@ export class Game {
    * is on the stage may bloom while the stage is up, which still leaves the
    * reticle and the hot parts of the weapon itself glowing — exactly what
    * the screen is for. "On the stage" is the viewmodel, and the rule is
-   * stated by its DRAW (`BABYLON_EXIT.md` X4.3d): `ViewDraw` masks the
-   * weapon's lit parts in every state and never asks — where until then
-   * this asked of a rendering group, the viewmodel's having been one. Every
+   * stated by its DRAW: `ViewDraw` masks the
+   * weapon's lit parts in every state and never asks. Every
    * draw that asks is the world's, and so is the moon (`SkyDraw`, which asks
    * here too).
    */
@@ -2918,8 +2885,7 @@ export class Game {
     out: Color4,
   ): void {
     const emissive = material.emissiveColor;
-    // No material of ours states an intensity (Babylon's PBR alone declared
-    // one), so the scale is the fade.
+    // No material of ours states an intensity, so the scale is the fade.
     const k = fade;
     out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
   }
@@ -3197,8 +3163,9 @@ export class Game {
    */
   private installDomListeners(canvas: HTMLCanvasElement): void {
     // Pointer lock + audio unlock must happen inside a user gesture.
-    // (pointerdown, not click: Babylon may preventDefault the pointer event,
-    // which suppresses the compatibility click event entirely.)
+    // (pointerdown, not click: the canvas's input setup
+    // (`CanvasSurface.adoptInput`) prevents the press's default, which
+    // suppresses the compatibility click event entirely.)
     document.addEventListener("pointerdown", (e) => {
       this.sfx.unlock();
       // Not for a finger. There is no lock to take on a touch screen, and
@@ -3934,17 +3901,17 @@ export class Game {
 
   /**
    * Sizes the backing store from the player's render scale and the display:
-   * the render-scale setting's SETTER (`BABYLON_EXIT.md` X5.4h), on the
+   * the render-scale setting's SETTER, on the
    * game's own canvas (`core/CanvasSurface.ts`, Babylon's `resize` and
    * `setSize` ported).
    *
    * The scaling level is the RECIPROCAL of the resolution — level 1 means one
-   * backing pixel per CSS pixel, which is what Babylon's engine always ran at
-   * because `adaptToDeviceRatio` was never passed. On a 2x panel that is a
-   * quarter of the display's pixels, upscaled by the compositor. The setting is
-   * expressed against the DISPLAY instead (see `CONFIG.graphics.renderScales`),
-   * so `renderScale` 1.0 is the panel's own resolution on every machine and the
-   * default derives back to the old behaviour.
+   * backing pixel per CSS pixel, which on a 2x panel is a quarter of the
+   * display's pixels, upscaled by the compositor. The setting is expressed
+   * against the DISPLAY instead (see `CONFIG.graphics.renderScales`), so
+   * `renderScale` 1.0 is the panel's own resolution on every machine, and a
+   * fresh install starts at the rung nearest the CSS pixel grid
+   * (`settings.ts`' `defaultRenderScale`).
    *
    * Read fresh every call rather than cached: this is also the resize handler,
    * and the density is exactly what a resize can have changed.
@@ -3961,10 +3928,9 @@ export class Game {
     this.surface.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
     // The glow's blur at every rung and render scale at THIS ratio: a no-op
     // unless the ratio moved, and then its new widths (up to five) are the one
-    // exception to the seal (`BABYLON_EXIT.md` X5.2's row "pipelines"). The
-    // blur is skipped while they compile — no bloom for ~3 frames, where
-    // Babylon compiled them synchronously and drew it: a live difference the
-    // owner accepted (row "a DPR change in play", `render/GlowBlur.ts`).
+    // exception to the seal. The blur is skipped while they compile — no
+    // bloom for ~3 frames, an accepted live difference (`render/GlowBlur.ts`,
+    // `docs/rendering.md`).
     this.glowBlur.declare(glowKernels(dpr));
   }
 
@@ -4059,7 +4025,7 @@ export class Game {
     // frustum: a deploy screen over a meadow is a live view of it too. Nothing
     // here advances its clock — see `GrassSystem.follow`.
     //
-    // (Neither is a mesh now, the grass since X4.6c and the water since X4.6d, so
+    // (Neither is a mesh, so
     // neither has a switch for the cull's `offer` to read; what the size gate says
     // of each is asked after the cull, in `drawGrass` and `drawWater`.)
     this.grass.follow(this.cameraSys.camera);
@@ -4089,7 +4055,7 @@ export class Game {
     // a per-frame push at a standing GPU emitter, the mote field's own shape,
     // and at most one question per machine on the field. Handed each hull's
     // fade, so a hull faded out at its map's draw distance takes its dust,
-    // its spray and its ripple with it (X4.2d's post-commit review): 1 on a
+    // its spray and its ripple with it: 1 on a
     // map that states none, which changes nothing.
     this.rotorWash.update(fleetStepped, this.hullFades);
     // …and the WATER's half of the same wash, straight off the sites that call
@@ -4121,9 +4087,8 @@ export class Game {
     if (!vol) return;
     vol.update();
     // The shadow map is re-read rather than held, which
-    // `ShadowSystem.lightMatrix` explains — the generator mutates that matrix
-    // in place, and leaning on it is leaning on an implementation detail of
-    // Babylon's.
+    // `ShadowSystem.lightMatrix` explains — the matrix is mutated in place,
+    // and leaning on it is leaning on an implementation detail.
     vol.setShadow(this.shadows.depthMap, this.shadows.lightMatrix);
     // And the bodies', which is what lets a soldier standing in a beam cut it.
     // Re-read for the same reason the line above is: both generators mutate
@@ -4160,8 +4125,7 @@ export class Game {
    * pass the post chain does not open. The ORDER is the chain's list, which
    * this file assembled (the shafts, then the blur, then the grade — the
    * shafts belong to the frame they smear with, and grain over a smear reads
-   * as a dirty lens), and nothing here moves it (`BABYLON_EXIT.md` X5.2c2:
-   * the blur is no Babylon pass to take off a camera and put back).
+   * as a dirty lens), and nothing here moves it.
    */
   private setMotionBlurEnabled(on: boolean): void {
     this.motionBlur.setEnabled(on);
@@ -4516,14 +4480,13 @@ export class Game {
   /**
    * The world could not be drawn — our renderer, which draws it in every
    * pass of a round, refused a surface of it or lost a pass of it
-   * (`BlockHandover`, `WorldCulling.setMap`), and Babylon holds no mesh of it
+   * (`BlockHandover`, `WorldCulling.setMap`), and no mesh of it exists
    * to fall back on, so there is no honest half-world to play in: said on
    * the console, the round left for the menu (`enterMenu`, which leaves a
    * server's match — `leaveMatch` — as it leaves the page's own), and a
    * toast saying the map could not be drawn — `loadHeights`' precedent.
-   * `BABYLON_EXIT.md` X3.7, "What becomes of a failure".
    *
-   * **Run after the task in hand**, as each pass's loss always was: a
+   * **Run after the task in hand**, as each pass's loss is: a
    * failure can land INSIDE a render (a refused pass), whose commands still
    * hold the buffers the menu's teardown destroys, or inside `installMap`,
    * whose caller must finish its turn before the map it built is taken
@@ -4557,8 +4520,7 @@ export class Game {
   }
 
   /**
-   * The graphics device was LOST (`BABYLON_EXIT.md` X5.4i, the owner's (A),
-   * row "X5.4, a lost device"): every draw of ours is made on that device
+   * The graphics device was LOST: every draw of ours is made on that device
    * and on no other, nothing here rebuilds one in place (`FINDINGS.md` 74), so
    * the page RELOADS itself to the menu, a one-line notice left for it
    * (`core/deviceLoss.ts`) — the round lost offline, the match left in a
@@ -4576,7 +4538,7 @@ export class Game {
    * runs off the device's `lost`, a microtask, so between frames: after the
    * last frame's submit, with none recording (a frame is one synchronous
    * `FrameLoop` step, and nothing settles inside one). In the order the loss
-   * owes it (`BABYLON_EXIT.md` X5.4i): the loop STOPPED, so no frame runs
+   * owes it: the loop STOPPED, so no frame runs
    * into what follows; our renderer disposed — its frame buffer, the
    * frame's targets and every texture the maker made, destroyed at once (the
    * one exception to "destroyed after the frame's submit", there being no
@@ -4648,7 +4610,7 @@ export class Game {
    * The camera as `GPUParticleSystem._render` bound it, for `ParticleDraw`, asked
    * as the main pass begins (the frame's transform is this frame's by then, as
    * the scene's was at the group's draw): the frame's view and projection
-   * apart (`SceneFrame`, the scene's until `BABYLON_EXIT.md` X6.1f), the view's
+   * apart (`SceneFrame`), the view's
    * inverse by `Matrix.invertToRef` (the same doubles rounded to the same floats),
    * and the active camera's `globalPosition`.
    */
@@ -4879,7 +4841,7 @@ export class Game {
     // first second of a spawn. After `lighting.update` on the frames that run one, because
     // its point-light visibility is written per SLOT and the slots are that
     // frame's; on the frames that do not, they are simply the last ones
-    // chosen. All compute — no draw call — and since `BABYLON_EXIT.md` X5.1b
+    // chosen. All compute — no draw call — and
     // only its CPU half is here: this span is the lights, the channels, the
     // hulls and the params written and the dispatch ARMED; the three passes
     // are RECORDED by our renderer's late prepare as the main pass begins
@@ -4906,9 +4868,9 @@ export class Game {
     // different symptom: a fire in the village panned from a listener at the
     // map's corner while the menu is up over it. It still runs after the
     // camera update and after `lighting.update`, which is the whole of the
-    // order it was ever owed, and it is now last in the frame rather than last
-    // in the world step — so the rule that nothing may move the camera after
-    // it is if anything harder to break.
+    // order it is owed, and it is last in the frame rather than last in the
+    // world step — so the rule that nothing may move the camera after it is
+    // if anything harder to break.
     this.sfx.setListener(
       this.cameraSys.camera.position,
       this.cameraSys.forwardToRef(this.listenerForward),
@@ -4926,41 +4888,41 @@ export class Game {
     this.pushScoreboard();
     this.prof.begin(P.render);
     this.drawBodies();
-    // The hulls are ours too (`BABYLON_EXIT.md` X4.2b): their joints composed
-    // here, after every write, and their drawing handed to our renderer —
-    // where Babylon composed their nodes inside the render until X4.2a.
+    // The hulls are ours too: their joints composed
+    // here, after every write, and their drawing handed to our renderer.
     this.drawHulls();
-    // …and the player's own weapon (X4.3b-d): its joints evaluated as the
+    // …and the player's own weapon: its joints evaluated as the
     // render evaluated its nodes, every surface handed to our renderer — the
     // card, the opaque parts in Babylon's group-1 order, the glasses back to
     // front.
     this.drawView();
-    // …and the effect pools' pieces and the bullet marks (X4.4b): posed
+    // …and the effect pools' pieces and the bullet marks: posed
     // where every pool already put them this frame, handed to our renderer.
     this.drawPieces();
     this.drawMarks();
-    // …and the blast's billows and the debris (X4.4c): the batches `BlastFx`
+    // …and the blast's billows and the debris: the batches `BlastFx`
     // posed, and every shard and chunk off its body's pose.
     this.drawBlasts();
     this.drawDebris();
-    // …and the fires (X4.4d): the world's, and the molotov's flames where
+    // …and the fires: the world's, and the molotov's flames where
     // `GrenadeFx` stood them.
     this.drawFires();
-    // …and the rings and the flags (X4.6b): through the size gate here, the
+    // …and the rings and the flags: through the size gate here, the
     // rest inside the render.
     this.drawZones();
-    // …and the grass (X4.6c) on the same terms, its patches chosen by `follow`
+    // …and the grass on the same terms, its patches chosen by `follow`
     // above.
     this.drawGrass();
-    // …and the water (X4.6d) on the same terms, each body's shape chosen by `follow`
+    // …and the water on the same terms, each body's shape chosen by `follow`
     // above.
     this.drawWater();
-    // …and the glazing and the fading pools (X4.6e), all of them read inside the
+    // …and the glazing and the fading pools, all of them read inside the
     // render, where the camera and the frustum are this frame's.
     this.drawBlended();
-    // THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+    // THE FRAME, ours (`core/SceneFrame.ts`): what Babylon's
     // `scene.render()` did, in its order — the camera's update and matrices,
-    // the render id, the draw phase, the post chain — where it was called.
+    // the render id, the draw phase, the post chain — called at the point of
+    // the frame Babylon's was.
     this.sceneFrame.render();
     this.prof.end(P.render);
     // AFTER the render, because the render is the thing being waited for: a
@@ -5623,9 +5585,8 @@ export class Game {
   }
 
   /**
-   * `F2`: the dev-only MAP VIEWER, raised as a lid over a round or lowered
-   * (`BABYLON_EXIT.md` X5.3b; rows "X5.3, the viewer's key and reach" and "the
-   * viewer's overlays"). It covers `playing`, `dying` and `deploy` in both
+   * `F2`: the dev-only MAP VIEWER, raised as a lid over a round or lowered.
+   * It covers `playing`, `dying` and `deploy` in both
    * kinds of round, and from every other state — the menu, a build, the
    * round-over card, another lid, a benchmark — it does nothing
    * (`SCREENS.viewer.covers` refuses it).
@@ -5800,7 +5761,7 @@ export class Game {
     for (const light of this.fireLights.values()) this.lighting.remove(light);
     this.fireLights.clear();
     // The fleet's drawing first — every view lets go of its hull's picture and
-    // takes its body and rig out of the scene — then the fleet.
+    // takes its body and rig out of the draw — then the fleet.
     this.vehicleViews.dispose();
     this.vehicles.dispose();
     // The dust rings under that fleet, which would otherwise go on asking the
@@ -5834,7 +5795,7 @@ export class Game {
     this.fadeDraw.uninstall();
     this.farthestRun.uninstall();
     // The weapon stays drawn — the kit screen covers the menu — but a failure
-    // of it with no round standing is the console's (X4.3c).
+    // of it with no round standing is the console's.
     this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
     this.cloudDraw.onFailed(cloudsFailedOverMenu);
     this.skyDraw.onFailed(skyFailedOverMenu);
@@ -5878,11 +5839,9 @@ export class Game {
    * result to everything that reads geometry or environment off it.
    *
    * THE ONE PLACE A MAP IS BUILT, and its one caller is a round starting
-   * (`buildRound`). It had two once — the map editor's rebuild was the other,
-   * until `BABYLON_EXIT.md` X5.3c deleted the editor — and before it was one
-   * method they were two copies of it that had already drifted apart, silently
-   * in the worst way: a system added to one copy and forgotten in the other
-   * kept a cached pointer into a disposed map, and nothing threw. Anything new
+   * (`buildRound`). A second copy of it drifts apart silently, in the worst
+   * way: a system added to one copy and forgotten in the other keeps a cached
+   * pointer into a disposed map, and nothing throws. Anything new
    * that consumes a `GameMap` or an `EnvironmentSpec` goes here.
    *
    * What deliberately stays with the caller is the environment and what is
@@ -5916,8 +5875,7 @@ export class Game {
     // own match, in its host. (The viewer sweeps the fields it draws itself.)
     const navFields = this.remoteRound;
     // Our renderer draws the world in every pass, and what it cannot draw
-    // fails the world (`BABYLON_EXIT.md` X3.7b): no build makes a mesh of it
-    // (X6.1g).
+    // fails the world: no build makes a mesh of it.
     const map = this.mapBuilder.build(layout, environment, heights, {
       foliage,
       navFields,
@@ -5977,11 +5935,11 @@ export class Game {
     const bodyDraw = bodyDrawDistanceOf(environment);
     this.ragdolls.setViewDistance(bodyDraw);
     this.net?.roster.setViewDistance(bodyDraw);
-    // …and where a body's distance FADE ends (`BABYLON_EXIT.md` X4.1e): the
+    // …and where a body's distance FADE ends: the
     // cull ramps a body out short of the roster's switch rather than letting
     // it pop there, off the same number and never a gate of its own.
     this.culling.setBodyDrawDistance(bodyDraw);
-    // And where a HULL's fade ends (`BABYLON_EXIT.md` X4.2d): the map's own
+    // And where a HULL's fade ends: the map's own
     // `hullDrawDistance`, capped at the fog and floored at a hull's gun reach
     // — infinite, every hull drawn at any range, on a map that states none.
     // The cull's alone: nothing the authority or a hull decides reads it.
@@ -6007,35 +5965,32 @@ export class Game {
     const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
     this.roundWorld = owner;
     // The bodies are no part of the world the handover hands over, and have
-    // no fallback either (`BABYLON_EXIT.md` X4.1d): a ROUND's map draws them,
+    // no fallback either: a ROUND's map draws them,
     // a pipeline of theirs that cannot be built — this install's, and every
     // one after it, the pipelines being the session's — or a pass of ours
     // refused under them fails the round as the world's passes do. Installed
     // BEFORE the world, so they draw ahead of it at the one point both use,
     // as Babylon's opaque queue drew the rigs ahead of ours.
-    // The hulls on the bodies' terms, and installed AHEAD of them (X4.2b):
-    // Babylon's opaque queue, the hulls' meshes in it, drew before the
-    // bodies' draw of ours, so a hull goes down first at the one point both
-    // use.
+    // The hulls on the bodies' terms, and installed AHEAD of them, in
+    // Babylon's order (its opaque queue, the hulls in it, drew before the
+    // bodies), so a hull goes down first at the one point both use.
     // The pools' pieces and the marks on the bodies' terms, installed AHEAD
-    // of the hulls, the bodies and the world (X4.4b): the pools' meshes were
-    // in Babylon's opaque queue, which drew before every draw of ours at the
-    // one point all of them use — so a mark still goes down before the wall
-    // it is biased off.
-    // The blast's billows and the debris on the same terms (X4.4c), the
-    // billows first: every one of them was in that queue too, so each goes
+    // of the hulls, the bodies and the world, in the same order (that queue,
+    // the pools in it, drew before the rest at the one point all of them
+    // use) — so a mark goes down before the wall it is biased off.
+    // The blast's billows and the debris on the same terms, the
+    // billows first: every one of them is of that queue too, so each goes
     // down ahead of everything else of ours at that point — the order among
     // the four differing from the queue's front-to-back interleave only
     // where two of them tie, the bodies' accepted price.
-    // The FIRES on the same terms (X4.4d), and FIRST of all: they were in
-    // that queue until X4.4d, ahead of the billows' draw of ours, front to
-    // back among themselves as they still are.
-    // THE ONE RUN ahead of even those (X4.6d): the RINGS AND FLAGS, the BLADES and the
+    // The FIRES on the same terms, and FIRST of all: that queue put them
+    // ahead of the billows, front to back among themselves.
+    // THE ONE RUN ahead of even those: the RINGS AND FLAGS, the BLADES and the
     // WATER in Babylon's one nearest-first order, first at this point and behind what
     // is left of that queue, the `backed` panes, with which nothing in it ties
     // (`NearestRun`'s header). The TURF first at `"opaque"`.
     // AHEAD of even the run: the `backed` panes, the last of that queue in a
-    // round, ours since X4.6e (`GlassDraw`), nearest first, so a pane still goes
+    // round (`GlassDraw`), nearest first, so a pane goes
     // down ahead of the blocks it saves the shading of. Its see-through panes
     // and every fade are the back-to-front run's, behind the moon at
     // `"beforeBlended"` (`FarthestRun`).
@@ -6054,16 +6009,16 @@ export class Game {
     this.debrisDraw.install((reason) => this.worldFailed(reason, owner));
     this.hullDraw.install((reason) => this.worldFailed(reason, owner));
     this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
-    // The weapon is drawn for the SESSION (X4.3c), so this hands it only whom
+    // The weapon is drawn for the SESSION, so this hands it only whom
     // to tell: the round, while one stands — told at once if its pipelines
     // failed already, as every round after one that failed is.
     this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
     // …and the clouds, on the same terms but for one: a failed pipeline is told
     // only if a ring stands. `startRound` has stood this map's by this line
     // (`applySky`, ahead of this install), so a ring that came after the failure
-    // refuses its round here, and a map stating none plays on (X4.5b).
+    // refuses its round here, and a map stating none plays on.
     this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
-    // …and the dome and the moon, on the clouds' terms (X4.5c).
+    // …and the dome and the moon, on the clouds' terms.
     this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
     this.handover.install(map, owner);
     // The bodies' map is no part of the world the handover hands over, but it
@@ -6072,18 +6027,18 @@ export class Game {
     // it, the pipeline being the session's.
     this.bodyShadowMap.setFailure((reason) => this.worldFailed(reason, owner));
     // …and the visors into the glow's mask AFTER the world's palette, which
-    // the handover registered just now: the palette went down first in that
-    // pass while Babylon drew the visors.
+    // the handover registered just now: in Babylon's order, the palette is
+    // first in that pass and the visors after it.
     this.bodyDraw.installMask();
     // …and the pieces' unlit parts after the visors, where Babylon's mask
     // drew the pools' meshes: after everything first in that pass.
     this.pieceDraw.installMask();
-    // …and the billows' bloom after the pieces' (X4.4c): Babylon's mask drew
-    // their meshes after every draw of ours there. (No shard or chunk is
+    // …and the billows' bloom after the pieces', in the same mask order:
+    // after every other draw there. (No shard or chunk is
     // emissive: the debris has no mask.)
     this.blastDraw.installMask();
-    // …and the fires' after the billows' (X4.4d): Babylon's mask drew their
-    // meshes after every draw of ours, the billows' last among them.
+    // …and the fires' after the billows', in the same mask order: after
+    // every other draw, the billows' last among them.
     this.flameDraw.installMask();
     // The fires' pull is sized to what the handover handed over just now.
     this.flameDrawn = new Int32Array(this.flameDraw.capacity);
@@ -6135,8 +6090,8 @@ export class Game {
     this.leash.setMap(map.size, map.margin);
     // The three places the ground under a body's feet is kept: the heightfield,
     // the collider boxes bucketed over it, and the hulls, which are in neither
-    // because they move. `probeGround` takes the highest of them and was a
-    // whole-scene ray pick until it could. The deck supplier is bound HERE and
+    // because they move. `probeGround` takes the highest of them. The deck
+    // supplier is bound HERE and
     // once per install rather than per frame — `VehicleSystem` is a system and
     // `Player` may not reach for one, which is what this wiring is for.
     this.player.setGround(
@@ -6148,15 +6103,13 @@ export class Game {
       // `world/CollisionField.ts`.
       map.collidables,
     );
-    // **The solid world as a SEGMENT QUERY, to the six systems that used to ask
-    // the scene.** This is the whole of `ENGINE_UPGRADE.md` wall 2 on this
-    // side: `scene.pickWithRay` walked every mesh in the scene to answer where
-    // a round stopped, so the eight sites that asked it were priced on the size
-    // of the MAP rather than on the length of the ray. They read
-    // `colliderBoxes`, the strut groups and the heightfield now, exactly as
-    // `Player.probeGround` was made to. Nothing about what any of them decides
-    // has changed — see `world/RayWorld.ts` for the two questions and which
-    // caller asks which.
+    // **The solid world as a SEGMENT QUERY, to the six systems that ask
+    // where a round stops.** This is the whole of `ENGINE_UPGRADE.md` wall 2
+    // on this side: the eight sites are priced on the length of the ray, not
+    // on the size of the MAP as a pick over every mesh would be. They read
+    // `colliderBoxes`, the strut groups and the heightfield, as
+    // `Player.probeGround` does — see `world/RayWorld.ts` for the two
+    // questions and which caller asks which.
     //
     // `VehicleSystem` is not in this list and is not an exception: it is
     // handed the whole `GameMap` already, and takes it off `map.rays` where it
@@ -6190,7 +6143,7 @@ export class Game {
     // district turn up different ground. (The scorch needs no telling — it
     // multiplies the floor rather than painting a colour on it.)
     this.blastDebris.setEnvironment(environment);
-    // …and our renderer's copy of that earth (X4.4c): the debris palette's
+    // …and our renderer's copy of that earth: the debris palette's
     // third slot, as the `get` material the chunks wore held it.
     if (this.debrisRecipe && this.blastDebris.earth) {
       this.mats.repaintPool(this.debrisRecipe, 3, Color3.FromHexString(this.blastDebris.earth));
@@ -6266,8 +6219,7 @@ export class Game {
   }
 
   /**
-   * The viewer's frame: the map editor's tail, renamed (`BABYLON_EXIT.md`
-   * X5.3b). The free camera is the shadow focus, biased ahead, and
+   * The viewer's frame. The free camera is the shadow focus, biased ahead, and
    * the ROUND's bodies are what the grass bends round — the pushers the last
    * world frame filled, held with the world in the page's own match and
    * refilled by `updateRoundBehind` in a server's — so the bodies and hulls are
@@ -6616,19 +6568,19 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's BODIES (`BABYLON_EXIT.md` X4.1d): every
+   * Hands our renderer this frame's BODIES: every
    * pooled rig `WorldCulling` says is drawn this frame (`drawsBody` — switched
    * on, and with some of it left to draw: not under the size gate nor past
    * the end of its distance fade, measured once and dropped whole), its
    * joints composed and its segments' matrices written as an instance of its
-   * side's kit (`SoldierModel.writeRigDrawing`) at its FADE (`bodyFade`,
-   * X4.1e) — the bodies drawn whole first and the fading ones after them,
+   * side's kit (`SoldierModel.writeRigDrawing`) at its FADE (`bodyFade`)
+   * — the bodies drawn whole first and the fading ones after them,
    * which the drawing draws behind its screen door — and their centres kept for
    * the order and the bloom the render pulls (`bodyPull`). Once a frame, in EVERY
    * state, after everything that poses or places a body and after the cull,
-   * immediately before the frame's render — inside the render span, where
-   * Babylon composed the rigs' meshes until X4.1a, so the profiler's
-   * attribution does not move. A body not drawn is not composed — and while
+   * immediately before the frame's render — inside the render span, so the
+   * profiler attributes the compose to the render. A body not drawn is not
+   * composed — and while
    * the draw is not installed (the menu) none is: `commit`
    * would take nothing, and no other reader depends on these composes, every
    * one composing a joint FRESH (`SoldierModel`'s header).
@@ -6639,10 +6591,10 @@ export class Game {
     const rigs = this.pooledRigs;
     const segments = draw.segments;
     const culling = this.culling;
-    // The bodies drawn WHOLE first and the FADING ones after them
-    // (`BABYLON_EXIT.md` X4.1e): the drawing draws the second behind its
-    // screen door, at the fade `WorldCulling` measured them to. With nobody
-    // fading this is the one pass it always was, in the same order.
+    // The bodies drawn WHOLE first and the FADING ones after them: the
+    // drawing draws the second behind its screen door, at the fade
+    // `WorldCulling` measured them to. With nobody fading this is a single
+    // pass, in pool order.
     let n = 0;
     let whole = 0;
     for (let pass = 0; pass < 2; pass++) {
@@ -6671,8 +6623,8 @@ export class Game {
    * `camera.position` — for this frame's `n` drawn bodies (`drawBodies`):
    *
    * - each body's segments in the ORDER Babylon's queue drew a rig's meshes:
-   *   group 0's opaque sort (`setRenderingOrder`, until `BABYLON_EXIT.md`
-   *   X6.1h: nearest first by the squared distance of the bounding sphere's
+   *   group 0's opaque sort (`setRenderingOrder`'s: nearest first by the
+   *   squared distance of the bounding sphere's
    *   centre from that eye) and,
    *   between two at one distance, the order the meshes were made in, the
    *   kit's — a stable sort, as `Array.prototype.sort` is. What it decides is
@@ -6725,8 +6677,8 @@ export class Game {
   }
 
   /**
-   * The player's own weapon as our renderer draws it (`BABYLON_EXIT.md`
-   * X4.3c, X4.3d), built once at construction: every SEGMENT the viewmodel's
+   * The player's own weapon as our renderer draws it, built once at
+   * construction: every SEGMENT the viewmodel's
    * tree holds (`ViewTree.segments`, the order they were made), numbered into
    * its kit; each one's material read once — an opaque part's cel recipe, or
    * an unlit one's colour as a slot in the weapon's emissive table; a GLASS's
@@ -6812,13 +6764,13 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's WEAPON (`BABYLON_EXIT.md` X4.3c, X4.3d):
+   * Hands our renderer this frame's WEAPON:
    * the viewmodel's tree evaluated as the render evaluated it
    * (`ViewModel.drawView` — every surface switched on and visible, whatever
    * its role, the cache settled inside the render as before), and each
    * surface it found written as one draw — its joint's world, its place in
-   * the kit, an opaque part's material's recipe — in the order the frame drew
-   * them while they were Babylon's meshes:
+   * the kit, an opaque part's material's recipe — in the order Babylon's
+   * frame drew them:
    * - the kit CARD first, the last of group 0's blended queue it was, its
    *   canvas uploaded first if it was painted since (`ViewDraw.cardPicture`);
    * - the OPAQUE parts in BABYLON'S GROUP-1 ORDER: the opaque queue sorted by
@@ -6827,7 +6779,7 @@ export class Game {
    *   sort as V8's is — so a tie goes to the segment made first
    *   (`ViewMesh.slot`), never to the order the evaluation walked the joints
    *   in, which differs where an arm's joint was made before the other arm's
-   *   segments (X4.3c's review, checked against the parent's own queue). That
+   *   segments. That
    *   order is what settles an equal depth, so a finish, which swaps a colour
    *   group's material, re-orders the draws exactly as it re-ordered the
    *   queue;
@@ -6891,7 +6843,7 @@ export class Game {
       // materials (`shaders/MaterialKey.ts`) — a tie going to the segment
       // MADE first (its slot: the kit is numbered in the order made) — the
       // order Babylon dispatched the meshes in, not the order the evaluation
-      // walked them, which follows the joints (X4.3c's review).
+      // walked them, which follows the joints.
       let r = opaque;
       while (r > 0) {
         const o = order[r - 1];
@@ -6959,7 +6911,7 @@ export class Game {
   }
 
   /**
-   * Every kit a pool draws in the world (`BABYLON_EXIT.md` X4.4b), from the
+   * Every kit a pool draws in the world, from the
    * views that built them: the tracer's, the case's, the frag's and the
    * bottle's, the rocket's and the mine's — what `pieceDraw` was handed, and
    * what each session's wire pools (`NetSession`) make their pieces of.
@@ -6976,21 +6928,21 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's PIECES (`BABYLON_EXIT.md` X4.4b): every
+   * Hands our renderer this frame's PIECES: every
    * piece a pool has switched on — the tracers in flight, the brass, the
    * simulation's thrown bodies and the wire's, the rockets and the mines of
    * both — composed fresh and written as an instance of its kit
    * (`pieces.writePieceDrawing`): an unlit segment always, a CEL segment only
    * where the size gate keeps its world sphere this frame
-   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh the segment
-   * was), and each drawn segment's sphere kept for the order and the bloom
+   * (`WorldCulling.keepsSphere`), and each drawn segment's sphere kept for
+   * the order and the bloom
    * the render pulls (`piecePull`). A piece with nothing drawn is no
    * instance.
    *
    * Once a frame, in EVERY state, after everything that moves a piece (the
    * pools' own steps, `NetSession.update`, `PlayerView.stepped`) and after
    * the cull, immediately before the frame's render — inside the render span,
-   * where Babylon composed the pools' meshes until X4.4b. While the draw is
+   * so the profiler attributes the compose to the render. While the draw is
    * not installed (the menu) none is composed.
    */
   private drawPieces(): void {
@@ -7116,10 +7068,10 @@ export class Game {
   private readonly pieceAt = new Vector3();
 
   /**
-   * Hands our renderer this frame's bullet MARKS (`BABYLON_EXIT.md` X4.4b):
+   * Hands our renderer this frame's bullet MARKS:
    * every standing slot of `BulletMarks` the size gate keeps — its frozen
-   * world sphere asked of `WorldCulling.keepsSphere`, as `offer` asked it of
-   * the mesh the slot was, a mark being cel and so never exempt — in slot
+   * world sphere asked of `WorldCulling.keepsSphere`, a mark being cel and
+   * so never exempt — in slot
    * order, which `markPull` sorts inside the render. Once a frame, beside
    * `drawPieces`.
    */
@@ -7182,10 +7134,10 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's blast BILLOWS (`BABYLON_EXIT.md` X4.4c):
+   * Hands our renderer this frame's blast BILLOWS:
    * whether any batch `BlastFx` posed holds one — a batch is drawn exactly
-   * while its mesh was visible — and whether the glow may draw them, which
-   * `GlowRules.admits` asked of every mesh (`glowAdmits`; a billow is never
+   * while it is visible — and whether the glow may draw them, which
+   * `GlowRules.admits` answers (`glowAdmits`; a billow is never
    * `noGlow`). The batches themselves are read inside the render
    * (`blastPull`), where the camera and the frustum are this frame's. Once a
    * frame, beside `drawPieces`.
@@ -7299,10 +7251,10 @@ export class Game {
   private readonly blastAt = new Vector3();
 
   /**
-   * Hands our renderer this frame's RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b):
+   * Hands our renderer this frame's RINGS AND FLAGS:
    * a surface is drawn while its switch is on and the size gate keeps its sphere
-   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh it was), and the
-   * rest of what Babylon did with those meshes is asked inside the render
+   * (`WorldCulling.keepsSphere`), and the rest — the frustum test and the
+   * order, Babylon's — is asked inside the render
    * (`nearestPull`). In every state, after everything that moves the zones.
    */
   private drawZones(): void {
@@ -7317,9 +7269,9 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's GRASS (`BABYLON_EXIT.md` X4.6c): the field is
-   * drawn while the size gate keeps its one sphere (`WorldCulling.keepsSphere`, as
-   * `offer` asked it of every patch mesh, which all held that sphere), its patches
+   * Hands our renderer this frame's GRASS: the field is
+   * drawn while the size gate keeps its one sphere (`WorldCulling.keepsSphere`,
+   * every patch holding that sphere), its patches
    * chosen by `GrassSystem.follow`. In every state.
    */
   private drawGrass(): void {
@@ -7328,9 +7280,9 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's WATER (`BABYLON_EXIT.md` X4.6d): each body is
-   * drawn while the size gate keeps its sphere (`WorldCulling.keepsSphere`, as `offer`
-   * asked it of the mesh it was, its grid and its quad holding one sphere), its shape
+   * Hands our renderer this frame's WATER: each body is
+   * drawn while the size gate keeps its sphere (`WorldCulling.keepsSphere`,
+   * its grid and its quad holding one sphere), its shape
    * chosen by `WaterSystem.follow`. In every state.
    */
   private drawWater(): void {
@@ -7343,8 +7295,8 @@ export class Game {
   }
 
   /**
-   * What our renderer PULLS inside the render for this frame's one run (`NearestRun`,
-   * `BABYLON_EXIT.md` X4.6d), where the render has placed the camera — what Babylon
+   * What our renderer PULLS inside the render for this frame's one run (`NearestRun`),
+   * where the render has placed the camera — what Babylon
    * did with these meshes on its opaque list, step for step: a surface is drawn when
    * it is kept and its sphere passes the frustum test of the mesh's culling strategy,
    * the sphere alone (`inPlanes`, off this render's planes); nearest first by the squared distance to the bounding sphere's centre off `globalPosition`, the order the
@@ -7404,9 +7356,9 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's GLAZING and FADES (`BABYLON_EXIT.md` X4.6e):
+   * Hands our renderer this frame's GLAZING and FADES:
    * whether either may be drawn at all — and, for the fades, whether the glow
-   * may draw a spark's bloom, which `GlowRules.admits` asked of every mesh
+   * may draw a spark's bloom, which `GlowRules.admits` answers
    * (`glowAdmits`). Which of them draws, and in what order, is asked inside the
    * render (`farthestPull`). Once a frame, after the cull, in every state.
    */
@@ -7449,12 +7401,12 @@ export class Game {
 
   /**
    * What our renderer PULLS inside the render for this frame's GLAZING
-   * (`GlassDraw`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * (`GlassDraw`), where the render has placed the
    * camera — what Babylon did with each group's mesh, step for step: a pane
    * (`GlassDraw.surfaces`, in birth order) is drawn while its block's cell is
-   * offered (`WorldCulling.offersBlock`, what its mesh was a candidate by), the
-   * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
-   * the filed mesh) and the sphere passes the frustum test of the mesh's
+   * offered (`WorldCulling.offersBlock`), the
+   * size gate keeps its record's sphere (`keepsSphere`) and the sphere passes
+   * the frustum test of the mesh's
    * culling strategy (`inPlanes`); a
    * BACKED one into group 0's opaque order, nearest first by the squared distance to the bounding sphere's centre
    * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
@@ -7494,7 +7446,7 @@ export class Game {
 
   /**
    * What our renderer PULLS inside the render for this frame's one back-to-front
-   * run (`FarthestRun`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * run (`FarthestRun`), where the render has placed the
    * camera — what Babylon did with the meshes on its transparent list, step for
    * step:
    * - a FADE is drawn while its node is switched on and its visibility is over
@@ -7505,8 +7457,7 @@ export class Game {
    *   sphere, the pools' rule (`docs/rendering.md`, "The pools, ours": no drop
    *   can latch), and the frustum test; its world, look and bloom written at its
    *   index among the drawn fades. **Babylon's gate LATCHED here and that is
-   *   dropped on purpose**, by the owner's decision of 2026-11-06 (X4.6e's
-   *   review, ported exactly the commit before): it read a scorch's or a blob's
+   *   dropped on purpose**: it read a scorch's or a blob's
    *   bounds as of the last time the mesh's world was COMPUTED, only for a
    *   candidate it kept, so one never computed was measured at the world
    *   origin and stayed dropped while the eye was out of its reach;
@@ -7603,11 +7554,10 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's FIRES (`BABYLON_EXIT.md` X4.4d): whether
+   * Hands our renderer this frame's FIRES: whether
    * any may be drawn — a world fire on the map the handover installed, or a
-   * molotov flame switched on (`visible`, its mesh's `isVisible` until
-   * X4.4d) — and whether the glow may draw them, which `GlowRules.admits`
-   * asked of every mesh (`glowAdmits`). The fires themselves are read inside
+   * molotov flame switched on (`visible`) — and whether the glow may draw
+   * them, which `GlowRules.admits` answers (`glowAdmits`). The fires themselves are read inside
    * the render (`flamePull`), where the camera and the frustum are this
    * frame's. Once a frame, after the cull (`offersBlock` is its answer this
    * frame) and beside `drawBlasts`.
@@ -7763,12 +7713,12 @@ export class Game {
   private readonly flameAt = new Vector3();
 
   /**
-   * Hands our renderer this frame's DEBRIS (`BABYLON_EXIT.md` X4.4c): every
+   * Hands our renderer this frame's DEBRIS: every
    * glass shard and rubble chunk switched on, its world composed off its
    * body's pose as it stands (`poseView.writePosedDrawing`) and kept by the
-   * size gate on the world sphere it is drawn with this frame (Babylon's
-   * latch on stale bounds dropped on purpose, the owner's decision of
-   * 2026-11-01) — the shards first, then the chunks, each in its pool's
+   * size gate on the world sphere it is drawn with this frame (no latch on
+   * stale bounds, on purpose: `farthestPull` says why) — the shards first,
+   * then the chunks, each in its pool's
    * order — recorded by index alone:
    * their worlds and kits are written into the draw by `debrisPull`, once it
    * has ordered them. Once a frame, after the cull (the gate's eye) and
@@ -7835,32 +7785,31 @@ export class Game {
   }
 
   /**
-   * Hands our renderer this frame's HULLS (`BABYLON_EXIT.md` X4.2b): every
+   * Hands our renderer this frame's HULLS: every
    * view whose hull is present (`VehicleRig.enabled`, which `VehicleView`
    * follows `Vehicle.present` with), in hardstanding order, its joints
    * composed this frame (`fadeHulls`) and each segment's matrix written as an instance of its kind's
    * kit (`vehicleRig.writeHullDrawing`) — a segment the size gate drops
    * (`WorldCulling.keepsSphere`, asked of that segment's world sphere this
-   * frame, as `offer` asked it of the mesh the segment was) written as
+   * frame) written as
    * nothing, and so is every DETAIL segment of a hull whose whole measure
-   * the detail tier refuses (`WorldCulling.keepsDetail`, `BABYLON_EXIT.md`
-   * X4.2c) — with its kit word, the charred paint a bit of it, and the
+   * the detail tier refuses (`WorldCulling.keepsDetail`) — with its kit
+   * word, the charred paint a bit of it, and the
    * segments' centres kept for the order the render pulls (`hullPull`).
    *
-   * **And at the FADE its map's draw distance gives it** (`BABYLON_EXIT.md`
-   * X4.2d), which `fadeHulls` composed every present hull for and asked,
+   * **And at the FADE its map's draw distance gives it**, which `fadeHulls`
+   * composed every present hull for and asked,
    * earlier in the frame — a hull faded out entirely is not drawn, and is no
    * instance — and the hulls drawn WHOLE are handed over first, in
    * hardstanding order, the FADING ones after them, which the drawing draws
-   * behind its screen door. With no hull fading this is the one pass it
-   * always was, in the same order. So the capacity takes the first sixteen
+   * behind its screen door. With no hull fading this is a single pass, in
+   * hardstanding order. So the capacity takes the first sixteen
    * present hulls drawn whole, then fading ones, in hardstanding order.
    *
    * Once a frame, in EVERY state, after everything that writes a joint and
    * after the cull, immediately before the frame's render — inside the render
-   * span, where Babylon composed the hulls' nodes until X4.2a (the compose
-   * itself is `fadeHulls`', in the cull span, since X4.2d's post-commit
-   * review). A hull not present is not drawn, and while the draw is not
+   * span (the compose itself is `fadeHulls`', in the cull span). A hull not
+   * present is not drawn, and while the draw is not
    * installed (the menu) none is.
    */
   private drawHulls(): void {
@@ -7899,13 +7848,13 @@ export class Game {
   /**
    * Every present hull composed — its joints, FRESH (`vehicleRig.composeHull`,
    * the one compose a hull gets a frame) — and its whole measure asked its
-   * draw-distance FADE (`WorldCulling.hullFade`, `BABYLON_EXIT.md` X4.2d),
+   * draw-distance FADE (`WorldCulling.hullFade`),
    * into `hullFades` by its index in the fleet. Called once a frame, in every
    * state, from `followEye` straight after the cull (the eye the fade is
    * asked from is `offer`'s, this frame) and before the two
    * readers: `RotorWash.update`, which scales its emitters' rate and its
-   * ripple by the fade (the post-commit review's owner decision: a hull's
-   * wash fades with it), and `drawHulls`, which draws off the same compose.
+   * ripple by the fade (a hull's wash fades with it), and `drawHulls`,
+   * which draws off the same compose.
    * A hull not present, and every hull while the draw is not installed (the
    * menu), is not composed and reads 1 — so the wash under
    * it is what it always was, and nothing else reads its joints.
@@ -7941,7 +7890,7 @@ export class Game {
    *   0's opaque sort, nearest first by the squared distance to the bounding sphere's centre and, between two at one
    *   distance, the order the meshes were made in, the kit's, stable. A
    *   segment not drawn (culled, dropped by the size gate, a DETAIL segment of
-   *   a hull the detail tier refuses — `WorldCulling.keepsDetail`, X4.2c — or
+   *   a hull the detail tier refuses — `WorldCulling.keepsDetail` — or
    *   past a narrower kind's own) goes last.
    */
   private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
@@ -7981,8 +7930,8 @@ export class Game {
   /**
    * Hands the round's pooled bodies to `WorldCulling`, which measures and
    * gates each once a frame (`drawsBody`), and keeps their rigs in that order
-   * for `drawBodies`, which draws THESE and no others (`BABYLON_EXIT.md`
-   * X4.1d: no rig is a Babylon mesh, so a rig not filed here is not drawn).
+   * for `drawBodies`, which draws THESE and no others (no rig is a mesh, so
+   * a rig not filed here is not drawn).
    *
    * **Here rather than in `installMap`, for `setRoster`'s reason**: this is the
    * ROUND's roster, and that method is about the MAP. It runs after the pool
@@ -8039,7 +7988,7 @@ export class Game {
    * they went from 44.8 seconds in the ROUND to 10.6 under the card —
    * `ENGINE_UPGRADE.md` S0c, where the second figure is the per-face cull's
    * doing and the change of state is this method's. Our renderer's bake
-   * (X3.6c, the only one since X3.7c) drains Coldharbour in five frames.
+   * drains Coldharbour in five frames.
    */
   private openBakeWait(): void {
     const total = this.reflections.bakePending;
@@ -8069,12 +8018,12 @@ export class Game {
    * the warm-up instead of coming down: the wait for every pipeline of ours
    * the round can use (`PipelineWarmup`) — the round's declared list, asked
    * once for the session, so no body, hull, weapon or pool of ours is stood
-   * up here for a pipeline to compile on (`BABYLON_EXIT.md` X4.1d, X4.4e),
+   * up here for a pipeline to compile on,
    * and the map's own, asked by its install. Nothing is drawn for a
    * pipeline's sake: the card's frames are `loading`'s own, from the camera
-   * the build left (the vantages that stood it at every spawn and flag went
-   * at X5.4c, a log on all seven maps showing neither cache creating anything
-   * at one). Without a map there is nothing to wait for and the wait simply
+   * the build left (no vantage is stood at a spawn or a flag: a log on all
+   * seven maps showed neither cache creating anything at one). Without a map
+   * there is nothing to wait for and the wait simply
    * ends.
    */
   private beginWarmup(wait: NonNullable<Game["bakeWait"]>): void {
@@ -11340,19 +11289,18 @@ export class Game {
    *
    * **The ENGINE before its three clients, always.** A corpse tested for
    * stillness or a shard aged before its own step would be reading last frame's
-   * velocities. And this is now the ONE place the physics world is stepped
-   * anywhere in the client — no frame point steps it (there is no scene to,
-   * since `BABYLON_EXIT.md` X6.1h; `scene.physicsEnabled` was held false until
-   * then) precisely so that a pause, the deploy map and the menu, all of which
+   * velocities. And this is the ONE place the physics world is stepped
+   * anywhere in the client — no frame point steps it — precisely so that a
+   * pause, the deploy map and the menu, all of which
    * render, cannot advance it, and a second door into the engine would be the
    * thing that quietly reopened.
    *
-   * **The glass owes this frame nothing, and it used to.** A broken pane left
-   * seven flow fields to sweep and they were drained here one per frame, which
-   * on Cinderhaven was seven consecutive 40 ms frames for one window. A break
-   * relaxes the fields inside `NavGrid.openBox` now, on the frame it happens
-   * and for a cost bounded by what it opened — so there is no drain left to
-   * order against the bots, and no `glass` phase to measure it with.
+   * **The glass owes this frame nothing.** A break relaxes the seven flow
+   * fields inside `NavGrid.openBox`, on the frame it happens and for a cost
+   * bounded by what it opened — so there is no drain to order against the
+   * bots, and no `glass` phase to measure it with. Drained here one per frame
+   * instead, they cost Cinderhaven seven consecutive 40 ms frames for one
+   * window.
    */
   private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);

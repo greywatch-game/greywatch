@@ -578,8 +578,8 @@ export class InputManager {
       if (isMouse(e)) this.pointerMask = e.buttons;
     };
     // A touch still drives no BUTTON MASK in here, and must not: a tap latched
-    // into `confirmPressed` is what used to get past the title screen, and it
-    // deployed the player off the menu's map and difficulty rows on the way
+    // into `confirmPressed` gets past the title screen, and it deploys the
+    // player off the menu's map and difficulty rows on the way
     // (see `confirmPressed`). Every screen a phone meets carries its own
     // button — the menu's and the round-over card's Deploy, the deploy
     // screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its
@@ -1191,8 +1191,8 @@ const BOUND_CODES = new Set([
   "ShiftRight",
   "ControlLeft",
   "ControlRight",
-  // Read by nothing since the map editor went (`BABYLON_EXIT.md` X5.3c); kept
-  // so Alt's browser default (focusing the menu bar) stays suppressed.
+  // Read by nothing; kept so Alt's browser default (focusing the menu bar)
+  // stays suppressed.
   "AltLeft",
   "AltRight",
 ]);

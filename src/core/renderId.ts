@@ -1,34 +1,23 @@
 /**
- * renderId.ts — the RENDER ID as a counter of OURS (`BABYLON_EXIT.md` X5.4b):
- * the id the viewmodel's render cache is keyed on (`rigJoints.ts`'
- * `RenderCache`, `viewTree.ts`), with Babylon's meaning, and the one moment a
- * render's evaluation is SETTLED at it.
+ * renderId.ts — the RENDER ID: the counter the viewmodel's render cache is
+ * keyed on (`rigJoints.ts`' `RenderCache`, `viewTree.ts`), and the one moment a
+ * render's evaluation is SETTLED at it. Babylon's render id, ported.
  * Owns: `RenderId` (the number, its advance, and the evaluation's listeners).
  * Invariants:
- * - **It moves exactly where Babylon's render id moved in a round, and
- *   nowhere else.** X5.4a's log (`plans/webgpu-ref/readers.mjs`) found TWO
- *   points a frame, both inside `scene.render`: `Scene._renderFrame`'s, after
- *   its custom render targets' block under `renderTargetsEnabled`
- *   (`scene.pure.js` 4573), and `Scene._renderForCamera`'s, before the camera
- *   binds its frame buffer (4069). The glow mask's render moves neither (a
- *   plain 2D target takes `RenderTargetTexture._render`'s third branch). The
- *   cache compares ids for EQUALITY only, so a counter that moves at the same
- *   points gives every read the answer Babylon's id gave — `muzzleWorld` and
- *   `throwHandWorld` among them, and with them `GrenadeCommand.origin` and
- *   `OrdnanceCommand.origin`, bit for bit (decided 2026-10-31).
- * - **The frame that moves it is OURS since X5.4f** (`core/SceneFrame.ts`,
- *   `render`): the scene is never rendered, so the two advances and the
- *   evaluation are called there, at the points `scene.render` reached them,
- *   where until then they were told off the scene's public observables
- *   (`driveFromScene`, held a constant apart from Babylon's own id by a DEV
- *   shadow, both retired with the render: Babylon's id no longer moves).
- * - **The evaluation is told where Babylon's was**: inside the camera's render,
- *   once it has moved the id (where `onAfterActiveMeshesEvaluationObservable`
- *   was raised), so `settle` stamps the joints the evaluation took with the id
- *   the render took.
+ * - **It moves at exactly TWO points a frame, both in `SceneFrame.render`**:
+ *   the frame's, after its render targets, and the camera render's, before
+ *   the camera binds its frame buffer — where Babylon's moved
+ *   (`Scene._renderFrame` and `Scene._renderForCamera`, 9.28 `scene.pure.js`
+ *   4573 and 4069). The glow mask's render moves neither. The cache compares
+ *   ids for EQUALITY only, so these two points decide every read's answer —
+ *   `muzzleWorld` and `throwHandWorld` among them, and with them
+ *   `GrenadeCommand.origin` and `OrdnanceCommand.origin`, bit for bit.
+ * - **The evaluation is told inside the camera's render, once it has moved the
+ *   id**, so `settle` stamps the joints the evaluation took with the id the
+ *   render took.
  * - Ids are never negative and never repeat: the cache keeps the negatives for
  *   its provisional evaluations.
- * Never: moves at a third point; reads Babylon's id.
+ * Never: moves at a third point.
  * Contract: this header, `rigJoints.ts`' `RenderCache` and `docs/game.md`
  * (`drawView`'s row).
  */
@@ -38,7 +27,7 @@ export class RenderId {
   /** Told at each render's evaluation, in the order they were added. */
   private readonly evaluations: (() => void)[] = [];
 
-  /** The current render id — what `scene.getRenderId()` answered. */
+  /** The current render id. */
   get current(): number {
     return this.id;
   }

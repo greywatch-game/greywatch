@@ -37,8 +37,8 @@
  *    allocates per frame still muddies every capture with churn of its own.
  *    Captures and reports allocate freely — a capture is a deliberate act,
  *    not a frame — and that is why the report is a FILE of its own
- *    (`profileReport.ts`): the half that may allocate is no longer a method
- *    away from the half that may not, and nothing in this file builds one.
+ *    (`profileReport.ts`): the half that may allocate is not a method away
+ *    from the half that may not, and nothing in this file builds one.
  *
  *    **There is exactly ONE allocation left in the recording path and it is
  *    per COLLECTION rather than per frame**: the sentinel object the GC watch
@@ -80,39 +80,36 @@
  *    draw-call bound"), so the JS phases attribute the third of the frame
  *    that was never the problem and `render` is the enormous bar — and **two
  *    spans open INSIDE it**: `drawWorld` and `glow`. They are bracketed by the
- *    frame itself (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4g), because the
- *    boundaries they want are inside the frame's render and there is nowhere
- *    in `Game.ts` to put them; until X5.4g this file hung them off the
- *    frame's observables (`hookRender`; the scene's until X5.4f), and they
- *    were three with `shadowPass`, a Babylon shadow generator's map, which
- *    nothing opened after X5.3d and which report version 38 retired (a
- *    fourth, `drawOverlay`, held the rendering groups above 0 until X4.3d
- *    emptied them, retired with report version 24). Babylon's
- *    `SceneInstrumentation` counters — the draw count, the active meshes, the
- *    mesh walk, the render-target and particle times — rode beside them while
- *    the big bar was Babylon's; nothing raised them once the scene stopped
- *    rendering (X5.4f), and report version 38 retired them too.
+ *    frame itself (`core/SceneFrame.ts`), because the boundaries they want
+ *    are inside the frame's render and there is nowhere in `Game.ts` to put
+ *    them. An older capture may carry two more: `shadowPass`, a Babylon
+ *    shadow generator's map, until report version 38 (empty in some captures
+ *    before it), and `drawOverlay`, the rendering groups above 0, until
+ *    report version 24. Babylon's `SceneInstrumentation` counters — the draw
+ *    count, the active meshes, the mesh walk, the render-target and particle
+ *    times — rode beside them until report version 38 too, and read nothing
+ *    in some captures before it.
  *
  *    **What they measure is CPU: the RECORDING of the frame's commands, not
  *    the work the GPU then does.** That is still the right thing to be
  *    watching — the whole of that measurement is that this frame is bound by
  *    the submission and not by the pixels — but a recording can read cheap
- *    while the GPU is saturated, and nothing on the CPU would say so. **GPU time is here
- *    now, and only when the boot asked for it** (`?gpu` — see `main.ts`,
+ *    while the GPU is saturated, and nothing on the CPU would say so. **GPU time is
+ *    measured only when the boot asked for it** (`?gpu` — see `main.ts`,
  *    which is the only place it can act, because a device's features are
  *    fixed when the device is created and a required feature the adapter
  *    lacks makes `requestDevice` REJECT). That is why it is a boot flag
  *    rather than a setting, and why it costs a reload.
- *    **Both GPU counters are OURS** since `BABYLON_EXIT.md` X5.4g:
+ *    **Both GPU counters are OURS**:
  *    `gpu.frame`, the whole frame, from before its first pass to after its
  *    last (`render/FrameTimer.ts`, two empty passes of its own bracketing the
  *    frame's one encoder), and `gpu.cull`, our renderer's culls, stamped on
  *    their own compute passes (`render/PassTimer.ts`), a part of `gpu.frame`
- *    — both attributed the same way (`GpuPassTimer`). Until X5.4g `gpu.frame`
- *    was Babylon's (`writeTimestamp` around its two encoders, which needed
- *    `--enable-unsafe-webgpu` in Chrome) and `gpu.mainPass` Babylon's
- *    main-pass counter, which timed nothing after X5.4f and which report
- *    version 38 retired. Measured cost of the flag: 130.0 fps against 129.9
+ *    — both attributed the same way (`GpuPassTimer`). Before report version
+ *    38 `gpu.frame` was Babylon's (`writeTimestamp` around its two encoders,
+ *    which needed `--enable-unsafe-webgpu` in Chrome) and `gpu.mainPass`,
+ *    Babylon's main-pass counter, stood beside it; report version 38 retired
+ *    that one. Measured cost of the flag: 130.0 fps against 129.9
  *    disarmed, which is nothing.
  *  - **The heap is usually FROZEN and the GC is only ever INFERRED.** Chrome
  *    rate-limits the bucketised `performance.memory` to one update every twenty
@@ -152,9 +149,8 @@ import { urlFlag } from "./urlOverrides";
 /**
  * What the profiler reads of the canvas, once a row: the backing store's size
  * and the scaling level that made it of the window. Structural, so this file
- * imports no canvas — the game's `CanvasSurface` satisfies it (Babylon's
- * `WebGPUEngine` did until `BABYLON_EXIT.md` X5.4h), and `Game` hands it over
- * at `arm`.
+ * imports no canvas — the game's `CanvasSurface` satisfies it, and `Game`
+ * hands it over at `arm`.
  */
 export interface RenderSurface {
   getRenderWidth(useScreen?: boolean): number;
@@ -275,8 +271,8 @@ interface GpuFrameTimer extends GpuPassTimer {
  * The device's create methods, by the kind each makes — an index into
  * `profileReport.ts`'s `CREATED`, which is where the kind gets its name and
  * its argument. An ASYNC render pipeline
- * is still a render pipeline — Babylon 9.28's `preWarmPipeline` made those, and
- * a warm-up built on it should show up here as creations BEFORE the round.
+ * is still a render pipeline, and a warm-up that builds them should show up
+ * here as creations BEFORE the round.
  */
 const DEVICE_CREATES: readonly (readonly [string, number])[] = [
   ["createRenderPipeline", 0],
@@ -667,7 +663,7 @@ export class FrameProfile {
     this.viewOf = read;
   }
 
-  /** How a capture reads our renderer's effect pools (`BABYLON_EXIT.md` X4.4b) — `setBodies`' terms. */
+  /** How a capture reads our renderer's effect pools — `setBodies`' terms. */
   setPools(read: () => PoolFacts): void {
     this.poolsOf = read;
   }
@@ -1056,20 +1052,18 @@ export class FrameProfile {
    * on the frame it was made in — the hook `FINDINGS.md` 1 asked for to settle
    * whether a hitch sits one or two frames after a creation.
    *
-   * **The PROTOTYPE is wrapped, not the device field Babylon kept**: `GPUDevice`
-   * was the one surface here that a Babylon upgrade could not move, and the device
-   * the boot already holds picks the wrapper up through its prototype. The
+   * **The PROTOTYPE is wrapped, not a device**: the device the boot already
+   * holds picks the wrapper up through its prototype, so nothing has to hand
+   * this one the device. The
    * wrappers are taken off again by `disarm` like every other hook, so a
    * disarmed profiler is not on the device at all. Anything that wrapped the
    * same methods first (`plans/webgpu-ref/pipelines.mjs` does, in an init
    * script) is wrapped in turn and put back exactly as it was found.
    *
-   * **A creation is named by its descriptor's LABEL alone** since report
-   * version 38: every pipeline made in a round is our renderer's, labelled
-   * where it is made, and the Babylon effect a pipeline built through
-   * Babylon's cache was named by (a patch on
-   * `WebGPUCacheRenderPipeline._buildRenderPipelineDescriptor`) names
-   * nothing any more — no Babylon pipeline is made at all since X5.4h.
+   * **A creation is named by its descriptor's LABEL alone**: every pipeline
+   * made in a round is our renderer's, labelled where it is made. (Before
+   * report version 38 a creation could also carry the Babylon effect it was
+   * built for; see `profileReport.ts`.)
    *
    * One argument and no rest parameter on every wrapper: all five create
    * methods take a single descriptor, and `...args` would be an array per call.
@@ -1308,14 +1302,13 @@ export class FrameProfile {
 
   /**
    * Closes `present` on the frame that has just been submitted — called by the
-   * frame loop right after `FrameSubmit.submit` returns (`core/FrameLoop.ts`,
-   * `BABYLON_EXIT.md` X5.4g), so the span is the end of the frame after
-   * `tick`: the frame timer closed, the encoder finished, the one
-   * `queue.submit`, then the timer's read-back begun (`mapAsync`, under
-   * `?gpu`) and the next frame's encoder made, with the timer's opening pass
-   * when it times that frame — as Babylon's `flushFramebuffer` made its next
-   * encoders inside the same span. Until X5.4g it hung off the engine's
-   * end-of-frame notification (`hookEngine`), after Babylon's `endFrame`.
+   * frame loop right after `FrameSubmit.submit` returns (`core/FrameLoop.ts`),
+   * so the span is the end of the frame after `tick`: the frame timer closed,
+   * the encoder finished, the one `queue.submit`, then the timer's read-back
+   * begun (`mapAsync`, under `?gpu`) and the next frame's encoder made, with
+   * the timer's opening pass when it times that frame — the span Babylon's
+   * `flushFramebuffer` covered, so `present` reads alike in a capture from
+   * before report version 38.
    *
    * **The second place a bracket lives outside `Game.ts`, and for the
    * opposite reason to the frame's spans.** Those are boundaries INSIDE the

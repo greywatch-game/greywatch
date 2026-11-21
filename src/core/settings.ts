@@ -61,9 +61,8 @@ export type ShadowQuality = keyof typeof CONFIG.graphics.shadowTiers;
 /**
  * How thick the grass grows near the eye and how far it reaches, as one of
  * `CONFIG.grass.tiers`. Derived from that table for `RenderScale`'s reason.
- * There is no `off`: the lowest rung is a field a phone draws for less than
- * the tuft budget every map used to carry, and a bald map is not a quality
- * setting — it is a different map.
+ * There is no `off`: the lowest rung is a field a phone draws cheaply, and a
+ * bald map is not a quality setting — it is a different map.
  */
 export type GrassQuality = keyof typeof CONFIG.grass.tiers;
 
@@ -111,13 +110,12 @@ const GYRO_MODES = ["off", "aiming", "always"] as const;
 export type GyroMode = (typeof GYRO_MODES)[number];
 
 /**
- * One row on the settings screen. Mostly booleans; `renderScale` is the first
- * field that is not, and it is what the note this replaces was warning about.
+ * One row on the settings screen. Mostly booleans; `renderScale` is not.
  *
- * **What the widening actually cost**, since the old note guessed at it: not a
- * second control type on the screen (a toggle turned out to be a two-option
+ * **What a field that is not a boolean costs**: not a second control type on
+ * the screen (a toggle is a two-option
  * choice, so both render through one path), but the storage layer below, which
- * really was generic over the keys and not their types. It now carries a codec
+ * has to be generic over the types as well as the keys. It carries a codec
  * per key, and the mapped type over `Settings` is what makes a new field a
  * compile error until it has one.
  */
@@ -148,12 +146,9 @@ export type Settings = {
   /**
    * How much of the panel's native resolution the scene is drawn at.
    *
-   * This is the one setting that was silently pinned before it existed. The
-   * engine was built without `adaptToDeviceRatio`, so Babylon's hardware
-   * scaling level stayed 1 and the backing store matched the CSS pixel grid —
-   * which on any 2x display is a QUARTER of the panel's pixels, upscaled by the
-   * compositor, with FXAA smoothing an already-soft image. Nothing in the tree
-   * had ever called `setHardwareScalingLevel`.
+   * A backing store matching the CSS pixel grid is, on any 2x display, a
+   * QUARTER of the panel's pixels, upscaled by the compositor, with FXAA
+   * smoothing an already-soft image.
    */
   renderScale: RenderScale;
   /**
@@ -289,30 +284,27 @@ export type Settings = {
 };
 
 /**
- * The scale a fresh install starts at: the rung NEAREST the resolution the game
- * has always drawn at.
+ * The scale a fresh install starts at: the rung NEAREST the CSS pixel grid.
  *
- * `1 / devicePixelRatio` is the old behaviour expressed on this ladder — the
- * backing store used to match the CSS pixel grid — so on a 1x display that is
- * 1.0 and nothing changes at all, and on a 2x display it is 0.5, which is
- * exactly the frame that shipped. The sharpness is then one keypress away
- * rather than forced on a machine that has never been measured; `FINDINGS.md`
+ * `1 / devicePixelRatio` is that grid expressed on this ladder, so on a 1x
+ * display that is 1.0 and on a 2x display it is 0.5. The sharpness is then
+ * one keypress away rather than forced on a machine that has never been measured; `FINDINGS.md`
  * §1 is the reason that distinction matters.
  *
- * **NEAREST, and it used to be "largest rung at or below", which is a bug on
+ * **NEAREST, and never "largest rung at or below", which is a bug on
  * every fractional-DPI display there is.** `1 / dpr` is only ON this ladder for
  * dpr 1, 1.333 and 2. Everywhere else, rounding down takes the rung below —
  * and the gap between rungs is a third of the resolution, so the "safe"
  * direction is not safe at all. Measured on the display that reported it:
  * **dpr 1.4406 gives `1/dpr` = 0.694, rounded DOWN to 0.5, for a hardware
- * scaling level of 1.388 — 52% of the pixel count the game drew before the
- * setting existed**, upscaled by the browser. Every hard edge in a renderer
- * with no MSAA gets chunkier and crawls: it reads as lines flickering along the
+ * scaling level of 1.388 — 52% of the pixel count of the CSS pixel grid**,
+ * upscaled by the browser. Every hard edge in a renderer with no MSAA gets
+ * chunkier and crawls: it reads as lines flickering along the
  * viewmodel, the interior walls, the stair sides and every place two surfaces
  * meet, none of which changed. Rounding to the nearest rung bounds the error at
- * half a rung either way — the same display now takes 0.75, a level of 0.926
- * and 17% MORE pixels than shipped, which is a cost the player can spend one
- * keypress undoing, where blur is not.
+ * half a rung either way — the same display takes 0.75, a level of 0.926
+ * and 17% MORE pixels than the CSS pixel grid, which is a cost the player can
+ * spend one keypress undoing, where blur is not.
  *
  * The ladder still cannot express `1/dpr` exactly, and that is the honest limit
  * of a three-rung setting. A fourth rung, or letting the default sit off the

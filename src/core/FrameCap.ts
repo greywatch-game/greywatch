@@ -2,20 +2,19 @@
  * FrameCap.ts — the ceiling on how often a frame is drawn: the player's frame
  * rate cap (`Settings.fpsCap`).
  * Owns: the ADMITTER our frame loop asks of every display refresh
- * (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g; Babylon's render loop asked it
- * through `engine.customAnimationFrameRequester` until then) — the decision
+ * (`core/FrameLoop.ts`) — the decision
  * whether a refresh is given a frame at all — and the simulation's clock: how
  * much time a frame steps the world by (`elapsed`).
  * Invariants: a refused refresh runs NOTHING of the frame — not the loop's
  * begin, not `Game.tick`, not the submit — so the frame that does run measures
  * its delta across the whole gap and every system sees one ordinary long
  * frame. The cap is a DEADLINE, never an accumulator. Rate 0 admits every
- * refresh, which is the loop exactly as it ran before the setting existed.
+ * refresh: the loop uncapped.
  * The world is stepped on the REFRESH clock, never on when the callback ran.
  * Never: requests a refresh (the loop does, and re-requests one it refused);
  * allocates per frame (the profiler's rule — `docs/profiling.md`).
  *
- * **Why not `engine.maxFPS`, which Babylon already had.** Read in
+ * **Why not an accumulator, as Babylon's `engine.maxFPS` is.** Read in
  * `AbstractEngine._isOverFrameTime`: it ADDS each refresh's elapsed time to an
  * accumulator and draws once that reaches `1000 / maxFPS`, carrying the
  * remainder. On a panel whose period is a hair under 16.667 ms — any "60 Hz"

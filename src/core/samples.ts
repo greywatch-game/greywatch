@@ -149,12 +149,10 @@ import tankCannon from "../../audio/tank-cannon.webm?url";
  * the rocket and the mine each carry their own, so ONE recording is every
  * explosion in the game — a grenade, a shell, a rocket and a mine — and
  * `Sfx.explosion` spends `power` on it as `rate`, which is `magOut`'s
- * inversion again and for `magOut`'s reason. **The id names the RECORDING and
- * that is why this row is no longer called `grenade`**: it was cut from
- * `audio/src/grenade.wav` while a grenade was the only thing anybody had
- * recorded going off, and it is cut from `audio/src/explosion.wav` now — a
- * bigger take of the same event, which the manifest's note measures against
- * the one it replaced. `tankCannon` is the odd one in the other direction: a
+ * inversion again and for `magOut`'s reason. **The id names the RECORDING,
+ * never the first thing that spent it**: it is cut from
+ * `audio/src/explosion.wav`, and the manifest's note has its measurements.
+ * `tankCannon` is the odd one in the other direction: a
  * report with no row in `CONFIG.weapons` behind it, so it is a deviation from
  * nothing at all, which it shares with `rocketLauncher` above. Both blasts are
  * MONO for `mountedGun`'s reason — neither is ever heard except through a

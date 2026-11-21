@@ -1,6 +1,5 @@
 /**
- * deviceLoss.ts — what the page does when its graphics device is LOST
- * (`BABYLON_EXIT.md` X5.4i, row "X5.4, a lost device": the owner's (A)),
+ * deviceLoss.ts — what the page does when its graphics device is LOST,
  * past the teardown `Game` runs off the device's own `lost`.
  * Owns: the session's record of the last loss (one `sessionStorage` entry,
  * `MARK`: when it happened and the notice it left for the menu), the loop
@@ -20,8 +19,7 @@
  *   same: nothing says this is not the second loss. **That holds for the
  *   FIRST loss too**: a page whose `sessionStorage` throws (a storage
  *   policy that refuses it) never reloads on a loss and goes straight to the
- *   plate — kept so, and named for the owner (`BABYLON_EXIT.md` X5.4i's
- *   review, `plans/done/babylon_exit_landed.md`).
+ *   plate — deliberately, the owner's call.
  * - The entry is `sessionStorage`'s, so it is the TAB's and dies with it: a
  *   new tab or window starts with no loss behind it. The settings are not
  *   here and need nothing — they are `localStorage`'s (`core/settings.ts`),

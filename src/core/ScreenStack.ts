@@ -111,9 +111,8 @@ export type StepState =
  * `loading -> deploy -> playing` cycle, differing only in who hosts the match
  * (`NetSession.local`).
  *
- * `viewer` is the dev-only map viewer (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
- * X5.3b): a free camera, the nav graph and the layout's marks on a plan, laid
- * over a ROUND rather than built beside one — so it covers the three states
+ * `viewer` is the dev-only map viewer (`F2`, `src/viewer/`): a free camera,
+ * the nav graph and the layout's marks on a plan, laid over a ROUND rather than built beside one — so it covers the three states
  * a round is in, exactly as the pause does, and holds the page's own match as
  * the pause does. It is the one lid that MOVES the camera, which is why
  * lowering it puts the camera back (`ViewerSession.dispose`): the deploy
@@ -126,20 +125,21 @@ export type GameState = StepState | LidState;
 
 /**
  * The four questions every state answers. Each one is a behaviour in `Game.tick`
- * that used to be a list of state names written out where it was needed.
+ * answered once here, rather than as a list of state names written out where
+ * it is needed.
  */
 export type ScreenSpec = {
   /**
    * For a LID, the states it may be raised over. `null` is what makes a state a
    * STEP — a thing the game is doing rather than a screen over one.
    *
-   * This is the guard each `open*` method used to write out for itself, and
+   * This is the guard each `open*` method would otherwise write for itself, and
    * having it here buys more than tidiness: it is what BOUNDS the stack.
    * `settings` naming `paused` is the only reason a stack is ever two lids deep,
    * so the depth of the thing is a property of this table rather than of a chain
-   * of `if`s somebody has to hold in their head. `under` was that chain, and is
-   * now the bottom of what is actually there — which is what makes a third lid a
-   * row in this table and not a rewrite.
+   * of `if`s somebody has to hold in their head. `under` is the bottom of what
+   * is actually there — which is what makes a third lid a row in this table and
+   * not a rewrite.
    */
   covers: readonly GameState[] | null;
 
@@ -253,8 +253,7 @@ const SCREENS: Record<GameState, ScreenSpec> = {
     inRound: false,
   },
   // The pause's row, and for the pause's reasons: the round's three states and
-  // no other (nothing on the menu, `BABYLON_EXIT.md` row "X5.3, the viewer's
-  // key and reach"), the page's own match held under it, a server's carried on
+  // no other (nothing on the menu), the page's own match held under it, a server's carried on
   // behind it — its bodies, its fleet and the player's body where the authority
   // has it — and the board taken away, as a lid takes it.
   viewer: {
@@ -326,10 +325,10 @@ export class ScreenStack {
    *
    * A step transition happens for reasons that have nothing to do with what is
    * on screen: an authority's `roundover` lands while somebody sits in the
-   * settings, a `died` arrives while the pause card is up. Before this was a
-   * stack those cases wrote the new state straight over the lid's, which stranded
-   * the screen — visible, uncloseable, with a live state taking input underneath
-   * it. The state can no longer be stranded here, and the SCREEN cannot either
+   * settings, a `died` arrives while the pause card is up. Writing the new
+   * state straight over the lid's would strand the screen — visible,
+   * uncloseable, with a live state taking input underneath it. The state cannot
+   * be stranded here, and the SCREEN cannot either
    * as long as the caller takes down what it is given (`Game.go`).
    */
   go(step: StepState): LidState[] {
@@ -357,7 +356,7 @@ export class ScreenStack {
    * Takes one named lid off, and refuses if it is not the one on top. Named
    * rather than bare so a close that raced something else cannot pop a screen
    * that is still up — `closeSettings` arriving after a `go` has already cleared
-   * the stack is the case that matters, and it now does nothing instead of
+   * the stack is the case that matters, and it does nothing instead of
    * dropping whatever the game moved on to.
    */
   lower(lid: LidState): boolean {

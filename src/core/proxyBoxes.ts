@@ -7,8 +7,8 @@
  * padded by `CONFIG.graphics.bodyShadows.hullPad` — whichever map draws them;
  * a hull's box is composed off the HULL's own fields (`pos`, `yaw`,
  * `present`; `entities/hullFrame.ts`' `hullBodyToRef`), never off a mesh, so
- * nothing about how a hull is DRAWN reaches its shadow (`BABYLON_EXIT.md`
- * X4.1c); every matrix is composed FRESH, in `src/math`'s copies of Babylon's
+ * nothing about how a hull is DRAWN reaches its shadow; every matrix is
+ * composed FRESH, in `src/math`'s copies of Babylon's
  * arithmetic, the bits Babylon's own composition gave.
  * Never: imports Babylon (`scripts/check-babylon-free.mjs` holds it as a root;
  * the bone table is `entities/soldierBones.ts`', not the rig's); reads a node

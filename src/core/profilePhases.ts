@@ -109,33 +109,29 @@ export const PHASES = [
   /**
    * `GiVolume.update` — choosing the lights, the channels and the hull slots,
    * the params upload and ARMING the dispatch. Its three compute passes are
-   * RECORDED inside `render` since `BABYLON_EXIT.md` X5.1b, by our renderer's
-   * late prepare as the main pass begins (`render/GiCompute.ts`), not here; the
-   * GPU's share is in `gpu.frame`. Same name, same parent, a smaller share, so
-   * no report version moved.
+   * RECORDED inside `render`, by our renderer's late prepare as the main pass
+   * begins (`render/GiCompute.ts`), not here; the GPU's share is in
+   * `gpu.frame`.
    */
   "gi",
   /** `pushHullEngines` — the fleet's voices. */
   "audio",
   /**
    * The frame's render: the bodies', hulls', weapon's and pools' handover and
-   * `SceneFrame.render` — `scene.render()` until `BABYLON_EXIT.md` X5.4f, the
-   * same steps in the same order since. The big one, and see `FrameProfile`'s
-   * header on why.
+   * `SceneFrame.render`. The big one, and see `FrameProfile`'s header on why.
    */
   "render",
   /**
    * The two spans INSIDE `render`, and the only ones in this list that `Game`
-   * does not bracket: the FRAME does (`SceneFrame.render` and `timeWith`,
-   * `BABYLON_EXIT.md` X5.4g; `FrameProfile.hookRender` hung them off the
-   * frame's observables until then). `drawWorld` is the camera's draw phase
+   * does not bracket: the FRAME does (`SceneFrame.render` and `timeWith`).
+   * `drawWorld` is the camera's draw phase
    * up to the glow's work, `glow` that work — the mask and its blur — and the
    * glow's work runs inside the draw phase's close, after our renderer's main
    * pass and after `drawWorld` has closed, so the two cannot overlap.
    * (`shadowPass`, a Babylon shadow generator's map, was the third until
-   * report version 38 retired it, nothing having opened it since
-   * `BABYLON_EXIT.md` X5.3d; `drawOverlay`, the rendering groups above 0, a
-   * fourth until X4.3d emptied them: report version 24.)
+   * report version 38 retired it, and reads empty in some captures before
+   * it; `drawOverlay`, the rendering groups above 0, a fourth until report
+   * version 24.)
    */
   "glow",
   "drawWorld",
@@ -145,9 +141,7 @@ export const PHASES = [
    * closed, the encoder finished and submitted, then, under `?gpu`, the
    * timer's read-back begun (its `mapAsync`), and the NEXT frame's encoder
    * made, with the timer's opening pass when it times that frame
-   * (`core/FrameLoop.ts`, `render/FrameSubmit.ts`, `BABYLON_EXIT.md` X5.4g;
-   * Babylon's `endFrame` until then, whose `flushFramebuffer` was the same
-   * finish and submit and made its next frame's encoders inside it too).
+   * (`core/FrameLoop.ts`, `render/FrameSubmit.ts`).
    *
    * **It is the one phase in this list that is NOT inside `frame`**, and it is
    * here because the residue outside the tick was the whole of an unexplained
@@ -183,10 +177,10 @@ export const P = Object.fromEntries(
 /**
  * Which span each phase sits INSIDE.
  *
- * **The nesting is a fact about `Game.ts`'s bracket placement, and until this
- * existed the only written statement of it was prose in `docs/profiling.md`.**
- * That was enough while a report was read by a person, and stopped being enough
- * the moment `public/profile_viewer.html` had to draw the containment: a reader
+ * **The nesting is a fact about `Game.ts`'s bracket placement, and this is its
+ * one statement a program can read.** Prose in `docs/profiling.md` is enough
+ * for a person reading a report, and not for `public/profile_viewer.html`,
+ * which has to draw the containment: a reader
  * that guesses the tree draws a wrong picture confidently, and one that carries
  * its own copy goes stale the first time a phase is added here.
  *
@@ -201,7 +195,7 @@ export const P = Object.fromEntries(
  * questions.
  *
  * **There are three roots because the frame has two parts and only one of
- * them is the tick — and the simulation is no longer either.** `frame` is
+ * them is the tick — and the simulation is neither.** `frame` is
  * `Game.tick`, wall to wall; `present` is the frame's submit after it
  * returns; `sim` is the core's step, in the local match. None
  * contains another, and a reader that drew `present` or `sim` inside `frame`
@@ -257,7 +251,6 @@ export const PARENT_OF: Readonly<
  * a reader given only a child→parent map cannot tell a root from a phase the
  * map has not heard of, and those two want opposite renderings: a root is a
  * top-level bar, and an unknown phase is a warning that the reader is stale.
- * `public/profile_viewer.html` drew the second for both until this existed.
  */
 export const ROOTS: readonly Phase[] = PHASES.filter(
   (name) => !(name in PARENT_OF),

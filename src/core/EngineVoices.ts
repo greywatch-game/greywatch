@@ -762,8 +762,8 @@ export class EngineVoices {
   }
 
   /**
-   * Somebody ELSE's hull, and the gap this used to be is why it exists: a tank
-   * driven past you by a bot or by another player made no sound at all, and
+   * Somebody ELSE's hull, and the gap it fills is why it exists: without it a
+   * tank driven past you by a bot or by another player makes no sound at all, and
    * armour you cannot hear is armour that arrives from nowhere.
    *
    * The same graph as `engineOn`, spatialised, one voice per `key` and DRIVEN
@@ -781,9 +781,8 @@ export class EngineVoices {
    * answer to both. A stationary occupied hull idles, which is what a
    * stationary occupied hull does.
    *
-   * The rolloff is INVERSE, which it was alone in `Sfx` in being until the
-   * one-shot panner (`Sfx.panner`) was moved onto the same model for the same
-   * reason — linear over a long range is a source as loud at fifty metres as
+   * The rolloff is INVERSE, as the one-shot panner's (`Sfx.panner`) is, for
+   * the same reason — linear over a long range is a source as loud at fifty metres as
    * at ten, and that is what makes an engine GROW as the thing arrives rather
    * than simply exist until it doesn't.
    *

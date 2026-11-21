@@ -129,8 +129,8 @@ export function aimKick(
       ? 0
       : Math.min(1, (stringShots - 1) / (pat.patternShots - 1));
   // ONE envelope over both axes, so a string changes how HARD the weapon
-  // kicks and never which WAY. The lateral used to ramp up on an envelope of
-  // its own while this one tapered down, which rotated the kick vector
+  // kicks and never which WAY. A lateral ramping up on an envelope of
+  // its own while this one tapers down rotates the kick vector
   // through the opening of every string — see `pattern`.
   const env = 1 + (pat.pitchSettled - 1) * into;
   return {
@@ -148,8 +148,8 @@ export function aimKick(
  *
  * The bias is the CENTRE of the draw and `sweepSpan` is how far off it a
  * round may land, clamped so the total stays inside -1..+1 whatever the bias
- * is — which is what keeps every ceiling documented for `maxYaw` true. The
- * span used to be `1 - |bias|`, which made a weapon's spread a consequence of
+ * is — which is what keeps every ceiling documented for `maxYaw` true. A
+ * span of `1 - |bias|` would make a weapon's spread a consequence of
  * its pull and put the rifle's worst round at three times its own mean.
  *
  * **It is a SWEEP over the string and never an independent draw per round**

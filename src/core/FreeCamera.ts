@@ -1,6 +1,6 @@
 /**
  * FreeCamera.ts — the game's one camera: Babylon 9.28's `FreeCamera` PORTED as
- * written onto `src/math/` (`BABYLON_EXIT.md` X6.1f), with the parts of its
+ * written onto `src/math/`, with the parts of its
  * `TargetCamera` and `Camera` this game reaches, collapsed into one class
  * under Babylon's member names — so a reader that asked Babylon's camera asks
  * this one the same question in the same words, and gets the same bits.
@@ -10,8 +10,8 @@
  * inverse), `globalPosition` and the view-projection — with the CACHES that
  * decide when each is recomputed.
  *
- * **Why the caches are ported and not simplified** (the step's rule: a port of
- * Babylon is a port of what it DID). A matrix here is recomputed only when the
+ * **Why the caches are ported and not simplified** (a port of Babylon is a
+ * port of what it DID). A matrix here is recomputed only when the
  * cache says its inputs moved (`_isSynchronizedViewMatrix`,
  * `_isSynchronizedProjectionMatrix`), and a recompute is not free of side
  * effects: the view's moves `globalPosition` and the world matrix, and the
@@ -28,11 +28,10 @@
  * **What Babylon's camera had that this game never reaches, and is not here**
  * (each read off the source, and each answering nothing in this game):
  * - the INPUTS and their INERTIA (`FreeCamera.inputs`, `cameraDirection`,
- *   `cameraRotation`, `TargetCameraMovement`): `CameraSystem` cleared the
- *   inputs at construction and nothing in the tree wrote either field, so
- *   `_checkInputs` took the movement system's fast path every frame and
- *   moved nothing — `update` is what it was after that: the view and the
- *   projection asked;
+ *   `cameraRotation`, `TargetCameraMovement`): the game gives the camera no
+ *   input and writes neither field, so `_checkInputs` would take the
+ *   movement system's fast path every frame and move nothing — `update` is
+ *   what is left after that: the view and the projection asked;
  * - collisions and gravity (off), a parent (none), a locked target (null),
  *   `rotationQuaternion` (unset), rig cameras (`RIG_MODE_NONE`), the
  *   orthographic and oblique projections (`mode` is perspective), reverse
@@ -44,15 +43,15 @@
  *   render-pass id and the scene's camera list.
  *
  * Invariants:
- * - **The projection is WebGPU's** (`isNDCHalfZRange`: depth 0..1, what
- *   the game's `SceneEngine` told Babylon's until X6.1h) **at the SURFACE's aspect ratio**
+ * - **The projection is WebGPU's** (`isNDCHalfZRange`: depth 0..1, passed to
+ *   `PerspectiveFovLHToRef` as a constant) **at the SURFACE's aspect ratio**
  *   (`CanvasSurface.getAspectRatio(this)`, Babylon's `getAspectRatio` over the
  *   render size and this camera's `viewport`).
  * - The matrices are `src/math`'s (float32, Babylon's identity flag), so a
  *   reader takes them as `Matrix` and nothing crosses a library.
  * - `setTarget` ZEROES the roll (Babylon's "match previous behavior"): a roll
  *   is written after it, never before (`CameraSystem.update`).
- * Never: reads the scene or a Babylon object; allocates in `getViewMatrix` or
+ * Never: reads a Babylon object; allocates in `getViewMatrix` or
  * `getProjectionMatrix` (`setTarget` allocates its one vector, the `subtract`
  * Babylon's made); owns where the camera goes — `CameraSystem` and the viewer
  * write the pose.

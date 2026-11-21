@@ -2,9 +2,7 @@
  * shadowWindow.ts — where a directional shadow camera STANDS, and the texel
  * snap that stops its edges crawling; the light's view-projection as
  * Babylon's `ShadowGenerator` composed it (`lightTransformToRef`). (The LIT
- * texel a map switched off reads is our renderer's since `BABYLON_EXIT.md`
- * X5.4d, `TextureMaker.lit`; Babylon's wrapped views of OUR renderer's
- * textures, `core/wrappedTextures.ts`', went with Babylon's engine at X5.4h.)
+ * texel a map switched off reads is our renderer's, `TextureMaker.lit`.)
  * Owns the light's own cross-axis basis and the
  * last snapped focus, and `ShadowLight`, what a light is to both; owns no
  * light, no generator and no render target, and never renders anything.
@@ -51,10 +49,8 @@ export const SHADOW_NEAR = 1;
 
 /**
  * WebGPU's depth range, 0..1 — what both maps' light matrices are made at
- * (`lightTransformToRef`'s `halfZ`). A constant since `BABYLON_EXIT.md`
- * X6.1h: it was read off the scene's engine (`isNDCHalfZRange`), which the
- * game's `SceneEngine` set true as the `WebGPUEngine` answered, and there is
- * no other engine.
+ * (`lightTransformToRef`'s `halfZ`; Babylon's engine's `isNDCHalfZRange`). A
+ * constant, because the game draws through WebGPU alone.
  */
 export const HALF_Z_RANGE = true;
 
@@ -75,11 +71,8 @@ export function depthBias(metres: number, depthRange: number): number {
 
 /**
  * What a window places and a transform reads of a directional light: where it
- * points and where it stands. A Babylon `DirectionalLight` was one, the world's
- * maps keeping theirs for Babylon's shadow generators until `BABYLON_EXIT.md`
- * X5.3d deleted both; every map holds the pair alone now (`BodyShadows`, and
- * `ShadowSystem`'s `MapLight`, with its window's side beside it), every map
- * being our renderer's.
+ * points and where it stands. Every map holds the pair alone (`BodyShadows`,
+ * and `ShadowSystem`'s `MapLight`, with its window's side beside it).
  */
 export interface ShadowLight {
   readonly direction: Vector3;
@@ -131,9 +124,8 @@ export function lightTransformToRef(
  */
 export class ShadowWindow {
   /**
-   * The two cross-axes of the light's own basis, as `place` last found them
-   * (a generator's render-list cull projected into them until
-   * `BABYLON_EXIT.md` X5.3d). The third axis is the light's direction, which
+   * The two cross-axes of the light's own basis, as `place` last found them.
+   * The third axis is the light's direction, which
    * the light already holds.
    */
   readonly axisX = new Vector3(1, 0, 0);

@@ -394,8 +394,8 @@ export class Sfx {
   /**
    * One `MixBus` per family, built with the context and never rebuilt.
    *
-   * Null before `unlock`, which is the single check every layer helper makes
-   * instead of the `this.master` test it used to: a bus implies a master, and
+   * Null before `unlock`, which is the single check every layer helper makes:
+   * a bus implies a master, and
    * a null one is the audio graph not existing yet rather than a group that
    * went missing.
    */
@@ -635,8 +635,7 @@ export class Sfx {
    *
    * Null before `unlock` and never null after it for a declared pair, so a
    * caller that reads it into a local and hands that local to every layer it
-   * builds is correct either way — the helpers all refuse a null bus, which is
-   * the same refusal they used to make against a null master.
+   * builds is correct either way — the helpers all refuse a null bus.
    *
    * **It is a LOCAL and never a field**, which is what makes it safe for a
    * gesture that finishes on a timer: `capture` schedules its second tone
@@ -737,13 +736,12 @@ export class Sfx {
    * **This method owns the SHAPE of a gunshot and the weapon owns nothing but
    * deviations from it** (`ReportVoice`, tabled in `CONFIG.weapons[id].report`
    * with what each field means). That split is the same one `recoilMult` makes
-   * against `CONFIG.recoil`, and it is what the six guns sounding identical
-   * cost: the only thing a weapon could say used to be `sfxPitch`, one
-   * multiplier over every frequency, which can make a big gun a small gun
-   * slowed down and nothing else. How much charge is behind the round, how
+   * against `CONFIG.recoil`, and it is what keeps six guns from sounding
+   * identical: one multiplier over every frequency can make a big gun a small
+   * gun slowed down and nothing else. How much charge is behind the round, how
    * long the report rings, how hard it drives the village and how loud the
    * mechanism is against the shot are what actually separate an SMG from a
-   * DMR, and none of them had anywhere to be said.
+   * DMR, and each needs a field of its own to be said.
    *
    * **The two low layers are where "heavy" lives, and they are separate on
    * purpose.** The roll is broadband noise under a resonant lowpass — the gas
@@ -894,21 +892,21 @@ export class Sfx {
    * about the same round.
    *
    * **FIVE LAYERS MODELLED ON A RECORDED FLYBY**, and the shape they make
-   * between them is the whole of why this is no longer one bandpassed burst.
+   * between them is the whole of why this is not one bandpassed burst.
    * The recording is four stages rather than a click: a whistle SWELLING for
    * ~55 ms, a snap whose energy sits at 500–1300 Hz under a bright shelf that
    * runs flat out to 13 kHz, a low body around 320 Hz over the 60 ms after it,
-   * and a hiss departing over a further ~200 ms. The old single burst was
-   * centred at 3400 Hz with neither the approach nor the tail, which is the
+   * and a hiss departing over a further ~200 ms. A single burst
+   * centred at 3400 Hz, with neither the approach nor the tail, is the
    * difference between a round going past and a twig snapping — what the ear
    * reads as a projectile is the swell and the departure, and a bright
    * transient on its own is just a transient.
    *
    * **The layers OVERLAP rather than abut, and that is the constraint the
    * numbers were fitted under.** `burst`'s decay is percussive by design — it
-   * is 57 dB down by the end of its own `dur` — so laying these end to end
-   * left audible holes between the stages and the cue read as three separate
-   * events. Each layer now starts inside the one before it, and the summed
+   * is 57 dB down by the end of its own `dur` — so laid end to end these
+   * leave audible holes between the stages and the cue reads as three separate
+   * events. Each layer starts inside the one before it, and the summed
    * envelope falls monotonically from the snap to silence, within 2–4 dB of
    * the recording the whole way down.
    *
@@ -960,8 +958,8 @@ export class Sfx {
       });
     }
     // 2. THE SNAP, and it is LOW. The loudest moment in the recording is at
-    //    635 Hz, not the 3400 this used to be built at, which is most of what
-    //    was wrong with the one-layer version. It runs long and sweeps to 300
+    //    635 Hz, not 3400, and a snap built up there is most of what turns a
+    //    round going past into a twig snapping. It runs long and sweeps to 300
     //    so its own second stage becomes the low ring the tail sits on.
     this.burst(bus, {
       dur: 0.115, vol: 0.32, type: "bandpass", freq: 760 * v, freqEnd: 300,
@@ -1258,9 +1256,9 @@ export class Sfx {
    * is which was decided by the master rather than chosen.**
    * `audio/src/reload.wav` holds a magazine stripped out of a well and a fresh
    * one slapped home, 2.4 s apart with the fetch for it in between; the catch
-   * and the bolt are not cleanly in it and are still the clacks they always
-   * were. A sample that is missing — not fetched, not decoded, not supported
-   * by the browser — falls back to the clack it replaced, exactly as `shoot`
+   * and the bolt are not cleanly in it and are synthesized clacks. A sample
+   * that is missing — not fetched, not decoded, not supported by the browser —
+   * falls back to a synthesized clack, exactly as `shoot`
    * falls back to its five synthesized layers, so this method is the same four
    * beats either way.
    *

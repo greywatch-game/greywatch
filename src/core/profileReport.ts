@@ -77,8 +77,7 @@ export interface CreationEvent {
    * which draw it was for. Empty for whatever is created unlabelled. Until
    * report version 38 a render pipeline built through Babylon's cache also
    * carried the `effect` it was for and its `defines` (a patch on Babylon's
-   * descriptor builder); no Babylon pipeline is made at all since X5.4h, and both
-   * are gone.
+   * descriptor builder); no pipeline is Babylon's, and both are gone.
    */
   label: string;
   /** Time inside the create call itself, which is not the compile. */
@@ -197,8 +196,8 @@ export interface HitchFrame {
    * number that matters: a 240 ms wall clock over 3 ms of GPU is not the GPU.
    * (Until report version 38 a hitch also carried `gpuMs`, Babylon's main
    * pass, and Babylon's counters — `drawCalls`, `activeMeshes`,
-   * `meshWalkMs`, `renderTargetsMs`, `particlesMs` — every one idle since
-   * `BABYLON_EXIT.md` X5.4f.)
+   * `meshWalkMs`, `renderTargetsMs`, `particlesMs` — every one idle in some
+   * captures before it.)
    */
   gpuFrameMs: number;
   /**
@@ -362,13 +361,13 @@ export interface BenchFacts {
 /**
  * Our renderer's take of the map's blocks when the capture was taken — or,
  * for a HALTED ring (a benchmark's), when it halted
- * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
+ * (`systems/BlockHandover.ts`) — read through the
  * reader `Game` pushes, at the capture or the halt and never per frame. `drawn` is the
  * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
- * own counter) did not see. Before report version 20 it carried
+ * own counter, before report version 38) did not see. Before report version 20 it carried
  * `handedBack` too, how many taken surfaces went back to Babylon's main pass;
- * since X3.7b nothing goes back (a world ours cannot draw is the menu,
- * `Game.worldFailed`), and the field is gone.
+ * none can (a world ours cannot draw is the menu, `Game.worldFailed`), and the
+ * field is gone.
  */
 export interface BlockFacts {
   taken: number;
@@ -379,13 +378,14 @@ export interface BlockFacts {
 
 /**
  * Our renderer's BODIES on the last frame before the capture — or, for a
- * HALTED ring, before the halt (`render/BodyDraw.ts`' `stats`,
- * `BABYLON_EXIT.md` X4.1d) — read through the reader `Game` pushes, as
+ * HALTED ring, before the halt (`render/BodyDraw.ts`' `stats`) — read
+ * through the reader `Game` pushes, as
  * `blocks` is and never per frame. `drawn` is the main pass's body draws (a
  * RANK of every body each, matte or visor), `masked` the glow mask's, and
  * `instances` the bodies drawn. None of them is in `counters.drawCalls`,
- * which is Babylon's counter and since X4.1d counts no body: a capture from
- * before it counted fourteen draws a body there.
+ * which is Babylon's counter and from report version 21 counts no body (a
+ * v20 capture may already not): a capture from before it counted fourteen
+ * draws a body there.
  */
 export interface BodyFacts {
   drawn: number;
@@ -395,10 +395,10 @@ export interface BodyFacts {
 
 /**
  * Our renderer's HULLS on the last frame before the capture — or, for a
- * HALTED ring, before the halt (`render/HullDraw.ts`' `stats`,
- * `BABYLON_EXIT.md` X4.2b) — read as `bodies` is. `drawn` is the main pass's
+ * HALTED ring, before the halt (`render/HullDraw.ts`' `stats`) — read as
+ * `bodies` is. `drawn` is the main pass's
  * hull draws (a RANK of every hull each) and `instances` the hulls drawn.
- * Neither is in `counters.drawCalls`, which since X4.2b counts no hull: a
+ * Neither is in `counters.drawCalls`, which from report version 22 counts no hull: a
  * capture from before it counted a draw a hull mesh there (25 a tank, 26 a
  * truck, 20 a helicopter, the size gate's drops aside).
  */
@@ -409,13 +409,13 @@ export interface HullFacts {
 
 /**
  * Our renderer's WEAPON on the last frame before the capture — or, for a
- * HALTED ring, before the halt (`render/ViewDraw.ts`' `stats`,
- * `BABYLON_EXIT.md` X4.3c, X4.3d) — read as `bodies` is. `drawn` is the main
+ * HALTED ring, before the halt (`render/ViewDraw.ts`' `stats`) — read as
+ * `bodies` is. `drawn` is the main
  * pass's draws of the viewmodel's segments (one a segment, as Babylon drew one
  * a mesh: the opaque parts, and since report version 24 the kit card and an
  * optic's glass) and `masked` the glow mask's. Neither is in
- * `counters.drawCalls`, which since X4.3c counts no opaque part of the weapon
- * and since X4.3d nothing of it at all: a capture from before either counted
+ * `counters.drawCalls`, which from report version 23 counts no opaque part of
+ * the weapon and from version 24 nothing of it at all: a capture from before either counted
  * the same draws there.
  */
 export interface ViewFacts {
@@ -425,35 +425,35 @@ export interface ViewFacts {
 
 /**
  * Our renderer's effect POOLS on the last frame before the capture — or, for
- * a HALTED ring, before the halt (`render/PoolDraw.ts`' `stats`, both draws,
- * `BABYLON_EXIT.md` X4.4b) — read as `bodies` is. `drawn` is the main pass's
+ * a HALTED ring, before the halt (`render/PoolDraw.ts`' `stats`, both
+ * draws) — read as `bodies` is. `drawn` is the main pass's
  * draws of the pieces (a RANK of every piece each, its cel segments and its
  * unlit ones apart) and of the bullet marks (one draw for all the marks),
  * `masked` the glow mask's, `instances` the pieces drawn — tracers, cases,
  * thrown and laid bodies, rockets — and `marks` the marks. Since report
- * version 27 (`BABYLON_EXIT.md` X4.4c) `drawn` and `masked` also count the
+ * version 27 `drawn` and `masked` also count the
  * blast's draws (a batch of billows each, `render/BlastDraw.ts`) and the
  * debris's (one rank: every glass shard and rubble chunk drawn), `billows`
  * the billows drawn and `debris` the shards and chunks. Since report
- * version 28 (`BABYLON_EXIT.md` X4.4d) they count the FIRES' draws too —
+ * version 28 they count the FIRES' draws too —
  * every world fire and molotov flame drawn, one draw each and one mask draw
  * each that glows (`render/FlameDraw.ts`) — and `fires` says how many. Since
- * report version 29 (`BABYLON_EXIT.md` X4.5b) `drawn` counts the cloud ring's
+ * report version 29 `drawn` counts the cloud ring's
  * one draw too (`render/CloudDraw.ts`), no pool, and `clouds` says whether it
- * was. Since report version 30 (`BABYLON_EXIT.md` X4.5c) `drawn` counts the dome's
+ * was. Since report version 30 `drawn` counts the dome's
  * and the moon's too and `masked` the moon's bloom (`render/SkyDraw.ts`), no pool
  * either, and `sky` says how many were drawn. Since report version 34
- * (`BABYLON_EXIT.md` X4.6e) `drawn` counts the backed glazing's draws (a pane
+ * `drawn` counts the backed glazing's draws (a pane
  * group each, `render/GlassDraw.ts`) and `glass` says how many; since
  * version 35 the see-through glazing's too, and the fades' (a spark, a dust
  * disc, a scorch or a blob each, `render/FadeDraw.ts`), `masked` the sparks'
- * blooms, and `fades` says how many; since version 37 (`BABYLON_EXIT.md`
- * X4.7c) `drawn` counts the ASH's draws too (a field each, `render/ParticleDraw.ts`
+ * blooms, and `fades` says how many; since version 37
+ * `drawn` counts the ASH's draws too (a field each, `render/ParticleDraw.ts`
  * — no pool, and never in the mask) and `particles` says how many. None
- * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
- * case, thrown or laid body, since X4.4c no billow, shard or chunk,
- * since X4.4d no fire, since X4.5b no ring, since X4.5c no dome and no moon,
- * since X4.6e no pane, spark, disc, scorch or blob, and since X4.7c no mote
+ * is in `counters.drawCalls`, which from report version 26 counts no tracer,
+ * mark, case, thrown or laid body, from 27 no billow, shard or chunk,
+ * from 28 no fire, from 29 no ring, from 30 no dome and no moon,
+ * from 34 and 35 no pane, spark, disc, scorch or blob, and from 37 no mote
  * field: a capture from before any of them counted a draw a mesh (or a
  * particle system) there.
  */
@@ -725,9 +725,9 @@ export interface ProfileReport {
   /*
    * `counters` — Babylon's `SceneInstrumentation` (the draw count, the active
    * meshes, the mesh walk, the render-target and particle times) — was here
-   * until report version 38. Every one was Babylon's and idle once the scene
-   * stopped rendering (`BABYLON_EXIT.md` X5.4f); our renderer's draws are
-   * counted by `blocks`, `bodies`, `hulls`, `view` and `pools`.
+   * until report version 38. Every one was Babylon's, and idle in some
+   * captures before it; our renderer's draws are counted by `blocks`,
+   * `bodies`, `hulls`, `view` and `pools`.
    */
   /**
    * What the BROWSER said about the same frames, which is the only thing in
@@ -782,8 +782,8 @@ export interface ProfileReport {
    * `main.ts`, which is the only place it can act, because a device's features
    * are fixed when it is created.
    *
-   * **Both counters are OUR timestamp queries** since report version 38
-   * (`BABYLON_EXIT.md` X5.4g): pass descriptors' stamps, which need the
+   * **Both counters are OUR timestamp queries** since report version 38:
+   * pass descriptors' stamps, which need the
    * device's `timestamp-query` and no browser flag.
    */
   gpu: {
@@ -808,9 +808,9 @@ export interface ProfileReport {
      * `writeTimestamp` until report version 38, the same span). Sampled rather
      * than continuous — only one measurement is in flight at a time — so
      * `samples` is the denominator and the mean is over those rows, never over
-     * the window. (`mainPass`, Babylon's main-pass counter beside it, timed
-     * nothing once the canvas's pass was ours, `BABYLON_EXIT.md` X5.4f, and
-     * was retired with report version 38.)
+     * the window. (`mainPass`, Babylon's main-pass counter beside it, was
+     * retired with report version 38, and timed nothing in some captures
+     * before it.)
      */
     frame: { samples: number; meanMs: number; p95Ms: number; maxMs: number };
     /**
@@ -1189,24 +1189,23 @@ export function buildReport(
     // frame — not at the capture. Before it a benchmark saved after its map
     // was torn down read the menu's `taken: 0` (2026-10-21's phone
     // captures). Nothing else changed meaning.
-    // 20: `blocks.handedBack` gone (`BABYLON_EXIT.md` X3.7b): nothing of the
-    // world goes back to Babylon any more, which is made no mesh of it, and a
-    // world our renderer cannot draw takes the round to the menu instead.
+    // 20: `blocks.handedBack` gone: no taken surface can go back to Babylon's
+    // main pass, and a world our renderer cannot draw takes the round to the
+    // menu instead.
     // 21: `bodies`, our renderer's body draws on the last frame (or the
-    // halt's). Since `BABYLON_EXIT.md` X4.1d no body is in
-    // `counters.drawCalls` (Babylon's), so a v20 capture from an X4.1d
-    // build shows the bodies' draws gone from it and nothing in their place.
-    // Nothing else changed meaning.
+    // halt's). No body is in `counters.drawCalls` (Babylon's), and a v20
+    // capture may already show the bodies' draws gone from it and nothing in
+    // their place. Nothing else changed meaning.
     // 22: `hulls`, our renderer's hull draws on the last frame (or the
-    // halt's). Since `BABYLON_EXIT.md` X4.2b no hull is in
-    // `counters.drawCalls` either. Nothing else changed meaning.
+    // halt's). No hull is in `counters.drawCalls` either. Nothing else
+    // changed meaning.
     // 23: `view`, our renderer's draws of the weapon's opaque parts on the
-    // last frame (or the halt's), and its glow-mask draws. Since
-    // `BABYLON_EXIT.md` X4.3c none of them is in `counters.drawCalls`; the
+    // last frame (or the halt's), and its glow-mask draws. None of them is in
+    // `counters.drawCalls`; the
     // `drawOverlay` span holds the optics' glass alone, the weapon's own draws
     // recorded at the end of group 0, inside `drawWorld`. Nothing else
     // changed meaning.
-    // 24: `drawOverlay` RETIRED (`BABYLON_EXIT.md` X4.3d): the optics' glass
+    // 24: `drawOverlay` RETIRED: the optics' glass
     // and the kit card are our renderer's too, so no rendering group above 0
     // holds anything, and the span recorded nothing; `drawWorld` is every
     // group's, which is group 0's. `view` counts the card and the glasses
@@ -1217,69 +1216,67 @@ export function buildReport(
     // capture said nothing of which code drew it, and a phone's had to be
     // matched to a deploy by its `takenAt`. Nothing else changed meaning.
     // 26: `pools`, our renderer's draws of the effect pools' pieces and the
-    // bullet marks on the last frame (or the halt's). Since
-    // `BABYLON_EXIT.md` X4.4b no tracer, mark, spent case, thrown or laid
-    // body is in `counters.drawCalls` (Babylon's), so a v25 capture from an
-    // X4.4b build shows their draws gone from it and nothing in their place.
-    // Nothing else changed meaning.
+    // bullet marks on the last frame (or the halt's). No tracer, mark, spent
+    // case, thrown or laid body is in `counters.drawCalls` (Babylon's), and a
+    // v25 capture may already show their draws gone from it and nothing in
+    // their place. Nothing else changed meaning.
     // 27: `pools.billows` and `pools.debris`, and the blast's and the
-    // debris's draws in `pools.drawn` and `pools.masked`: since
-    // `BABYLON_EXIT.md` X4.4c no billow, glass shard or rubble chunk is in
-    // `counters.drawCalls`. Nothing else changed meaning.
+    // debris's draws in `pools.drawn` and `pools.masked`: no billow, glass
+    // shard or rubble chunk is in `counters.drawCalls`. Nothing else changed
+    // meaning.
     // 28: `pools.fires`, and the fires' draws in `pools.drawn` and
-    // `pools.masked`: since `BABYLON_EXIT.md` X4.4d no world fire and no
+    // `pools.masked`: no world fire and no
     // molotov flame is in `counters.drawCalls`. Nothing else changed meaning.
     // 29: `pools.clouds`, and the cloud ring's one draw in `pools.drawn`:
-    // since `BABYLON_EXIT.md` X4.5b it is not in `counters.drawCalls`. Nothing
+    // it is not in `counters.drawCalls`. Nothing
     // else changed meaning.
     // 30: `pools.sky`, the dome's and the moon's draws in `pools.drawn` and the
-    // moon's bloom in `pools.masked`: since `BABYLON_EXIT.md` X4.5c none is in
+    // moon's bloom in `pools.masked`: none is in
     // `counters.drawCalls`. Nothing else changed meaning.
     // 31: `pools.zones`, the rings' and the flags' draws, in `pools.drawn` too:
-    // since `BABYLON_EXIT.md` X4.6b none is in `counters.drawCalls`. Nothing else
+    // none is in `counters.drawCalls`. Nothing else
     // changed meaning.
     // 32: `pools.grass`, the blades' and the turf's draws, in `pools.drawn` too:
-    // since `BABYLON_EXIT.md` X4.6c none is in `counters.drawCalls`. Nothing else
+    // none is in `counters.drawCalls`. Nothing else
     // changed meaning.
-    // 33: `pools.water`, a draw a body of water, in `pools.drawn` too: since
-    // `BABYLON_EXIT.md` X4.6d none is in `counters.drawCalls`. Nothing else changed
+    // 33: `pools.water`, a draw a body of water, in `pools.drawn` too:
+    // none is in `counters.drawCalls`. Nothing else changed
     // meaning.
     // 34: `pools.glass`, a draw a backed pane group, in `pools.drawn` too:
-    // since `BABYLON_EXIT.md` X4.6e none is in `counters.drawCalls`. Nothing
+    // none is in `counters.drawCalls`. Nothing
     // else changed meaning.
     // 35: `pools.glass` counts the see-through pane groups too, and
     // `pools.fades` — a draw a spark, dust disc, scorch or blob — in
-    // `pools.drawn` too, the sparks' blooms in `pools.masked`: since
-    // `BABYLON_EXIT.md` X4.6e's second commit none is in `counters.drawCalls`.
-    // Nothing else changed meaning.
-    // 36: `drawWorld` is the camera's DRAW PHASE up to the glow's work
-    // (`BABYLON_EXIT.md` X4.7b), no longer the rendering groups: it is
+    // `pools.drawn` too, the sparks' blooms in `pools.masked`: none is in
+    // `counters.drawCalls`. Nothing else changed meaning.
+    // 36: `drawWorld` is the camera's DRAW PHASE up to the glow's work,
+    // not the rendering groups: it is
     // entered on every frame the camera draws, whichever path told our
     // renderer's points. A v35 capture's `drawWorld` is group 0 alone, and
     // absent on a frame Babylon visited no group (the menu, a frame with
     // nothing of Babylon's in group 0); on a frame it did visit one, v36 adds
     // the rendering manager's own walk and, on such a frame the glow skips,
-    // the seam's `after` observer and `FrameDepth`'s identity test (both gone
-    // or changed since, `BABYLON_EXIT.md` X5.4e) — nothing measurable. Nothing
+    // the seam's `after` observer and `FrameDepth`'s identity test (neither
+    // in the current build in that form) — nothing measurable. Nothing
     // else changed meaning.
-    // 37: `pools.particles`, a draw a particle field of ours (the ash, since
-    // `BABYLON_EXIT.md` X4.7c), in `pools.drawn` too and no longer in
-    // `counters.drawCalls`, where Babylon's draw of the field was. Its update is a prepare's
-    // compute pass, outside the main pass and outside `drawWorld` (no longer a
-    // dispatch ending the main pass inside group 0, which ran our queued opaque
-    // recording there), and it is not in `gpu.cull`, being no cull. Nothing else
-    // changed meaning.
-    // 38: Babylon's instruments RETIRED (`BABYLON_EXIT.md` X5.4g, the loop and
-    // its clocks ours): `counters` and its five figures, `drawCalls`/
+    // 37: `pools.particles`, a draw a particle field of ours (the ash), in
+    // `pools.drawn` too and not in `counters.drawCalls`, where a v36 capture
+    // counted Babylon's draw of the field. Its update is a prepare's
+    // compute pass, outside the main pass and outside `drawWorld` (in a v36
+    // capture, a dispatch ending the main pass inside group 0, which ran our
+    // queued opaque recording there), and it is not in `gpu.cull`, being no
+    // cull. Nothing else changed meaning.
+    // 38: Babylon's instruments RETIRED (the loop and its clocks ours):
+    // `counters` and its five figures, `drawCalls`/
     // `activeMeshes` in `segments` and `series`, every hitch's `gpuMs`,
     // `drawCalls`, `activeMeshes`, `meshWalkMs`, `renderTargetsMs` and
     // `particlesMs` — Babylon's `SceneInstrumentation` and its active meshes,
-    // which nothing raised once the scene stopped rendering (X5.4f) — and
+    // which read nothing in some v37 captures — and
     // `gpu.mainPass` with `series.gpuMs`, Babylon's main-pass counter, which
-    // timed no pass of Babylon's after X5.4f; `pipelines.named` and a
+    // timed nothing in some v37 captures too; `pipelines.named` and a
     // creation's `effect` and `defines`, Babylon's effect a pipeline built
-    // through its cache was named by (no Babylon pipeline is made after the
-    // boot); and the `shadowPass` phase, which nothing opened after X5.3d.
+    // through its cache was named by (no pipeline is Babylon's); and the
+    // `shadowPass` phase, which some earlier captures never opened.
     // `gpu.frame` is OURS — two empty passes of our frame timer bracketing
     // the frame's one encoder, from before its first pass to after its last
     // (`render/FrameTimer.ts`), where it was Babylon's `writeTimestamp`
@@ -1291,7 +1288,7 @@ export function buildReport(
     // recorder hung them off the frame's observables — neither bracket moved.
     // The frame's delta (the wall clock a row reads) is the loop's own port of
     // Babylon's `getDeltaTime`. A v37 capture reads the same in every field
-    // left; its retired ones are Babylon's and read 0 from X5.4f on.
+    // left; its retired ones are Babylon's and may read 0.
     version: 38,
     build: buildStamp(),
     takenAt: new Date().toISOString(),
@@ -1638,8 +1635,8 @@ function viewportSizes(r: ProfileRing, at: readonly number[]): ViewportSize[] {
     if (cw === 0 || ch === 0 || level <= 0) continue;
     const ww = r.windowW[i];
     const wh = r.windowH[i];
-    // `AbstractEngine.resize` hands `setSize` the CSS size over the level,
-    // and `setSize` truncates (`| 0`) — ported as written since X5.4h
+    // `resize` hands `setSize` the CSS size over the level, and `setSize`
+    // truncates (`| 0`) — Babylon's, ported as written
     // (`core/CanvasSurface.ts`). The canvas's own CSS box is what it
     // measures; the window stands in for it because `#game-canvas` fills the
     // page, and a pixel of slack absorbs the two roundings.

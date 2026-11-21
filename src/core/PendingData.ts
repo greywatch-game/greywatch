@@ -1,10 +1,10 @@
 /**
- * PendingData.ts — the page's READINESS (`BABYLON_EXIT.md` X6.1h): what the
+ * PendingData.ts — the page's READINESS: what the
  * game still waits on before a frame of it is the frame it means to draw —
  * Babylon 9.28's `Scene` pending-data list PORTED as written
  * (`scene.pure.js` 2040-2069: `addPendingData`, `removePendingData`,
- * `getWaitingItemsCount`, `isLoading`), and `isReady`, what `scene.isReady()`
- * answered for this game.
+ * `getWaitingItemsCount`, `isLoading`), and `isReady`, `scene.isReady()`
+ * reduced to the one arm this game reaches.
  * Owns: `PendingData` — the list of objects being waited on, in the order they
  * were added, each held by identity.
  * Invariants:
@@ -12,7 +12,7 @@
  *   `Scene.isReady` (`scene.pure.js` 1827) that could answer false in this
  *   game — the scene held no mesh, geometry, camera, particle system, render
  *   target, layer, effect layer or readiness check, its engine compiled no
- *   effect, and it was never disposed (`plans/webgpu-ref`'s X6.1a check:
+ *   effect, and it was never disposed (`plans/webgpu-ref`'s check:
  *   `_pendingData` held the water's foam and nothing else on any frame, and
  *   readiness went false on exactly the frames it was pending).
  * - **Removal is what Babylon's was**: by identity, the first match spliced,
@@ -22,11 +22,6 @@
  * - The holders: the water's foam mask while it decodes (`WaterSystem`, its
  *   decode's callback removing it on success and on failure alike, as the
  *   scene's `Texture` did). A new thing the frames must wait on is added here.
- * - **It answered what the scene's own list answered on every frame**, proven
- *   at its hook's commit (`BABYLON_EXIT.md` X6.1h), where it stood beside the
- *   scene's and the holder told both in the same task: the frame adapter's
- *   two arms compared at every frame's begin, draw and submit, the two lists
- *   element for element. The scene went in the next commit.
  * Never: reads a clock, polls or schedules (`executeWhenReady`'s timer has no
  *   caller in the game); is read by the game for an outcome — what reads it
  *   is the instruments (`scripts/lib/frameAdapter.mjs`' `ready`, the bank,
@@ -70,7 +65,7 @@ export class PendingData {
     return this._pendingData.length > 0;
   }
 
-  /** What `scene.isReady()` answered for this game (the header): nothing waited on. */
+  /** `Scene.isReady`'s one arm in this game (the header): nothing waited on. */
   isReady(): boolean {
     return !this.isLoading;
   }
