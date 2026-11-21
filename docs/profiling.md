@@ -216,8 +216,9 @@ merely going to reject — it is `undefined`. So: the modern API, then an
 `execCommand` textarea, then a download. The last rung always works.
 
 **`window.__profile`** is the instrument itself — `capture(reason, full)`,
-`trace(maxFrames)`, `last()`, `armed`, `seconds`. It ships. A smoke script wants
-this and not `__celshock`, because none of it is anything to do with the game.
+`trace(maxFrames)`, `last()`, `armed`, `seconds`. It ships, and `__celshock`
+does not (a DEV build's only). A smoke script wants this and not `__celshock`,
+because none of it is anything to do with the game.
 
 ---
 

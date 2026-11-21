@@ -96,7 +96,7 @@
  * the teardown between frames, then the page reloaded to the menu, or the
  * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
  * and no build or match opened after it, `deviceIsLost`),
- * window.__celshock debug handle.
+ * window.__celshock debug handle (DEV builds only).
  *
  * ## Licence
  *
@@ -2859,8 +2859,11 @@ export class Game {
     // theirs in.
     const lossNotice = takeLossNotice();
     if (lossNotice !== null) this.hud.toast(lossNotice);
-    // Debug/test handle (used by automated smoke tests).
-    (window as unknown as { __celshock: Game }).__celshock = this;
+    // Debug/test handle, DEV builds only: every script that drives the game
+    // boots it through `scripts/dev-server.mjs`, and a production page has no
+    // reason to hand the whole `Game` to its console. The profiler's handle
+    // below is the one that ships.
+    if (import.meta.env.DEV) (window as unknown as { __celshock: Game }).__celshock = this;
     // The profiler's own handle, beside it and for the same reason — but this
     // one SHIPS, because the whole point of the instrument is the devices that
     // will never run a dev server. It is the instrument itself rather than a

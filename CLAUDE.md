@@ -220,7 +220,8 @@ npm run coldharbour  # `--probe`, `--refusals`
 No test suite but `corecheck`, no linter. `npm run typecheck` is the automated
 gate — run it after any change. Playwright + Chromium are devDeps for ad-hoc browser smoke
 tests; write throwaway scripts to the scratchpad, not the repo, drive them
-through the `window.__celshock` handle `Game`'s constructor exposes, and read
+through the `window.__celshock` handle `Game`'s constructor exposes (in a DEV
+build only — every driver boots `scripts/dev-server.mjs`), and read
 **[`VERIFYING.md`](VERIFYING.md)** before writing one rather than after it has
 misled you — **it is written PER MACHINE now**, because a headless Chromium
 needs the right binary and the right flag before `navigator.gpu` will hand back

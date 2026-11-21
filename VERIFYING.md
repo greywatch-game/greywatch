@@ -8,7 +8,9 @@ when you are reasoning about a change.
 
 Playwright + Chromium are devDeps for ad-hoc smoke tests; write throwaway scripts
 to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock`
-(`g` below).
+(`g` below) **in a DEV build only** — a production page (`npm run preview`, the
+deployed site) has no such handle, so drive the dev server
+(`scripts/dev-server.mjs`), as every script in the tree does.
 
 **READ THIS FIRST, because the game runs on WebGPU and WHICH MACHINE you are
 on decides more than any flag does.** There are two dev machines, they fail in
