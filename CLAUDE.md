@@ -1658,6 +1658,21 @@ built.
   joints, `rigJoints.ts`, posed by `animateSoldier`, drawn by our renderer as an
   instance of its side's kit). Animation is procedural, so a new
   behavior means new FSM states, never new clips.
+- **A comment states what the code does NOW and why it must — never how it
+  came to be.** No plan step ids (`X5.4h`), and no "until", "since", "no
+  longer", "where Babylon's scene did": that is the commit's and the plan
+  file's, and a comment arguing from an engine no longer in the tree explains
+  nothing to a reader who never saw it. **Three things read like history and
+  are not**: a PORT's provenance (`Babylon 9.28's FreeCamera, ported as
+  written`), stated ONCE, in the contract header, because it is why odd code
+  must not be "fixed"; a report, wire or bake VERSION somebody must still
+  decode old data by; and the consequence clause — "or crouching makes you
+  EASIER to kill" — which is the reason the comment exists and the first thing
+  a shortening cuts. **A rule a `docs/` companion or this file holds is NAMED
+  and pointed at, not restated.** **Rewrite only the comments on code you are
+  changing**, in that change; a comment found WRONG is fixed in the change
+  that found it, and a sweep of comments is a commit of its own whose
+  comment-stripped build is identical to the one before it.
 
 ## Files not to edit / not part of the build
 
