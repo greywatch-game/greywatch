@@ -1,85 +1,98 @@
 /**
- * ShadowBindings.ts — Every shadow a lit material samples, bound onto it: the
- * world's map, the bodies', the lamps' atlas, the lightning's key and its map,
- * the clouds' field and the foliage's front-face map, plus the registry of the
- * non-cel materials (grass, water) that read the same `celShadow` include.
- * `CelMaterialFactory` owns one (`mats.shadows`) and lends it its cache. The
+ * ShadowBindings.ts — Every shadow a lit material samples, as our renderer's
+ * frame binds it: the world's map, the bodies', the lamps' atlas, the
+ * lightning's key and its map, the clouds' field and the foliage's front-face
+ * map. `CelMaterialFactory` owns one (`mats.shadows`). The
  * maps are published by the systems that render them (`ShadowSystem`,
  * `BodyShadows`, `LocalShadows`, and `Sky`'s field through `Game`); `Game`
- * also pushes the clouds and the lightning each frame, `ReflectionSystem`
- * holds the clouds off for a bake, and grass and water register here.
- * Invariants: **every sampler `SHADOW_SAMPLER_NAMES` names, and `foliageMap`
- * on a cel material, is BOUND on every material that declares it, always** — a
- * declared sampler with nothing behind it is a bind group that fails to build
- * and the draw silently lost. So a new material is seeded on the spot
- * (`applyShadow`, called by every creation path in the factory and by
- * `registerShadowConsumer`), each map is published before the first material
- * is asked for, and the clouds start on a texel of their own. The per-frame
- * pushes (the clouds, the lightning, the lamp slots) write into objects every
- * material already holds BY REFERENCE and walk nothing; the other setters
- * walk every reader.
+ * also pushes the clouds and the lightning each frame; a reflection bake's frame
+ * holds the clouds off on its own
+ * (`fillFrame`'s `bake`).
+ * Invariants: **every shadow texture our renderer's frame binds is OUR
+ * renderer's** (`fillFrameTextures`): a map that is ours as its owner hands it,
+ * a map that is OFF as the lit texel (`TextureMaker.lit`), and the clouds' field
+ * — `Sky`'s, or until it is handed over a no-cloud texel of this object's own —
+ * the last two `TextureMaker`'s since `BABYLON_EXIT.md` X5.4d, made as Babylon's
+ * `RawTexture`s were; a frame texture is null only before its owner first
+ * publishes it (a frame with one null draws nothing). Every value here is
+ * PULLED into the frame once a frame (`fillFrame`, `fillFrameTextures`) off
+ * these fields, and nothing is pushed onto a material: a material is a key of
+ * ours with no uniform to hold (`MaterialKey.ts`), so a setter stores and
+ * walks nothing (it walked the Babylon cel materials until `BABYLON_EXIT.md`
+ * X6.1c, none of which drew). Each map is published before the first frame,
+ * and the clouds start on a texel of their own.
  * Never: adds, removes or reorders a binding — the bumped ground variant is at
  * 16 of WebGPU's 16 sampled textures per stage since the near cascade
  * (CLAUDE.md), so a seventeenth is a packing first; creates or caches
- * a material; holds a consumer past its owner's `dispose`. The irradiance
- * volume is NOT here: it is bound only on cel materials and stays with the
- * factory (`setGi`), which binds it straight after this on creation.
+ * a material. The irradiance volume is NOT here: it stays with the factory
+ * (`setGi`), which copies it into the frame beside this.
  */
-import {
-  type BaseTexture,
-  Color3,
-  Constants,
-  Matrix,
-  RawTexture,
-  type Scene,
-  type ShaderMaterial,
-  Vector3,
-  Vector4,
-} from "@babylonjs/core";
-import { MAX_LOCAL_SLOTS } from "./wgsl/includes";
+import { Color3, Matrix, Vector3, Vector4 } from "../math";
+import type { FrameTextures, FrameUniforms } from "../render/frame";
+import type { OwnTexture } from "../render/HostBindGroup";
+import { type MadeTexture, SAMPLING, type TextureMaker } from "../render/TextureMaker";
+import { MAX_POINT_LIGHTS } from "./wgsl/celSurface";
 
 export class ShadowBindings {
-  // Shadow-map state, pushed onto every cel material as it is created.
-  private shadowMap: BaseTexture | null = null;
+  /**
+   * The world's four maps, the bodies' and the lamps' atlas as OUR renderer
+   * binds them (`render/WorldShadows.ts`, `render/BodyShadowMap.ts`,
+   * `render/LampAtlas.ts`, `BABYLON_EXIT.md` X3.6a, X4.1c and X3.6b), handed
+   * to our frame as themselves — or the lit texel while a map is off (X5.4d).
+   * Null only until a map is first published.
+   */
+  private readonly own: {
+    shadowMap: OwnTexture | null;
+    nearShadowMap: OwnTexture | null;
+    bodyShadowMap: OwnTexture | null;
+    flashMap: OwnTexture | null;
+    foliageMap: OwnTexture | null;
+    localAtlasMap: OwnTexture | null;
+  } = {
+    shadowMap: null,
+    nearShadowMap: null,
+    bodyShadowMap: null,
+    flashMap: null,
+    foliageMap: null,
+    localAtlasMap: null,
+  };
+  // Shadow-map state, copied into the frame (the maps themselves are `own`'s).
   private shadowMatrix = Matrix.Identity();
   private shadowParams = new Vector4(0.0025, 0.15, 0.06, 0);
   // The world's NEAR cascade: the same casters over a small window around
   // the player at a fine texel — see `ShadowSystem`'s near map. x = depth
   // bias, y = its own facet offset in metres.
-  private nearShadowMap: BaseTexture | null = null;
   private nearShadowMatrix = Matrix.Identity();
   private readonly nearShadowParams = new Vector4(0, 0, 0, 0);
   // The bodies' map, the same three things over again — see
-  // `SHADOW_UNIFORM_NAMES` for why none of it is shared with the pair above.
-  private bodyShadowMap: BaseTexture | null = null;
+  // the frame's `bodyLightMatrix` for why none of it is shared with the pair above.
   private bodyShadowMatrix = Matrix.Identity();
   private bodyShadowParams = new Vector4(0.0015, 0, 0, 0);
   // The clouds' shadow — see `setCloudShadow`. The texture is this object's
   // own "no cloud anywhere" until `Sky` hands over its field, and `w` = 1 in
-  // the area switches the term off whatever the texture holds.
-  private cloudShadowMap: BaseTexture;
+  // the area switches the term off whatever the texture holds. Ours, and bound
+  // on our frame alone: no Babylon material is handed it.
+  private cloudShadowMap: OwnTexture;
   /** That "no cloud anywhere" texel, kept to know it when it is replaced. */
-  private readonly noCloudShadow: BaseTexture;
+  private readonly noCloudShadow: MadeTexture;
+  /** What every map that is off is bound as on our frame: the fully-lit texel. */
+  readonly lit: OwnTexture;
   private readonly cloudShadowArea = new Vector4(0, 0, 0, 1);
   private readonly cloudShadowRay = new Vector4(0, 0, 0, 0);
-  // What the materials actually hold: the area with `w` forced to 1 while a
-  // reflection bake holds the term off — see `holdCloudShadow`.
+  // What the frame holds: the area as last pushed (`setCloudShadow`). A
+  // bake's frame holds it off itself (`fillFrame`).
   private readonly cloudShadowPushed = new Vector4(0, 0, 0, 1);
-  private cloudShadowHeld = false;
   // The foliage's front-face map — see `setFoliageMap`. Cel materials only:
-  // grass and water have no translucency and do not declare it.
-  private foliageMap: BaseTexture | null = null;
+  // the water has no translucency and does not declare it.
   private foliageMatrix = Matrix.Identity();
   private foliageParams = new Vector4(0, 0, 0, 0);
-  // The lamps' atlas — see `setLocalShadowMap`. The per-slot arrays are handed
-  // to every consumer BY REFERENCE and rewritten in place, so a frame's
-  // assignment reaches every material without a walk: a `ShaderMaterial`
-  // keeps the array it was given and re-reads it on every bind.
-  private localAtlasMap: BaseTexture | null = null;
-  private readonly pointSpot = new Float32Array(MAX_LOCAL_SLOTS * 4).map(
+  // The lamps' atlas — see `setLocalShadowMap`. The per-slot arrays are this
+  // object's own, rewritten in place by `LocalShadows` (`localSlots`) and
+  // copied into the frame.
+  private readonly pointSpot = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 3 ? -2 : 0),
   );
-  private readonly pointShade = new Float32Array(MAX_LOCAL_SLOTS * 4).map(
+  private readonly pointShade = new Float32Array(MAX_POINT_LIGHTS * 4).map(
     (_, i) => (i % 4 === 1 || i % 4 === 2 ? -1 : 0),
   );
   private readonly localAtlas = new Vector4(1, 1, 1, 1);
@@ -89,86 +102,84 @@ export class ShadowBindings {
   // black whenever no flash is up, which is the shader's early-out.
   private readonly flashDir = new Vector3(0, -1, 0);
   private readonly flashColor = new Color3(0, 0, 0);
-  private flashMap: BaseTexture | null = null;
   private flashMatrix = Matrix.Identity();
   private readonly flashParams = new Vector4(0, 0, 0, 0);
 
-  /**
-   * The materials the CACHE holds — `CelMaterialFactory`'s own map, lent by
-   * reference so a material it mints later is walked by the next push without
-   * being told. Read, never written: the factory is the one door into it.
-   */
-  private readonly cels: ReadonlyMap<string, ShaderMaterial>;
-
-  constructor(scene: Scene, cels: ReadonlyMap<string, ShaderMaterial>) {
-    this.cels = cels;
-    // **Bound from the first material, and it has to be**: the rigs, the
-    // capture rings and the viewmodel are all built before `Sky`, and a
-    // declared sampler with nothing behind it is a bind group that fails to
-    // build. One RG texel of zero is a field with no cloud in it.
-    this.noCloudShadow = new RawTexture(
-      new Uint8Array(2),
-      1,
-      1,
-      Constants.TEXTUREFORMAT_RG,
-      scene,
-      false,
-      false,
-      Constants.TEXTURE_NEAREST_SAMPLINGMODE,
-      Constants.TEXTURETYPE_UNSIGNED_BYTE,
-    );
-    this.noCloudShadow.name = "noCloudShadow";
+  constructor(private readonly textures: TextureMaker) {
+    this.lit = textures.lit;
+    // **Bound from the first frame, and it has to be**: the rigs, the capture
+    // rings and the viewmodel are all built before `Sky`, and a declared
+    // sampler with nothing behind it is a bind group that fails to build. One
+    // RG texel of zero is a field with no cloud in it — `rg8unorm`, sampled
+    // NEAREST and clamped, as the `RawTexture` it was.
+    this.noCloudShadow = textures.raw("no cloud shadow", new Uint8Array(2), 1, 1, "rg8unorm", SAMPLING.nearest);
     this.cloudShadowMap = this.noCloudShadow;
   }
 
   /**
-   * Materials that sample the depth map but are not cel materials — the grass
-   * and the water, each of which reproduces the cel lighting model in its own
-   * shader (see `celShadow`).
-   *
-   * They cannot live in the factory's cache: that map is keyed by colour and
-   * its entries are shared, permanent and created on demand, while these are
-   * one per map build and disposed with the map. So they are a second list
-   * that only the shadow setters walk — the same shape as the factory's
-   * `specs`, which holds foreign material references for the same reason.
-   *
-   * **Registering is the consumer's half of the contract and unregistering is
-   * the other half.** Grass and water are rebuilt every round; a material left
-   * here after its `dispose()` takes a `setMatrix` per frame for the rest of
-   * the session.
+   * The maps our renderer's frame binds — off the same fields, so a map
+   * replaced here is replaced there on the next frame; one never published is
+   * null, which draws nothing. Every one is OUR renderer's texture (`own`): a map's own, the
+   * lit texel where it is off, the clouds' field.
    */
-  private readonly shadowConsumers = new Set<ShaderMaterial>();
-
-  /** Adds a non-cel material to the shadow uploads, and seeds it now. */
-  registerShadowConsumer(mat: ShaderMaterial): void {
-    this.shadowConsumers.add(mat);
-    this.applyShadow(mat);
-  }
-
-  /** Drops a consumer. Call from the owner's `dispose`, without exception. */
-  unregisterShadowConsumer(mat: ShaderMaterial): void {
-    this.shadowConsumers.delete(mat);
-  }
-
-  /** Every material that samples the depth map, cel or not. */
-  private eachShadowReader(fn: (mat: ShaderMaterial) => void): void {
-    this.cels.forEach(fn);
-    this.shadowConsumers.forEach(fn);
+  fillFrameTextures(out: FrameTextures): void {
+    const own = this.own;
+    out.shadowMap = own.shadowMap;
+    out.nearShadowMap = own.nearShadowMap;
+    out.bodyShadowMap = own.bodyShadowMap;
+    out.localAtlasMap = own.localAtlasMap;
+    out.flashMap = own.flashMap;
+    out.cloudShadowMap = this.cloudShadowMap;
+    out.foliageMap = own.foliageMap;
   }
 
   /**
-   * The clouds' shadow field (`Sky.cloudShadowMap`), bound to every material
-   * that reads the key's shadow. Called once, after `Sky` exists — the texture
-   * object is stable even though its contents are rewritten as the ring drifts.
+   * Copies every shadow value a cel draw reads into our renderer's frame
+   * (`CelMaterialFactory.fillFrame`, which calls this). A pull rather than a
+   * push because half of what is here is never pushed: the matrices are the
+   * generators' own and are rewritten in place, and the clouds, the flash and
+   * the lamps' slots are rewritten in place by their owners — so the only
+   * copy that cannot miss a change is one taken off the fields.
    */
-  setCloudShadowMap(map: BaseTexture): void {
+  fillFrame(out: FrameUniforms, bake = false): void {
+    out.lightMatrix.set(this.shadowMatrix.m);
+    this.shadowParams.toArray(out.shadowParams);
+    out.nearLightMatrix.set(this.nearShadowMatrix.m);
+    this.nearShadowParams.toArray(out.nearShadowParams);
+    out.bodyLightMatrix.set(this.bodyShadowMatrix.m);
+    this.bodyShadowParams.toArray(out.bodyShadowParams);
+    out.foliageLightMatrix.set(this.foliageMatrix.m);
+    this.foliageParams.toArray(out.foliageParams);
+    // What the frame HOLDS…
+    this.cloudShadowPushed.toArray(out.cloudShadow);
+    // …held off for a reflection bake (`w` 1): a cube is baked ONCE and the
+    // shadow moves, so a cloud's shadow caught in a bake would stay painted
+    // into every pane and pond that reflects it for the rest of the round
+    // while the real one drifted off. The bake's frame is a frame of its own.
+    if (bake) out.cloudShadow[3] = 1;
+    this.cloudShadowRay.toArray(out.cloudShadowRay);
+    this.flashDir.toArray(out.flashDir);
+    this.flashColor.toArray(out.flashColor);
+    out.flashLightMatrix.set(this.flashMatrix.m);
+    this.flashParams.toArray(out.flashParams);
+    out.pointSpot.set(this.pointSpot);
+    out.pointShade.set(this.pointShade);
+    this.localAtlas.toArray(out.localAtlas);
+    this.localParams.toArray(out.localParams);
+  }
+
+  /**
+   * The clouds' shadow field (`Sky.cloudShadowMap`), bound on our frame from
+   * the next one on. Called once, after `Sky` exists — the texture object is
+   * stable even though its contents are rewritten as the ring drifts.
+   */
+  setCloudShadowMap(map: OwnTexture): void {
     const was = this.cloudShadowMap;
     this.cloudShadowMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("cloudShadowMap", map));
-    // This object's own "no cloud" texel is nobody's once every reader holds
-    // the field. `Game` swaps it in its constructor, before any frame — the
-    // only other holder, the irradiance volume, binds per frame off `lit`.
-    if (was !== map && was === this.noCloudShadow) was.dispose();
+    // This object's own "no cloud" texel is nobody's once the frame holds the
+    // field. `Game` swaps it in its constructor, before any frame — the only
+    // other holder, the irradiance volume, binds per frame off `lit`.
+    if (was !== map && was === this.noCloudShadow) this.textures.release(this.noCloudShadow);
   }
 
   /**
@@ -177,13 +188,7 @@ export class ShadowBindings {
    * after `Sky.update`, because the crossfade moves with the drift and the
    * drift does not stop for a menu.
    *
-   * **It walks no material**: `applyShadow` hands every reader
-   * `cloudShadowPushed` and `cloudShadowRay` BY REFERENCE, as `pointSpot` is
-   * handed, and a `ShaderMaterial` re-reads the object it was given on every
-   * bind, so rewriting the two in place is the whole of the push. The crossfade
-   * moves every frame the clouds drift, so a walk here was a walk every frame —
-   * two uniform-list scans a material across the whole cache, to hand each one
-   * the object it already held.
+   * It walks no material: the frame copies the two off these fields.
    */
   setCloudShadow(area: Vector4, ray: Vector4): void {
     this.cloudShadowArea.copyFrom(area);
@@ -191,42 +196,25 @@ export class ShadowBindings {
     this.pushCloudShadow();
   }
 
-  /**
-   * Holds the clouds' shadow OFF for a reflection bake, and lets it go again.
-   *
-   * **A cube is baked once and the shadow moves**, so a cloud's shadow caught
-   * in a bake would stay painted into every pane and pond that reflects it for
-   * the rest of the round while the real one drifted off. `ReflectionSystem`
-   * holds it on the hook that moves the eye into the probe and lets it go on
-   * the one that moves it back, so the main pass of the same frame finds it
-   * as it was. One write into the vector every reader holds (see
-   * `setCloudShadow`), so it walks nothing either.
-   */
-  holdCloudShadow(held: boolean): void {
-    if (held === this.cloudShadowHeld) return;
-    this.cloudShadowHeld = held;
-    this.pushCloudShadow();
-  }
-
-  /** Rewrites what every reader holds by reference — see `setCloudShadow`. */
+  /** Rewrites what the frame copies — see `setCloudShadow`. */
   private pushCloudShadow(): void {
     this.cloudShadowPushed.copyFrom(this.cloudShadowArea);
-    if (this.cloudShadowHeld) this.cloudShadowPushed.w = 1;
   }
 
   /**
-   * Binds the ShadowSystem's depth map to every cel material. Called once at
-   * startup — the texture object is stable even though its contents re-render.
+   * Binds the ShadowSystem's depth map — once a rung, and once each time the
+   * map changes hands; the texture object is stable while its contents
+   * re-render. `own` is the texture as our renderer holds it, which our
+   * frame binds; null while the map is off, which our frame binds as the lit
+   * texel (`TextureMaker.lit`).
    */
-  setShadowMap(map: BaseTexture): void {
-    this.shadowMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("shadowMap", map));
+  setShadowMap(own: OwnTexture | null): void {
+    this.own.shadowMap = own ?? this.lit;
   }
 
   /** The light's view*projection; re-uploaded when the shadow camera moves. */
   setShadowMatrix(matrix: Matrix): void {
     this.shadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("lightMatrix", matrix));
   }
 
   /**
@@ -234,15 +222,13 @@ export class ShadowBindings {
    * 1x1 on a rung without one, read through a matrix that puts every receiver
    * OUTSIDE its window so the far map answers alone.
    */
-  setNearShadowMap(map: BaseTexture): void {
-    this.nearShadowMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("nearShadowMap", map));
+  setNearShadowMap(own: OwnTexture | null): void {
+    this.own.nearShadowMap = own ?? this.lit;
   }
 
   /** The near light's view*projection; re-uploaded when its window moves. */
   setNearShadowMatrix(matrix: Matrix): void {
     this.nearShadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("nearLightMatrix", matrix));
   }
 
   /**
@@ -251,27 +237,26 @@ export class ShadowBindings {
    */
   setNearShadowParams(bias: number, normalBias: number): void {
     this.nearShadowParams.set(bias, normalBias, 0, 0);
-    this.eachShadowReader((mat) => mat.setVector4("nearShadowParams", this.nearShadowParams));
   }
 
   /**
-   * The BODIES' map, bound once at startup for the same reason the world's is:
-   * the texture object is stable while its contents re-render.
+   * The BODIES' map, bound once a rung for the same reason the world's is:
+   * the texture object is stable while its contents re-render. `own` as
+   * `setShadowMap`'s (`render/BodyShadowMap.ts`, ours since X4.1c), null on a
+   * rung that has none.
    *
    * Unlike the world's it re-renders EVERY frame, and nothing here has to know
    * that — a texture is a texture. What does change is that this one can never
-   * be skipped: it is in `SHADOW_SAMPLER_NAMES`, so a material that lists it and
-   * never receives it loses every draw.
+   * be skipped: it is in the frame's textures (`FRAME_TEXTURES`), so a frame
+   * that never receives it draws nothing.
    */
-  setBodyShadowMap(map: BaseTexture): void {
-    this.bodyShadowMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("bodyShadowMap", map));
+  setBodyShadowMap(own: OwnTexture | null): void {
+    this.own.bodyShadowMap = own ?? this.lit;
   }
 
   /** The bodies' light view*projection; re-uploaded when THAT window moves. */
   setBodyShadowMatrix(matrix: Matrix): void {
     this.bodyShadowMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("bodyLightMatrix", matrix));
   }
 
   /**
@@ -281,15 +266,11 @@ export class ShadowBindings {
    */
   setBodyShadowParams(bias: number): void {
     this.bodyShadowParams.set(bias, 0, 0, 0);
-    this.eachShadowReader((mat) =>
-      mat.setVector4("bodyShadowParams", this.bodyShadowParams),
-    );
   }
 
   /**
    * This frame's lightning: where it comes from and how bright it is now, or
-   * `amount` 0 for none. Written into the objects every material holds, so
-   * nothing is walked.
+   * `amount` 0 for none. Written into the objects the frame copies.
    *
    * **A SECOND key rather than the moon's, and that is the fix, not a
    * refinement.** The flash used to take the key's direction for its length
@@ -304,16 +285,14 @@ export class ShadowBindings {
     this.flashColor.copyFrom(color).scaleInPlace(Math.max(0, amount));
   }
 
-  /** The lightning's own depth map, bound once per rung like the others. */
-  setFlashMap(map: BaseTexture): void {
-    this.flashMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("flashMap", map));
+  /** The lightning's own depth map, bound once per rung like the others, and `own` as `setShadowMap`'s. */
+  setFlashMap(own: OwnTexture | null): void {
+    this.own.flashMap = own ?? this.lit;
   }
 
   /** That map's view*projection, re-uploaded when a strike re-aims it. */
   setFlashMatrix(matrix: Matrix): void {
     this.flashMatrix = matrix;
-    this.eachShadowReader((mat) => mat.setMatrix("flashLightMatrix", matrix));
   }
 
   /** Its depth bias (normalised). */
@@ -322,13 +301,11 @@ export class ShadowBindings {
   }
 
   /**
-   * The lamps' atlas and its shape (`systems/LocalShadows.ts`). Walks the
-   * shadow readers only when the TEXTURE changes, which is a rung change;
-   * the two vectors are held by reference and are rewritten in place.
+   * The lamps' atlas and its shape (`systems/LocalShadows.ts`), and `own` as
+   * `setShadowMap`'s; the two vectors are rewritten in place.
    */
-  setLocalShadowMap(map: BaseTexture): void {
-    this.localAtlasMap = map;
-    this.eachShadowReader((mat) => mat.setTexture("localAtlasMap", map));
+  setLocalShadowMap(own: OwnTexture | null): void {
+    this.own.localAtlasMap = own ?? this.lit;
   }
 
   /**
@@ -360,22 +337,17 @@ export class ShadowBindings {
   /**
    * The FOLIAGE's depth map: front faces of the translucent solids, and
    * nothing else, which is what gives the translucency term a thickness to
-   * measure (see `TranslucencySpec.depth`). Bound once at startup, before any
-   * material exists, for `setBodyShadowMap`'s reason — every cel material
-   * declares the sampler, so there is no state in which it may be absent.
-   *
-   * Pushed over the CACHE and not over `eachShadowReader`: grass and water
-   * carry no translucency and do not declare it.
+   * measure (see `TranslucencySpec.depth`). Bound once at startup, before the
+   * first frame, for `setBodyShadowMap`'s reason — every cel program declares
+   * it, so there is no state in which it may be absent.
    */
-  setFoliageMap(map: BaseTexture): void {
-    this.foliageMap = map;
-    this.cels.forEach((mat) => mat.setTexture("foliageMap", map));
+  setFoliageMap(own: OwnTexture | null): void {
+    this.own.foliageMap = own ?? this.lit;
   }
 
   /** The foliage light's view*projection; re-uploaded when its window moves. */
   setFoliageMatrix(matrix: Matrix): void {
     this.foliageMatrix = matrix;
-    this.cels.forEach((mat) => mat.setMatrix("foliageLightMatrix", matrix));
   }
 
   /**
@@ -385,7 +357,6 @@ export class ShadowBindings {
    */
   setFoliageParams(perMetre: number): void {
     this.foliageParams.set(0, perMetre, 0, 0);
-    this.cels.forEach((mat) => mat.setVector4("foliageParams", this.foliageParams));
   }
 
   /**
@@ -395,16 +366,13 @@ export class ShadowBindings {
    */
   setShadowParams(bias: number, darkness: number, normalBias: number): void {
     this.shadowParams.set(bias, darkness, normalBias, 0);
-    this.eachShadowReader((mat) =>
-      mat.setVector4("shadowParams", this.shadowParams),
-    );
   }
 
   /**
    * The clouds' field, for `CelMaterialFactory.readLighting` to hand on to the
    * irradiance volume. Live references: read, never write.
    */
-  get cloudMap(): BaseTexture {
+  get cloudMap(): OwnTexture {
     return this.cloudShadowMap;
   }
   get cloudArea(): Vector4 {
@@ -412,45 +380,5 @@ export class ShadowBindings {
   }
   get cloudRay(): Vector4 {
     return this.cloudShadowRay;
-  }
-
-  /**
-   * Seeds a material with every shadow it samples: a consumer from
-   * `registerShadowConsumer`, and a cel material from every one of the
-   * factory's creation paths, which binds the irradiance volume straight
-   * after it.
-   */
-  applyShadow(mat: ShaderMaterial): void {
-    if (this.shadowMap) mat.setTexture("shadowMap", this.shadowMap);
-    mat.setTexture("cloudShadowMap", this.cloudShadowMap);
-    mat.setVector4("cloudShadow", this.cloudShadowPushed);
-    mat.setVector4("cloudShadowRay", this.cloudShadowRay);
-    mat.setMatrix("lightMatrix", this.shadowMatrix);
-    mat.setVector4("shadowParams", this.shadowParams);
-    if (this.nearShadowMap) mat.setTexture("nearShadowMap", this.nearShadowMap);
-    mat.setMatrix("nearLightMatrix", this.nearShadowMatrix);
-    mat.setVector4("nearShadowParams", this.nearShadowParams);
-    if (this.bodyShadowMap) {
-      mat.setTexture("bodyShadowMap", this.bodyShadowMap);
-    }
-    mat.setMatrix("bodyLightMatrix", this.bodyShadowMatrix);
-    mat.setVector4("bodyShadowParams", this.bodyShadowParams);
-    if (this.localAtlasMap) mat.setTexture("localAtlasMap", this.localAtlasMap);
-    mat.setArray4("pointSpot", this.pointSpot as unknown as number[]);
-    mat.setArray4("pointShade", this.pointShade as unknown as number[]);
-    mat.setVector4("localAtlas", this.localAtlas);
-    mat.setVector4("localParams", this.localParams);
-    if (this.flashMap) mat.setTexture("flashMap", this.flashMap);
-    mat.setMatrix("flashLightMatrix", this.flashMatrix);
-    mat.setVector4("flashParams", this.flashParams);
-    mat.setVector3("flashDir", this.flashDir);
-    mat.setColor3("flashColor", this.flashColor);
-    // A grass or water consumer is registered BEFORE this runs, which is how
-    // this tells the two apart: only a cel material declares the foliage map.
-    if (!this.shadowConsumers.has(mat)) {
-      if (this.foliageMap) mat.setTexture("foliageMap", this.foliageMap);
-      mat.setMatrix("foliageLightMatrix", this.foliageMatrix);
-      mat.setVector4("foliageParams", this.foliageParams);
-    }
   }
 }

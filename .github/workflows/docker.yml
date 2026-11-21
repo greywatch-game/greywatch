@@ -102,6 +102,10 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The commit the settings screen prints (`vite.config.ts`'s `buildStamp`):
+          # the build context has no `.git`, so the image is told it.
+          build-args: |
+            BUILD_COMMIT=${{ github.sha }}
           # `npm ci` is the slow layer and the lockfile rarely moves, so the
           # cache is worth more here than the ~1 min the build itself takes.
           #

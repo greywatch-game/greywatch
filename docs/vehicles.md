@@ -4,9 +4,13 @@ What a vehicle IS to each subsystem that meets one, why it is the only moving
 `solid` mesh in the game, how a driver's frame differs from a body's, and what
 is deliberately not built. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps
 the summary; this file is the contract for `src/entities/Vehicle.ts`,
-`src/entities/vehicleRig.ts`, `src/entities/vehicleKinds.ts`,
+`src/entities/VehicleView.ts`, `src/entities/HullSprings.ts`,
+`src/entities/HullWhips.ts`, `src/entities/vehicleRig.ts`,
+`src/entities/vehicleKinds.ts`, `src/entities/vehicleModels.ts`, the three
+frame files (`tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts`),
 `src/entities/TankModel.ts`, `src/entities/TruckModel.ts`,
-`src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`, `src/systems/VehicleCamera.ts`,
+`src/entities/HeliModel.ts`, `src/systems/VehicleSystem.ts`,
+`src/systems/VehicleViews.ts`, `src/systems/VehicleCamera.ts`,
 `src/systems/VehicleCrew.ts`, `src/systems/crewPilot.ts` and for `Game`'s
 `updateDriver` / `frameVehicleCamera` / `mount` / `dismount` /
 `clearVehicle` / `resolveShell` / `offeredSeat`.
@@ -25,20 +29,29 @@ same arithmetic it always was on both older kinds. See "Flying, and what
 ## The shape of it
 
 A vehicle is a block of NUMBERS and a MESH, and everything else is machinery
-that reads those two:
+that reads those two — and since `BABYLON_EXIT.md` X2.2 C9 the machinery is in
+two halves, the SIMULATION (everything the authority builds, no Babylon) and the
+PICTURE (only a client builds it); see "The hull and its picture" below:
 
 | the thing | what it owns |
 | --- | --- |
 | `MapLayout.vehicles` | where each side's vehicles stand, and WHAT stands there. One `VehicleSpawnDef` per hardstanding; absent on two of the five shipped maps |
 | `MapLayout.vehicles` (again) | and on Sarab, THREE a side — a tank, a gun truck and a helicopter |
 | `config/vehicles.ts` | `VehicleSpec` — the shape of one kind — and the three kinds: the TANK, the gun TRUCK and the HELICOPTER |
-| `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a model, and the one place the default (a tank) is written down |
-| `entities/vehicleRig.ts` | what every vehicle's mesh IS: the joints `Vehicle` writes, the three extents the physics needs off the drawing, and the three closures a model hands back |
+| `entities/vehicleKinds.ts` | the ONE place a kind becomes a name, a spec and a frame (no Babylon — the authority reads it), and the one place the default (a tank) is written down (`resolveKind`) |
+| `entities/tankFrame.ts`, `truckFrame.ts`, `heliFrame.ts` | each kind's `HullFrame` — the three extents the physics needs off the drawing and the offset of every joint between the collider box and a muzzle — and the drawing constants they are derived from, which the model files IMPORT |
+| `entities/vehicleModels.ts` | the client's twin of `VEHICLE_KINDS`: kind to the model that draws it, a `Record` over the same union, and every kind's drawing in both views' colours (`hullKits`) |
+| `entities/vehicleRig.ts` | what every vehicle's drawing IS: the joints a hull's view writes (OUR `JointTree`, `rigJoints.ts`, since `BABYLON_EXIT.md` X4.2a), the segments hung off them and the KIT they are drawn as (one a model and a view, `segmentOf`, X4.2b), the three closures a model hands back, and the one way its drawing is written for our renderer (`writeHullDrawing`) |
+| `render/HullDraw.ts`, `render/hullProgram.ts` | every hull as OUR renderer draws it (X4.2b): the kits on the GPU once, each frame's hulls as instances, a draw a RANK of every hull |
 | `entities/TankModel.ts`, `entities/TruckModel.ts`, `entities/HeliModel.ts` | the ART, one file per kind — the boxes, the running gear, the whips and the guns as JOINTS over them, and the charred repaint a wreck takes |
-| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, and the ground half of its lean |
-| `entities/HullFlex.ts` | what the hull's own mass does to the drawing: the sprung body's three springs and the antennae |
+| `entities/hullSeats.ts` | the two chairs (`CrewSeat`: `DRIVER`, `GUNNER`), the order they fill in (`SEATS`), and `chooseSeat`, the one boarding rule — no vehicle, no import, so the authority's roster can name a seat without pulling in a hull |
+| `entities/Vehicle.ts` | one hull of any kind: its collider, its drive, its turret, its two guns' clocks and angles, which of its two seats are filled, its health, the ground half of its lean, and the `HullPose` its joints are drawn at — the SIMULATION, no mesh |
+| `entities/HullSprings.ts` | what the hull's own mass does to its sprung body: three springs on one travel budget, on the muzzle's path, so simulated |
+| `entities/VehicleView.ts` | one hull's PICTURE: the rig (its body joint standing where the collider box stands), the belts' run, the whips and the paint, copied and followed off the hull; drawn once a frame before the render by our renderer, as an instance of its kind's kit (`Game.drawHulls`, X4.2b) |
+| `entities/HullWhips.ts` | the two antennae bending — the picture's one simulation of its own |
 | `entities/FlightModel.ts` | the rotor, on a kind that states `flight`: the spool, the disc's attitude, the cyclic, thrust and collective, and the attitude a hull on the wire is drawn at |
 | `systems/VehicleSystem.ts` | the fleet: build, the respawn clock, the wreck clock, which seat a boarder gets, and where a dismount lands |
+| `systems/VehicleViews.ts` | the fleet's picture: one `VehicleView` per hull, by hardstanding, built and taken down with the map |
 | `systems/VehicleCamera.ts` | the view from behind a hull, and its pull-in |
 | `systems/VehicleCrew.ts` | the bots that crew: which body is in which SEAT of which hull, where it is taking it, and what each of its guns is laid on |
 | `systems/crewPilot.ts` | the bot at the sticks of a hull that flies: the held heading, the air fan, the collective and the cyclic, and the flow-field `route` both seats ask |
@@ -52,12 +65,16 @@ hardstanding.
 ## Three kinds, and the TWO capabilities between them
 
 **There are three vehicles and no code that knows it.** `Vehicle` is handed a
-`VehicleSpec` and a rig BUILDER by `VehicleSystem` and never learns which kind
+`VehicleSpec` and a `HullFrame` by `VehicleSystem` and never learns which kind
 it is — `CONFIG.vehicles.tank` used to be read in forty-three places in that
-file and every one of them is `this.spec` now. A fourth kind is a row in
-`VEHICLE_KINDS`, a block in `config/vehicles.ts` and a model file, and no `if`
-anywhere. **The moment a system asks which kind it is holding, that bargain is
-broken.**
+file and every one of them is `this.spec` now. A fourth kind is a member of
+`VehicleKind`, a block in `config/vehicles.ts`, a frame file, a model file and a
+row in each of TWO tables — `VEHICLE_KINDS` (name, spec, frame) and the one in
+`vehicleModels.ts` (the model) — both `Record<VehicleKind, …>`, so a kind with a
+row in one and not the other does not compile; and no `if` anywhere. The view
+pool looks the model up BY the hardstanding's kind (`modelOf`, through the same
+`resolveKind` default), which is a lookup and not a branch. **The moment a
+system asks which kind it is holding, that bargain is broken.**
 
 **Two things a kind genuinely differs by in code, and neither is asked as a
 kind.** Both are one nullable block in the spec resolved once into one boolean,
@@ -100,11 +117,18 @@ The first, in full:
 without an interface that lies. A tank's running gear is two belts of scrolling
 links and a truck's is four wheels that turn and two that steer, and no shape
 over both is honest — so `VehicleRig` does not describe running gear at all. It
-carries `setRun(left, right, steer)`, a closure the builder made, and `Vehicle`
-hands it the two distances and the stick it already has. `reset` and `paint` are
-the same bargain for the respawn and the wreck. The three numbers the physics
-cannot get anywhere else — `gauge`, `contactReach`, `wheelReach` — are stated on
-the rig, which is what stopped `Vehicle` importing from a model file at all.
+carries `setRun(left, right, steer, rotor)`, a closure the builder made, and the
+hull's VIEW hands it the two distances, the stick and the disc the hull told it
+(`HullPicture.rolled`). `reset` and `paint` are the same bargain for the respawn
+and the wreck. The three numbers the physics cannot get anywhere else —
+`gauge`, `contactReach`, `wheelReach` — are stated on the kind's `HullFrame`
+(`entities/hullFrame.ts`), beside the offset of every joint between the
+collider box and a muzzle, in a frame file of its own that the model IMPORTS
+and places its nodes FROM, so the two cannot drift; `vehicleKinds.ts` hands it
+to the hull with the spec. That is what stopped `Vehicle` importing from a
+model file at all, since `BABYLON_EXIT.md` X2.2 C8 it is what keeps the
+simulation off the rig, and since C9 it is what keeps the model files off the
+authority.
 
 ### What the TRUCK is, and the trade it is
 
@@ -151,7 +175,7 @@ frame-rate exact by construction rather than through the `Math.min(1, dt *
 rate)` idiom, which never quite arrives and arrives differently at 30 Hz. It is
 deliberately the same three lines as the throttle's walk toward its wanted
 speed: both are a control the driver ASKS with and the hull answers at its own
-rate. The DRAWN wheels take it too (`steerShown` is fed from the linkage), or a
+rate. The DRAWN wheels take it too (the view is told the linkage, not the stick), or a
 truck would be telling two stories about one mechanism.
 
 The tank's is 8 — a tenth of a second, a hand pulling a tiller, near enough
@@ -202,6 +226,31 @@ Geometry is not what a mesh costs: the rework took a hull from 7.2 k vertices
 to 23.6 k with the mesh count unchanged, and Coldharbour's frame rate at the
 hardstanding did not move outside the run-to-run spread.
 
+**Since `BABYLON_EXIT.md` X4.2b a mesh is a SEGMENT of its kind's KIT, and
+what it costs moved with it.** No hull is a mesh: every hull is
+an instance of its kind's kit in its side's colours (`render/HullDraw.ts`),
+and a draw is one RANK of every hull — each hull's `r`th segment nearest the
+eye — so a segment is at most ONE draw a frame for the whole fleet rather than
+one a hull, and the draw count is capped by the widest kit (the truck's 26)
+whatever the fleet. The price is vertex work: a rank's draw runs to the
+longest segment any hull draws there, times the hulls, the surplus corners
+exiting early. So the rule above stands in a new unit — a segment is still a
+colour per moving part, and a new colour on the hull is one more rank — and a
+LONGER segment is paid at every rank it lands on.
+
+**Since X4.2c a model names its DETAIL segments, and a far hull draws without
+them** (`docs/rendering.md`, "The hulls, ours"; `PERF_PLAN.md` A3). Each model
+file states a `DETAIL` list of its `segment` calls — the tank's four link
+strips, its road wheels and its cupola gun's ring, the truck's weapon-station
+yoke, nothing of the helicopter's (the user's set, 2026-10-31) — and a hull
+whose whole MEASURE (one sphere a kit, `vehicleRig.HullMeasure`) projects
+under `CONFIG.graphics.culling.hullDetail` draws its REDUCED set. So a part
+that only reads up close belongs in a detail call of its own, never merged
+into a silhouette segment's colour: a detail segment is chosen by its CALL,
+and a call that mixes the silhouette with fittings cannot be swapped without
+the silhouette going too. The list is DATA on the model, never a branch on
+the kind, and `segmentOf` refuses a name no call made.
+
 **A mesh is bought here for exactly one reason and it is never a colour:
 something that MOVES differently from everything around it cannot merge with any
 of it.** Twelve of the twenty-five are that — six for the tracks, four for the
@@ -221,9 +270,10 @@ whose turning can be SEEN**. A road wheel is a disc, and a disc rotating about
 its own axis is indistinguishable from a disc at rest; giving each one a node
 would be twelve more meshes to animate nothing.
 
-**Two figures go in and they are per TRACK, not per hull.** `Vehicle` keeps
-`trackRun[2]`, adds `speed ± yawRate * TRACK_GAUGE / 2` to them each frame and
-hands both to `setTrackRun`. That is what makes a neutral-steer pivot — which
+**Two figures go in and they are per TRACK, not per hull.** The hull's view
+(`VehicleView`) keeps `trackRun[2]`, adds `speed ± yawRate * TRACK_GAUGE / 2`
+to them each step the hull tells it about (`HullPicture.rolled`) and hands both
+to `setTrackRun`. That is what makes a neutral-steer pivot — which
 this vehicle can do at a standstill — come out as the two tracks running
 opposite ways, and it is derived rather than decided: the drive is still one
 speed and one yaw rate. Nothing in the game may read it back. A track that has
@@ -242,10 +292,13 @@ Four things the model may not do, each of which has already been done once:
 - **Nothing emissive.** Written when the glow's `noGlow` exclusion was a
   one-shot scan at construction, which a tank built per round could never join.
   The bloom reads `noGlow` every frame now (`GlowPass`), so that reason is gone;
-  a glowing part on a hull is still a look nobody has chosen. The headlights are
-  boxes.
-- **Nothing pickable.** The collider box is the only pickable thing a tank has.
-  A pickable visual would put the hitscan's wall ray, the bots' LOS and the
+  since `BABYLON_EXIT.md` X4.2b a hull is drawn by the matte cel program alone,
+  so a glowing part would be a program and a mask draw nobody has built — and
+  a look nobody has chosen. The headlights are boxes.
+- **Nothing pickable.** Not even the collider box's mesh, since the X2.2
+  review, and since X4.2b there is no mesh of a hull at all: a hull is
+  answered by `rayBox` off its fields, and no mesh is picked at all (the map
+  editor's was the last pick, and it built no hulls; gone at X5.3c). A pickable visual would put the hitscan's wall ray, the bots' LOS and the
   ground probe on sixty triangles of track link.
 - **Nothing above the deck inside the turret's sweep.** The ring is at the deck
   and the turret's underside is 11 cm above it, so a raised engine deck, a
@@ -667,7 +720,7 @@ one that carries the weight. `VehicleRig.sprung` is everything the springs carry
 the tub, the sponson, the stowage, the marking and the whole turret with the
 gun and the masts on it — and it hangs off `VehicleRig.hull` with the RUNNING GEAR
 left behind on the hull node: the belts, the road wheels, the idlers, the
-sprockets and the link strips. `HullFlex.flexHeave` moves it in Y and never rotates
+sprockets and the link strips. `HullSprings.flexHeave` moves it in Y and never rotates
 it, so a compressing hull compresses along its own up axis rather than the
 world's.
 
@@ -745,8 +798,8 @@ across all of it**, because that is the failure this section exists to prevent:
 the worst case over hard driving on Coldharbour leaves 14 cm of the belly's 34
 still clear, and crossing Harrowmead leaves 31.
 
-**None of it moves anything either.** This block reaches one `TransformNode`'s
-Y. The collider does not travel with it, the gun is aimed in world angles off a
+**None of it moves anything either.** This block reaches one joint's Y (a
+`TransformNode`'s until `BABYLON_EXIT.md` X4.2a). The collider does not travel with it, the gun is aimed in world angles off a
 turret that rides on it, and the reticle still cannot lie.
 
 ## The antennae bow, and there is no Havok in them
@@ -755,7 +808,7 @@ The two whips are the third picture on this vehicle and the furthest out from
 the drive. A mast is a thin cantilever bolted to the turret roof, and the three
 things that bend one are all numbers the hull already has: the acceleration
 the drive achieved, how fast the hull node the foot is bolted to is ROTATING,
-and the wind. So it is two damped springs a mast (`HullFlex.flexAntennae`), and it
+and the wind. So it is two damped springs a mast (`HullWhips.step`), and it
 was asked whether it should be a physics chain instead. It should not, and the
 reasons are worth writing down because the question will come back:
 
@@ -764,8 +817,8 @@ reasons are worth writing down because the question will come back:
   antenna is on a live vehicle, and `CLAUDE.md`'s standing rule is that Havok
   never touches a rig node.
 - **A hull TELEPORTS as far as a solver is concerned.** It is moved by
-  `moveWithCollisions` and ridden up over a kerb by `standOnGround`, neither of
-  which is a velocity. A jointed chain hung off an anchor that jumps
+  the sweep (`CollisionField`) and ridden up over a kerb by `standOnGround`,
+  neither of which is a velocity. A jointed chain hung off an anchor that jumps
   0.9 m in a frame cracks every time a tank climbs a kerb, and the fix for that
   is to feed the solver a velocity the hull does not have.
 - **It would cost per link what the spring costs per mast.** Four bodies and
@@ -808,8 +861,9 @@ is greatest at the root — and the upper takes what is left over, which is wher
 the shape comes from. The angle handed to the upper link is a LAGGED copy of the
 spring's, so while the mast is moving the leftover goes negative and the two
 links bend against each other into an S, and when it settles they agree and it
-is one smooth bow. `setAntennaBend` is the whole of that, and `Vehicle` owns the
-numbers exactly as it owns `trackRun`.
+is one smooth bow. `setAntennaBend` is the whole of that, and `HullWhips` owns
+the numbers exactly as the view owns `trackRun` — a picture's, told each step
+the hull takes (`HullPicture.flexed`, `kicked`) and read back by nothing.
 
 **The two masts are one spring scaled by their own lengths.** A cantilever's
 natural frequency goes as 1/L^2, so `ANTENNA_LENGTHS` (1.5 and 1.2) is exported
@@ -846,8 +900,10 @@ established: things that MOVE cannot be in structures that are BAKED.
 
 What the hull's collider box is:
 
-- `metadata.solid`, and neither `porous` nor `rayOnly`. Those two describe a
-  fence — a thing that is a wall to a body and mostly air to a bullet, or the
+- A box to both questions, and neither `porous` nor `rayOnly` (no mesh of a
+  hull is pickable — since `BABYLON_EXIT.md`
+  X4.2a there is no body MESH at all, only the rig's body joint, and since
+  X4.2b no mesh of a hull at all — and nothing picks a mesh). Those two describe a fence — a thing that is a wall to a body and mostly air to a bullet, or the
   reverse. A tank is both to both, which is the plain case. So it answers both
   of `RayWorld`'s questions: a round stops on it and a sightline breaks on it.
   It reaches those queries as `RayWorld.hulls` — a list `VehicleSystem` keeps
@@ -860,22 +916,23 @@ What the hull's collider box is:
   `Game`). Verified against the ray it replaced over 1,617 points on and around
   a parked hull: no disagreement anywhere, and a body dropped over the turret
   settles on the deck.
-- `checkCollisions`, so `moveWithCollisions` — the player's, and the other
-  tank's — is held out of it. It is also the mesh that *moves*, which is what
-  makes that safe: Babylon excludes the mover from its own collision test. And
-  because it moves, it is the one collidable mesh that cannot live in
-  `CollisionField`'s grid — `VehicleSystem.build` registers every hull body in
-  `map.collidables.movers` instead, which is appended to every answer, exactly
-  as it pushes the hull into `map.rays.hulls` a line earlier and for the same
-  reason.
+- **In every SWEEP**, so the player's and the other hulls' are held out of it.
+  It reaches them the way it reaches the rays: `RayWorld.bodyNear`, the list
+  every sweep is gathered from, appends each hull's `rayBox()` after the static
+  boxes, behind the same gate (`Vehicle.present`) — so `hide` takes it out of
+  every sweep and every ray in one write, and `VehicleSystem.build` registers a hull once, in
+  `map.rays.hulls`. A hull's own sweep passes itself as `self`, which is the
+  whole of how a mover is kept out of its own test (Babylon's coordinator
+  skipped the mover; `bodyNear` skips `self`).
 - **No `WorldBox`.** `NavGrid`, `CoverMap`, `ObstacleField`, the AO bake and the
   collision bake are all built once from the finished collider set at map load,
   and a thing that moves cannot be in any of them.
 
 **The drive USED to be the last thing in the game that walks the whole scene,
-and that is the single most expensive thing a vehicle has ever done.**
-`moveWithCollisions` costs per collidable MESH in the map, which is what every
-ray in this tree stopped doing when `RayWorld` replaced the picks
+and that is the single most expensive thing a vehicle has ever done.** This is
+history now, kept because the numbers are what argued for the two fixes after
+it. Babylon's `moveWithCollisions` cost per collidable MESH in the map, which
+is what every ray in this tree stopped doing when `RayWorld` replaced the picks
 (`ENGINE_UPGRADE.md` wall 2) — a hull was left behind because it MOVES a body
 rather than asking a question about one, so no analytic query stands in for it.
 Measured on the authority, one hull stepped 2,000 times: **0.039 ms a call
@@ -887,25 +944,46 @@ suggests, because a map fields more than one and all of them are driven:
 plank, the springs, the lean, the whips, the turret, the cupola gun, the crew
 AI, the crush sweep and the engine audio combined.
 
-**It is narrowed now, and the narrowing is Babylon's own rather than a
-replacement.** `map.collidables` (`world/CollisionField.ts`) buckets the
-collider MESHES, `Vehicle.update` hands the hull's own street to
-`body.surroundingMeshes`, and Babylon's coordinator walks that instead of
-`scene.meshes` — so the collision RESPONSE is untouched and the landing position
-is bit-identical, which was proved at 8,000 samples per hull kind on every map
-with armour rather than argued. **11 us a call, the fleet 0.12 ms a frame,
-Sarab's median frame 11.3 ms to 8.7, and the authority's Sarab tick p50 0.691 ms
-to 0.053**. It still runs only while `|speed| > 1e-3`, so a
-parked fleet still costs nothing.
+**It was narrowed first, and the narrowing was Babylon's own.** A bucketed
+mesh grid handed the hull's own street to `body.surroundingMeshes`, and
+Babylon's coordinator walked that instead of `scene.meshes` — the landing
+position bit-identical at 8,000 samples per hull kind on every map with armour.
+**11 us a call, the fleet 0.12 ms a frame, Sarab's median frame 11.3 ms to 8.7,
+and the authority's Sarab tick p50 0.691 ms to 0.053.**
 
-**Three rules the narrowing rests on, and a change here must not break any of
-them.** The list must be a SUPERSET of what the sweep can reach — radius plus
-the whole step plus a margin — so `Vehicle.update` CHECKS that the hull did not
-outrun it and re-runs the whole walk when it did, which is what makes an
-ejection out of a wall safe. The list must be in the SCENE's order, because
-Babylon breaks a distance tie in favour of whichever mesh it walked first and a
-box world is full of coplanar ties. And it must be centred on
-`getAbsolutePosition()`, which is what `moveWithCollisions` itself opens with.
+**And now the sweep is the game's own** (`BABYLON_EXIT.md` X2.1).
+`world/ellipsoidSweep.ts` is Babylon 9.28's collider ported operation for
+operation — a port rather than a new sweep because every push-out, the offset
+sphere and the climb band in this file were tuned against its response — and
+`CollisionField.move` feeds it the BOXES near the hull out of `RayWorld`
+rather than meshes, so the authority's hulls drive with no scene at all — and
+since X5.3e no collider is a mesh on either side. `scripts/sweep-check.mjs` holds
+it to the bit against Babylon (56,000 of 56,000 over the seven maps) at 10-33
+us a move. It still runs only while `|speed| > 1e-3`, so a parked fleet still
+costs nothing.
+
+**Three rules the sweep rests on, and a change here must not break any of
+them** (`CollisionField.ts`'s header). The list must be a SUPERSET of what the
+sweep can reach — radius plus the whole step plus a margin — and that is
+CHECKED: a sweep whose centre travelled farther than the list was gathered for
+is re-gathered at the reach it needed and run again, three times, then against
+every body box on the map, which is what makes an ejection out of a wall safe.
+The list must be in `RayWorld`'s RANK ORDER (derived from `boxGroups` on both
+sides: the client's collider-mesh order while there were collider meshes), because the sweep breaks a distance
+tie in favour of whichever box it met first and a box world is full of
+coplanar ties — measured, a different order slid hulls metres apart from an
+embedded start. And a move of a millimetre or less is not written back
+(`COLLISIONS_EPSILON`), which is Babylon's callback and what lets a hull pull
+away from rest (below).
+
+**It differs from what shipped under Babylon in three places, all on
+purpose**: the start is the body's own float64 position (Babylon read it out
+of the float32 world matrix), a merged scatter cluster's triangles round as a
+mesh of its own did, and **a hull is swept where it IS** — Babylon swept
+against a hull's last computed world matrix, a frame old on a client and, on
+the authority, wherever the last read had left it, the origin for a hull
+nobody had driven. Each of the first two moves an answer only by a rounding,
+which matters only on a knife edge.
 
 The consequence is stated rather than hidden: **bots walk through a parked
 tank.** They walk through corpses too, for the identical reason, and both are in
@@ -929,8 +1007,10 @@ queries stopped picking meshes, and it is an argument now — the rule is kept
 either way: nothing is allocated per call, and **the other tank stays in the
 answer throughout**, which is what makes one hull block another's camera. The
 dismount's floor test does the same thing for the same reason. The crew's
-sightline is the second and is `Game`'s `CrewCtx.visibleFrom` — see the two
-bugs the AI crew found, below.
+sightline is the second and is `Game`'s `CrewCtx.visibleFrom`, which passes
+the hull as `RayWorld.blocked`'s `skip` (through `BattleSystem.losBetween`) —
+it was two writes to `body.isPickable` around the query until `BABYLON_EXIT.md`
+X2.2 C8, the same answer, and see the two bugs the AI crew found, below.
 
 **The third is the hitscan's own wall cap, and it is the same mistake seen from
 the other end: a hull's guns are DRAWN on the hull, so a muzzle is regularly
@@ -954,7 +1034,7 @@ and its barrel reaches past the hull at every bearing the turret has.
 
 The skip is `ShotOptions.fromHull`, and it is on the GUN rather than at the
 trigger for `shellShotFor`'s reason — there are two triggers and they are in
-different processes, so `Game` and `HeadlessGame` are fixed by one field. It is
+different processes, so `Game` and `SimCore` are fixed by one field. It is
 also what stops a third gun bolted to a hull reintroducing this: the options
 object belongs to the hull, so it carries the hull. **The hitscan is the only
 path that needed it**, because `updateDriver` REPLACES `updateOnFoot` — the
@@ -967,16 +1047,138 @@ one of the eight, and **a round fired at the enemy tank parked 20 m ahead still
 stops on it** for 2.75 of 55 — `resist.bullet` at 0.05, which is the trade that
 keeps this gun useless against armour.
 
-**`isPickable` is still read, and it is still load-bearing.** `Vehicle.rayBox`
-gates on `isEnabled() && isPickable` exactly as `SOLID_ONLY` does, so `hide`
-takes a wreck that has been carried away out of every ray in one write.
-**The bug that found that term was the ground probe's**, back
+**The gate is `Vehicle.present`, and it is load-bearing.** `Vehicle.rayBox`
+returns null unless the hull is on the field, so `hide` takes a wreck that has
+been carried away out of every ray, every sweep, the deck and the crush in one
+write. It used to be `body.isEnabled() && body.isPickable`, the terms
+`SOLID_ONLY` reads; since `BABYLON_EXIT.md` X2.2 C8 it is a field and the body
+mesh merely follows it (enabled exactly while present) — since C9 the body
+mesh is the VIEW's (`VehicleView.update`), and since the X2.2 review it is
+neither pickable nor `solid`, the map editor (the predicate's one caller,
+gone since X5.3c) having built no hulls at all. (Since X4.2a that body is a joint and no mesh, and since
+X4.2b no mesh of a hull exists: the rig's switch, `VehicleRig.enabled`, is
+what follows `present` now.) **The bug that found the pickable term was the ground probe's**, back
 when the ground was a ray: it started INSIDE the box it was meant to ignore,
 found the hull's own underside, pinned `floorY` to whatever height the tracks
 already had, and a hull lifted by anything — Babylon's own collision response
 climbing a barrier — stayed there for the rest of the round and could not fall.
-That probe is gone (see below) and the term it argued for is still load-bearing.
-Do not take it back out of `world/solid.ts`.
+That probe is gone (see below), and the rule it argued for is that a caster
+takes its OWN hull out by `skip`, never by a write to the hull.
+
+### Where a round leaves is read off the hull AS DRAWN, and it is arithmetic
+
+**No simulation reads a node — the authority builds no rig and no hull model
+to read one off.** A hull's three muzzles (`entities/hullFrame.ts`) and a bot's
+(`soldierPose.ts`) are the float32 node chains REPLAYED off fields, bit for
+bit. A hull's are read off its joints AS DRAWN, so the 1e-5 guards on the lean
+and the springs sit on a muzzle's path and are simulated on both sides: they
+live in the pose record (`HullPose`), which the view copies onto the joints and
+never the reverse. The one node an outcome still reads is offline, the
+player's throw hand and launcher muzzle (`FINDINGS.md` 55).
+
+`Vehicle.muzzleToRef`, `mgMuzzleToRef` and `mgSightToRef` were node reads —
+`computeWorldMatrix(true)` and `getAbsolutePosition()` on `rig.muzzle` (the
+turret on a gunless kind), `rig.mgMuzzle` and `rig.mgSight`. A forced read
+walks every ancestor, so on both sides each was the FRESH float32 chain off
+the nodes' current values: body `T(pos) R(yaw)` → root `T(0, -h/2, 0)` → hull
+`R(lean)` → sprung `T(0, heave) R(tilt)` → turret `T(turretAt) R(local yaw)` →
+gun `T(at) R(-gunPitch)` → muzzle `T(muzzleAt)`, or turret → mgMount
+`T(mgMountAt) R(local yaw)` → mgGun `T(mgGunAt) R(-mgPitch)` → mgMuzzle or
+mgSight. **Since `BABYLON_EXIT.md` X2.2 C8 they are that chain replayed**
+(`entities/hullFrame.ts`, `hullPointToRef`) with `src/math`'s float32
+`Matrix` and yaw-pitch-roll quaternions, off `Vehicle.pos`, `yaw`, the kind's
+`HullFrame` and the hull's `HullPose` — and bit for bit: an assertion against
+the node read at every call, removed before the commit, saw 0 mismatches over
+whole seed-777 rounds on the four armour maps and over a live client driving,
+firing and sighting all three kinds.
+
+**The pose is what the joints hold AS DRAWN, and that is not what the springs
+want.** The ground lean (`leanHull`) and the suspension's tilt and heave
+(`HullSprings.lean`, `flexHeave`) were written to their nodes only when they
+had moved by more than 1e-5, so a drawn joint trails its spring by up to that —
+and the muzzle was always read off the drawn joint. So `HullPose` keeps those
+guards (and is zeroed by `placeAt`, as the rig is reset on the same placing),
+and the guards are on the muzzle's path: changing one moves the fight hash.
+Since C9 it is the RECORD that is written and the view that copies it onto the
+joints, never the other way (see "The hull and its picture") — and since
+`BABYLON_EXIT.md` X4.2a the joints are ours, so `hullPointToRef` has no node
+left to agree with: it and the drawn joints are the same chain composed twice,
+the oracle there measuring them equal.
+Measured: on a seed-777 Sarab round 15,090 of 27,707 reads were taken while
+the drawn lean was behind the ground's. **The lean and the springs are
+therefore SIMULATED on the authority** — a picture to everything that aims,
+never to where a round starts. `fireGun`'s recoil bearing reads the pose's
+`turretY` too, which is the value the turret node carried.
+
+## The hull and its picture
+
+**`Vehicle` is the simulation and a `VehicleView` its picture** (client-only,
+built per hull by `installMap`, taken down by `teardownMap`): **a view READS its
+hull and is TOLD only what cannot be polled**, through one `HullPicture`, and
+nothing it is told comes back — the authority's hulls have no picture.
+
+**`Vehicle` is the simulation and nothing else** (`BABYLON_EXIT.md` X2.2 C9):
+no `@babylonjs/core`, no mesh, no rig, no scene, every vector `src/math`'s — so
+the authority builds the same hull a client does, and `VehicleSystem` takes no
+scene and no material factory. **What a hull looks like is a `VehicleView`**,
+one per hull, which only a client builds (`VehicleViews`, from `installMap`
+right after `VehicleSystem.build`, by hardstanding index, each with its kind's
+model off `vehicleModels.modelOf`; torn down by `teardownMap` before the fleet).
+A view owns the rig, the belts' run, the whips (`HullWhips`) and the paint.
+**The rig's joints are OURS since `BABYLON_EXIT.md` X4.2a** (`vehicleRig.ts`,
+X4.1a's `JointTree`): the tree's first joint is the collider box's frame
+(`rig.body`, what an invisible body box MESH was, the rig its child), each
+world a float32 matrix composed fresh in `src/math`'s copies of Babylon's
+arithmetic. **And since X4.2b the hull is OURS to draw**: none of it is a
+mesh. A rig is its joints and its SEGMENTS (`HullSegment`: the joint and
+the segment's local); what a segment looks like is its kind's KIT in its
+side's colours (`HullKit`), built ONCE a kind and a side — the first rig of
+the pair merges it, every later one hangs it without making a part
+(`segmentOf`) — and every hull is drawn as an instance of it
+(`render/HullDraw.ts`, `docs/rendering.md`'s "The hulls, ours"): `Game.
+drawHulls`, beside `drawBodies` immediately before the frame's render (`SceneFrame.render`), writes
+each present hull's drawing off the tree `Game.fadeHulls` composed earlier in
+the frame (in the cull span, since X4.2d's post-commit review, so the rotor
+wash can be handed the same fade) — each segment's world (its local times its
+joint's, what Babylon was handed through `freezeWorldMatrix` from X4.2a to
+X4.2b, bit for bit). No node and no mesh of a hull is in the scene, and nothing
+in the game reads a joint but the drawing. **The closures are what they were**
+— the run and the whips are joints, `reset` a pose — **but `paint`**, which
+swapped every mesh's material for the charred one, **is a flag the drawing
+reads** (`VehicleRig.charred`): it substitutes the charred slot of the hulls'
+one palette for every segment's own. **It is not what a shadow draws**: since
+`BABYLON_EXIT.md` X4.1c `ShadowHull` is the HULL — its collider box composed
+off `pos`, `yaw` and `present` (`hullFrame.ts`' `hullBodyToRef`, the matrix
+the body node composed, bit for bit), in both shadow maps — so nothing about
+how a hull is drawn reaches its shadow, and X4.2 owes the shadows nothing.
+
+**A view READS its hull and never writes it.** Everything that is STATE is
+read in `VehicleView.update`, which runs right after `VehicleSystem.update`
+(one call site, the page's, offline and in a match alike — the authority builds
+no view) before anything draws: the body joint at `pos` turned `yaw`, the
+hull drawn exactly while `present` (`setHullRigEnabled`, the rig's one
+switch, which every mesh's own flag was until X4.2b), and each joint copied off `Vehicle.pose` where it differs — the hull
+wrote the record behind the guards the node writes had, so a joint is exactly
+what the record says. The guards stay on joints that cost nothing to write,
+because an unguarded write of a `-0` over a `0` is a different bit drawn.
+
+**Five things it is TOLD, and only these, through `Vehicle.picture`
+(`HullPicture`)**, because polling would get each wrong:
+
+| told | when | why it cannot be read afterwards |
+| --- | --- | --- |
+| `placed()` | `placeAt` | the rig goes back to rest and to its livery, and the whips straighten — a reset the hull may be stepped past again (a netplay placing lands BEFORE the step that frame) before the view next looks |
+| `kicked()` | `fireGun` | the masts crack once, between two steps — the springs' half of the shot is the hull's own (`HullSprings.kick`), on the muzzle's path |
+| `wrecked()` | `wreck` | the charred paint — while the page hosted its own core the battle, the grenades and the rockets that wreck a hull stepped AFTER the frame's `VehicleViews.update`, so a view reading `alive` painted the wreck a frame late (the X2.2 review); a page posing hulls off the wire wrecks one in `syncNetVehicles`, ahead of the update, and is told on the same call |
+| `rolled(dt, speed, yawRate, steer, rotor, moved, linkage)` | each `update`/`updateRemote` | the belts are an INTEGRATOR: the view keeps the run and the stick and disc last drawn, and the gate (skip a hull that neither moved nor turned and whose linkage and disc are as drawn) is its own |
+| `flexed(dt, accel, lateral, footPitch, footRoll)` | after each `leanHull` | the whips are an integrator too, against the mast feet's attitude — the ground lean and the springs summed as HELD — whose rate `HullWhips.step` takes as a difference across one step |
+
+**Nothing a picture is told comes back.** Each call is made after the hull has
+decided, with numbers it has already decided; a hull with no picture runs the
+same arithmetic to the bit, which is why the authority, which builds none,
+fights the same fight (the seven fight hashes did not move). The mast feet's
+lean RATE used to live in `HullFlex` beside the springs; it is the whips' alone
+and moved with them, computed off the attitude the hull hands over.
 
 ## Driving OVER things: the ten contacts and the climb
 
@@ -1031,8 +1233,7 @@ That formulation is why terrain costs nothing: a hill asks for exactly
 `speed * grade`, which is inside the limit for every slope on any shipped map,
 so the limiter never touches a tank driving over ground and only ever bites on a
 STEP. `drive.climbFloor` is the rise a stopped hull is still allowed, so ground
-that came up under a parked one — a pane breaking, the editor rebuilding — does
-not strand it. Falling is left to gravity and has no limit at all: a hull driven
+that came up under a parked one — a pane breaking — does not strand it. Falling is left to gravity and has no limit at all: a hull driven
 off a roof is supposed to drop like one.
 
 `drive.climbDrag` is what the climb costs the drive, and it is what stops a tank
@@ -1093,7 +1294,7 @@ halves must not drift apart:
 
 - Horizontally it is **where the collision ellipsoid's floor sits**
   (`ellipsoidOffset.y`), so anything shorter is simply not in the hull's way.
-  `moveWithCollisions` has no notion of climbing and slides along a vertical
+  The sweep has no notion of climbing and slides along a vertical
   face whatever its height, so without the lift the ground query never gets a
   chance and a tank is stopped dead by a 0.3 m kerb.
 - Vertically it is **the ceiling of the band a contact will accept a surface
@@ -1128,7 +1329,7 @@ the sphere's leading edge is the hull's own nose. Measured: the nose now stops
 
 Three things about that offset, all of them load-bearing:
 
-- **It is world-space and Babylon does not rotate it**, so it is rebuilt every
+- **It is world-space and the sweep does not rotate it**, so it is rebuilt every
   frame the hull STIRS — moves or turns — rather than set once in the
   constructor. Turning is half of that and it was missing; see below.
 - **The sign flips only while the speed passes through zero**, which is the only
@@ -1145,8 +1346,8 @@ Three things about that offset, all of them load-bearing:
 
 ### And the arm that offset hangs on is what got the hull stuck
 
-The 1.4 m offset is the fix above and it is also a lever. `moveWithCollisions`
-sweeps a TRANSLATION and nothing else, so a hull's YAW carries the sphere round
+The 1.4 m offset is the fix above and it is also a lever. The sweep moves a
+TRANSLATION and nothing else, so a hull's YAW carries the sphere round
 on that arm — at `turnRate * 1.4`, 1.26 m/s at full stick — through anything the
 tank is parked beside, with no test of any kind. Two things followed, and the
 second is the one players reported.
@@ -1159,7 +1360,7 @@ finally touched the sphere arrived at its true place in one step. Measured: a
 then **2.37 m in a single frame**. It is aimed on a turn as well now, which
 makes the same swing the continuous 1.26 m/s above.
 
-**And Babylon cannot get out of a sphere that is inside a box.** Its
+**And the sweep (Babylon's, ported) cannot get out of a sphere that is inside a box.** Its
 swept-ellipsoid response ejects one by `CollisionsEpsilon * 10` per frame in the
 space it has SCALED by the ellipsoid — 0.022 m of world at this radius, measured
 as exactly that constant on every frame of every hang, whatever displacement was
@@ -1218,9 +1419,10 @@ The push-out above is about walls. This one has no wall in it at all, and it is
 the one that reads as *"I come to a stop, press W, and it chugs for four or five
 seconds before it starts moving."*
 
-`moveWithCollisions` writes the position back **only when the move it worked out
-exceeds `CollisionsEpsilon`** — one millimetre — and otherwise returns the mesh
-exactly where it was, quietly. From a standstill the first frame asks for
+The sweep writes the position back **only when the move it worked out
+exceeds `COLLISIONS_EPSILON`** — one millimetre, Babylon's `CollisionsEpsilon`,
+which the port keeps on purpose — and otherwise leaves the body exactly where
+it was, quietly. From a standstill the first frame asks for
 `accel * dt^2`, which is a third of a millimetre at 120 fps. So the hull did not
 move; the blocked check read that as walked-into-something and docked the speed
 to a third; and the two found a fixed point:
@@ -1259,7 +1461,7 @@ walls is what let this one show.
 
 `Player.probeGround` used to be the most expensive thing the game does per frame
 (0.483 ms on real hardware, a third of the game's own JS) because
-`scene.pickWithRay` with a predicate walks every mesh in the scene.
+`scene.pickWithRay` with a predicate walked every mesh in the scene.
 `Vehicle.applyGround` used to cast the same shape of ray and cost the same, and a
 driver therefore paid TWO of the frame's most expensive pick where a body on
 foot paid one — the hull's ground and the chase camera's pull-in. **Neither is
@@ -1337,7 +1539,11 @@ was already there:
   vertical motion this frame — which on a machine that flies is the whole of a
   touchdown. The skids compress and rebound through `flexHeave` with no new
   code, and **nothing in the suspension knows a helicopter landed rather than a
-  tank driving off a kerb.**
+  tank driving off a kerb.** The CRASH reads the same number —
+  `crashCost(jolt)`, `(jolt - crashJolt) * crashDamage` over the threshold,
+  spent as a `shell` through `crash` — on a hull the simulation steps; on one a
+  PERSON flies it reads the jolt their reports describe (below, "A person's
+  landing is charged off their REPORTS").
 - **`grounded` swaps the tilt rate**, so the frame the skids leave the pad the
   hull stops following the ground and starts following the cyclic.
 - **A parked helicopter costs the frame what a parked tank costs.** With nobody
@@ -1354,8 +1560,8 @@ without going anywhere is a machine whose ground answer can still go stale.
 `Vehicle.flies` is that resolved once — `gun`/`armed`'s shape and `gun`/`armed`'s
 reason. It is the SECOND capability question in the file and there are still
 only two, but it is worth being as exact about its readers as the section above
-is about `armed`'s six, or a third kind erodes the bargain by stealth. Ten, and
-five of them are one line:
+is about `armed`'s six, or a third kind erodes the bargain by stealth. Eleven,
+and six of them are one line:
 
 1. `Vehicle.update`'s drive block — `flyStep` in place of the throttle walk.
 2. `Vehicle.update`'s tail — the commanded attitude overrides the ground's while
@@ -1370,13 +1576,16 @@ five of them are one line:
    the hull, or an ortho window forty metres up drags the shadows out from under
    the aircraft on any map with a low sun.
 7. `Game.pushTouchControls` — whether the collective's two buttons are drawn.
-8. `server/HeadlessGame` — the leash again, on the authority.
+8. `server/SimCore` — the leash again, on the authority.
 9. `server/Match.onDrive` — `tank.spec.flight?.ceiling ?? null`, which is
    `resolveShell`'s blessed data read rather than a kind test.
 10. `Vehicle.gearLoad` — how much of its own weight the running gear is
     carrying, which is 1 wherever the block is null and is what takes the
     weight transfer out of a hull hanging from its rotor. `flexSuspension` is
     its only caller, and see the suspension note under the flight section.
+11. `SimCore.applyDrive` — a person's accepted `drive` is a crash test
+    (`src/sim/reportedLanding.ts`) only on a hull that flies, because only that
+    kind's `update` charges one.
 
 **`standOnGround` is not on that list and that is the point of the whole
 design.** It has never heard of `flies`.
@@ -1571,7 +1780,7 @@ which was never the thing that was wrong.
 ### Three gaps, all accepted on purpose
 
 - **`vel` stays horizontal and `standOnGround` remains the sole owner of
-  `body.position.y`.** Putting a Y component through `moveWithCollisions` was
+  `pos.y`.** Putting a Y component through the sweep was
   the obvious move and is wrong: the collision ellipsoid's floor sits
   `climbHeight/2` above the hull's bottom, so a descending machine would be
   stopped by the collider and put back by the plank, once a frame, for ever. The
@@ -1584,6 +1793,55 @@ which was never the thing that was wrong.
 - **No autorotation.** A rotor that stops lifting simply stops lifting, and the
   machine falls at gravity. That is correct and it is also what makes leaving a
   hull in the air a decision.
+
+### A person's landing is charged off their REPORTS
+
+**The crash is one check in `Vehicle.update`, and a hull a person flies never
+runs `update` anywhere that may be hurt.** Their page PREDICTS it (`predicted`
+refuses every blow) and the simulation POSES its copy from what they report
+(`updateRemote`) — so until `FINDINGS.md` 60 was fixed a person-flown
+helicopter took no crash damage at all, in a match always and offline from
+`BABYLON_EXIT.md` X2.5a C4b. The posed copy's own `jolt` cannot stand in: the
+authority poses at 60 Hz off reports arriving at ~20, so its measured vertical
+rate is a train of spikes and zeros and `standOnGround`'s airborne branch
+extrapolates a step past each report — a `jolt` off that crashes helicopters in
+level flight.
+
+**So the simulation asks the same arithmetic of the REPORT series**
+(`src/sim/reportedLanding.ts`, run by `SimCore.applyDrive` on every accepted
+`drive`, spent by `SimCore.advance` right after the hulls move through the same
+`Vehicle.crash`). Per sample: the plank under the reported position, banded off
+the previous sample's tracks (`Vehicle.restAt`, `standOnGround`'s own
+`plankUnder`); the rise rate is the PLANK's if the reported centre stands on it
+and the report's own vertical motion otherwise; the jolt is the change in rise
+rate across the sample, clamped to `joltLimit`; `crashCost` charges it. The
+interval is the REPORTER's clock (`DriveCommand.time`): the client's
+`DriveMessage.time` — offline as in a match since X2.5c C4, the page's own
+`hullClock` before that — BOUNDED against when its messages arrive
+(`Match.onStamp`, `STAMP_SLACK` — an honest client's own stamp to the bit, a stretched one spent at the arrival rate), with
+two samples closer than half an upload interval taken as one
+(`SimCoreOptions.reportGap`). Nothing reported is a velocity — where the hull
+was and when, the `updateRemote` bargain. **A correction breaks the series**:
+the authority's `hullcorrect` stops the client's machine where it puts it, so
+the first report after one (`resync`) is a rebase rather than a rate, and the
+descent it cut is carried to the next rate, which a touchdown pays —
+`reportedLanding.ts`, "A broken series", and `npm run corecheck`'s
+`sarab/break`.
+
+**With every step a sample the rule IS `standOnGround`'s arithmetic** — which
+is what the offline page reported until X2.5c C4 and what `corecheck`'s bare
+core still does, measured on Sarab (`npm run corecheck`, `sarab/crash`) to
+6e-11 of 129 points against the bot path on the same flight. **At `INPUT_HZ` —
+every person's rate now, offline included — it errs two ways, both measured
+there**: on the client's clock — a whole-ms `Date.now()`
+read a millisecond or so late moves a 50 ms interval's rate a few percent,
+±21 points at 8 m/s — and HIGH on a descent whose rate changes inside its last
+interval, because the wire sees the rate before the change: a full-up flare at
+0.6 m costs 70 to a bot and 122 on the wire, exact clock or not. It cannot err
+the other way on purpose: a descent cannot steepen past `descentRate`, so a
+late dive has nothing to hide. A gentle landing, a firm one under the
+threshold, low level flight over 8 m of uneven ground and a climb and a
+descent in the air cost nothing on every path.
 
 ## What a hit is worth: `DamageKind`
 
@@ -1638,7 +1896,7 @@ entirely, and the shape a round is tested against is the shape that is drawn.
 ## The TRACKS, and the one thing armour does that is not a weapon
 
 **A hull kills what it drives through.** `crushSweep` (`systems/hullRules.ts`,
-one function both simulations call) runs immediately after
+one function, which the core calls for every host) runs immediately after
 `VehicleSystem.update`, once per frame per moving hull, and puts down
 every enemy body the collider is standing in.
 
@@ -1648,7 +1906,7 @@ and the collision bake are all built once from the finished collider set, and a
 thing that MOVES cannot be in any of them. That is the ragdoll's rule and the
 hull is an instance of it rather than an exception to it, and the consequence
 is stated everywhere it lands: **bots walk through a parked tank exactly as
-they walk through a corpse.** `moveWithCollisions` is no answer either — it
+they walk through a corpse.** The sweep is no answer either — it
 sweeps the HULL out of the world's boxes, and a body is not one of them. So
 before this, a driver could put eleven metres a second through a squad standing
 in the road and the squad stood there unmoved. Everything else on this vehicle
@@ -1673,7 +1931,7 @@ under a bridge a tank is crossing — nothing at all of him is inside the box.
 
 `rotX` is 0 on this box and stays 0 (`rayBox` writes it once; the collider never
 tilts, only the picture leans), which is what lets both height terms be
-unrotated. The enabled/pickable gate is `rayBox`'s, so a hull that has been
+unrotated. The `present` gate is `rayBox`'s, so a hull that has been
 taken away crushes nothing; a WRECK still could, and never does, because
 `tank.alive` is the first of the three gates below — and that gate is doing real
 work now rather than restating a fact about wrecks, because `Vehicle.coast`
@@ -1685,7 +1943,7 @@ moves one.
 | --- | --- |
 | `tank.alive` | a wreck mowing down whatever it was rolling toward when it died. **The one gate here that stops something that would otherwise HAPPEN**: a wreck keeps the momentum it was killed with and `coast` carries it, so a burning hull genuinely does slide through the street it died in — it simply cannot kill anybody doing it |
 | `speed >= crush.minSpeed` (1.5 m/s) | a hardstanding becoming a mincer. Bots walk into parked armour all round, for the reason at the top of this section, and a hull with no speed gate would fill its own side's ticket count while sitting still |
-| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `hullRules.driverOf` is where a person's seat and the bot crew are asked in `VehicleSystem`'s own order — each simulation answers the person half (`HullRules.personIn`) |
+| a DRIVER | crediting a kill to nobody. It is barely a rule — an empty hull is also one that is not moving — but `by` is what a kill is filed against, and `hullRules.driverOf` is where a person's seat and the bot crew are asked in `VehicleSystem`'s own order — each `HullRules` host — the core, and a match client's prediction — answers the person half (`HullRules.personIn`) |
 
 The gunner is never the killer: the man on the cupola gun moves nothing.
 
@@ -1719,26 +1977,26 @@ derived from the bearing, which is right by the same derivation every other
 death uses.
 
 The kill itself takes the ordinary doors: `creditKill` files the row (keyed on
-the flag the VICTIM fell in, like every other kill), `registerBotKill` charges
-the ticket and offers the corpse to the pool, and a player victim needs neither
-because `takeDamage` is the one door a death offline takes. A player DRIVER
+the flag the VICTIM fell in, like every other kill), the bot's death door
+(`SimCore.onKill`) charges the ticket and the page offers the corpse to the pool
+when that death arrives off the wire (`NetRoster.onDeath`), and a player victim
+needs neither because `takeDamage` is the one door a person's death takes. A player DRIVER
 gets the hitmarker and its note, on the same terms a shell's direct hit gets
 them; a bot crew gets none of it.
 
-### In a match it is the authority's, and a driven hull is swept like any other
+### It is the simulation's, and a driven hull is swept like any other
 
-On the client `crushSweep` is offline by construction and is never guarded for:
-`updateWorld` returns at its first line in a match. The authority calls the same
-function from `HeadlessGame.step`, and the one way the two calls differ is that
-the authority's sweeps **every** hull on the field, the ones a PERSON is driving
-included — because its `personIn` answers for every peer, where the client's
-answers only for its own player. Those are posed on
-that side from the wire — but `Vehicle.updateRemote` measures `speed` out of the
-ground the hull covered, precisely so everything downstream reads a remote hull
-the way it reads a local one, so a person running a squad over resolves there
-exactly as a bot crew's hull does. Nothing about it is predicted on the client:
-the driver learns of the kill when the killfeed says so, which is the same round
-trip a shell's blast already takes.
+The page never calls `crushSweep`. The simulation core does, from
+`SimCore.step` — the authority's in a match and the page's own match's offline
+(the page's own core's from `BABYLON_EXIT.md` X2.5a C4a until X2.5c C4) — and
+it sweeps **every** hull on the field, the ones a PERSON is driving included,
+because its `personIn` answers for every person it holds. Those are posed from the person's report (`drive`, off the
+wire — offline as in a match since X2.5c C4) — but
+`Vehicle.updateRemote` measures `speed` out of the ground the hull covered,
+precisely so everything downstream reads a remote hull the way it reads a local
+one, so a person running a squad over resolves there exactly as a bot crew's
+hull does. Nothing about it is predicted on the page: the driver learns of the
+kill when the killfeed says so — a round trip, offline as in a match.
 
 ## Two seats, and what each of them is
 
@@ -1751,8 +2009,8 @@ pair of booleans indexed by `DRIVER` (0) and `GUNNER` (1), and the split is:
 | `GUNNER` | **no** | the CUPOLA machine gun, laid by walking its ring to the same camera's order | the same chase camera |
 
 **The first person aboard drives**, and that rule is stated in exactly one
-place — `chooseSeat` in `entities/Vehicle.ts`, which `Game.offeredSeat` asks to
-word the prompt and `HeadlessGame.seat` asks to grant it, so the chair a prompt
+place — `chooseSeat` in `entities/hullSeats.ts`, which `Game.offeredSeat` asks to
+word the prompt and `SimCore.seat` asks to grant it, so the chair a prompt
 names is the chair the server seats you in. It takes who holds each chair
 (`SeatHolder`: open, a bot, a person — each process answering from its own
 tables) and the chair asked for, and answers in one order: that chair if free,
@@ -1803,20 +2061,20 @@ bot crew never denies the player their own armour** — and the objection is
 answered rather than dropped: the eviction has a PROMPT in front of it now, in
 the words the ground offer already uses (`TAKE OVER TANK`, `TAKE OVER GUN`
 against a bot; `SWAP SEAT` into an empty chair). A PERSON is never moved, on
-either side: `Game.seatHeldBy` is what tells the three kinds apart — offline
-through `VehicleCrew.crewOf`, in a match through `VehicleState.by`/`by2` against
-the roster, which is the one exception to "a client never learns which slots
+either side: `Game.seatHeldBy` is what tells the three kinds apart — through
+`VehicleState.by`/`by2` against the roster, offline as in a match (never
+`VehicleCrew.crewOf`, a crew table no client holds), which is the one exception to "a client never learns which slots
 are bots", made because this draws a PROMPT. The authority's twin is
-`HeadlessGame.seatHolder`, reading the crew table the client cannot.
+`SimCore.seatHolder`, reading the crew table the client cannot.
 
 **The authority makes the same move and needed a line of its own for it.**
-`HeadlessGame.seat` is one method for mounting and crossing, and its fall-back
+`SimCore.seat` is one method for mounting and crossing, and its fall-back
 when the chair asked for is taken is *the other chair* — which on a crossing is
 the chair the player just left, so a swap against a bot gunner silently put
 them back where they started. The eviction below it was unreachable from that
 path, because after the release a crossing never sees both chairs taken. **A
 crossing is `chooseSeat` with `only` set** — the chair named or nothing — on
-both sides: `Game.canSwapSeat` offers the key with it, and `HeadlessGame.seat`
+both sides: `Game.canSwapSeat` offers the key with it, and `SimCore.seat`
 asks it BEFORE releasing the chair the player is in, so a refused crossing
 leaves them sitting where they were rather than in no chair at all.
 
@@ -1845,7 +2103,7 @@ really got out:
 
 | on mount | why |
 | --- | --- |
-| `setBodyHidden(true)` | there is no rifle in a driver's hands, and the viewmodel is parented to a camera that is now twelve metres behind a tank |
+| `setBodyHidden(true)` | there is no rifle in a driver's hands, and the viewmodel hangs off a camera that is now twelve metres behind a tank |
 | `player.invulnerable = true` | the HULL is what is being shot at. This stops rounds LANDING |
 | `battle.removeHuman(player)` | …and this stops bots AIMING. Both are needed: a bot that could still acquire an unkillable target would stand there firing at it for the rest of the round |
 | `vehicleCam.take(tank)` | the view opens down the hull's own heading |
@@ -1934,7 +2192,8 @@ every frame, so the conquest occupancy count, the minimap arrow, the audio
 listener's fallback and the leash all keep answering "where is the player" with
 "in that tank". A consequence worth naming: **a tank parked on a flag captures
 it**, because the crew inside it counts exactly as a body standing there would.
-The TANK is not in `Game.combatants` and never captures anything on its own.
+The TANK is not in the combatant list the authority counts occupancy from
+(`SimCore` assembles it each step) and never captures anything on its own.
 
 ## The turret is a MASS, and a rate limit alone could not say so
 
@@ -2008,8 +2267,8 @@ node further out.
 
 **Its bearing is a WORLD angle, and that is the single decision the feature
 rests on.** `Vehicle.mgYaw`/`mgPitch` are held in the world exactly as
-`turretYaw`/`gunPitch` are, and `Vehicle.aimMg` writes the DIFFERENCE onto
-`rig.mgMount`. The mount is parented to the turret, so a bearing held
+`turretYaw`/`gunPitch` are, and `Vehicle.aimMg` writes the DIFFERENCE into
+the pose a view draws `rig.mgMount` from. The mount is parented to the turret, so a bearing held
 *relative* to it would be dragged round by every traverse the driver asked
 for — a gunner laid on a doorway would be swept off it the moment the main gun
 moved, which is the same failure a hull turning under a held turret would be
@@ -2096,6 +2355,9 @@ weapon has. The report was a gunner who could not see what he was shooting at.
 fixed separately and neither fix knows a kind.
 
 ### The eye, the anchor and the look point were COLLINEAR
+
+**A chase camera's look point may never sit on its own eye ray** —
+`CONFIG.vehicles.frameLift` is an ANGLE that fades out as the view looks down.
 
 `place` took `look = anchor + dir * distance * 0.9` and `eye = anchor - dir *
 distance`, with a comment saying that looked "a little PAST the tank rather than
@@ -2294,7 +2556,7 @@ A hardstanding's hull is LIVE, a WRECK, or GONE:
 
 **A respawn is never refused.** A hardstanding is in `MapBuilder.keepClear`, so
 nothing is ever built on one, and the only thing that could be standing there is
-a body — which resolves itself, because `moveWithCollisions` pushes them out on
+a body — which resolves itself, because the sweep pushes them out on
 their next frame. Refusing would mean a side losing its armour for the rest of
 the round because a bot was loitering, which is far worse than a shove.
 
@@ -2382,9 +2644,9 @@ is the whole point. At 0.9 the fall ate nearly all of the speed, the wreck lande
 at 2.9 m/s and scrubbed 20 cm, and what a player saw was a lurch and then a
 vertical drop.
 
-The move is `narrowedMove`, the third of the three sweeps `CLAUDE.md` allows — a
-sweep that walked `scene.meshes` would price a burning hull on the size of the
-map. **A wreck that hits a building has ARRIVED**: the velocity is re-read off the
+The move is `moveBody` (`CollisionField`), the third of the three sweeps
+`CLAUDE.md` allows — a sweep that walked `scene.meshes`, as Babylon's once did,
+would price a burning hull on the size of the map. **A wreck that hits a building has ARRIVED**: the velocity is re-read off the
 ground actually COVERED rather than docked by a fraction, so a slide along a wall
 keeps the along-wall share and a head-on stop keeps nothing, and it is bounded by
 what was ASKED, because a sphere being ejected out of a box covers a great deal of
@@ -2632,8 +2894,7 @@ the audio context — which is already holding these voices exactly as it holds
 the tail of the last shot, and stopping them as well would put a half-second
 wind-down under the fresh voice the resume rebuilds. It is also what makes a map
 rebuild safe without knowing anything about one — the key is the hull's index in
-the fleet, and `installMap` runs from `loading` and from the editor, neither of
-which steps a fleet.
+the fleet, and `installMap` runs from `loading`, which steps no fleet.
 
 ## The dust under a rotor
 
@@ -2656,26 +2917,34 @@ spooled down or has no rotor at all is one whose emitter is running at a rate of
 zero. Nothing is spawned and nothing is scheduled, which is `Sfx`'s rule for the
 held-open ambience voices arriving in the other half of the frame.
 
-### What a GPU particle system here may and may not do
+### What a GPU particle field here may and may not do
 
 These were `BlastDust`'s, recorded in `docs/grenades.md` while that class
-existed, and are Babylon's rather than the game's. Moved here verbatim when the
-blast stopped using particles, because a GPU emitter is still built here:
+existed, and were Babylon's rather than the game's. Moved here when the blast
+stopped using particles, because a GPU emitter is still built here — and since
+`BABYLON_EXIT.md` X4.7d the rings are OUR renderer's fields (`ParticleField`s
+of the `"ring"` feature set, stepped and drawn by `render/ParticleDraw.ts`),
+Babylon's `GPUParticleSystem` ported exactly, so every rule below is the port's
+because it was Babylon's:
 
-- **A stopped system refuses manual emissions too** (the update shader gates its
-  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst system
+- **A stopped field refuses manual emissions too** (the update shader gates its
+  emit branch on `stopFactor != 0`), so `stop()` is not a way to hold a burst field
   idle. Each is started once and left started; with `emitRate` zero an idle one emits
-  nothing and costs nothing.
+  nothing and costs nothing (at rest it still dispatches and draws nothing: its
+  count is zero until it first emits, and stays up after until a reset).
 - **`updateSpeed` is `1/60`**, which is what makes the numbers mean what they say:
-  the GPU clock advances by `updateSpeed * scene.getAnimationRatio()` and that ratio
-  is `dt * 60`, so a lifetime is seconds and an emit power is m/s. (`Atmosphere`'s
+  the GPU clock advances by `updateSpeed` × the frame's animation ratio
+  (`SceneFrame.animationRatio`, `scene.getAnimationRatio()` until
+  `BABYLON_EXIT.md` X5.4g) and that ratio is `dt * 60`, so a lifetime is
+  seconds and an emit power is m/s. (`Atmosphere`'s
   0.012 is deliberately not that.)
-- **A colour gradient may only be added BEFORE a system's first render** — the
-  narrower rule under what `BlastDust` stated as "the fade cannot be curved"; see
-  below for how `RotorWash` spends it.
-- **In emit-rate-controlled mode a `GPUParticleSystem` re-emits into a ring of
+- **A ring's gradients are BAKED ONCE**, at its first ready test, as Babylon made
+  its textures once — so they are stated in `RotorWash.buildRing` before
+  `start()`, and a map whose colours differ gets new rings rather than a
+  repaint (below).
+- **In emit-rate-controlled mode a field re-emits into a ring of
   `max(emitRate * maxLifeTime, this frame's emission)` slots from a circular write
-  pointer**, so a burst system's ring is exactly one `manualEmitCount`, and a second
+  pointer**, so a burst field's ring is exactly one `manualEmitCount`, and a second
   burst inside the first's life overwrites its slots. `Atmosphere` documents the
   other side of this invariant.
 
@@ -2756,7 +3025,7 @@ dust comes out dark. **`foamColor` is near-white on every map by construction**,
 because that is what froth is, so it carries none of it: raw, a rotor over
 Cinderhaven's bay at night threw a ring of daylight-white spray onto a surface
 whose own foam was being drawn at about half that. `RotorWash.surfaceLight` is
-the correction and it is `WaterShader`'s own three terms taken at the value a
+the correction and it is `wgsl/water.ts`'s own three terms taken at the value a
 flat surface gets — the ambient whole, the sky fill whole (that shader's note:
 water is the most up-facing surface on any map), and the key by how far above
 the horizon it is. The bands themselves are deliberately not reproduced: a
@@ -2766,11 +3035,22 @@ quantised step is a thing a lit SURFACE does and a puff of spray is not one.
 
 The other half of a downwash on water is not a particle at all — it is the
 surface going matte, foaming and throwing a wake — so it is drawn by
-`WaterShader`, out of the same normal, the same mirror and the same foam mix the
+`wgsl/water.ts`, out of the same normal, the same mirror and the same foam mix the
 surface already has. `RotorWash` publishes the SITES (x, z, the ring's radius,
 0..1) because it is already asking each machine the only question the shader
 needs, and `Game` hands them to `WaterSystem.setWash` on the line under
 `rotorWash.update`.
+
+**Both halves FADE with the hull** on a map that states a hull draw distance
+(`EnvironmentSpec.hullDrawDistance`, `BABYLON_EXIT.md` X4.2d's post-commit
+review, the project owner's decision): `Game.fadeHulls` asks each hull its
+fade off the cull's eye just before `rotorWash.update`, which is handed the
+fades by fleet index and spends them on each ring's `emitRate` and each
+site's strength — the AMOUNT of wash, never its throw — so a helicopter
+fading out at range thins its dust, its spray and its hole with it, and one
+faded out entirely is silenced and publishes no site. On every map that
+states no distance the fade is exactly 1, and a number times 1 is that
+number.
 
 **That push is from `tick` and not from the camera tail beside `water.update`,
 and both halves of the reason are about WHERE each one runs.** The tail is only
@@ -2820,33 +3100,39 @@ life, ~0.3 s) is the up-ramp, and it costs a little density — the alpha is now
 under its peak at both ends of a life instead of one, so `opacity` went 0.65 to
 0.72 to put the cloud back where the sweep had left it.
 
-**`BlastDust` says a colour gradient on a GPU system takes the whole scene's
-rendering down, and it is right about what it measured — but the rule underneath
-is narrower, and it is the rule that lets this file have the curve that one
-cannot.** A gradient texture changes the VERTEX BUFFER LAYOUT: with one, the
-per-particle `color` attribute is gone and the shader samples the gradient
-instead (`gpuParticleSystem.pure.js` — `_GetAttributeNamesOrOptions`, and the
-`!this._colorGradientsTexture` guards around the buffer build). Those buffers are
-built by `_initialize()` on a system's FIRST RENDER and never again, while the
-gradient texture is created whenever the update effect is next recreated. So a
-gradient added to a system that has already drawn leaves the buffers and the
-effect disagreeing about the vertex format, which on WebGPU is not a wrong
-colour but a dead scene.
+**A ring's gradients are three textures and they are BAKED ONCE**, which is
+how the ring is wired. `render/ParticleDraw.ts` bakes them at the ring's first
+ready test (`_recreateUpdateEffect`'s, kept across a reset), off the stops `RotorWash.buildRing` and `paint` stated, exactly as
+Babylon's `GPUParticleSystem` baked its own (`ParticleField.bakeColorGradients`
+and `bakeFactorGradients`, `_bakeColorGradientData` and `_bakeFactorGradientData`
+ported, proven element for element against the parent's arrays at X4.7d): the
+colour an 8-bit RGBA texture of 256 x **2** — two rows, so the light and dark
+halves of the pair are lerped per puff by its own seed and the two-tone body
+survives the ramp — the size and the velocity a 256 x 1 pair of floats each.
+The stops are alpha 0, 0.72 at a fifth of a life, and 0. So the gradients are
+stated before `start()`, the environment arrives on `build` rather than through
+a `setEnvironment` of its own, and a map whose dust is a different colour gets
+NEW rings rather than a repaint — the only thing that ever disposes one inside a
+session, and so the one thing that draws a ring's random textures again. **The
+rebuild decides two things, and the port kept it for both**: when a ring's random
+textures are drawn, and where the rings stand in `ParticleDraw`'s one
+creation-ordered list. On a palette change the motes are rebuilt first
+(`atmosphere.apply`, earlier in `installMap`) and the rings after them, so the
+rings go to the end of the list and draw after the ash. A repaint in its place
+is a later commit if the bank's bytes allow it, and it owes the ORDER a check as
+well as the draws: it would leave the rings where they were, so a map change
+that rebuilds the motes would put them behind the rings and flip the
+ring-against-ash order in a rotation.
 
-**So the rule is "before the first render", not "never"** — and the whole of how
-this class is wired is that rule. Gradients are added in `buildRing`, before
-`start()` and before the ring has been offered to a frame; the environment
-therefore arrives on `build` rather than through a `setEnvironment` of its own;
-and a map whose dust is a different colour gets NEW rings rather than a repaint,
-which is the only thing that ever disposes one inside a session. `BlastDust`
-re-tints per install on systems that have been drawing since the `Game` was
-constructed, so for that class the conclusion stands unchanged.
-
-Verified on the live client rather than inferred: the ring's gradient texture
-comes back 256 x **2** — two rows, so the light and dark halves of the pair are
-still lerped per puff by its own seed and the two-tone body survives the ramp —
-with stops at alpha 0, 0.72 at a fifth of a life, and 0, and the scene went on
-rendering (frame 430 to 541 over the second after).
+**Under Babylon's particle system this was a harder rule, and it is gone with
+it.** A gradient texture changed a `GPUParticleSystem`'s VERTEX BUFFER LAYOUT —
+the per-particle `color` attribute dropped and the shader sampling the gradient
+instead — while its buffers were built at its first render and never again, so
+a gradient added to a system that had already drawn left the buffers and the
+effect disagreeing about the vertex format, which on WebGPU was not a wrong
+colour but a dead scene (what the retired `BlastDust` measured). Our fields pull
+their slots out of storage by a stride fixed with the feature set, so there is
+no vertex layout to disagree with; what is left is the bake's once.
 
 ### The tint is the FLOOR where a blast's cloud is the MIST
 
@@ -2971,6 +3257,31 @@ entries are emitted in matters as well: an entry's INDEX is a hull's identity on
 the wire (`VehicleState.i`), so a hand-authored list that regenerates in a
 different order is two builds that disagree about which hull is which.
 
+**A map that shortens how far a hull is DRAWN owes it the guns' reach**
+(`EnvironmentSpec.hullDrawDistance`, `BABYLON_EXIT.md` X4.2d; `docs/world.md`'s
+overrides have the whole argument). A hull is a gun as well as a picture, and
+one faded out while its shell can still land on the player looking for it is
+an unseen shooter — so the field is floored, at the resolve and in every build,
+at `hullDrawFloor()`: the farthest a kind's fire lands from its muzzle
+(`HULL_REACH.fire`, the tank shell's 340 m plus its 7 m blast), plus the
+farthest a viewer's eye stands from what of him it can hit (`HULL_REACH.eye`,
+the helicopter's chase camera to its hull's far corner, 22.4 m) and a muzzle
+from its hull's measure centre (8 m), over the 0.9 of the distance the fade
+starts at — ~419.4 m today. Both reach terms are read off this file's specs,
+so **a longer range, a bigger blast, a further chase camera or a fourth kind
+raises the floor by itself**, and a kind added with a longer reach than the
+tank's moves every map that states a distance. **The third term is not
+read, it is MEASURED and GUARDED**: how far a muzzle stands from its hull's
+measure centre is a fact about the model — a barrel's length, a turret's
+place — so it is `CONFIG.graphics.culling.hullFade.muzzle` (8 m against the
+tank main gun's 7.68 turned to the rear), and a dev build sweeps every kind's
+muzzles and gunner's sight through their whole traverse when the hull kits
+are built and throws if one reaches past it (`vehicleModels.ts`'
+`checkMuzzleReach`): a longer barrel or a fourth kind owes that number a
+raise, and the first dev boot says so. The crews' own reach is far inside
+it (95 m, the gunner's 70), which is not what binds: a person can sit in the
+seat.
+
 ## Bots drive, and the road graph turned out not to be the blocker
 
 This entry used to be in the list below, and the reason it gave was: *"an AI
@@ -3003,7 +3314,7 @@ it disposes the fleet.** `Game.installMap` opens with exactly that —
 `clearVehicle` before a single thing is thrown away, "because the hull it
 belongs to is about to stop existing" — and the authority did not: it ASSERTED
 instead that a rotation had already emptied every seat, on the grounds that
-`Match` retires every peer, and `NetPlayer.retire` is exactly the half that
+`Match` retires every peer, and `SimPlayer.retire` is exactly the half that
 clears the SEAT and not the list. What that left was a person nothing in the
 round could see: out of `hittablesAgainst` and out of `acquire` for the rest of
 the match, so no bot ever fired at them again, no round could land on them and
@@ -3021,7 +3332,7 @@ Three things a driver keeps that a benched bot does not:
 
 - **Its life.** Still `alive`, still holding its roster slot and its scoreboard
   row. Burning the hull kills the crew and charges the ticket, through the
-  ordinary door — `Bot.takeDamage` then `Game.registerBotKill`, with the hull's
+  ordinary door — `Bot.takeDamage` then the core's bot death door, with the hull's
   own centre as the bearing the blow came from, so the corpse is thrown clear of
   the wreck rather than lying down beside it.
 - **Its position**, slaved to the hull every frame by `Bot.nudgeTo` —
@@ -3140,9 +3451,10 @@ because each will be re-introduced by anything that adds a second vehicle.
   shorter than 2.95 m dives straight back into the box within the hull's own
   length. Measured: no line of sight to a body standing in the open at 20, 25,
   30, 40 or 50 m dead ahead. The fix is the chase camera's — take the hull out of
-  the pick for the length of the ray, two property writes and no allocation, made
-  by the CALLER because `world/solid.ts` forbids minting a predicate that closes
-  over a mesh. `Game`'s `CrewCtx.visibleFrom` is where it lives.
+  the answer for the length of the ray, made by the CALLER as the query's `skip`
+  (`RayWorld.blocked`, through `BattleSystem.losBetween`), no allocation and no
+  write to the hull; no query takes a predicate, so none is minted that closes
+  over one. `Game`'s `CrewCtx.visibleFrom` is where it lives.
 - **A whisker fan must reach the nose, and must be denser than the narrowest
   thing it may not hit.** With the probes spread evenly from a third of the reach,
   anything closer than four metres was invisible — which never showed on a
@@ -3394,7 +3706,7 @@ argument that a machine which answers an obstacle by climbing needs the run-up
 rather than the near field. That opened a nine-metre hole directly in front of
 a hull whose rotor disc is ten metres across, and `WHISKER_DEPTHS`' own hour
 was paid a second time one axis up: measured on Sarab, a pilot flew into the
-side of a building at fifteen metres, `moveWithCollisions` refused every metre
+side of a building at fifteen metres, the sweep refused every metre
 of the drive, and `freeFromWalls` walked the machine sideways out of the wall
 for the rest of the round while the fan reported clear air and the engine note
 said fifteen knots. **The near field is what a TURN swings a bearing onto, and
@@ -3412,8 +3724,8 @@ stand high enough to reach a machine twelve metres over the roofs.
 
 The first is the near-field hole above.
 
-The second is that **`moveWithCollisions` opens with `getAbsolutePosition()`,
-and on the AUTHORITY nothing had ever computed one.** That value is whatever
+The second is that **Babylon's `moveWithCollisions` opened with
+`getAbsolutePosition()`, and on the AUTHORITY nothing had ever computed one.** That value is whatever
 `computeWorldMatrix` last wrote; on a client the render walk writes it once a
 frame, so nothing in this tree ever had to say so. The server does not render.
 A node that is merely MOVED does not report itself out of sync, so its FIRST
@@ -3424,10 +3736,21 @@ of colliders standing at 0,0 whatever its route said, and a bot crew took two
 minutes to cross ground it covers in twenty seconds.
 It was there for as long as bots have crewed anything and nothing could see it,
 because the only tool that watches a headless round prints tickets and kills
-rather than positions. `narrowedMove` forces the matrix now, which is one 4x4
-compose per sweep per frame against the two sweeps this game has; the Sarab
-authority tick is unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201
-both).
+rather than positions. The fix then was to force the matrix before every
+sweep, one 4x4 compose per sweep per frame; the Sarab authority tick was
+unmoved by it (p50 0.101 ms before, 0.086 after, p95 0.201 both). **Since
+`BABYLON_EXIT.md` X2.1 there is no matrix to force**: the sweep starts from
+the body's own position and meets every other hull at its `rayBox()`, which
+reads the hull's position too, so a sweep on the authority reads no world
+matrix at all. **Nor does anything else on a hull since `BABYLON_EXIT.md` X2.2
+C8**: the three muzzles, the last node reads the authority made on one, were
+FORCED (a forced read walks every ancestor, so they were never stale), and are
+now the same float32 chain replayed off the hull's fields (`hullFrame.ts`; see
+"Where a round leaves", above). A bot's muzzle, the other forced read, needs
+none since C5 (`soldierPose.ts`). So the rule `CLAUDE.md` used to state — a
+node read on the authority owes a forced matrix — had no reader left, and since
+C11 it states the converse: no simulation reads a node, and the authority
+builds no rig and no hull model it could read one off.
 
 ### What it does, measured
 
@@ -3456,6 +3779,23 @@ are mirror images of each other:
 | --- | --- | --- |
 | **client** | the one hull this player is DRIVING | every other hull |
 | **authority** | every bot-driven hull | the hulls with a person at the sticks |
+
+**Offline the page is that client and its core is that authority**
+(`BABYLON_EXIT.md` X2.5a C4b): the same two rows, with the `DriveMessage`
+replaced by a `drive` command submitted every frame and trusted rather than
+validated. So the hull a person drives is ONE machine on both sides of the wire
+— the driver's picture (the linkage steer, the lean off the drive, the gun's
+kick on the frame it fires) and the driver's handling alike — and what the
+remote half lacks, it lacks offline too. **The crash is the one thing that
+gap cost and it is closed on both at once**: a posed hull runs `updateRemote`,
+which charges nothing, so the core charges a person-flown landing off the
+reports themselves (`src/sim/reportedLanding.ts`, "A person's landing is
+charged off their REPORTS" above, `FINDINGS.md` 60). Offline the trigger is
+what it is in a match: the page predicts the round (`Game.fireShell`,
+`fireMg`) and reports it as a `shell` or an `mg`, and the core decides. Until
+X2.5c C4 it was asked of the page's own core between its step and the page's
+fleet, the one moment the two copies stood in the same place
+(`Game.pullHullTrigger`).
 
 **The second seat is a second pair of questions and NOT a mode on the first**,
 because the two chairs in one hull can be filled by two different kinds of
@@ -3589,7 +3929,7 @@ makes "the first man aboard drives" a fact about the server's own copy of the
 fleet at the instant the ask arrives rather than something a client decided.
 
 **A SEAT SWAP is the same message**, from a peer already in that hull naming
-the other chair, and it goes through the same `HeadlessGame.seat`: the chair
+the other chair, and it goes through the same `SimCore.seat`: the chair
 under them is released and the new one taken on the same frame, while
 everything a body owes while it is aboard — the invulnerability, the absence
 from every bot's target list — is left standing, because none of it was ever
@@ -3621,7 +3961,7 @@ being shot at.
 **A driver reports a hull INSTEAD of a body, not beside one.** `DriveMessage`
 replaces `MoveMessage` for as long as the seat is held, because a driver has no
 body of their own — `Game.updateDriver` slaves `Player.position` to the hull
-and `HeadlessGame.step` does the same on the far side. A client sending both
+and `SimCore.step` does the same on the far side. A client sending both
 would be reporting one person in two places, and `Match.onMove` refuses a
 seated player for exactly that reason (as `onShot` and `onGrenade` refuse one:
 there is no rifle in a driver's hands).
@@ -3672,7 +4012,13 @@ lid a wall.
 offline and one with teeth on Harrowmead, the single map with both an open
 boundary and a hardstanding. Without it the first driver to take the long way
 round a flank is counted out and burned in his own tank by a countdown he was
-never shown.
+never shown. **A FLYING hull's crew are** — pilot and gunner both, because a
+machine forty metres up clears the boundary boxes — and when the count runs
+out the core puts the person out of the chair first and then kills them from
+nobody, filed `other`: a seat makes its person invulnerable, so a kill aimed
+at a seated body was refused every step and a pilot past the margin flew on
+for ever (the X2.5a review). The hull is not burned; it is left where it was,
+as any machine its crew got out of.
 
 **The shell is re-fired rather than rewound.** `ShellMessage` takes `onShot`'s
 gates — a rate, a cone and an origin — and then uses none of the claim: the
@@ -3733,10 +4079,9 @@ ray happened to find, which can be a street away.
   parked one, for the ragdoll's reason above, and one per squad still shoots
   ROCKETS at it. What they DO do now is crew it — see the section above, which
   is where this entry used to say they never would.
-- **The editor builds none.** A vehicle is not level data to be authored — the
-  hardstanding is, and that is a layout entry. A solid, pickable mesh with no
-  `SelectionRef` behind it is also something the centre-screen pick can land on
-  and fail to resolve.
+- **A vehicle is not level data.** The hardstanding is, and that is a layout
+  entry; the map editor built no fleet for that reason (gone since
+  `BABYLON_EXIT.md` X5.3c).
 - **~~No shadow.~~ Built** — in a map of its own, not the world's. The entry
   that used to stand here gave the right reason a hull is not registered with
   `ShadowSystem` — that depth map re-renders only when the texel-snapped focus
@@ -3744,7 +4089,8 @@ ray happened to find, which can be a street away.
   shadow — and that is still why it is not. What answered it is
   `systems/BodyShadows.ts`, re-rendered every frame and carrying soldiers and
   hulls and nothing static, where a hull is one instance of the proxy box: its
-  collider box, so moving that box moves the shadow. See "The bodies' map" in
+  collider box, off the hull's own fields (never its mesh, since X4.1c), so
+  moving the hull moves the shadow. See "The bodies' map" in
   `docs/rendering.md`.
 - **~~No third kind, and in particular nothing that FLIES or FLOATS.~~ Three,
   and the third one flies** — see "Flying, and what `standOnGround` turned out
@@ -3771,9 +4117,9 @@ ray happened to find, which can be a street away.
   differently from the rest of it, which is the part of a landing a player is
   actually watching.
 - **A flying hull is not collided UPWARD.** `vel` is horizontal and
-  `standOnGround` owns `body.position.y` alone, so nothing stops a helicopter
+  `standOnGround` owns `pos.y` alone, so nothing stops a helicopter
   climbing through the underside of an arch. Putting a Y component through
-  `moveWithCollisions` is the obvious fix and is worse: the collision ellipsoid's
+  the sweep is the obvious fix and is worse: the collision ellipsoid's
   floor sits `climbHeight/2` above the hull's bottom, so a descending machine
   would be stopped by the collider and put back by the plank once a frame for
   ever. Same class as "a hull pivots through whatever it is beside".

@@ -1,6 +1,7 @@
 /**
  * server/simulate.ts — Runs a whole Conquest round headlessly and prints what
- * happened. `npm run simulate [map] [difficulty] [rounds] [seed]`.
+ * happened. `npm run simulate [map] [difficulty] [rounds] [seed] [--events]
+ * [--phases]`.
  *
  * **A round is a function of its map, its difficulty and its SEED**
  * (`src/systems/RoundRandom.ts`), and every round printed says which seed it
@@ -11,6 +12,35 @@
  * does. **`fight` is what to compare**: a hash over every death and every
  * award in the order they happened, each with its tick, its slot and its
  * kind — the whole kill list, where the board beside it is only its totals.
+ *
+ * **Everything here is read off the core's event ring** (`src/sim/events.ts`),
+ * drained after every step exactly as `Match` drains it, and folded in the
+ * order the core wrote it: the hash folds each `award` and `death` with the
+ * tick it was STAMPED with, which is the tick the step that raised it ran.
+ * Nothing is wired onto the core; this host is a reader of what it says.
+ *
+ * **`--events` prints the list itself**, one line per event in the order the
+ * simulation raised it, before the summary: every death and award the hash
+ * folds, and every piece of news `Match` puts on the wire — a bot's kill,
+ * shot and reload, a capture, a neutralisation, a blast, a fire, a tank gun, a
+ * cupola gun, a pane, a seat, a spawn, a person's damage and near miss. Each
+ * line is `<tick> <kind> <fields>`, numbers printed in full, so two runs of
+ * one seed diff line by line and a divergence is named by the first line that
+ * differs rather than by a hash that moved. The kinds and the line format are
+ * kept byte for byte: the ring's
+ * presentation-only kinds — a footstep, a tracer, a hit, a hull's kick, a
+ * rocket, a fire going out — are left out, being most of the file and
+ * nothing `Match` sends. The lines are written between steps, outside the
+ * timed region.
+ *
+ * **`--phases` hands the core a clock and turns its step timing on**
+ * (`SimCoreOptions.timing`, `SimCore.timeSteps`)
+ * — the timing the page's profiler files as `sim` and its five children — and
+ * prints each phase's mean beside the tick. The core reads that clock inside
+ * the timed region, twelve times a step, so the tick printed is the tick with
+ * the instrument in it; the plain run is still the one that measures a match,
+ * which passes no clock. The fight is the same fight either way: the clock is
+ * read into `SimCore.timing` (`src/sim/stepTiming.ts`) and nothing else.
  *
  * This is the server's equivalent of playing a round, and it is the only way to
  * see the simulation on its own — no clients, no rendering, no wall clock. A
@@ -47,9 +77,13 @@ import { PerformanceObserver } from "node:perf_hooks";
 import { TICK_HZ } from "../src/net/protocol";
 import { CONFIG } from "../src/config";
 import { MAPS } from "../src/world/maps";
+import { perTeamOf } from "../src/world/layout";
 import { freshSeed, parseSeed } from "../src/systems/RoundRandom";
 import type { DeathCause } from "../src/systems/killRules";
-import { HeadlessGame } from "./HeadlessGame";
+import { SimCore } from "../src/sim/SimCore";
+import { SIM_PHASES } from "../src/sim/stepTiming";
+import { EV, EventCursor, decode, type EventKind, type Vec3 } from "../src/sim/events";
+import { loadSimWorld } from "./world";
 
 /** Give up rather than spin forever if a round somehow cannot end. */
 const MAX_SIM_MINUTES = 45;
@@ -122,31 +156,37 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const def = MAPS.find((m) => m.id === mapId);
   if (!def) throw new Error(`no map "${mapId}" (have ${MAPS.map((m) => m.id).join(", ")})`);
 
-  const game = new HeadlessGame();
+  // The AUTHORITY's options, because this is the authority's fight: the
+  // history is recorded every tick as `Match` records it, so the tick cost
+  // printed below is the one a match pays.
+  const game = new SimCore({
+    rewind: true,
+    timing: timePhases ? () => performance.now() : undefined,
+  });
+  game.timeSteps(timePhases);
+  // `--phases`: the core's own timing of each step, summed per phase and
+  // read after the step's clock — see the header.
+  const phaseMs = new Float64Array(SIM_PHASES.length);
+  let phaseTotal = 0;
+  // `--events`: one line per event, stamped with the tick it was raised on —
+  // see the header. Null when not asked for, so a plain run builds no string.
+  const log = printEvents
+    ? (tick: number, line: string) => process.stdout.write(`${tick} ${line}
+`)
+    : null;
   const captures: string[] = [];
   let blasts = 0;
-  game.onExplosion = () => blasts++;
   let blazes = 0;
-  game.onBlaze = () => blazes++;
-  // `onCapturedEvent` and NOT `conquest.onCaptured`, which is the simulation's
-  // own and pays everybody standing on the flag: a callback has one owner, and
-  // taking that one here would have quietly turned the capture awards off in
-  // the one tool that exists to check them.
-  game.onCapturedEvent = (point, by) => captures.push(`${point.def.id}->${by}`);
   // Every award paid, by kind. The cheapest check there is that the scoring
   // rules actually fire in a whole round: no `capture` line means the flags
   // paid nobody, and no `defend` line means the attack/defend split is not
   // being reached at all.
   const awards: Record<string, number> = {};
   // The fight as a list, hashed as it happens — see the header. Fed from the
-  // two hooks below, which between them see every death and every payout.
+  // `award` and `death` events, which between them are every death and every
+  // payout.
   const fight = createHash("sha256");
   let events = 0;
-  game.scores.onAward = (slot, kind, points) => {
-    awards[kind] = (awards[kind] ?? 0) + 1;
-    fight.update(`${game.tick} a ${slot} ${kind} ${points}\n`);
-    events++;
-  };
   // Every death, filed by the door it came through and by whether anybody was
   // paid for it. The two checks under `reconcile` are what this is for; the
   // per-cause breakdown is what makes a failure readable rather than merely
@@ -155,26 +195,84 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
   const uncredited: Partial<Record<DeathCause, number>> = {};
   let bodies = 0;
   let creditedBodies = 0;
-  game.onDeath = (slot, cause, credited) => {
-    fight.update(`${game.tick} d ${slot} ${cause} ${credited ? 1 : 0}\n`);
-    events++;
-    bodies++;
-    deaths[cause] = (deaths[cause] ?? 0) + 1;
-    if (credited) creditedBodies++;
-    else uncredited[cause] = (uncredited[cause] ?? 0) + 1;
+
+  /**
+   * Drains what the core said on its last call and folds it — the hash, the
+   * tallies, and the `--events` line. Called after every call made on the
+   * core, which is the host's half of the ring's contract.
+   */
+  const drained = new EventCursor();
+  const read = (): void => {
+    game.drain(drained);
+    for (let i = 0; i < drained.count; i++) {
+      if (!READ.has(drained.kind(i))) continue;
+      const ev = decode(drained, i);
+      const t = ev.tick;
+      switch (ev.type) {
+        case "blast":
+          blasts++;
+          if (log) log(t, `explode ${v3(ev.at)} ${ev.power}`);
+          break;
+        case "ignited":
+          blazes++;
+          if (log) log(t, `blaze ${v3(ev.at)}`);
+          break;
+        case "captured": {
+          const id = game.conquest.points[ev.point].def.id;
+          captures.push(`${id}->${ev.by}`);
+          if (log) log(t, `captured ${id} ${ev.by}`);
+          break;
+        }
+        case "award":
+          awards[ev.kind] = (awards[ev.kind] ?? 0) + 1;
+          fight.update(`${t} a ${ev.slot} ${ev.kind} ${ev.points}\n`);
+          events++;
+          if (log) log(t, `award ${ev.slot} ${ev.kind} ${ev.points}`);
+          break;
+        case "death":
+          fight.update(`${t} d ${ev.slot} ${ev.cause} ${ev.credited ? 1 : 0}\n`);
+          events++;
+          if (log) log(t, `death ${ev.slot} ${ev.cause} ${ev.credited ? 1 : 0}`);
+          bodies++;
+          deaths[ev.cause] = (deaths[ev.cause] ?? 0) + 1;
+          if (ev.credited) creditedBodies++;
+          else uncredited[ev.cause] = (uncredited[ev.cause] ?? 0) + 1;
+          break;
+        // The rest of what `Match` relays, taken only for the list. Nobody is
+        // seated in a simulated round, so `nearmiss`, `spawn`, `seat` and
+        // `damage` never appear today; they are printed so a tool that grows
+        // synthetic players lists them.
+        default:
+          if (log) log(t, describe(ev, game));
+          break;
+      }
+    }
   };
 
-  // **Nothing sets the roster here any more, and that is the fix rather than
-  // an omission.** This tool exists to measure the ROUND a player actually
-  // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side; it used
-  // to have to say so itself, because the authority fielded sixteen on every
-  // map. It does not any more — `HeadlessGame.startRound` fields the map's own
-  // number through `BattleSystem.setFielded` — so asking again here would be a
-  // second opinion about a number that now has one owner. See
+  // **The roster is `Match`'s pair, stated as `Match` states it** — the
+  // ceiling as the pool and the map's own `perTeamOf` fielded out of it
+  // (`RoundSpec`). This tool exists to measure the ROUND a player actually
+  // gets, which on Sarab is `MapLayout.perTeam`'s twenty-four a side, and the
+  // slot layout is what every outcome stream is keyed by — so a pool sized
+  // any other way would be a different fight from the authority's. See
   // `server/Roster.ts`.
 
   const built = Date.now();
-  await game.startRound(def, difficulty, true, seed);
+  // The host's three jobs (`SimCore`'s header): load the world, hand over the
+  // seed, anchor the clock. The anchor decides nothing here — nobody is seated,
+  // so nothing is ever rewound against it — and is taken as `Match` takes it.
+  const { collision, floor } = await loadSimWorld(def);
+  game.startRound({
+    def,
+    collision,
+    floor,
+    difficulty,
+    pool: CONFIG.bots.maxPerTeam,
+    fielded: perTeamOf(def.layout),
+    seed,
+  });
+  game.anchor(Date.now());
+  read();
   const buildMs = Date.now() - built;
 
   const dt = 1 / TICK_HZ;
@@ -213,6 +311,13 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     const ms = performance.now() - t0;
     samples[ticks] = ms;
     startedAt[ticks] = t0;
+    // What the step said, folded outside the clock above.
+    read();
+    if (timePhases) {
+      const t = game.timing;
+      phaseTotal += t.total;
+      for (let i = 0; i < SIM_PHASES.length; i++) phaseMs[i] += t.ms[i];
+    }
     // Counted AFTER the clock is read, so the instrument is never inside its
     // own measurement. A target is the honest test of contact: it is what
     // gates the line-of-sight ray, the shot and the aim, which is where a
@@ -273,6 +378,16 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     difficulty,
     seed,
     buildMs,
+    /**
+     * `--phases`: the mean ms per step of the core's own timing — the whole
+     * step and each `SIM_PHASES` entry — or null when not asked for.
+     */
+    phases: timePhases
+      ? {
+          step: phaseTotal / Math.max(1, ticks),
+          each: SIM_PHASES.map((name, i) => ({ name, ms: phaseMs[i] / Math.max(1, ticks) })),
+        }
+      : null,
     wallMs,
     ticks,
     simSeconds: ticks / TICK_HZ,
@@ -302,7 +417,7 @@ async function runRound(mapId: string, difficulty: number, seed: number) {
     winner: game.conquest.winner,
     tickets: [...game.conquest.tickets] as [number, number],
     // Summed out of the per-slot board rather than kept alongside it — see
-    // `HeadlessGame.teamScore`.
+    // `SimCore.teamScore`.
     kills: [game.teamScore(0).kills, game.teamScore(1).kills] as [number, number],
     losses: [game.teamScore(0).deaths, game.teamScore(1).deaths] as [number, number],
     // The board's third column, which a whole headless round is the cheapest
@@ -405,7 +520,79 @@ function reconcileProblems(r: Awaited<ReturnType<typeof runRound>>): string[] {
   return out;
 }
 
-const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = process.argv.slice(2);
+/** A vector as three full-precision numbers, for `--events`. */
+function v3(v: Vec3): string {
+  return `${v[0]},${v[1]},${v[2]}`;
+}
+
+/**
+ * The event kinds this tool reads: the two the hash folds, the two counted,
+ * and the rest of what `Match` relays — the C0 list, which `--events` prints
+ * byte for byte. Everything else is drained and left undecoded.
+ */
+const READ: ReadonlySet<EventKind> = new Set<EventKind>([
+  EV.blast,
+  EV.ignited,
+  EV.captured,
+  EV.neutralised,
+  EV.award,
+  EV.death,
+  EV.botDown,
+  EV.botFired,
+  EV.botReload,
+  EV.cannon,
+  EV.mg,
+  EV.glass,
+  EV.nearMiss,
+  EV.spawned,
+  EV.seat,
+  EV.damaged,
+]);
+
+/** One `--events` line for a kind the round does not otherwise fold. */
+function describe(ev: ReturnType<typeof decode>, game: SimCore): string {
+  switch (ev.type) {
+    case "neutralised":
+      return `neutralised ${game.conquest.points[ev.point].def.id}`;
+    case "botDown":
+      return (
+        `kill ${ev.killer} ${ev.slot} ${ev.head ? 1 : 0} ` +
+        `${v3(ev.from)} ${ev.damage} ${ev.kind}`
+      );
+    case "botFired":
+      return `fire ${ev.slot} ${v3(ev.muzzle)}`;
+    case "botReload":
+      return `reload ${ev.slot}`;
+    case "cannon":
+      return `cannon ${ev.tank}`;
+    case "mg":
+      return `mg ${ev.tank}`;
+    case "glass":
+      return `glass ${ev.panes.join(",")} ${v3(ev.at)} ${v3(ev.dir)}`;
+    case "nearMiss":
+      return `nearmiss ${ev.slot} ${v3(ev.at)}`;
+    case "spawned":
+      return `spawn ${ev.slot} ${v3(ev.pos)} ${ev.yaw}`;
+    case "seat":
+      return `seat ${ev.slot} ${ev.tank} ${ev.seat} ${v3(ev.at)} ${ev.yaw}`;
+    case "damaged":
+      return (
+        `damage ${ev.slot} ${ev.amount} ${ev.from ? v3(ev.from) : "-"} ${ev.killed ? 1 : 0} ` +
+        `${ev.kind} ${ev.health} ${ev.respawnIn}`
+      );
+    default:
+      return ev.type;
+  }
+}
+
+const argv = process.argv.slice(2);
+/** `--events`: print the ordered event list — see the header. */
+const printEvents = argv.includes("--events");
+/** `--phases`: the core times its own step — see the header. */
+const timePhases = argv.includes("--phases");
+const [mapId = "hollowmere", difficulty = "1", rounds = "1", seedArg] = argv.filter(
+  (a) => a !== "--events" && a !== "--phases",
+);
 // Refused rather than ignored: a typo that quietly drew a fresh seed would
 // print a different fight and call it the one that was asked for.
 const fixedSeed = seedArg === undefined ? null : parseSeed(seedArg);
@@ -434,6 +621,13 @@ for (let i = 0; i < Number(rounds); i++) {
       `           ${r.spikes.over} ticks over ${SPIKE_MS} ms, ${r.spikes.collected} of them ` +
         `during one of the round’s ${r.spikes.pauses} GC pauses (${r.spikes.gcMs.toFixed(0)} ms total)`,
       `           first spikes on ticks ${r.spikes.at.join(", ") || "(none)"}`,
+      ...(r.phases
+        ? [
+            `  phases:  step ${r.phases.step.toFixed(4)} ms mean, of which ` +
+              r.phases.each.map((p) => `${p.name} ${p.ms.toFixed(4)}`).join(", ") +
+              ` (the core's own clock, --phases)`,
+          ]
+        : []),
       `  contact: peak ${r.peakContact} of ${r.roster} bots on a target at once`,
       ...r.contact
         .filter((b) => b.ticks > 0)

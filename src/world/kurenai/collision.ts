@@ -12,17 +12,19 @@
  *
  * `rayGroups` is the other half of that: 60 `strut` boxes in
  * 20 groups — the timber a round DOES stop on, with no body
- * behind it. One group per collider mesh, because the server merges each group
- * the way the client does. They are not in `boxes` because nothing derived
- * from geometry may see them: a 0.1 m rail is a shape the nav grid can only get
- * wrong.
+ * behind it. One group per placement, its posts and rails, kept grouped as the
+ * client groups them, because the server rebuilds the same list from them and
+ * parity compares it group by group; `RayWorld` indexes every strut on its
+ * own. They are not in `boxes` because nothing derived from geometry may see
+ * them: a 0.1 m rail is a shape the nav grid can only get wrong.
  *
  * `boxGroups` is a third view of the SAME boxes: 212 of them, in
- * 161 groups, that the client merged into one collider mesh
- * each because they are a scatter region's props and a pick costs per mesh.
- * Indices into `boxes`, not boxes — everything derived from geometry still
- * reads them one at a time. Anything named here is not also given a mesh of
- * its own.
+ * 161 groups, that the client groups by locality: the scatter's
+ * blocking props, one group per cluster square across every region. What reads
+ * it is a body's sweep, whose ties go in the groups' own order — `RayWorld`'s
+ * rank, every box no group names and then each group's, the same on both
+ * sides. Indices into `boxes`, not boxes — everything derived from geometry
+ * still reads them one at a time.
  *
  * `panes` is the glass a round can take away: 0 sheets, each with a
  * collider in `boxes` (the eighth entry is its index there) holding a body out
@@ -42,7 +44,7 @@
 import type { MapCollision } from "../collision";
 
 export const KurenaiCollision: MapCollision = {
-  sourceHash: "7d6df759951a0530",
+  sourceHash: "16e354f3e3155b33",
   boxes: [
   [444,20,2,0,10,221,0,0],
   [444,20,2,0,10,-221,0,0],

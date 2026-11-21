@@ -1,0 +1,254 @@
+# post.mjs --ignore=@plans/webgpu-ref/post-expected.txt — the differences each
+# BABYLON_EXIT.md X5.2 sub-step EXPECTS of the post chain's probe, against the
+# log of the parent it was measured on. One `--ignore` path pattern a line
+# (`**` any segments, `*` any run within one, `[stage=glob]` an element by its
+# STAGE), `#` a comment; README.md, "post.mjs", and compareLogs' comment.
+#
+# Key a pattern on the DRAW it moved — `**.draws[stage=<name>].<field>` — never
+# on a pass index: an index names whatever draw a scenario puts there, so a
+# pattern on one excuses that field on ANOTHER stage's draw too. A sub-step
+# adds its own section, says why each line is expected, and leaves the earlier
+# sections standing (a pattern that excuses nothing is printed, not failed).
+
+# X5.2b (f697f0e): the glow's box filter (`glow.down`, `low` only) and its four
+# blurs (`glow.blur`) are our draws, compared with the Babylon draws they
+# replaced under the same names. Three fields differ by construction:
+# - `pipeline.call`: ours `createRenderPipelineAsync` ahead of the frame,
+#   Babylon's `createRenderPipeline` at its first draw.
+# - `bundle`: Babylon's draw was recorded into a render bundle; ours is a
+#   bundle-list item run on the pass encoder itself (seam item 3).
+# - `viewport`: Babylon set the whole target before its bundle; ours sets none,
+#   which a render pass defaults to (the same `[0, 0, w, h, 0, 1]`).
+**.draws[stage=glow.*].pipeline.call
+**.draws[stage=glow.*].bundle
+**.draws[stage=glow.*].viewport
+
+# X5.2c1: the grade (`grain`) is our draw — the last stage of our post chain
+# (`render/PostChain.ts`), drawn into the canvas's pass, which `PostPasses`
+# opens as Babylon's `_finalizeFrame` opened it for Babylon's last pass;
+# Babylon's prefix writes the grade's input (`camera.outputRenderTarget`, set
+# only across the post phase), cleared as Babylon's `activate` cleared it. Every
+# pass, its attachments, load ops, clears, labels and hashes are compared, and
+# every field of the grain's draw but X5.2b's three, which differ by
+# construction for the same reasons:
+**.draws[stage=grain].pipeline.call
+**.draws[stage=grain].bundle
+**.draws[stage=grain].viewport
+# And Babylon's own bookkeeping, which X5.2c1 moves by design (`chain` is the
+# CPU facts beside a frame, not a draw): the camera's list no longer holds the
+# grade, and the blur's toggle no longer takes the grade off and re-appends it,
+# so the list is shorter and has fewer holes (`list`); a grade switched off is
+# no longer a detached Babylon pass (`off`); and the grade has no `attached`
+# (`slots.grade.attached`) — its switch is its stage's `active()`.
+**.chain.list
+**.chain.off
+**.chain.slots.grade.attached
+
+# X5.2c2, the shafts and the blur: both are stages of our post chain, drawn
+# ahead of the grade into the chain's POOL (one target a pass position,
+# `PostPasses.openPool`, bound and cleared as Babylon's `activate` bound and
+# cleared the reader's input), compared with the Babylon draws they replaced
+# under the same names, every target named by the stage that writes it.
+# X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=shafts].pipeline.call
+**.draws[stage=shafts].bundle
+**.draws[stage=shafts].viewport
+**.draws[stage=blur].pipeline.call
+**.draws[stage=blur].bundle
+**.draws[stage=blur].viewport
+# The shafts' two SHADOW MAPS are bound as our renderer holds them
+# (`own ?? hostTexture`, `ShadowBindings`' pattern; `BABYLON_EXIT.md` rule 5):
+# the same texture (`shadow.world`, `shadow.bodies`), through the view and
+# sampler its owner made — the view with no descriptor (the defaults: a 2d
+# view of its one mip and one layer, where Babylon's wrapped view stated
+# them), and the sampler nearest as Babylon's but at WebGPU's defaults for
+# the two fields a one-mip 2d texture never reads (`addressModeW`
+# clamp-to-edge where Babylon's said repeat, `lodMaxClamp` 32 where it said
+# 0). The bytes the march reads are the same: the pass's output hash is
+# compared, and equal.
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.dimension
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.mipLevelCount
+**.draws[stage=shafts].bindGroups[1].entries[2].view.view.arrayLayerCount
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.dimension
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.mipLevelCount
+**.draws[stage=shafts].bindGroups[1].entries[3].view.view.arrayLayerCount
+**.draws[stage=shafts].bindGroups[1].entries[6].sampler.addressModeW
+**.draws[stage=shafts].bindGroups[1].entries[6].sampler.lodMaxClamp
+**.draws[stage=shafts].bindGroups[1].entries[7].sampler.addressModeW
+**.draws[stage=shafts].bindGroups[1].entries[7].sampler.lodMaxClamp
+# And Babylon's bookkeeping: the shafts hold no slot in the camera's list
+# (their switch is their stage's `active()`, latched as their attach was).
+**.chain.slots.shafts
+
+# X5.2c2, FXAA: our draw, the chain's first stage of ours after the ink
+# (`shaders/Fxaa.ts`, `wgsl/fxaa.ts`), compared with the Babylon draw it
+# replaced; `DefaultRenderingPipeline` deleted, the `scene.autoClear = false` it
+# set stated by `Game` in its place (at cb17a73, until the picture change below,
+# a459e7c, put it back to true), so every pass's clear is the parent's.
+# X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=fxaa].pipeline.call
+**.draws[stage=fxaa].bundle
+**.draws[stage=fxaa].viewport
+# And Babylon's bookkeeping: FXAA holds no slot in the camera's list and has no
+# attach (its switch is its stage's `active()`); the probe no longer logs either.
+**.chain.slots.fxaa
+**.chain.slots.fxaaAttached
+
+# X5.2c2's picture change (`scene.autoClear` true, the owner's decision, row
+# "X5.2, autoClear"), against the FXAA commit's log: the frame's OPENING canvas
+# pass — always `passes[0]`, the scene's first bind, so the index names that pass
+# alone in every scenario — clears its colour to the scene's clear colour where
+# it loaded it, so its load op, clear value and the canvas's hash after it move;
+# every later pass, the final canvas's hash among them, is unmoved (the last
+# pass overwrites the canvas whole). COMMENTED OUT, being for a comparison ACROSS
+# the change only — a later sub-step compares against a parent on the same side
+# of it and must see its own passes[0]; pass them as --ignore= by hand to compare
+# a log from before it:
+#   **.passes[0].color[0].loadOp
+#   **.passes[0].color[0].clear
+#   **.passes[0].out[0].hash
+#   **.chain.autoClear
+
+# X5.2d: the ink — the chain's first stage, its glow compose in its last line —
+# is our draw (`shaders/CelInk.ts`, `wgsl/celInk.ts`), compared with the Babylon
+# draw it replaced under the same name, `ink`; no Babylon `PostProcess` is left
+# on the camera. X5.2b's three fields, for X5.2b's reasons:
+**.draws[stage=ink].pipeline.call
+**.draws[stage=ink].bundle
+**.draws[stage=ink].viewport
+# And the scene draws STRAIGHT INTO the frame (`PostPasses.frameTarget`, the
+# camera's `outputRenderTarget` through the camera's render), clearing it itself: Babylon's own
+# clear of a camera's output target under `scene.autoClear` — its colour and
+# depth at the frame's first bind, its depth again as the camera's render binds
+# it — where `PostProcess.activate` cleared the ink's input once. So the frame's
+# OPENING pass — always `passes[0]`, the scene's first bind, so the index names
+# that pass alone in every scenario — is the frame's, cleared, with no draw, where
+# it was the canvas's (its label, target, format, usage and view, its depth's
+# target, usage and stencil clear, and what it leaves: the frame cleared, and
+# the frame's depth now hashed, having `COPY_SRC`, where the canvas's had none);
+# and the pass the scene draws in — always `passes[1]` — LOADS the frame's colour
+# that opening pass cleared, where it cleared it (its load op and clear value),
+# its depth cleared as before. Every other field of both passes, every later
+# pass and every target's hash, the final canvas's among them, are compared, and
+# equal: the canvas's pass, the last, loads the canvas as before, which the last
+# stage overwrites whole. What this moves that NO frozen frame shows is the
+# canvas on a boot frame before our chain's pipelines are built — no pass
+# clears it any more, so it holds the swap chain's transparent zeros where
+# a459e7c left the clear colour — X5.2d's picture change, the owner's
+# decision (BABYLON_EXIT.md row "X5.2, the boot canvas"), seen in the live
+# half (menu frames lose their `->canvas/clear`), which is printed and not
+# compared.
+**.passes[0].label
+**.passes[0].color[0].target
+**.passes[0].color[0].format
+**.passes[0].color[0].usage
+**.passes[0].color[0].view.format
+**.passes[0].depth.target
+**.passes[0].depth.usage
+**.passes[0].depth.stencilClearValue
+**.passes[0].out[0].target
+**.passes[0].out[0].hash
+**.passes[0].out[1]
+**.passes[1].color[0].loadOp
+**.passes[1].color[0].clear
+#
+# X5.4e: the frame's passes before the chain are OUR renderer's
+# (`render/FrameTargets.ts`, `Renderer.end`, `recordGlowMask`, `glowBlurPass`):
+# the frame's opening clear, the main pass, the glow's mask and its blur's five,
+# each on a target made as Babylon made it and begun with Babylon's load ops and
+# clear values — every pass's attachments, label, targets, draws and hashes
+# compared, and equal — but recorded on Babylon's UPLOAD encoder, the one it
+# submits first, after the prepares, where Babylon began them on its RENDER
+# encoder. So those passes' `role` moves (render → upload: the opening pass, the
+# main pass, the mask and the four or five blurs — `passes[0]` to `passes[7]`,
+# the chain's passes after them keeping `render`), and `whole`'s per-buffer item
+# lists move with them; the frame's command ORDER across the two buffers is the
+# same item for item (X5.4e's record: `wholeflat.cjs`).
+**.passes[0].role
+**.passes[1].role
+**.passes[2].role
+**.passes[3].role
+**.passes[4].role
+**.passes[5].role
+**.passes[6].role
+**.passes[7].role
+**.whole.submits[*].buffers[*].items
+# The scene clears nothing: `scene.autoClear` and `autoClearDepthAndStencil` are
+# held false, the frame's clear being ours (with no output target on the camera
+# the scene's one clear would be a pass of its own on the canvas).
+**.chain.autoClear
+**.chain.autoClearDepthAndStencil
+# The glow's six are our renderer's, whose sampler is a descriptor compared draw
+# by draw in every bind group that reads them: Babylon's render target's three
+# sampling fields (`samplingMode`, `wrapU`, `wrapV`) have no counterpart and
+# read null.
+**.chain.glow.targets.*.samplingMode
+**.chain.glow.targets.*.wrapU
+**.chain.glow.targets.*.wrapV
+# And ONE queue write a frame fewer (272 bytes): Babylon's own scene uniform
+# buffer for the glow mask's render target (`Scene ubo #0 for glowMask`:
+# viewProjection, view, projection, vEyePosition, inverseProjection), which the
+# target's render rewrote (`updateTransformMatrix(true)`) and no draw read — the
+# mask's render list was empty. Every other write of the frame is the same, in
+# the same order and size (X5.4e's record: `writes.mjs`, one deploy frame's
+# writes on both trees, listed write by write).
+**.whole.submits[*].writes.writeBuffer
+**.whole.submits[*].writes.bytes
+#
+# X5.4f: the post chain's passes are OUR renderer's (`render/ChainPasses.ts`):
+# a pool target made as `PostPasses` made its `RenderTargetTexture` and its pass
+# begun as `bindFramebuffer` and `clear` began one, the canvas's pass begun as
+# `_startMainRenderPass(false)` began Babylon's main pass (the swap chain's
+# texture, a `depth32float` of our own, both loaded) — every pass's
+# attachments, label, targets, draws, bind groups and hashes compared, and
+# equal, and every queue write the same in number and bytes — but recorded on
+# Babylon's UPLOAD encoder after the frame's own passes, where Babylon began
+# them on its RENDER encoder, which holds nothing now. So every chain pass's
+# `role` moves (render → upload; every pass of every scenario reads `upload`
+# after it), and `whole`'s per-buffer item lists move with them; the frame's
+# command ORDER across the two buffers is the same item for item (X5.4f's
+# record: `wholeflat.cjs` over all 34 scenarios, 562 items).
+**.passes[*].role
+**.whole.submits[*].buffers[*].items
+#
+# X5.4g: the frame's ONE encoder and ONE submit are ours (`render/FrameSubmit.ts`,
+# `core/FrameLoop.ts`): every pass of the frame is recorded into the encoder our
+# loop makes after each submit, where it was recorded into Babylon's UPLOAD
+# encoder (the seam's item 9, retired), and the frame is submitted as ONE command
+# buffer, where Babylon's `flushFramebuffer` submitted two (its upload encoder,
+# then its render encoder, empty since X5.4f). So every pass's `role` moves
+# (upload → frame), and each submit's `buffers` moves with it: one buffer
+# (`frame`, labelled `frame encoder`) where there were two (`upload`, labelled
+# `[#|#] - UploadEncoder`, and an empty `render`). The frame's command ORDER and
+# items are the same item for item (X5.4g's record: `wholeflat.cjs` over all 34
+# scenarios, 562 items), and every queue write the same in number and bytes.
+**.passes[*].role
+**.whole.submits[*].buffers
+#
+# X5.4h: the DEVICE and the CANVAS are the game's (`main.ts`,
+# `src/core/CanvasSurface.ts`) and Babylon's `WebGPUEngine` is not constructed
+# (the scene stands on a `NullEngine`, `src/core/SceneEngine.ts`). The device is
+# asked for exactly as Babylon asked for its own — no limits, no feature but
+# `timestamp-query` under `?gpu` — and the context configured exactly as it
+# configured its own (the format, usage 17, premultiplied): every limit, every
+# feature, every `configure` argument but the device it names, and every pass
+# of every scenario, with every queue write, equal. What moves is named here:
+# the device's LABEL (ours, where Babylon's was `BabylonWebGPUDevice0`) wherever
+# it is recorded; the engine's own adapter request, which passed Babylon's whole
+# options object to `requestAdapter` (`antialias`, `stencil`, the lock-step
+# three, `deviceDescriptor`, `enableGPUDebugMarkers`, `swapChainFormat` — none
+# of them a member WebGPU's `GPURequestAdapterOptions` reads) where ours passes
+# `powerPreference` alone, the one it reads, the same in both; and
+# `compatibilityMode`, an engine flag with no engine to hold it (null).
+*.statics.compatibilityMode
+*.statics.boot.adapterOptions[*].antialias
+*.statics.boot.adapterOptions[*].stencil
+*.statics.boot.adapterOptions[*].deterministicLockstep
+*.statics.boot.adapterOptions[*].lockstepMaxSteps
+*.statics.boot.adapterOptions[*].timeStep
+*.statics.boot.adapterOptions[*].deviceDescriptor
+*.statics.boot.adapterOptions[*].enableGPUDebugMarkers
+*.statics.boot.adapterOptions[*].swapChainFormat
+*.statics.boot.deviceDescriptors[*].label
+*.statics.boot.configures[*].deviceLabel
+*.statics.boot.deviceLabel

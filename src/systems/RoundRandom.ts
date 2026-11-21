@@ -7,16 +7,16 @@
  * typed (`parseSeed`). Owns no system and decides no outcome: a system asks it
  * for a stream once, when it builds the thing that draws, and keeps it.
  *
- * **Why outcomes are seeded at all** (`BABYLON_EXIT.md` X0.2, `PERF_PLAN.md`
- * C1): `Math.random` decided where every round went inside its cone, which
- * spawn a body took and where in it, and how far off a tank crew laid its gun.
- * A round could therefore never be played twice, so a bug in one could never
- * be watched again and a benchmark's fight was a different fight every run.
- * Now a round is a function of its map, its difficulty and ONE number — and
- * that number is per ROUND rather than per build, because a game whose every
- * round fought out identically would be a worse game. Normal play draws a
- * fresh one (`freshSeed`); a benchmark, a replay or a bug report passes one
- * (`?seed=`, `npm run simulate`'s fourth argument).
+ * **Why outcomes are seeded at all**: `Math.random` decided where every round
+ * went inside its cone, which spawn a body took and where in it, and how far
+ * off a tank crew laid its gun. A round could therefore never be played twice,
+ * so a bug in one could never be watched again and a benchmark's fight was a
+ * different fight every run. Now a round is a function of its map, its
+ * difficulty and ONE number — and that number is per ROUND rather than per
+ * build, because a game whose every round fought out identically would be a
+ * worse game. Normal play draws a fresh one (`freshSeed`); a benchmark, a
+ * replay or a bug report passes one (`?seed=`, `npm run simulate`'s fourth
+ * argument).
  *
  * **One stream per SHOOTER, not one for the round**, so that what one shooter
  * does cannot move another's draws. A shared stream is reproducible only while
@@ -44,9 +44,12 @@
  *    reused or renumbered silently re-rolls every round anybody wrote down.
  *  - Asking twice for one key hands back the SAME stream, so a pool rebuilt
  *    mid-session (`BattleSystem.setRoster`) picks up where its slots were.
- *  - One `RoundRandom` per simulation — `Game` offline, `HeadlessGame` on the
- *    authority — and each calls `seedRound` once per round, AFTER everything
- *    that draws has been built and BEFORE the first body spawns.
+ *  - One `RoundRandom` in the simulation — `SimCore`'s, offline and on the
+ *    authority — reseeded by `startRound` once per round, AFTER everything
+ *    that draws has been built and BEFORE the first body spawns. The page
+ *    keeps one more (`Game.random`) for the one stream it still draws, the
+ *    player's own cone (`STREAM.player`), reseeded from the same round seed
+ *    in `buildRound`; the core never registers that key.
  * Never: be drawn from by anything that only makes a PICTURE or a SOUND (the
  * casings, the blast's billows, a voice's pitch) — those stay on
  * `Math.random`, and a picture drawing from an outcome stream would make the
@@ -68,8 +71,10 @@ export const STREAM = {
   /** A bot's spread cone, by the authority's slot. */
   botShot: 2,
   /**
-   * The offline player's shooting: the spread cone, the recoil's drift and
-   * the flinch on taking a hit — everything random about where their rounds go.
+   * The player's shooting: the spread cone, the recoil's drift and the flinch
+   * on taking a hit — everything random about where their rounds go. Drawn on
+   * the PAGE (`Game.random`) and submitted with the round as a direction;
+   * never registered in the core.
    */
   player: 3,
   /** A hull's cupola gun's cone, by hardstanding index. */

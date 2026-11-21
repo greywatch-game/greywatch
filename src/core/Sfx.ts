@@ -44,7 +44,7 @@
  * half goes in that class, and a new thing either half needs from this one is
  * a member of `AudioCore` rather than a reach for a private field.
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3, Vector3Like } from "../math";
 import {
   CHANNEL_GROUPS,
   CONFIG,
@@ -699,7 +699,7 @@ export class Sfx {
    * Points the audio listener at the camera. Called once per frame, after the
    * camera has moved — same ordering rule as the lighting and fog uniforms.
    */
-  setListener(position: Vector3, forward: Vector3): void {
+  setListener(position: Vector3Like, forward: Vector3): void {
     const l = this.listener;
     if (!l || !this.ctx) return;
     this.lx = position.x;
@@ -888,10 +888,10 @@ export class Sfx {
    * A round cracking past the player's head. Not a hit and not a hit sound —
    * the supersonic N-wave, which arrives *before* the report of the rifle that
    * fired it and is the only thing that tells you you are being shot at rather
-   * than shot near. Wired from `CombatSystem.onNearMiss` for the player only
-   * offline, and from the authority's `nearmiss` event in a match — ONE method
-   * for both, so the two simulations cannot make different noises about the
-   * same round.
+   * than shot near. Wired from the core's `nearMiss` event offline and from the
+   * authority's `nearmiss` event in a match (`Game.roundPassed`, the one
+   * door) — ONE method for both, so the two cannot make different noises
+   * about the same round.
    *
    * **FIVE LAYERS MODELLED ON A RECORDED FLYBY**, and the shape they make
    * between them is the whole of why this is no longer one bandpassed burst.
@@ -927,7 +927,7 @@ export class Sfx {
    * this cue a player can act on. A blurred bearing costs more than a missing
    * Doppler.
    */
-  nearMiss(at: Vector3): void {
+  nearMiss(at: Point): void {
     const bus = this.bus("nearMiss", "impact");
     if (!this.ctx) return;
     const v = 0.9 + Math.random() * 0.2;
@@ -1540,7 +1540,7 @@ export class Sfx {
    * MOTOR in it — the layer the fourth burst below exists for — and leaves the
    * tail to the shared convolver.
    */
-  launcher(at: Vector3): void {
+  launcher(at: Point): void {
     const bus = this.bus("launcher", "explosion");
     const a = CONFIG.audio;
     const dist = this.distanceToListener(at);
@@ -2360,7 +2360,7 @@ export class Sfx {
    * different sentence: it is the difference between a second and a half of
    * window and three and a half.
    */
-  botReload(at: Vector3, voice: ReportVoice = FLAT_REPORT): void {
+  botReload(at: Point, voice: ReportVoice = FLAT_REPORT): void {
     const bus = this.bus("botReload", "mechanism");
     const dist = this.distanceToListener(at);
     if (dist > CONFIG.audio.maxDistance) return;
@@ -2387,7 +2387,7 @@ export class Sfx {
    * sound is for, which is knowing that someone is moving *now*, close, and
    * roughly over there.
    */
-  botStep(at: Vector3): void {
+  botStep(at: Point): void {
     const bus = this.bus("botStep", "footstep");
     const f = CONFIG.audio.footstep;
     const dist = this.distanceToListener(at);

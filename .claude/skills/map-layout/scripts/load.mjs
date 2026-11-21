@@ -5,11 +5,36 @@
 // stripping (Node 24), which is why this works on every map: each layout's only
 // value import is `Vector3`. The road network is the game's own
 // (`src/world/roadPaths.ts`), so "on a road" means what it means in a round.
-import { readdirSync } from "node:fs";
+//
+// **That one value import is a DIRECTORY** (`import { Vector3 } from
+// "../../math"`, every layout since BABYLON_EXIT.md X1.1, which Vite resolves
+// to `src/math/index.ts`), and Node's ESM loader refuses a directory import
+// outright (ERR_UNSUPPORTED_DIR_IMPORT) — which stopped audit, plan and views
+// before they read a layout, from X1.1 until X6.1a's review. So a resolve hook
+// (`registerHooks`, in this process only) answers a relative import under
+// `src/` that names a directory with that directory's `index.ts`, as Vite does;
+// every other specifier resolves as Node resolves it. The layouts stay as the
+// generators write them.
+import { existsSync, readdirSync, statSync } from "node:fs";
+import { registerHooks } from "node:module";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const ROOT = fileURLToPath(new URL("../../../../", import.meta.url));
+const SRC = join(ROOT, "src");
+
+registerHooks({
+  resolve(specifier, context, next) {
+    if ((specifier.startsWith("./") || specifier.startsWith("../")) && context.parentURL?.startsWith("file:")) {
+      const target = fileURLToPath(new URL(specifier, context.parentURL));
+      const index = join(target, "index.ts");
+      if (target.startsWith(SRC) && existsSync(target) && statSync(target).isDirectory() && existsSync(index)) {
+        return next(pathToFileURL(index).href, context);
+      }
+    }
+    return next(specifier, context);
+  },
+});
 const src = (...p) => pathToFileURL(join(ROOT, "src", ...p)).href;
 
 /** Map ids with a layout on disk (the dev-only proving ground included). */

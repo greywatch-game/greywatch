@@ -19,12 +19,18 @@ types from its predecessor, and `MapBuilder.build(layout, env)` takes both as
 arguments for the same reason.
 
 **The two halves are paired in `src/world/maps.ts`, and it plus
-`vite.config.ts`'s `WRITABLE` table and `scripts/collision-hash.mjs`'s `MAPS` are
+`scripts/collision-hash.mjs`'s `MAPS` (which `scripts/check-maps.mjs` reads) are
 the only existing files a new map
 touches.** A `MapDef` is `{ id, name, layout, environment, collision }`; `MAPS` is
 the registry
 and `DEFAULT_MAP` is the fallback. `Game` holds one `mapDef` field (`Game.mapDef`) and
 reads both halves off it. Nothing outside `maps.ts` may import a map's own modules.
+**A new map also owes a GENERATOR among its new files**:
+`scripts/generate-<id>.mjs`, taking `--out <dir>` (writing the two files there and
+nothing in `src/`), since `npm run maps:check` re-runs one for every row in
+`collision-hash.mjs`'s `MAPS` and fails the build on a map without it — the
+generators being the only way to author a map (`BABYLON_EXIT.md` X5.3,
+`docs/build.md`).
 The shipped maps are **Hollowmere** (night), **Greyfen** (a jungle morning, sun
 through the canopy), **Coldharbour** (a harbour town on a bay before dusk), **Harrowmead** (a
 farming vale at sunset in high summer), **Sarab** (a desert town an hour
@@ -164,10 +170,10 @@ a walled precinct round it for that reason before any other; see `BIRKAT` in
 here and is argued in that script's header: a 900 m town is some hundreds of
 buildings whose only interesting property is that none of them overlaps, and its
 floor is fifty thousand numbers. What the script emits is an ordinary layout
-file — flat arrays of one-line entries, which is what `src/editor/sourceScan.ts`
-requires — so the editor opens, patches and saves it exactly as it does
-Harrowmead's, and re-running the generator discards those edits the way
-re-running any `heights.ts` generator does.
+file, and the script is its only author: a change goes into the script and is
+re-run, and `npm run maps:check` fails the build on a byte the committed file
+differs by (the map editor that once patched it is gone, `BABYLON_EXIT.md`
+X5.3c).
 
 **Cinderhaven is the sixth and the biggest: 1,500 m of PLAY inside 2,000 m of
 ground**, 2.8 times Sarab's playable area, seeded by `npm run cinderhaven` on
@@ -332,12 +338,13 @@ engine. Seven things came out of building it and all of them outlive it:
   already refuses what grows; what a big region still owes a check against is
   water, a pad and a flag's ring.
 - **A prop a map sows by the thousand is built from PARTS**
-  (`world/parts.ts`), which the older props are not. The maple, the leaf drift
-  and the bamboo clump were first built with `MeshBuilder` like everything else
-  in `world/props/`, and some 130,000 small meshes, each uploaded to the device
-  on the way to being merged away took this map's build from 15 s to 86 s; as parts it
-  is 11-13 s. The maple is BLOCKING and built this way, and the collision bake,
-  `npm run parity` and a live round all pass with it, so a blocking prop may be.
+  (`world/parts.ts`) — and since BABYLON_EXIT.md X1.2 every prop is. The maple,
+  the leaf drift and the bamboo clump were first built with `MeshBuilder` like
+  everything else in `world/props/` then was, and some 130,000 small meshes,
+  each uploaded to the device on the way to being merged away took this map's
+  build from 15 s to 86 s; as parts it is 11-13 s. The maple is BLOCKING and
+  built this way, and the collision bake, `npm run parity` and a live round all
+  pass with it, so a blocking prop may be.
 - **A floor surface is judged under the map's own sun.** At 14.5 degrees
   `dirt` and `turf` both carve plates that read as a cracked desert pan, and
   `sand` reads as dunes. Kurenai was `flat` for that reason and read as one
@@ -417,7 +424,7 @@ mountain valley as the maples turn, built against a reference frame,
 `reference-media/new-map.jpg`; infantry only, and cut down from 750 m because
 the same kit over three times the side read as sparse and cost 88 fps where it
 now runs 154). **Sarab is the map that SPENDS the levers**, stating six of the
-eight rows below, and the first to state a `ParticleSpec.volume` — the mote
+nine rows below, and the first to state a `ParticleSpec.volume` — the mote
 field emitted around the EYE, without which `count` is a density that scales
 with a map's AREA.
 
@@ -435,7 +442,7 @@ and reached through `npm run simulate:dev`.
 
 No two maps share a module in any direction.
 
-## Eight things that look global and are the map's
+## Nine things that look global and are the map's
 
 Everything below defaults to what the two valleys are, so a map that states
 nothing is bit-identical to before any of them existed. Each was a genuine
@@ -448,8 +455,9 @@ ARGUMENT nearly everywhere: `GameMap.size` has always carried it, and `NavGrid`,
 had to change is the handful of readers that took it from nothing — `TerrainField`
 and `terrainSlab` (which now take their half-extent from the heightfield's own
 `size * cell`, since the grid states it twice), the grass mask's extent,
-`Ridge`'s outside-play assertion, the editor's coordinate spinners and terrain
-grade check, and `buildServerWorld`. Three things a larger map owes:
+`Ridge`'s outside-play assertion, the map editor's coordinate spinners (gone
+since X5.3c), the terrain grade check (`viewer/validate.ts`), and
+`buildSimWorld`. Three things a larger map owes:
 
 - `terrain.size * terrain.cell` must equal it. Nothing checks; the floor simply
   samples against the wrong origin and comes back as garbage.
@@ -463,10 +471,11 @@ grade check, and `buildServerWorld`. Three things a larger map owes:
 
 **`EnvironmentSpec.fogEnd` — how far you can see.** `FOG_WALL` in
 `config/fogWall.ts` used to be the answer and is now only the DEFAULT: a map's
-`fogEnd` is pushed by `Game.installMap` into the three systems that gate on it —
-`BattleSystem` (where a rig stops being drawn), `RagdollSystem` (where a corpse
-is not worth tumbling) and `NetRoster` (the same call for a remote body). The
-old dev warning that checked the two against each other is gone, because the
+`fogEnd` is pushed by `Game.installMap` into the two systems that gate on it —
+`NetRoster` (where a rig stops being drawn) and `RagdollSystem` (where a corpse
+is not worth tumbling). There were three until `BABYLON_EXIT.md` X2.5c C4: the
+offline page's own `BattleView` was the first, and went when every body the
+page draws became a wire body. The old dev warning that checked the two against each other is gone, because the
 disagreement it reported is now the feature.
 
 **What deliberately did NOT move with it** is the whole reason a clear map is a
@@ -483,19 +492,20 @@ one term along.
 
 **`EnvironmentSpec.bodyDrawDistance` — how far a BODY is worth drawing**,
 defaulting to `fogEnd`, clamped to it, and resolved in exactly one place
-(`bodyDrawDistanceOf`). It exists because the three gates above were pinned to
+(`bodyDrawDistanceOf`). It exists because the gates above were pinned to
 the WEATHER, and on a map with no weather that is not a distance at all:
 Coldharbour and Harrowmead both see past their own diagonals, so both of them
 draw every rig on the map at every moment, and at 1500 m that is measurably the
 largest thing in the frame — **65% of the active meshes with the roster in view,
 and 2.6 ms of a 9.2 ms frame**. It is `ENGINE_UPGRADE.md` S8.
 
-**Two things about it are the whole of its design.** The first is that all three
+**Two things about it are the whole of its design.** The first is that both
 gates are handed ONE number, resolved once by `installMap` — which is what keeps
-`bots.lodDisableDistance` and `bots.death.maxDistance` the same distance by
-construction, the property `config/fogWall.ts` was written to protect. A corpse
-refused a tumble somewhere its own rig is still being drawn would stand to
-attention until `death.hideTime`.
+the distance a rig stops being drawn (`NetRoster`'s) and the ragdoll gate
+(`RagdollSystem.viewDistance`) the same distance by construction, the property
+`config/fogWall.ts` was written to protect (the first was `bots.lodDisableDistance` until X2.5c C5 deleted
+it). A corpse refused a tumble somewhere its own rig is still being drawn would
+stand to attention until `death.hideTime`.
 
 The second is that **`WorldCulling`'s reach deliberately did not move with it**,
 and the asymmetry is the argument rather than an omission. Past `fogEnd` a
@@ -506,6 +516,97 @@ is a soldier a player may never look straight at; a BLOCK dropped early is a
 building that vanishes out of a skyline they are looking at. So the world's
 answer to a map you cannot fog is still S8's first one — **fog it**, well inside
 its own diagonal — and this field is only for the bodies standing in it.
+
+**A map's `fogEnd` is a distance from the EYE and a LANDMARK is a fixed thing in
+the world** — a fog wall chosen for the cull budget put Cinderhaven's volcano in
+flat `fogColor` from everywhere anybody played, and the fix was to buy the fog
+back and take the saving out of this row.
+
+**`EnvironmentSpec.hullDrawDistance` — how far a HULL is worth drawing**
+(`BABYLON_EXIT.md` X4.2d, `PERF_PLAN.md` A3), resolved in exactly one place
+(`hullDrawDistanceOf`) and pushed by `installMap` to the cull and nothing
+else (`WorldCulling.setHullDrawDistance`): past it no tank, truck or
+helicopter is drawn, and over its last tenth one FADES out — the bodies'
+screen door, measured from the eye to the hull's whole measure's centre and
+ending AT the distance (`WorldCulling.hullFade`,
+`CONFIG.graphics.culling.hullFade`), so a stated distance is a look call
+rather than a pop. It is the cull's alone: neither the authority nor
+`server/validate.ts` reads it, nothing a hull does in the round depends on
+it, and a hull's shadow stays its collider box whatever it says.
+
+**Its default is NO distance, not `fogEnd`, and that is the one way it is not
+`bodyDrawDistance`.** A body defaults to the fog because the roster switches
+it off there anyway; nothing ever cut a hull, so a default at the fog would
+fade every far hull over the fog's last tenth — Sarab's 504-560 m is 74.5-100%
+fog, Cinderhaven's 1,125-1,250 m 79.8-100% (the cel shader mixes in the SQUARE
+of its linear ramp, `celSurface.ts`), neither of them all of it — and drop one
+standing out of the SKY past it: a hull past `fogEnd` is drawn in pure
+`fogColor`, which is still a silhouette against a sky whose horizon colour is
+only required to sit close to the fog. A picture change on every armour map
+that set nothing. So absent is `Infinity`, every hull drawn at any range as
+before; a stated one is capped at `fogEnd` as a body's is, for the same fact
+read the other way: past the fog what is left of a hull is that flat
+silhouette, nothing a player can read, so a map that has chosen to cut hulls
+at all ends the fade where the fog ends.
+
+**A hull is a GUN as well as a picture, and that is what floors it.** A body
+past `bodyDrawDistance` is past every bot's engagement range (55 m,
+`bots.perception.engageRange`); a hull is not, because a PERSON can crew it,
+and a hull faded out while its guns still reach the player looking for it is
+an unseen shooter. The reaches, today: the tank's shell 340 m and its blast 7
+m past where it stops (`vehicles.tank.gun`), the truck's station and the
+helicopter's chin gun 210 m, the tank's cupola gun 190; the bots behind them
+far shorter — a crew engages at 95 m and its gunner at 70 (`vehicles.crew`) —
+and the launcher that hunts a hull shorter again (a rocket's ~157 m flight, a
+bot's 75 m band). So a stated distance is RAISED to `hullDrawFloor()`, which
+keeps a hull WHOLE wherever its fire can land on anybody looking for it: the
+fire's reach from a muzzle (`HULL_REACH.fire`, 347 m), the viewer's eye from
+the farthest point of what of him it can hit (`HULL_REACH.eye`, 22.4 m — a
+helicopter's chase camera 2.4 m up and 14 m back, to the far corner of its
+11.4 m hull) and a muzzle from its hull's measure centre (`hullFade.muzzle`,
+8 m over the tank's measured 7.68 with its turret to the rear), end to end,
+over the 0.9 of the distance the fade starts at — **~419.4 m**. **Two terms
+follow the kinds by themselves and one is guarded**: the fire and the eye are
+read off every kind's own numbers (`entities/vehicleKinds.ts`' `HULL_REACH`:
+a gun's `range` and `blastRadius`, a chase camera's height and distance, the
+hull's box), so a longer range, a bigger blast, a further camera or a fourth
+kind moves the floor with no edit; the muzzle's offset is the DRAWING's — a
+barrel's length, a turret's place — which no spec states, so it is a measured
+number in the config, and a dev build sweeps every kind's muzzles and gunner's
+sight through their whole traverse whenever the hull kits are built and throws
+if one reaches past it (`vehicleModels.ts`' `checkMuzzleReach`). A longer
+barrel or a fourth kind's gun owes that term a raise, and is told. It is a
+CLAMP at the resolve, in every build, and a dev build says so on the console:
+a fairness rule rather than a look, which no build may ship without, and a
+stated number that is not the round's is one its author should see. **A map
+whose fog closes inside the floor gets no distance at all**: no cut there is
+both at or inside the fog and past the reach, and the floor is the fairness
+rule — a cut at the fog would put the fade inside the reach it keeps whole. Of the four armour maps, Coldharbour (480),
+Harrowmead (520), Sarab (560) and Cinderhaven (1,250) all leave room above the
+floor.
+
+**What a map stating it owes**: nothing a layout must agree with — no bake, no
+parity, nothing the server holds — only the look call, which is the fade
+landing on ground the player can see, and the floor above; and since it is a
+LANDMARK's argument turned round (a hull is a thing in the world, the fade a
+distance from the eye), the same caution `fogEnd` takes: a hull vanishing out
+of a skyline is louder than a soldier thinning out of a street. **The look
+call includes what a hull leaves BEHIND it** (`BABYLON_EXIT.md` X4.2d's
+post-commit review, the project owner's decision): the rotor wash FOLLOWS the
+fade — its dust and spray rings' rate and the water's ripple site scaled by
+the hull's fade (`Game.fadeHulls` hands `RotorWash.update` each hull's), so
+a helicopter faded out takes its downwash with it, what is already aloft
+drifting out on its own life; but a hull's TRACERS (`CombatFx`, off the
+muzzle) and a shell's BLAST and its dust are NOT faded and are accepted as
+they are — a round and an impact are the fight, drawn wherever they land, so
+a hull past its distance can still be seen firing by its streaks and its
+hits. And the screen door's holes are INKED: the ink reads each hole's depth
+step, so on a big viewport (3440x1440) a fading tank reads as a field of
+small cross-hatched "x" marks rather than a smooth thinning — as a fading
+body does at the same distance edge. **No shipped
+map states one yet** (X4.2d): A3's measured +15.4% at 420 m on Cinderhaven was
+Babylon's per-mesh cost, and what it buys under our renderer is a per-map
+look call, taken after.
 
 **`MapLayout.surfaces` — how deep the nav graph stacks** (`CONFIG.nav.maxSurfaces`,
 3). See `docs/bots.md`: a map raises it only because it stacks FLOORS, and the
@@ -524,16 +625,29 @@ contact of 5-7 of 16 bots against 10-14 on the levels — and the same harness a
 only 17% of its ticks with nobody engaged.
 
 **What it costs is RIGS, which is why it is BOUNDED and why the pool is rebuilt
-rather than sized to the ceiling.** A bot is fourteen merged meshes, and a mesh
-in the scene is in the frame's own active-mesh walk whether the body is enabled
-or not — `WorldCulling` is explicit that a disabled mesh is skipped CHEAPLY and
-not skipped, which is the whole reason that file exists. So a pool built to
-`CONFIG.bots.maxPerTeam` (24) on every map would put six hundred meshes nobody
-is fighting into a village whose entire frame is under 2 ms.
-`BattleSystem.setRoster` therefore disposes the pool and builds a new one when
-the number MOVES, which is the one place the "built once and never disposed"
-rule bends, and it bends at a map change — where the whole world is being
-rebuilt anyway and a loading card is already up. Measured on the box this was
+rather than sized to the ceiling.** Until `BABYLON_EXIT.md` X4.1d a bot was
+fourteen merged meshes, each in the frame's own active-mesh walk whether the
+body was enabled or not (`WorldCulling` is explicit that a disabled mesh is
+skipped CHEAPLY and not skipped), so a pool built to
+`CONFIG.bots.maxPerTeam` (24) on every map put six hundred meshes nobody was
+fighting into a village whose entire frame is under 2 ms. A body is no mesh
+now — our renderer draws it as an instance of its side's kit — so what a body
+costs a frame is the cull's read of its switch, and, while it is switched
+on, its measure, its joint composes and its share of the rank draws, whose
+vertex work is each rank's longest segment TIMES the bodies drawn. A surplus
+body switched off is down to the read and its rig's memory, and the rule
+stands: the pool is the round's roster, and nothing on the page is sized to
+a ceiling no round on this map fields.
+`BattleSystem.setRoster` therefore builds a new pool when the number MOVES, and
+`NetRoster.setFielded` new rigs for it on the page when the count or the
+viewer's side moved since the session's pool was built — which on a server's
+session, living across rotations, is a map change. The page's own match is a
+fresh session every round (`Game.openLocalRound` disposes the last through
+`leaveMatch`), so offline every round builds its rigs anew, a same-map restart
+included — once, at the map's own `perTeam`, which the session's constructor is
+handed so `setFielded` finds nothing to rebuild, a known cost. That is the one place the "built once and never disposed" rule bends,
+and it bends only at a round's build, where a loading card is already up;
+inside a round it holds. Measured on the box this was
 written on, Sarab is 15.2-15.7 ms a frame at 24 a side against 10.8 at 8, warm
 and uncapped; every other map is untouched code and an untouched pool.
 
@@ -562,7 +676,8 @@ is 256 of them and 128 m is 144, bought with coarser culling and larger merged
 buffers.
 
 Two things key off a block and both follow a map's value for free, because they
-read the KEY the merge wrote rather than a size: `ReflectionSystem.encloses` —
+read the KEY the merge wrote rather than a size: the reflection bake's
+exclusion (`ReflectionSystem`'s `exclusionOf`, told to the cull as numbers) —
 a glazing group and the wall it is glazed onto are the same building because
 `PaneBlocks` and `BlockMerge` filed them under the same string — and
 `WorldCulling`, whose cells are bounded by their MESHES rather than by the
@@ -574,8 +689,8 @@ units.
 deliberate rather than an oversight. `PhysicsWorld`'s static containers and
 `GlassSystem`'s pane index are spelled with the same key and stay on the
 constant: neither is an identity — nothing reads either one — and what they
-want from a big map is the opposite of what the merge wants. `HavokPlugin.addChild`
-is quadratic in a container's children, so a bucket that grew to 128 m would
+want from a big map is the opposite of what the merge wants. Havok's
+`HP_Shape_AddChild` is quadratic in a container's children, so a bucket that grew to 128 m would
 hand back most of what S5b bought.
 
 **`MapLayout.terrainBlock` — how big a floor patch is** (`BLOCK_SIZE`, 48,
@@ -587,11 +702,13 @@ its floor, and the floor stays where it is until the map moves it.
 
 It owes a whole number of terrain cells and nothing checks — `terrainPatches`
 takes `Math.round(terrainBlock / cell)` and cuts on grid lines, so a value that
-is not a multiple simply cuts somewhere other than where it says. **Three
-callers must pass the same map's value**: `buildValley`, the server's
-`terrainColliders` (or line of sight runs over a different rise from the one the
-clients are standing on) and the editor's brush (or a stroke re-tessellates
-meshes it never touched and leaves the ones under the cursor stale). The patch
+is not a multiple simply cuts somewhere other than where it says. **Its one
+caller is `buildValley`**; the map editor's brush was a second, which had to pass
+the same map's value or a stroke re-tessellated meshes it never touched, until
+`BABYLON_EXIT.md` X5.3c deleted it. The server's `terrainColliders` was another until
+`BABYLON_EXIT.md` X2.3 took the authority's meshes away; line of sight over a
+rise is `RayWorld`'s march over the field's own cells on both sides, which no
+patch lattice reaches. The patch
 key is a mesh NAME and has never lined up with the merge's seams, which is fine
 and always was: a floor mesh carries no `metadata.block` at all.
 
@@ -611,7 +728,7 @@ It lives on the ENVIRONMENT rather than on the layout, unlike the five above,
 and that is the tell for what it is. The others are shape — how big, how deep,
 how it is cut, what the floor does. This one is a consequence of `lighting.direction`, sitting
 two fields above it, and `Game.installMap` pushes the two together. It also
-means the editor's work light inherits it for nothing, since that spreads
+means the viewer's work light inherits it for nothing, since that spreads
 `...env.lighting`.
 
 Shadow length is `h / tan(elevation)`, so Coldharbour's 40 m towers threw 25 m
@@ -652,8 +769,8 @@ big the map is.
 What it costs is texel density — `window / mapSize`, so 5.4 cm at 110 and 9.8 cm
 at 200. The four-tap kernel is measured in TEXELS and still cancels the
 staircase, but the distance at which a shadow edge is sub-pixel roughly doubles.
-`mapSize` stays global: it is baked into the `ShadowGenerator` at construction,
-and 4096 would be four times the fill on a pass that runs on most frames.
+`mapSize` stays global: it is the rung's (`CONFIG.graphics.shadowTiers`), and
+4096 would be four times the fill on a pass that runs on most frames.
 
 Three rules:
 
@@ -725,8 +842,8 @@ ground, never the colour of it. Three consequences:
   every map that states a `groundSpec`.
 - **It is a MATERIAL, so it is the one thing on an `EnvironmentSpec` that
   `applyEnvironment` cannot push.** It is baked by `MapBuilder.buildValley`, which
-  is why the editor treats a floor edit as a full rebuild and why `workLight.ts`
-  refuses to touch `floorColor` alongside the two rim colours.
+  is why the viewer's `workLight.ts` refuses to touch `floorColor` alongside
+  the two rim colours.
 
 **A surface is a FIELD sampled per texel, and nothing in one may be bigger than
 about a quarter of the tile.** Every pattern is a noise recipe — folded octaves
@@ -745,7 +862,7 @@ this replaced, which scattered a few hundred filled ellipses per tile:
   paint a damp patch across it and the patch is what advertises the period. The
   slow change of soil across a valley is `graphics.groundVariation` instead — the
   same world-space drift the flat cel colours get, applied to the ground texture
-  path in `CelShader`, where it has no period to find.
+  path in the cel shader (`wgsl/celSurface.ts`), where it has no period to find.
 - **A height plane is a DEPTH, not only a slope.** The shader carves it —
   parallax and a hard self-shadow toward the key, at the surface's own
   `bumpScale` — so a recipe is judged by what it looks like CUT: the highest
@@ -760,9 +877,7 @@ It is a vertex attribute rather than anything the environment can push, so it
 costs nothing per frame and everything at build time (measured: 128k vertices in
 71 ms, against a ~570 ms build). Two consequences for this layer: geometry added
 by a path that emits no `WorldBox` occludes nothing, which is the same blind spot
-navigation has and the same reason; and the editor's per-item rebuild moves a
-mesh without rebaking, so a dragged cottage carries stale occlusion until the
-next full rebuild. See `docs/rendering.md` for why the value lives in the colour
+navigation has and the same reason. See `docs/rendering.md` for why the value lives in the colour
 buffer's alpha.
 
 **The same bake writes the SWAY WEIGHT**, and there are two rules this layer
@@ -791,12 +906,12 @@ height is decided. It used to be the literal `0`, asserted independently in
 `MapBuilder.buildValley`, `NavGrid.rasterize`, `Player.probeGround`,
 `ShadowSystem.groundYUnder` and `GrassSystem` — five hardcodings of the same
 constant, which is why the floor could not be anything but level. The grid is 80x80
-cells of 3 m, sampled bilinearly, authored with the editor's terrain mode.
+cells of 3 m, sampled bilinearly, written by the map's generator.
 
 **The heights live in their own generated file** (`hollowmere/heights.ts`).
-`layout.ts` is authored — an ASCII village map, district commentary,
-`BANK_H`/`TERRACE_H` in place of bare numbers — and the editor patches it one line at
-a time to preserve all of that; several thousand bare numbers would drown it.
+`layout.ts` is read as a layout — district commentary and one entry a line, its
+generator's transcription of a design — and several thousand bare numbers would
+drown it.
 `heights.ts` is the opposite: pure generated data, rewritten wholesale, one grid row
 per line so a diff shows which strips of the map moved.
 
@@ -811,12 +926,13 @@ needs the floor is HANDED one:
 
 - `MapBuilder.build(layout, env, heights, opts)` takes it as an argument, and
   `Game.floor` is where the standing map's is put down — `installMap` is one
-  synchronous turn and cannot contain a fetch, so the two async doors into a
-  build (`buildRound`, `toggleEditor`) resolve it first.
-- `buildServerWorld` awaits it beside the collision bake.
-- The editor reads `map.terrain.field`, which IS that object: the terrain
-  brush writes through it and the rebuild tier reads the edits straight back,
-  exactly as it did when the field hung off the layout constant.
+  synchronous turn and cannot contain a fetch, so the one async door into a
+  build (`buildRound`) resolves it first.
+- `loadSimWorld` (`server/world.ts`) awaits it beside the collision bake, and
+  hands both to `buildSimWorld`.
+- The built map's `map.terrain.field` IS that object (the map editor's terrain
+  brush wrote through it until `BABYLON_EXIT.md` X5.3c; the viewer's
+  `terrainGrade` reads it).
 - The menu's schematic is handed `heightsOf(def)` and repaints when the floor
   lands, because it draws a row the moment the cursor reaches it and cannot
   wait for a fetch. A `null` floor draws as a level one.
@@ -838,7 +954,7 @@ S7 for the measurement and `src/world/maps.ts` for the shape.
   scrub reads as blades on the map's own floor.
 - **`Placement.y`, `ScatterSpec.y` and `GrassRect.y` are offsets above the local
   floor**, not absolute heights, so dressing rides the ground when it moves. Control
-  points and spawns stay absolute — the editor snaps their height to the nav surface.
+  points and spawns stay absolute — the generator puts their height on the nav surface.
   A `WaterRect` with no `y` floats `CONFIG.water.surfaceY` above **its own bed**,
   which makes a pool read as recessed: Hollowmere's bog bed is at -0.6 and its surface
   lands at -0.28, below the bank around it.
@@ -988,7 +1104,8 @@ Three of those rows are load-bearing beyond their own map.
   Coldharbour's `build:total` 993 → 1049 ms on the first build and 869/843 →
   855/821 on the two after it; Harrowmead 861 → 918, then 700/659 → 693/651. So
   ~56 ms per surface a map actually uses, paid on the first build of a page and
-  never again — the field is memoised per pattern and the textures per scene,
+  never again — the field is memoised per pattern and the textures per material
+  factory (one a session, as the scene they were keyed on until X6.1d was),
   exactly as the floor's are — plus ~2 MB of GPU per surface for the albedo and
   the height map. A map that lays no asphalt never builds the asphalt field.
 
@@ -1073,7 +1190,12 @@ unbiased, 34.1% at -2 and 35.7% from -4, where it stops moving and is still
 **It is carried by the BUILDER and not by the slab** (`Build`'s `depthUnits`,
 which reaches `CelMaterialFactory.get` and `getGroundTextured` and is part of
 their cache KEY — one hex at two biases is two materials, or a car's underbody
-is lifted off the ground because a road minted its colour first). That is what
+is lifted off the ground because a road minted its colour first). **And the
+material carries it into OUR renderer**, which draws the road merge since
+`BABYLON_EXIT.md` X3.5: a cel material's recipe keeps its `zOffsetUnits` as
+`depthBias`, and `WorldBlocks` asks for the recipe's pipeline with it, so a
+road is -8 in both renderers' draws and the ladder below holds in each
+(`docs/rendering.md`, "Our renderer's frame"). That is what
 keeps the road's own internal ladder intact: the lane markings are painted 2 cm
 over their slab and move toward the eye WITH it, so that pair is settled by the
 same geometry it always was, and what changes is only the road against the
@@ -1193,8 +1315,7 @@ that is not across it.
   apron — and rides `ROAD_JOIN_LIFT` (1 mm, half a rank) over a carriageway of
   its own surface, because the two are the same texture triangulated differently
   over the same ground and a tie between them is broken per pixel. The placement
-  that owns that surface draws it (`BuildCtx.road`), so the editor selects it
-  with that road.
+  that owns that surface draws it (`BuildCtx.road`), so it is that road's PIECE.
 - **Rectangles are untouched and are never an arm of anything.** A map with no
   path resolves to exactly the footprint it had, which is what keeps the seeded
   dressing on Hollowmere, Greyfen, Coldharbour, Harrowmead and Sarab
@@ -1324,9 +1445,10 @@ boxes, and only on slopes: +721 on Cinderhaven, +230 on Sarab and ~50 on Harrowm
 
 **Every builder that declares a `BuildCtx` belongs in `CONFORMS_TO_TERRAIN`**
 (`BuildingKit.ts`) — the road, the three runs and the `pylon`, whose span is drawn
-to the ground under the next pole — because the editor moves anything else by
-translating its meshes, and a builder that read the floor is then drawn against the
-floor it was dragged away from until the next full rebuild.
+to the ground under the next pole — because the map editor moved anything else by
+translating its meshes, and a builder that read the floor was then drawn against the
+floor it was dragged away from until the next full rebuild. (The editor is gone,
+`BABYLON_EXIT.md` X5.3c; a builder still owes the list its name.)
 
 **A walked surface more than `stepHeight` up needs something built to reach it, and
 `stairs` is that piece.** Its run is `height / 0.35` and is derived rather than
@@ -1335,38 +1457,38 @@ without a symptom — the same trap `buildBoardwalk` refuses a `height` spinner 
 Butt the top of the run against the deck's edge: the joint is then two neighbouring
 cells within a step, and nothing has to line up more precisely than that.
 
-**Babylon defaults to a LEFT-handed system** (`scene.useRightHandedSystem` is
-false), so a front face is *clockwise* seen from the front. Hand-built `VertexData`
+**The world is LEFT-handed, Babylon's default** (`scene.useRightHandedSystem`
+was false), so a front face is *clockwise* seen from the front. Hand-built geometry
 wound the right-handed way — the order you get working the cross product out on
-paper — fails in the worst possible manner: the meshes build, the shaders compile,
-the console is clean, nav and picking are unaffected (Babylon's triangle picking is
-two-sided), and the only symptom is that `ComputeNormals` derives downward normals,
+paper — fails in the worst possible manner: the parts build, the shaders compile,
+the console is clean, nav and the rays are unaffected (both read the heightfield,
+not its triangles; Babylon's picking was two-sided), and the only symptom is that `computeNormals` derives downward normals,
 so the floor is back-face culled and lit from below. The world looks like it has no
 ground at all and every number you can check still reads correct. `assertFacesUp`
 throws on it in dev builds; trust that over your own derivation.
 
 The terrain is emitted **per terrain block** (`MapLayout.terrainBlock`, 48 m by
-default and independent of the merge's), each with an invisible clone marked
-`solid` — the one place a collider shares a visual's vertices, since a heightfield
-has no box to stand in for it, so `MapBuilder.collider()` is bypassed and `NavGrid`
-reads the field directly. The block split is not just for culling: `CameraSystem`
-picks every frame and `CombatSystem` every shot, and one map-wide floor mesh would
-defeat bounding-box rejection.
+default and independent of the merge's), each block's own arrays kept as its
+collider (`GameMap.terrainGeometry`, `PhysicsWorld`'s floor) — the one place a
+collider shares a visual's vertices, since a heightfield has no box to stand in
+for it, so `MapBuilder.collider()` is bypassed and `NavGrid` and `RayWorld` read
+the field directly. (Each block's collider was an invisible clone MESH marked
+`solid` until `BABYLON_EXIT.md` X5.3e; the block split was for a pick's
+bounding-box rejection, which no ray makes now.)
 
-**That clone is also the one collider in the world that says what it is made
-of.** It carries `metadata.surface = "ground"`, which is what a round stopping
-there kicks up — a dull brown dust disc and a lowpassed thud rather than the
-spark and tick a wall gives. Being bypassed by `collider()` is exactly what
-makes this cheap: the clone *is* the heightfield, so it is the one thing that
-can honestly answer the question, and every box `collider()` makes leaves the
-field **absent**, which reads as `"hard"`.
+**The floor is also the one collider in the world that says what it is made
+of.** A ray that stops on it answers `"ground"` (`RayHit.surface`, off
+`TerrainField` in `RayWorld`), which is what a round stopping there kicks up — a
+dull brown dust disc and a lowpassed thud rather than the spark and tick a wall
+gives — and every box `collider()` records answers `"hard"`. (It was
+`metadata.surface` on the clone mesh while there was one.)
 
 So a new map, a new building or a new prop owes nothing here at all — the
-default is the common case, and the exception is a single line beside the one
-mesh that is genuinely different. Splitting the boxes into stone, timber and
-metal later is a `surface` argument on `collider()` plus a member of
-`ImpactKind`; nothing between the world layer and `CombatSystem` moves, and
-nothing already built has to be revisited.
+default is the common case, and the exception is the one collider that is
+genuinely different. Splitting the boxes into stone, timber and metal later is
+a field on `WorldBox` that `collider()` takes and `RayWorld` answers with, plus
+a member of `ImpactKind`; nothing between the world layer and `CombatSystem`
+moves, and nothing already built has to be revisited.
 
 ## The valley rim
 
@@ -1435,7 +1557,7 @@ schematics, and that is correct.
 Shape lives on `MapLayout.ridge` (a `RidgeSpec`, all fields optional) and the
 palette on `EnvironmentSpec` (`ridgeColor`/`ridgeScreeColor`). That split is not
 tidiness: `applyEnvironment` writes uniforms and nothing else, which is what lets
-the editor's work light swap a spec per keypress with no rebuild, so a *shape*
+the viewer's work light swap a spec per keypress with no rebuild, so a *shape*
 living there would silently stop working. The rim is a **receiver only**
 (`noShadowCaster`) — a 20–45 m crest throws 26–58 m of shadow at the moon's 38° and
 the shadow window is a fixed 110 m square following the player, so a casting rim
@@ -1502,8 +1624,8 @@ through to the skybox running the whole way round the map. `latticeBands` cuts
 its blocks so they break at 0 and at `size` and never straddle, or the two loops
 would emit the same ground twice and z-fight. It carries the same clone collider
 the floor does, so the borderland is real: you walk it, rounds spark on it and a
-corpse lands on it. Neither caller — `buildValley` or the server's
-`terrainColliders` — is told the margin exists; the extent is the field's.
+corpse lands on it. Neither `buildValley` nor `RayWorld` is told the margin
+exists; the extent is the field's.
 
 **The rim moves out with the boundary, and takes a second form.** The four boxes
 stand at `±(size/2 + margin)` and `ridgeSegments` is handed `size + 2 * margin`,
@@ -1628,7 +1750,7 @@ after.
   splitting each span divides it. `refineProfile` keeps the band and the back
   toe unsplit, because both have special-cased heights.
 - **The woods are the RIM's, not scatter.** They are built into the rim's own
-  VertexData, so they emit no collider, no `WorldBox`, nothing in the collision
+  geometry (a `GeometryBuffer` per run), so they emit no collider, no `WorldBox`, nothing in the collision
   bake, and draw nothing from the map's seeded stream — nothing inside the play
   square can reroll because a tree on a hill moved. They are sown per QUAD and
   weighted by its plan area, never per station, or every corner fan (ninety-odd
@@ -1639,7 +1761,8 @@ after.
   range running down into the sea.
 - **They wear the near trees' paint** (`RIM_WOOD`, `props/palette.ts`): the
   pine's needles and bark, and the dark broadleaf — the ash's spring green came out as a
-  field of bright diamonds under a low sun. They go into `visuals`, so the
+  field of bright diamonds under a low sun. They are surfaces of the world's
+  record like the rock (`visuals`, in the end), so the
   vertex bake gives them the colour buffer the merged pines carry, which is
   what makes sharing the pines' cached materials safe. **Every tree has a
   trunk**: at 150 m a crown with nothing under it reads as hanging in the air
@@ -1666,7 +1789,7 @@ around a farming valley that a 400 m map did not want to be.
 **The arithmetic is the same one `MIN_SLOPE` does for a crest, spent on distance
 instead of height, and it is measured from the player rather than from the play
 square.** The cel shader's fog is LINEAR between `fogStart` and `fogEnd`
-(`CelShader`, `clamp((dist - start) / (end - start))`), so a surface reaches
+(`wgsl/celSurface.ts`, `clamp((dist - start) / (end - start))`), so a surface reaches
 exactly `fogColor` at `fogEnd` and not one metre before it. The furthest an eye
 gets is the play boundary plus what the leash allows — 69 m at a sprint — so the
 margin a map owes is `fogEnd + 69`, which on Harrowmead's `fogEnd` of 520 is 589,
@@ -1750,10 +1873,14 @@ rather than anything about the margin.
 160,000 quads, against Sarab's 140,625 and Cinderhaven's 111,556, so it is the
 biggest floor in the tree but not by a new order. The mesh COUNT is the part that
 would have hurt, because `terrainPatches` cuts the borderland at four times the
-floor's block and the floor carries no `metadata.block`, so every patch is a
+floor's block and the floor carries no `metadata.block`, so every patch was a
 `WorldCulling` candidate at every distance: at the default 48 this map's ground
-is 193 meshes. Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than
-the 97 it had at 560 m square**, because the play floor's own share falls from 81
+is 193 meshes. (Since `BABYLON_EXIT.md` X3.5 our renderer draws the floor in
+the main pass, so a patch is no candidate there — it is clusters in one cut,
+one draw a recipe — and since X3.7b it is no mesh at all, in every pass; the
+count was the map editor's build's alone, and that build is gone since X5.3c.)
+Harrowmead states `terrainBlock: 96` and it is 57 — **fewer than the 97 it had
+at 560 m square**, because the play floor's own share falls from 81
 draws to 25. The trade is frustum granularity on the ground you fight over, which
 on a 400 m map stating a `fogEnd` of 520 is very nearly nothing: the whole floor
 is inside the view from the middle of the vale however it is cut.
@@ -1889,14 +2016,25 @@ and a blast can throw that body further still, so 78 + 69 is 147 and the margin
 is 180.
 
 **The same class runs on both sides and only one of them is real.** The authority
-holds one per `NetPlayer` and steps it in `HeadlessGame` against the last
+holds one per `SimPlayer` and steps it in `SimCore` against the last
 position that player reported; that verdict is what kills. The client holds one
 for its own player and, in a match, draws it and nothing more — the ordinary
 prediction split, since this is a pure function of movement, and it is why the
-leash costs the wire nothing at all. Offline the client's is the only one there
-is. Bots are not leashed and must not be: they read `nav.steer()` and the graph
-stops at the play square, so a bot cannot reach the borderland to be warned about
-it.
+leash costs the wire nothing at all. Offline the CORE's is the one that kills,
+exactly as the authority's does (`BABYLON_EXIT.md` X2.5a D3), and the page's
+only draws. Bots are not leashed and must not be: they read `nav.steer()` and the
+graph stops at the play square, so a bot cannot reach the borderland to be warned
+about it.
+
+**A seat in a FLYING hull does not stop it** (`docs/vehicles.md` — a ground
+hull's crew are exempt, a flier's are not, pilot and gunner alike), **and the
+kill puts the person on foot first.** A seat makes a body invulnerable — the
+hull is the target — and the leash kills through `takeDamage`, which refuses
+every blow while that holds; so a pilot who flew past the margin was told
+"expired" every step and was never killed, offline or in a match, until the
+core learned to give up the chair (`SimCore.seat(player, null)`, answered with
+a `seat` event) before the blow. The hull is left as any abandoned machine is:
+it never left the world, its crew did.
 
 **Scatter placement is seeded** (`layout.seed`, via `src/world/rng.ts`). This is not
 cosmetic: blocking scatter emits colliders, colliders feed `NavGrid` and
@@ -1931,73 +2069,153 @@ packing its clearance describes places fewer than it asks for. That is the
 intended way to author a dense field: a count tuned so nothing is ever refused
 is a count that stops short.
 
-**Blocking scatter colliders are MERGED BY LOCALITY, not one mesh per prop**
-(`MapBuilder.clusterColliders`), and it is the fence lesson at forest scale. A
-`pickWithRay` costs per mesh before it costs per triangle — a predicate call, a
-world-matrix inverse and a bounding test each — and the game used to fire such
-rays every frame against every solid mesh on the map: the hitscan on every shot,
-LOS for sixteen bots, the aim assist, the grenade's step ray, the death cam's
-pull-in and a tank's chase camera. **None of them is a pick any longer** — they
+**A placement does not BUILD its prop: it wears one of its kind's VARIANTS**
+(`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4). Each kind is built
+`CONFIG.scatter.variants` (16) times a build, off streams of its own seeded
+from the layout's seed, the kind and the variant's number, and taken off the
+placement it would have had: standing at the origin at scale 1 and yaw 0,
+its root's own height and lean kept. A placement wears one by a HASH of where
+it sits (its region and its index), never a draw, under its own spot, yaw
+and scale. Before X3.4 every tree was a different shape (a tree builder seeds
+a stream of its own from one shared draw), so Greyfen's forest was 7.3 M
+vertices of unique geometry; our renderer draws scatter as instances, which
+only pays when placements share a shape. Maple's four crown colours are
+shared out four variants each (`CLASSES`), so no crown is left out of a map.
+
+**What a builder takes from the shared stream is spent by a REPLAY, and the
+replay is the rule a builder change has to keep.** The shared stream still
+places everything: each prop's scale, its spot, its yaw and the next prop's
+spot come off it. So a placement spends exactly what its builder would have
+drawn from `rng`, without building it, through its kind's replay
+(`props/sharedDraws.ts`; maple's `mapleSharedDraws` was the first). **A
+builder that changes what it draws from `rng` owes its replay the same
+change**, and `npm run kit:hash` builds every kind over its seeds and rungs
+and fails if the two counts differ. What a builder draws from its own
+streams (`sub`, a tree's `own`) moves only its variants, and is free. When
+X3.4a landed, `npm run collision` rewrote no bake on any map: the placement
+had not moved a box.
+
+**Blocking scatter colliders are GROUPED BY LOCALITY, not one group per prop**
+(`MapBuilder.clusterColliders`), and it began as the fence lesson at forest
+scale. A `pickWithRay` cost per mesh before it cost per triangle — a predicate
+call, a world-matrix inverse and a bounding test each — and the game used to
+fire such rays every frame against every solid mesh on the map, so each group
+was MERGED into one collider mesh. **None of them is a pick any longer** — they
 are box queries through `RayWorld`, exactly as `Player.probeGround` became one
-first — so what the merge buys the FRAME is gone with them. It stays for three
-reasons that are not performance: the editor still picks meshes, the server
-still stands them up, and the grouping is baked into `MapCollision.boxGroups`,
-so it is data both sides have to agree on. The `WorldBox` list keeps one entry
-per prop either way, which is why nothing derived from geometry can tell.
-So every blocking prop
-on the map, across all regions, is gathered into one mesh per 12 m square after
-the scatter pass. Greyfen's 1,412 blocking props (as it was before its re-lay;
-~1,040 since) came to ~180 meshes; unmerged
-they would be more collider meshes than the rest of the map put together. The
-grouping is deliberately done ONCE for the whole pass rather than per region,
+first — and **no collider is a mesh since `BABYLON_EXIT.md` X5.3e**: the groups
+are data and nothing else, byte for byte the groups the meshes were merged
+from. They stay because the grouping is baked into `MapCollision.boxGroups`,
+so it is data both sides have to agree on — and since X2.1 it is what a body's
+SWEEP breaks ties by (`RayWorld`'s rank: every box no group names, then each
+group's — the order the client made its collider meshes in while it made
+them). The `WorldBox` list keeps one entry per prop either way, which is why
+nothing derived from geometry can tell. So every blocking prop on the map,
+across all regions, is gathered into one group per 12 m square after the
+scatter pass — Greyfen's 1,412 blocking props (before its re-lay; ~1,040 since)
+came to ~180 — and **ONCE for the whole pass rather than per region**,
 because the regions overlap and per-region grouping left the same square with
-one mesh per region standing over it (~500 meshes for the same props).
+one group per region standing over it (~500 for the same props). The bucket
+order and each bucket's order are the tie order, so they are not a tidiness
+question: `merge:hash` holds `boxGroups` as data.
 
 The boxes themselves stay in `colliderBoxes`, one per prop: the nav grid, the
-cover bake, the obstacle field and the AO all still see individual trunks, and
-the merge is about nothing but what a ray meets. The grouping is carried to the
-server on `MapCollision.boxGroups` — see `docs/multiplayer.md`. The editor gets
-them unmerged, for the reason it also skips `BlockMerge` and the strut merge:
-`repositionItem` walks colliders, local specs and boxes in step.
+cover bake, the obstacle field, the AO and the rays all still see individual
+trunks; only the grouping's order reaches the game. The grouping is carried
+to the server on `MapCollision.boxGroups` — see `docs/multiplayer.md`.
 
 Builders assemble geometry **at the origin, unrotated**, and return three parallel
 lists (`meshes`, `colliders`, `lights`) in local space; `MapBuilder` merges the
-meshes per colour and then transforms all three into place. Building at identity is
-what makes the merge safe — `MergeMeshes` bakes world matrices and returns an
-identity-transform mesh. **A scatter region obeys the same rule**, which is what
-lets the editor move and turn one by writing a transform. A merge of *one* mesh is
-the exception `MergeMeshes` will not handle — `mergeByMaterial` bakes those by hand,
-and before it did, every colour used by a single part of a rotated building (the
-tavern's sign, the smithy's forge glow, the boathouse lamp) was translated into
-place without being rotated.
+parts per colour and then transforms all three into place. Building at identity is
+what makes the merge safe — the merge bakes each member's world matrix and returns
+an identity-transform surface. **A scatter region obeys the same rule**, so a region
+is moved and turned by its transform alone. A merge of *one* part is
+the exception a merge cannot express — `mergeByMaterial` bakes those by hand
+(`bakePartTransform`), and before it did, every colour used by a single part of a
+rotated building (the tavern's sign, the smithy's forge glow, the boathouse lamp)
+was translated into place without being rotated.
 
-**A builder's parts never reach the GPU, and that is a rule rather than a
-tuning knob.** Everything `Build` makes — every box, cylinder and surface — is
-a `partBox`/`partCylinder`/`partSurface` from `src/world/parts.ts`: a real
-`Mesh` holding real vertices with no device buffer, no bounding info and no
-submesh under it. Uploading them was HALF the build. `VertexData.applyToMesh`
-sends a part's positions, normals, UVs and indices to the device the instant it
-exists, `mergeByMaterial` reads them back out of the CPU copies Babylon kept
-anyway, and the merge disposes the source — so a cottage's twenty planks were
-twenty round trips for geometry no frame would ever draw. At 1500 m that was
-161 seconds of a 186-second build; it is 9.4 of 17.4 now (`ENGINE_UPGRADE.md` S5).
+**A builder's geometry is not Babylon's, and its parts never reach the GPU.**
+Everything `Build` makes — every box, cylinder and surface — and everything a
+scatter prop makes is a `Part` (`src/world/parts.ts`): a `GeometryBuffer` of
+typed arrays built through `src/geometry/` (`createBox`, `createCylinder`,
+`computeNormals`, a merge and a transform — Babylon's generators copied
+operation for operation, `scripts/geometry-check.mjs` proving every number),
+with a name, a local transform, a material and its metadata, and no Babylon
+object under it (BABYLON_EXIT.md X1.2). A builder that reaches for
+`MeshBuilder` or `VertexData` is building outside the kit. A prop's
+`.parent =` is how it says where a part goes in its parent's frame:
+`flattenParts` composes it into the part's own transform at EMIT time — after
+`MapBuilder` has placed the root — exactly as Babylon's `setParent(null)`
+did, in its child order.
 
-Two consequences a builder has to know. **A part may never be drawn, picked or
-collided with** — it has no submeshes, so it would silently do nothing — which
-is why `MapBuilder.collider()` stays on `MeshBuilder` and colliders are not
-parts. And **every path out of a merge that KEEPS its source owes
-`uploadPart`**: the group-of-one hand-bake in both `mergeByMaterial` and
-`paneGroup`, and the material-less mesh both of them skip. A part that reaches
-the scene without it draws nothing and throws nothing.
+**And the merge is not Babylon's either** (BABYLON_EXIT.md X1.4). A placement's
+or a prop's parts are ADMITTED in one place (`admitStructure`, `admitProp` in
+`world/worldGeometry.ts`) as `WorldSurface`s, and both merge passes and the
+glazing's run on those: `mergeParts` for two or more (`Mesh.MergeMeshes`'
+arithmetic, `mergeTransformed`), `bakePartTransform` for one, the palette slot
+written into the buffer's `uv2`, the metadata written on the part. The floor's
+patches and the rim's runs are surfaces of the same record, minted first; the
+vertex bake runs on the record after the last merge; and nothing touches the
+device until `MapBuilder.bake`, where `worldRecords` (`parts.ts`) hands every
+surface to our renderer at once (`BuildOptions.onSurface`, `BABYLON_EXIT.md`
+X3.7b), which draws it in every pass or refuses it, failing the world, and
+releases its arrays — making no mesh of any (X6.1g; until then a surface our
+renderer did not take was made a Babylon mesh here, which on a shipped build
+was the glazing until X4.6e).
+What the map keeps of the record is `GameMap.world` — each surface's block,
+piece ranges, bounds, material, metadata and counts — and never the arrays,
+which the device holds. It used to
+be the other way round: every plank was a Babylon mesh, uploaded the instant it
+existed, read back out of the CPU copies by the merge and disposed — HALF the
+build at 1500 m (161 seconds of a 186-second one), until `parts.ts` stopped
+the upload and then stopped the mesh.
+
+Three consequences a builder has to know. **A part's arrays are its own**: the
+merge bakes a lone part's transform into its arrays IN PLACE, so two parts
+sharing one array would both be moved by it, silently — DEV refuses a shared
+buffer or array at admission. **A part with no material is dropped**: nothing
+would draw it. And **the surfaces are handed over in BIRTH order**
+(`WorldSurface.born`, minted at admission and at every merge of two or more,
+inherited by a merge of one) — the order Babylon made their meshes in while
+the merge ran on meshes, and so its candidate order, which our renderer takes
+the glazing and the fires in. `npm run merge:hash` recorded that order per
+mesh (`sceneRank`) while there were meshes. **The floor's collider arrays are
+its patch's values** (`GameMap.terrainGeometry`, `PhysicsWorld`'s floor; a
+mesh, the patch's collider clone, until `BABYLON_EXIT.md` X5.3e): taken in
+`buildValley` (`plainGeometryOf`), in the types that clone held — a floor mesh
+made of the patch shared them through a build's memo until X6.1g.
+
+**A merged surface still knows which LAYOUT ITEM each span of it came from —
+its PIECE ranges** (`WorldSurface.pieces`, kept on `GameMap.world`). A piece
+is a layout item: one per placement, roads included, and one per scatter
+region, numbered in that order, its id an index into `GameMap.world.pieces`
+(an `ItemRef`, "which item"; the map editor's `EditorRef` until X5.3c renamed it). Admission files
+every part as one range of its item's piece; `mergeSurfaces` (`merge.ts`)
+carries the members' ranges into a merge by running vertex and index
+offsets in member order — the order `mergeTransformed` concatenates in — and
+folds a range into the one before it when both are one piece; a merge of one
+keeps its member's. It is a wrapper around the merge, never inside it, so the
+merge stays a verbatim copy of Babylon's. So after `BlockMerge` has made a
+dozen buildings one mesh, which vertices and which triangles are each
+building's is still written down. **Nothing reads it yet: it is what
+DESTRUCTIBLE BUILDINGS need** — collapsing, hiding or re-uploading one
+placement's span of a block, the way `GlassFx` already collapses a pane's
+— and it costs a few numbers a surface. The floor and the rim carry none.
+**Its extension point is a builder-declared SUB-piece** (a
+`Part.metadata.piece`: this wall is its own piece of the cottage), which
+admission would file under an id of its own with nothing downstream changing.
+DEV checks every build (`assertPieces`): each surface's ranges are contiguous
+and cover its vertices and indices exactly. `npm run merge:hash`
+records the ranges per visual and the table under `lists`.
 
 A **second merge pass** (`BlockMerge`) collapses neighbouring structures and scatter
-fields into one mesh per (map block, material) — the block's side is
+fields into one surface per (map block, material) — the block's side is
 `MapLayout.blockSize`, 48 m by default — Sarab states 96, Cinderhaven and Kurenai
-120, Harrowmead 200. The village is ~230 structures
-and the outline pass draws every mesh twice, so without it the map alone costs ~670
-draws; with it, ~150, and frustum culling still throws away most of the map because
-a block is well inside the 78 m fog wall. Outlines still trace each building,
-because `renderOutline` expands vertices along their own normals.
+120, Harrowmead 200. The village is ~230 structures, and without it the map alone
+cost ~670 draws while the outline pass drew every mesh twice; with it, ~150, and
+frustum culling still throws away most of the map because a block is well inside
+the 78 m fog wall. The ink still traces each building, because `CelInk` finds
+edges in the frame's depth rather than per mesh.
 
 **There are FOUR vernaculars in the kit and each is a shape before it is a
 palette**: `kit/buildings/` and `kit/structures/` are the wet northern
@@ -2069,7 +2287,7 @@ the pane nor the drawing.
 
 Everything below follows from that split, and the sharpest consequence is that
 **a sheet which is not `breakable` is geometry and nothing else**: no
-`WorldPane`, no collider, no bucket in the sweep, no row in the collision bake,
+`WorldPane`, no collider, no box in any sweep, no row in the collision bake,
 no index on the wire. The city's glazing is drawn by the same code and known to
 no other part of the game.
 
@@ -2174,14 +2392,16 @@ a regression. Twelve is nothing,
 and the sweep that goes with them costs **~1 µs a shot** (twenty-four panes in
 a handful of buckets; it was ~15 µs when every sheet on the map was a pane).
 
-**The grouping is per PLACEMENT and that middle ground is the whole trick.**
-Merging every strut on the map into one mesh would be worse than leaving them
-loose: it is one bounding box around every fence in the village, so the cheap
-early-out a pick gets from the bounds never fires and every ray pays the whole
-triangle count. Per fence, a ray that crosses nothing is rejected by the bounds
-and a ray that crosses one fence tests one fence. The same reasoning is what
-sets the 12 m square for scatter, one section down — small enough that the
-bounds still reject, large enough that the mesh count collapses.
+**The grouping is per PLACEMENT and that middle ground was the whole trick**
+while each group was merged into one collider mesh. Merging every strut on the
+map into one mesh would have been worse than leaving them loose: one bounding
+box around every fence in the village, so the cheap early-out a pick got from
+the bounds never fired. Per fence, a ray that crossed nothing was rejected by
+the bounds and a ray that crossed one fence tested one fence; the same
+reasoning set the 12 m square for scatter, one section down. **No strut is a
+mesh since `BABYLON_EXIT.md` X5.3e** — `RayWorld` indexes every one on its own
+— and the groups ride on as DATA (`rayGroups`, `MapCollision.rayGroups`),
+unchanged, because the bake carries them.
 
 *(History: this paragraph and the one before it were measured while every ray
 picked meshes, and none does now — `src/world/RayWorld.ts` answers them all off
@@ -2210,13 +2430,19 @@ shophouses' 7.8 and 11.6, the latter cut into one bay or two by the unit's own
 width — which a pattern cut at about a metre accounts for. The tower's bays are cut to the same rhythm for the look alone — nothing
 holds a range into them and nothing ever will.
 
-**Breaking a pane is five writes and nothing deferred.** The visual
-range collapses; `RayWorld.remove` takes the box out of both questions every
-ray asks, and `metadata.solid` is cleared beside it for the editor's own
-predicate; `checkCollisions` is cleared, which is the movement half; `ObstacleField.remove` takes it out of the sub-cell push-out the bots and
-the server's move validator both read; and `NavGrid.openBox` relinks the ground
-it was severing, floods walkability into whatever that opened, and relaxes the
-flow fields over the result. All of that is local and cheap.
+**Breaking a pane is four writes and nothing deferred, and they are split
+between the simulation and its picture** (`BABYLON_EXIT.md` X2.2 C4). The
+visual range collapses — `GlassFx`, off `GlassSystem.onBroken`; the rest is
+`GlassSystem`'s. **The collider is ONE write**: `RayWorld.remove` takes the box
+out of both questions every ray asks and out of every body's sweep (a sweep
+gathers through `RayWorld.bodyNear`, off the same body bit) — the collider MESH
+whose `metadata.solid` and `checkCollisions` were cleared beside it went at
+X5.3e, read by nothing since the map editor's pick (X5.3c);
+`ObstacleField.remove` takes it out of the sub-cell push-out the bots and the
+server's move validator both read; and `NavGrid.openBox` relinks the ground it
+was severing, floods walkability into whatever that opened, and relaxes the
+flow fields over the result. All of that is local and cheap. The authority runs
+the simulation's half alone: it builds no `GlassFx` and draws no glazing.
 
 **The flow fields used to be deferred, and the deferral was the wrong axis.** A
 field is a breadth-first sweep over every walkable surface, so `GlassSystem`
@@ -2322,8 +2548,8 @@ below is what the switch rested on, kept so nobody re-runs it from scratch.
 **That probe is a POINT and a body is not, so a body can come to REST inside a
 collider — and no sweep gets it out again.** Gravity is added to `y` and never
 swept, so a body coming down beside a 0.16 m guard rail arrives in the timber,
-and `moveWithCollisions` from an embedded start is an EJECTION rather than a
-sweep: measured in a round, a body standing in a rail left it at a seventh of
+and the sweep (Babylon's `moveWithCollisions`, ported) from an embedded start
+is an EJECTION rather than a sweep: measured in a round, a body standing in a rail left it at a seventh of
 walking pace and pressing AWAY from the rail moved it the other way. That is why
 every body owes a push-out through `ObstacleField.resolve` (`CLAUDE.md`, the
 collider section). The authority agrees by construction: `server/validate.ts`
@@ -2407,8 +2633,8 @@ Every ray in the game is answered by `RayWorld` off the colliders' own boxes
 (`CLAUDE.md`, the collider section). This is how the substitution was proved,
 and the two classes of disagreement it found.
 
-Under a NullEngine, off `buildServerWorld` (which still stands the collider
-meshes up), **8,000 seeded rays per map per question** — 4,000 eye-height at
+Under a NullEngine, off `buildServerWorld` (which stood the collider meshes up
+then; `BABYLON_EXIT.md` X2.3 took them away), **8,000 seeded rays per map per question** — 4,000 eye-height at
 55/120/180 m, 2,000 short from inside geometry, 2,000 straight down — compared
 `scene.pickWithRay` against `RayWorld` on all four shipped maps. **32,000 rays
 each way. Every disagreement is one of two things and neither is a geometry
@@ -2450,3 +2676,92 @@ where a collider is flush with the ground.
 
 **Agreement after the tie-break: 99.66% to 99.99% per map per question**, with
 100% of the residual accounted for by the two classes above.
+
+## Looking at a map: the viewer
+
+`F2` in a dev build raises the MAP VIEWER over a round (`src/viewer/`, a lid:
+`docs/states.md`, "The map viewer's lid"): a free camera, a 2D plan of the nav
+graph and the layout's marks in its panel, the validation list and a work light.
+It edits nothing — a map's generator is its only author (`npm run maps:check`) —
+and it draws nothing in the world: the plan is a canvas in the panel
+(`BABYLON_EXIT.md` row "X5.3, the viewer's overlays"). It replaced the map editor,
+which `BABYLON_EXIT.md` X5.3c deleted; what the editor knew about READING a map
+survives here, in its own words (`docs/editor.md` and its modules' headers, moved
+verbatim — "the overlay" is the viewer's plan now, painted by `viewer/navPlan.ts`
+and `ViewerPlan.ts`, and "the editor" what looks).
+
+### What the nav colours mean
+
+Three colours, and the middle one is the reason this exists:
+
+- **green** — walkable: the flood fill reached it, bots can stand there.
+- **red** — standable but never reached. Sealed courtyards and decks lifted
+  just past the 0.6 m step height look identical to green ground in the
+  viewport and are completely dead in play. This is the single most useful
+  thing the editor draws.
+- **amber** — reached, but with no route to the selected objective.
+
+### What `validate` checks, and the bug behind each check
+
+**The validation list ranks honestly, and the ranking is the design.** Errors are
+definitely broken and are zero on a healthy map: a control point whose centre is not
+standable (the Flag-C-on-the-well bug), and a flag or spawn unreachable from a home
+spawn. Warnings need a human: the biggest is "standable ground nothing can reach",
+which is *also* how a roof and the top of a boulder look. `validate.ts` filters both
+out — roofs by height above adjacent walkable ground, prop stands by flatness — but
+the nav grid cannot distinguish a boathouse deck from a large flat collider top, so
+a handful survive on Hollowmere while it plays perfectly well. Read that number as a
+**delta**: note it, move a wall, look again. `makeIslandTest` is shared with the
+overlay so the red cells on screen are exactly the reported findings.
+
+**A cell id decomposes as `cell = cz * dim + cx`, which is `NavGrid`'s convention
+and not negotiable here** — `cell % dim` is the X column, `Math.floor(cell / dim)`
+is the Z row. Every check in `validate.ts` had those two the other way round, and
+the reason it survived is worth knowing before anyone writes the next check: the
+8-neighbour table is closed under transposing `dx`/`dz`, so a walk over it gives
+bit-identical answers, and only the step that leaves the grid for WORLD space is
+wrong. So the bug hides in exactly the two places that matter. `validateClearance`
+probed the obstacle field at the map's mirror image and reported **177 spots on
+Greyfen and 813 on Hollowmere that do not exist — the true count is zero on both**,
+while 659 and 1,286 surfaces respectively do get a genuine push-out and every one
+of them lands somewhere walkable. An island's `at` flew the camera to a point
+reflected across the diagonal. Neither looks wrong: a transposed probe still lands
+on real geometry, and a mirrored camera position still shows you *a* part of the
+map. `navOverlay.ts` had it right all along, which is why the overlay and the list
+quietly disagreed about where a finding was. `cellX`/`cellZ`/`cellOf`/`worldOf` at
+the top of the file are now the only decomposition; use them.
+
+That flatness filter is why terrain is checked directly by `terrainGrade` rather
+than left to `islands()`: a sculpting brush is a machine for producing unreachable
+ground, but a flat pit floor looks exactly like the top of a boulder to the island
+heuristic, so the one finding worth having is the one it suppresses. `terrainGrade`
+scans every edge of the height grid against `MAX_WALKABLE_GRADE` and reports a count
+with the worst offender's location — one finding per cell would bury everything else.
+
+The `structure()` checks exist only because entries can be deleted: a duplicate flag
+id silently merges two flags' flow fields (they are keyed by id), a spawn naming a
+flag that no longer exists is skipped by `ConquestSystem` without saying so, and a
+team with no home spawn deploys at the origin. None can happen by dragging
+something, and all are errors.
+
+### The work light
+
+Hollowmere is a night map: fog closes at 78 m, ambient is a dim blue, and
+most of what you see is silhouette. That is the point in play and useless for
+building — you cannot judge a roofline you cannot see, and half the map is
+past the fog wall.
+
+So the editor can push the lights up. This is a pure spec transform, applied
+with `applyEnvironment`, which only writes shader uniforms and the clear
+colour — idempotent and cheap enough to toggle per keypress with no rebuild.
+
+Three fields are deliberately NOT touched: `floorColor`, `ridgeColor` and
+`ridgeScreeColor` are baked into the ground and rim materials by
+MapBuilder.buildValley, so changing them would need a full map rebuild to
+take effect. Everything the work light does is uniform-only. This is also
+why the rim's SHAPE lives on MapLayout rather than here — see RidgeSpec.
+
+(`viewer/workLight.ts`; the viewer opens with it ON, the editor's default, and
+lowering the lid puts the map's own environment back. The editor's floor picker
+and `saveEnvironment` were deleted with it: `environment.ts` is hand-authored,
+row "X5.3, environment tuning".)

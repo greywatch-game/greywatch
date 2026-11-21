@@ -46,10 +46,10 @@
  * (`collective`) and one ordering — **the answer to something in the way is
  * UP, and a bearing is what is left when going over has been refused.**
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { angleDelta } from "../core/math";
 import type { Vehicle } from "../entities/Vehicle";
+import { Vector3 } from "../math";
 import type { NavGrid } from "../world/NavGrid";
 import type { Crew } from "./VehicleCrew";
 

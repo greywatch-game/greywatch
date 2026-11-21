@@ -14,19 +14,27 @@
  *
  * Invariants, all three inherited from `SoldierModel` and all three for its
  * reasons:
- * - **Merged per colour per NODE.** A mesh is a draw call, so this model's
+ * - **Merged per colour per JOINT.** A mesh is a draw call, so this model's
  *   cost is COLOURS PER MOVING PART and not boxes: six hundred parts come out as
  *   twenty-five meshes, and a wheel that costs sixty triangles instead of
  *   twelve costs nothing at all — see `Cyl`. That is why the whole sprung hull
  *   is ONE segment and the whole turret another: split into several segments
- *   on one node, a colour pays once per segment it appears in. **Twelve of the
+ *   on one joint, a colour pays once per segment it appears in. **Twelve of the
  *   twenty-five are there because a mesh that MOVES differently cannot merge
  *   with anything**, which is the one thing that buys a mesh here: six for the
  *   tracks, four for the two antennae, two for the commander's gun on its own
- *   ring, and nothing else in the model has earned one.
- * - **The joints are `TransformNode`s above the merged meshes**, so the turret
- *   traversing, the gun elevating and the tracks running are transforms and
- *   never a re-merge.
+ *   ring, and nothing else in the model has earned one. **Since
+ *   `BABYLON_EXIT.md` X4.2b a merged piece is a SEGMENT of this kind's KIT**,
+ *   built once a side and drawn by our renderer with every tank an instance
+ *   of it, and a segment is a RANK — at most one draw a frame for the whole
+ *   fleet, its vertex work the longest segment at that rank times the hulls
+ *   (`render/HullDraw.ts`) — so the rule holds in that unit: a new colour on a
+ *   joint is one more rank, and a longer segment is paid at every rank it
+ *   lands on.
+ * - **The joints are JOINTS above the merged meshes** — ours, a `JointTree`
+ *   (`vehicleRig.ts`, `BABYLON_EXIT.md` X4.2a), `TransformNode`s before — so
+ *   the turret traversing, the gun elevating and the tracks running are
+ *   transforms and never a re-merge.
  * - **Nothing here is emissive.** The rule was written when the glow's `noGlow`
  *   exclusion was a one-shot scan at construction and a tank, built per round,
  *   could never be excluded; the bloom reads `noGlow` per mesh every frame now
@@ -57,31 +65,51 @@
  * road wheels are not. Widen the pitch or shrink an end wheel and links appear
  * out of the air at the ends of the tracks.
  *
- * `Vehicle` owns how far each track has run and this file owns what that looks
- * like; `TRACK_GAUGE` is exported because splitting one hull speed into two
- * track speeds needs the distance between them, and that distance is a drawing
- * decision made here.
+ * The hull's VIEW owns how far each track has run (`VehicleView`) and this file
+ * owns what that looks like; `TRACK_GAUGE` is a frame number
+ * (`tankFrame.ts`) because splitting one hull speed into two track speeds
+ * needs the distance between them, and that distance is a drawing decision
+ * the simulation also reads.
  *
  * ## Four more move, and they are the two antennae
  *
  * A whip is the one part of a tank that is not a rigid body, and it is drawn as
  * two links so that it can BOW: the lower turns at the mast foot and the upper
- * hangs off its top, taking the leftover angle. `Vehicle` owns the bend for the
- * same reason it owns the track run — it is a consequence of the drive, and of
- * how fast the hull the mast is bolted to is leaning — and this file owns what
- * it looks like. `ANTENNA_LENGTHS` is exported on `TRACK_GAUGE`'s precedent:
- * the two lengths are a drawing decision, and the spring that bends them is
- * scaled by their ratio rather than tuned twice.
+ * hangs off its top, taking the leftover angle. `HullWhips` owns the bend — it
+ * is a consequence of the drive, and of how fast the hull the mast is bolted
+ * to is leaning, as the hull tells its view — and this file owns what it looks
+ * like. `ANTENNA_LENGTHS` is exported because the two lengths are a drawing
+ * decision, and the spring that bends them is scaled by their ratio rather
+ * than tuned twice.
+ *
+ * ## The numbers the simulation reads are not in this file
+ *
+ * Everything on the path from the collider box to a muzzle — the deck, the
+ * turret ring, the trunnion, the barrel's end, the cupola gun's mount — and the
+ * running gear's three extents are `tankFrame.ts`'s, Babylon-free, so the
+ * authority can replay a muzzle without importing a drawing. This file IMPORTS
+ * them and places its joints from them, so the two cannot drift.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import {
+  BARREL_END,
+  CUPOLA_Y,
+  DECK_Y,
+  END_Z,
+  TANK_FRAME,
+  TANK_GUN,
+  TRACK_W,
+  TRACK_X,
+  TURRET_Y,
+  WHEEL_REACH,
+} from "./tankFrame";
 import { extrude, rodBetween, solidBetween, type Point3, type ProfilePoint } from "./facet";
 import {
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   whip,
   type Box,
@@ -90,6 +118,7 @@ import {
   type VehicleRig,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * What one side's armour is PAINTED in — the same three-way read the soldier
@@ -121,8 +150,9 @@ interface TankKit {
    * Road wheels, drive sprocket and idler — in the HULL's paint, as a real
    * one's are, and therefore well lighter than the track they run in; that
    * contrast is load-bearing rather than decorative. It is its own field and
-   * not `armor` read twice because the wheels are a mesh of their own on a
-   * node of their own either way. See the running gear in `buildTank`.
+   * not `armor` read twice because the wheels are meshes of their own either
+   * way (the road wheels a segment on `hull`, the sprocket one on its own
+   * joint). See the running gear in `buildTank`.
    */
   wheel: string;
   /**
@@ -140,6 +170,17 @@ interface TankKit {
   /** The friend/foe colour, from `CONFIG.teams`. */
   accent: string;
 }
+
+/**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set,
+ * `PERF_PLAN.md` A3): the four link strips, the road wheels and idlers, and
+ * the cupola gun's ring — drawn only while the whole tank's measure projects
+ * at or above `CONFIG.graphics.culling.hullDetail` (`vehicleRig.ts`'
+ * `HullKitSegment.detail`). What is left is the silhouette: the belt and its
+ * tyres, the hull, the skirts, the turret, the guns, the sprockets and the
+ * whips. Each name is a `segment` call below, every colour it makes.
+ */
+const DETAIL: readonly string[] = ["tank-link-lo", "tank-link-hi", "tank-wheel", "tank-mg-ring"];
 
 /**
  * One kit per SIDE, indexed by the VIEW and not by `Team` — see
@@ -165,9 +206,6 @@ const KITS: readonly TankKit[] = [
   },
 ];
 
-/** The gun barrel's length, which the muzzle node sits at the end of. */
-const BARREL_LENGTH = 4.4;
-
 // --- the running gear's own frame, in the rig's coordinates ----------------
 //
 // Everything about a track hangs off these five numbers, and three of them are
@@ -180,25 +218,12 @@ const BARREL_LENGTH = 4.4;
 const BELT = 0.16;
 /** The top of the return run, above the ground face the hull stands on. */
 const LOOP = 1.0;
-/** How wide the band is. The wheels are proud of it; nothing else is. */
-const TRACK_W = 0.66;
 /** Sprocket and idler: exactly loop-sized, which is what hides the strips' seam. */
 const END_R = LOOP / 2;
 /** Every wheel on the vehicle turns about this height. */
 const HUB_Y = LOOP / 2;
 /** Road wheels, which are smaller than the two that close the loop. */
 const ROAD_R = 0.34;
-/**
- * How far the road wheels reach fore and aft of the hull's centre.
- *
- * Exported on `TRACK_GAUGE`'s precedent, and it is NOT `TRACK_REACH`: the
- * suspension's travel is bounded at the wheel STATIONS rather than at the ends
- * of the belt, because a bump stop is something a road-wheel arm reaches and
- * the sprocket and the idler have no arms at all. `Vehicle` cannot say how far
- * the body may tilt without knowing where the outermost wheel is, and where it
- * is is a drawing decision made here.
- */
-const WHEEL_REACH = 2.11;
 /**
  * How far the tub's floor stands above the face the tracks stand on — this
  * vehicle's ground clearance, and therefore the ceiling on how far its body
@@ -235,42 +260,12 @@ const TURRET_W = 2.56;
  */
 const ANTENNA_FEET = [[1.08, -1.5], [-1.08, -1.7]] as const;
 
-/** Half the hull, less half a band, less the 6 cm the sponson overhangs by. */
-const TRACK_X = CONFIG.vehicles.tank.hull.width / 2 - TRACK_W / 2 - 0.06;
-/** Where the sprocket and the idler stand, fore and aft of the hull's centre. */
-const END_Z = CONFIG.vehicles.tank.hull.length / 2 - 0.6;
-
-/**
- * How far fore and aft of the hull's centre the ground run actually reaches —
- * the sprocket at one end and the idler at the other, which is where a track
- * stops touching anything.
- *
- * Exported on `TRACK_GAUGE`'s precedent and for the same reason: `Vehicle` stands
- * the hull on six TRACK CONTACTS and cannot place them without knowing where
- * the tracks are, and where they are is a drawing decision made here. Using
- * the collider's own half-length instead would sample 0.6 m past the end of
- * the belt at each end, which is a hull rearing up on a kerb its tracks have
- * not reached yet.
- */
-const TRACK_REACH = END_Z;
-
-/**
- * The distance between the two tracks' centrelines.
- *
- * Exported because `Vehicle` splits one hull speed into two track speeds and
- * cannot do it without this — a hull turning at `w` rad/s runs its outer track
- * `w * TRACK_GAUGE / 2` faster than its inner one, which is the whole of why a
- * tank pivoting on the spot has its tracks going opposite ways. It is a
- * DRAWING decision (the bands could be anywhere across the hull), so it is
- * decided here and read there rather than restated in `CONFIG`.
- */
-export const TRACK_GAUGE = TRACK_X * 2;
-
 /**
  * The two whip antennae's lengths in metres, the long one first.
  *
- * Exported for the same reason `TRACK_GAUGE` is: it is a DRAWING decision made
- * here (the masts could be any length), and `Vehicle` cannot bend them without it.
+ * Exported for the reason `TRACK_GAUGE` is a frame number: it is a DRAWING
+ * decision made here (the masts could be any length), and the whips cannot be
+ * bent without it.
  * A cantilever's natural frequency goes as 1/L^2, so the ratio between these
  * two numbers is the whole of why the pair never swing in step — one config
  * spring is scaled by it rather than the short mast being given figures of its
@@ -281,19 +276,22 @@ export const ANTENNA_LENGTHS = [1.5, 1.2] as const;
 /** One side's moving parts: the two link strips and the toothed sprocket. */
 interface TrackSide {
   /** The ground run's links. Slides backwards under a hull driving forwards. */
-  lower: TransformNode;
+  lower: Joint;
   /** The return run's links, which go the other way. */
-  upper: TransformNode;
+  upper: Joint;
   /** Turns at `run / END_R`. The one wheel whose rotation can be seen. */
-  sprocket: TransformNode;
+  sprocket: Joint;
 }
 
 /**
- * Builds one tank in a team's colours.
+ * Builds one tank in a team's colours: its joints, and its segments hung off
+ * them — the parts made and merged into this kind's KIT for that side only by
+ * the first build of the pair (`segmentOf`, `BABYLON_EXIT.md` X4.2b), every
+ * later one hanging the kit's segments without making a part.
  *
  * Built once per hardstanding and never disposed inside a round — the same rule
- * the bot rig pool follows, and for the same reason: this is ~600 parts and
- * their merges, which is not a cost to pay on the frame a hull respawns.
+ * the bot rig pool follows, and for the same reason: the first is ~600 parts
+ * and their merges, which is not a cost to pay on the frame a hull respawns.
  * `resetRigPose` is what a fresh one goes through instead.
  *
  * **What it is drawn AS is a Leopard 2A6**, and everything below follows from
@@ -305,15 +303,12 @@ interface TrackSide {
  * No insignia and no national detail: it is a real type's CONSTRUCTION, worn by
  * both sides, which is the read the kit colours rest on.
  */
-export function buildTank(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildTank(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
   const t = CONFIG.vehicles.tank;
   // The drawn hull is built to the collider's own extents rather than to
   // numbers of its own, so the shape a round stops on and the shape a player
@@ -322,15 +317,15 @@ export function buildTank(
   const W = t.hull.width;
   const H = t.hull.height;
 
-  const root = new TransformNode("tank", scene);
-  const hull = new TransformNode("tank-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("tank");
+  const hull = tree.add("tank-hull", root);
   // Everything the springs carry, which is everything except the running gear.
   // See `VehicleRig.sprung`.
-  const sprung = new TransformNode("tank-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("tank-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("tank", view, DETAIL);
 
   /**
    * A round member from `a` to `b` — a rail, a cable, a discharger tube, a
@@ -339,7 +334,7 @@ export function buildTank(
    * box's two rotations nor a cylinder's three axes can lay a tube at an angle.
    */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
-    rodBetween("tank-rod", scene, a, b, d, tess, dTop),
+    rodBetween("tank-rod", a, b, d, tess, dTop),
     color,
   ];
   /** A side profile extruded across X — a hull, a skirt plate, a sight head. */
@@ -349,10 +344,10 @@ export function buildTank(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [extrude("tank-slab", scene, profile, width, bevel, x), color];
+  ): Shape => [extrude("tank-slab", profile, width, bevel, x), color];
   /** A convex solid between two end faces — the turret's wedge. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape =>
-    [solidBetween("tank-solid", scene, from, to), color];
+    [solidBetween("tank-solid", from, to), color];
 
   // ==========================================================================
   // THE RUNNING GEAR — on `hull`, because a track lies on the ground its
@@ -438,23 +433,20 @@ export function buildTank(
         links.push([0.07, BELT + 0.1, 0.075, e * (TRACK_W / 2 - 0.005), 0, z - LINK_PITCH / 2, kit.link]);
       }
     }
-    const lower = new TransformNode("tank-link-lo", scene);
-    lower.parent = hull;
+    const lower = tree.add("tank-link-lo", hull);
     lower.position.set(x, BELT / 2, 0);
     segment("tank-link-lo", lower, links);
 
-    const upper = new TransformNode("tank-link-hi", scene);
-    upper.parent = hull;
+    const upper = tree.add("tank-link-hi", hull);
     upper.position.set(x, LOOP - BELT / 2, 0);
     segment("tank-link-hi", upper, links);
 
-    // The sprocket, at the back and built about its own axle so the node can
+    // The sprocket, at the back and built about its own axle so the joint can
     // simply turn. Two toothed rings with the track's guide horns running
     // between them, a hub, and five raised SPOKES on its face — the teeth say
     // it is turning where they show under the skirt, and the spokes say so in
     // the one place a skirt never covers.
-    const sprocket = new TransformNode("tank-sprocket", scene);
-    sprocket.parent = hull;
+    const sprocket = tree.add("tank-sprocket", hull);
     sprocket.position.set(x, HUB_Y, -END_Z);
     const teeth: Box[] = [];
     for (const ring of [-0.2, 0.2]) {
@@ -485,11 +477,8 @@ export function buildTank(
   // THE HULL — on `sprung`, one segment: every colour on it is one mesh.
   // ==========================================================================
   //
-  // The hull's top, and therefore where the turret ring sits. Derived from the
-  // collider's own height rather than authored, so that raising the box raises
-  // the vehicle drawn inside it: what is left above this is the 0.95 m the
-  // ring and the turret need to reach the top of the box exactly.
-  const deckY = H - 0.95;
+  // The hull's top, and therefore where the turret ring sits — `DECK_Y`.
+  const deckY = DECK_Y;
   /** The nose and the tail plate stand at the collider's own ends. */
   const NOSE = L / 2;
   const TAIL = -NOSE + 0.04;
@@ -730,13 +719,13 @@ export function buildTank(
   // ==========================================================================
   // THE TURRET — traverses on the deck, a little behind centre.
   // ==========================================================================
-  const turret = new TransformNode("tank-turret", scene);
-  turret.parent = sprung;
-  turret.position.set(0, deckY + 0.06, -0.3);
+  const turret = tree.add("tank-turret", sprung);
+  const f = TANK_FRAME;
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   /** Where the commander stands, in the turret's own frame. */
-  const cupolaY = t.cupolaHeight - (deckY + 0.06);
+  const cupolaY = CUPOLA_Y;
   /** The roof, in the turret's frame: the top of the collider box exactly. */
-  const ROOF = H - (deckY + 0.06);
+  const ROOF = H - TURRET_Y;
 
   const tur: Box[] = [];
   const turCyls: Cyl[] = [];
@@ -928,11 +917,11 @@ export function buildTank(
 
   // --- the commander's gun: a ring on the cupola, laid by the SECOND man ----
   //
-  // Three more nodes and two more meshes, and they buy the only thing on this
+  // Three more joints and two more meshes, and they buy the only thing on this
   // vehicle that can be pointed somewhere the main gun is not. The mount YAWS
   // on the cupola ring and the gun ELEVATES in its trunnion, exactly as the
   // turret and the barrel do one scale up — and for the same reason they are
-  // nodes rather than boxes in the stow merge: a part that moves differently
+  // joints rather than boxes in the stow merge: a part that moves differently
   // from the thing it is bolted to cannot share a mesh with it.
   //
   // **The pivot is the CUPOLA's own axis and not where the gun is drawn.** A
@@ -944,9 +933,8 @@ export function buildTank(
   // from this axis, level with the roof items' tops, which is why the
   // commander's sight stands at the far corner of the roof rather than in
   // front of his hatch where the real one does.
-  const mgMount = new TransformNode("tank-mg", scene);
-  mgMount.parent = turret;
-  mgMount.position.set(-0.62, cupolaY + 0.3, 0.15);
+  const mgMount = tree.add("tank-mg", turret);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("tank-mg-ring", mgMount, [
     // The ring itself and the pintle standing out of its front. Both turn with
     // the mount, which is what makes the traverse legible from outside: the
@@ -955,9 +943,8 @@ export function buildTank(
     [0.34, 0.08, 0.34, 0, -0.06, 0, kit.track],
     [0.1, 0.18, 0.1, 0, 0.04, 0.16, kit.track],
   ]);
-  const mgGun = new TransformNode("tank-mg-gun", scene);
-  mgGun.parent = mgMount;
-  mgGun.position.set(0, 0.12, 0.16);
+  const mgGun = tree.add("tank-mg-gun", mgMount);
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("tank-mg-m", mgGun, [
     // The receiver, its box magazine and the spade grips behind it — the three
     // shapes that make a machine gun read as one at ten metres.
@@ -971,11 +958,10 @@ export function buildTank(
     [0.13, 0.26, 0, 0.02, 0.38, kit.track, "z"],
     [0.08, 0.62, 0, 0.02, 0.72, kit.track, "z", 0.07],
   ]);
-  const mgMuzzle = new TransformNode("tank-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("tank-mg-muzzle", mgGun);
   // Just past the barrel, so a flash lit here is outside it and a round fired
   // from here starts outside the turret's own geometry.
-  mgMuzzle.position.set(0, 0.02, 1.1);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The commander's eye over the receiver, and this is the one of the three
   // that the drawing does NOT already answer.** The truck's station and the
@@ -983,7 +969,7 @@ export function buildTank(
   // a powered mount, drawn so that the eye can find where the gun is looking —
   // and a pintle gun with spade grips has no such thing on it, because the man
   // holding it is the sight. There is no man to draw, so nothing is added here
-  // either: the node stands where his head would be and no mesh comes with it.
+  // either: the joint stands where his head would be and no mesh comes with it.
   //
   // On the bore's own vertical plane rather than off to one side, which is what
   // the other two cannot have and this can: with no head to sit behind, the
@@ -991,9 +977,8 @@ export function buildTank(
   // no lateral parallax to explain. 0.20 over the bore puts the barrel's far
   // end 15.3 deg below the sight line at 2.2x — the very bottom edge of the
   // picture, so the weapon frames the shot without standing in it.
-  const mgSight = new TransformNode("tank-mg-sight", scene);
-  mgSight.parent = mgGun;
-  mgSight.position.set(0, 0.22, 0.3);
+  const mgSight = tree.add("tank-mg-sight", mgGun);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the antennae: the only parts of this vehicle that BEND ---------------
   //
@@ -1013,7 +998,7 @@ export function buildTank(
   // and exist for the same reason, one layer down: the gust is one gust.
   const mast = (i: number): Whip => {
     const [x, z] = ANTENNA_FEET[i];
-    return whip(scene, segment, {
+    return whip(tree, segment, {
       name: `tank-whip${i}`,
       parent: turret,
       // The spring foot on the roof is 16 cm tall and this is inside it.
@@ -1031,12 +1016,10 @@ export function buildTank(
   const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   // --- the gun: elevates in the mantlet, in the slot between the wedges -----
-  const gun = new TransformNode("tank-gun", scene);
-  gun.parent = turret;
-  gun.position.set(0, 0.45, 1.25);
+  const gun = tree.add("tank-gun", turret);
+  const g = TANK_GUN;
+  gun.position.set(g.at[0], g.at[1], g.at[2]);
 
-  /** Where the barrel ends, along the gun's own axis. */
-  const BARREL_END = 0.45 + BARREL_LENGTH;
   segment("tank-gun-m", gun, [
     // The muzzle reference sensor, a small box on its stalk over the muzzle.
     [0.05, 0.04, 0.05, 0, 0.14, BARREL_END - 0.12, kit.track],
@@ -1068,26 +1051,18 @@ export function buildTank(
     slab([[-0.05, -0.3], [0.22, -0.3], [0.3, -0.2], [0.3, 0.2], [0.22, 0.3], [-0.05, 0.3]], 0.8, 0.02, 0, kit.armor),
   ]);
 
-  const muzzle = new TransformNode("tank-muzzle", scene);
-  muzzle.parent = gun;
+  const muzzle = tree.add("tank-muzzle", gun);
   // Just past the barrel, so a flash lit here is outside it and a shell fired
   // from here starts outside the hull's own collider box.
-  muzzle.position.set(0, 0, BARREL_END + 0.2);
+  muzzle.position.set(g.muzzleAt[0], g.muzzleAt[1], g.muzzleAt[2]);
 
   const rig: VehicleRig = {
-    root, hull, sprung, turret, gun, muzzle,
+    tree, body: hullBody, root, hull, sprung, turret, gun, muzzle,
     mgMount, mgGun, mgMuzzle, mgSight,
-    antennae, meshes, livery,
-    // The three extents `Vehicle` cannot get anywhere else — see
-    // `VehicleRig.gauge`. All three are drawing decisions made in this file,
-    // which is why they are stated here rather than exported as constants a
-    // physics file would have to import from a model.
-    gauge: TRACK_GAUGE,
-    contactReach: TRACK_REACH,
-    wheelReach: WHEEL_REACH,
+    antennae, segments, kit: drawingOf(tree, root), enabled: true, charred: false,
     setRun: (left, right, _steer, _rotor) => setTrackRun(tracks, left, right),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.tank),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.tank),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }
@@ -1097,8 +1072,9 @@ export function buildTank(
  *
  * The two figures are per TRACK and not per hull: a tank pivoting on the spot
  * has one of them positive and the other negative, which is the read that says
- * "tracks" rather than "wheels". `Vehicle` owns them — how far a track has run is
- * a consequence of the drive — and everything below is the picture.
+ * "tracks" rather than "wheels". The hull's view owns them (`VehicleView`) — how
+ * far a track has run is a consequence of the drive, which the hull tells it —
+ * and everything below is the picture.
  *
  * **The strips are slid modulo the pitch and the sprocket is turned modulo a
  * revolution**, both because the alternative is a coordinate that grows without

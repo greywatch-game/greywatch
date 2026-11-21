@@ -68,6 +68,20 @@ through with it, which reads as two screens up at once; the shell answered
 that with an opaque variant of its veil (`.ui-solid`), and the answer outlived
 it by being turned round.
 
+**The dev-only map viewer is the one lid over the SCENE that takes every screen
+off the glass**, because it is a tool for looking at the world rather than a
+screen of the game's (`BABYLON_EXIT.md` X5.3b, `docs/states.md`): `HUD.setEditing`
+puts `.editing` on `#hud`, and `hud.css` hides every child of `#hud` by
+`visibility` but the two dev panels (the viewer's and the F4 mixer's) and the
+instruments
+(`#hud-fps`, the profiler's `#prof`, `#cullcheck`) and `#toasts` — the deploy
+screen and the minimap under it come back unredrawn, as under `.kitting`. Its
+panel (`viewer/ViewerPanel.ts`) is a dev panel in the map editor's look — the old
+interface font, bare pixels, no unit — and its plan is the FOURTH surface
+`ui/mapPlan.ts` foresaw: `planFromWorld` painted by `paintPlan`, the deploy
+screen's projection, with the viewer's overlays over it in the map editor's colours,
+which no player reads and which the ownership rule below therefore does not bind.
+
 **Nothing under `#hud` is scaled to a short viewport any more.** `--ov-scale`
 drew a screen at the size it was authored for and scaled it down, and at its
 old 0.45 a landscape phone got a legible desktop menu rendered at 45%. Each
@@ -122,7 +136,14 @@ under reduced motion. **A failure fills both halves** (`bootFailed(cause,
 message)`): the plate turns to "Cannot start" over the cause in a few words,
 the bar goes and the edge turns red, and the note becomes the sentence a player
 can act on — "not a secure origin", "no WebGPU", "no graphics device", "no
-physics engine" or "start-up failed".
+physics engine" or "start-up failed". **It comes back ONCE after the boot, and
+only as that third failure**: a graphics device lost a second time inside
+`CONFIG.graphics.deviceLossWindow` (`BABYLON_EXIT.md` X5.4i, `docs/game.md`, "A
+lost device") — `main.ts` keeps the element it took off, puts it back in the
+document with its fade undone, and fails it as the boot does, the same words
+in the same plate, over a page whose frame has stopped. The FIRST loss reloads
+the page, and the menu it comes back to says so in a toast (`#toasts`, the
+`worldFailed` precedent: one lowercase line), which is all the notice there is.
 
 Each screen builds its own root element and appends it to `#hud`, which is why
 construction order in `Game`'s constructor matters exactly once: `HUD` writes
@@ -272,6 +293,17 @@ on this machine; Back is the system corner; the prompts are drawn on their
 controls for the device in hand. Every block is a named grid area over four
 templates, as on the other two.
 
+- **It prints WHICH BUILD this is, small in the bottom corner, on every page
+  and every device** (`buildStamp.ts`): the commit and the day, read off
+  the `<meta name="greywatch-build">` `vite.config.ts` stamps into
+  `index.html` — never compiled into the bundle, whose hash would then move
+  with every commit, and read off the document the service worker actually
+  served, so it is the build RUNNING (`docs/pwa.md`). It stands outside the
+  grid and off the pointer, bottom left where the foot's right-justified
+  hints leave the row empty and bottom right on a landscape phone, and where
+  there is no foot to hold that row (under a finger, on a landscape phone)
+  the grid gives up a band for it. Its first reader was a phone on a slow
+  link that ran yesterday's build through every reload without a word.
 - **It stands over the SCENE, not over a black veil.** Everything it can be
   raised over — the menu, the deploy map, the pause card — is DOM, so it takes
   them off the glass while it is up (`#hud.setting`, the kit screen's
@@ -699,12 +731,13 @@ is for, and it decides how it is drawn.
   which is the same one fact `drawSlot` and the `1`/`2` keys already share.
 
 **One stylesheet per module that writes markup, imported by that module**
-(`HUD.ts`→`hud.css` … `editor/EditorPanel.ts`→`editor/panel.css`); `main.ts`
+(`HUD.ts`→`hud.css` … `viewer/ViewerPanel.ts`→`viewer/viewer.css`,
+`dev/mixer/index.ts`→`dev/mixer/mixer.css`); `main.ts`
 imports `base.css` first. Vite bundles them into one hashed stylesheet the built
 `index.html` links from its head. All of it was once ~2,050 lines inline in
 `index.html`, which cost three things worth not paying again: no compile-time link
 between markup and the rules styling it, so a renamed class was a silent visual
-break; the editor's ~170 lines shipped in every production build; and a CSS-only
+break; the map editor's ~170 lines shipped in every production build; and a CSS-only
 change moved no content-hashed filename. Three rules keep it that way:
 
 - **`base.css` is for what two or more screens share** — the reset, the canvas, the
@@ -1553,8 +1586,12 @@ devices — the card's largest word was its own name, which is what a form says.
 **The MIDDLE of the kit screen is a turntable carrying the real viewmodel.** It
 is not a second model, not a render target and not a second camera: `ViewModel`
 simply has a pose that is not the carried one (`beginInspect` / `spinInspect` /
-`updateInspect` / `endInspect`), and the weapon is already parented to the camera
-and drawn in `VIEWMODEL_GROUP`.
+`updateInspect` / `endInspect`), and the weapon already hangs from the camera
+(its joints, `BABYLON_EXIT.md` X4.3b) and is drawn by our renderer, card and
+all — the card first, then the weapon, then an optic's glass (X4.3c, X4.3d;
+`docs/rendering.md`, "The weapon, ours") — in every state the screen covers,
+`menu` among them, so a kit screen raised off the title has the gun and its
+card on it with no map standing.
 
 - **THE BAY IS MEASURED, and that one change is what the rest of this section is
   downstream of.** The weapon is placed by back-projecting a SCREEN position, and
@@ -1570,7 +1607,7 @@ and drawn in `VIEWMODEL_GROUP`.
   layout freely, in either orientation, and the weapon follows.**
 - **What is left in `CONFIG` is the weapon's own SIZE, and the fit takes the
   worse of two axes.** `frameWidth`/`frameHeight` are the rifle's span as a
-  multiple of the frame's HEIGHT (the axis Babylon's FOV is fixed on, which is
+  multiple of the frame's HEIGHT (the axis the camera's FOV is fixed on, which is
   why the old `aspectReference` could be retired with the anchor), `frameMargin`
   is how much of the bay it may fill, and the weapon is pushed back until both
   fit. The old form could only ever be told about the WIDTH; a measured bay can
@@ -1596,7 +1633,7 @@ and drawn in `VIEWMODEL_GROUP`.
   one.** The carried pose is Euler, composed in the weapon's own frame, so at a
   side-on yaw the pitch a drag asks for arrives as a roll. `endInspect` dropping
   the quaternion is what lets the Euler pose come back at all — while one is set
-  Babylon ignores `rotation` entirely.
+  `rotation` is ignored entirely, as Babylon ignored it.
 - **It rotates about a derived pivot, not the node's origin** (which on a rifle
   is the receiver — a turntable about that would swing the weapon around the
   screen). `applyFit` measures the pivot from the weapon's own muzzle landmark.

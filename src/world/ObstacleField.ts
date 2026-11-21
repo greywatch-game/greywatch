@@ -13,7 +13,7 @@
  * through `rotateToLocalXZ` (boxGeometry.ts, shared with NavGrid) so ramps push
  * correctly and a rotated box is not pushed out of backwards.
  */
-import { Vector3 } from "@babylonjs/core";
+import type { Vector3Ref } from "../math";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
 import {
@@ -225,7 +225,7 @@ export class ObstacleField {
     y: number,
     z: number,
     radius: number,
-    out: Vector3,
+    out: Vector3Ref,
     floor = y + CONFIG.nav.stepHeight,
     ceiling = y + HEADROOM,
   ): boolean {
@@ -403,7 +403,7 @@ export class ObstacleField {
     floor: number,
     ceiling: number,
     radius: number,
-    out: Vector3,
+    out: Vector3Ref,
   ): boolean {
     // Into the box's frame through the shared transform rather than a private
     // copy of the yaw convention — that convention has already been got wrong

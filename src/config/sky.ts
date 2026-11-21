@@ -5,7 +5,7 @@
  * shafts: those are `CONFIG.graphics.volumetrics`, marched through the shadow
  * volume rather than smeared out of the moon's own pixels.
  * Contract: `docs/rendering.md`.
- * Gotcha: the dome and the disc ride at `infiniteDistance`, so their radii and
+ * Gotcha: the dome and the disc ride with the eye, so their radii and
  * heights are angular conveniences, not reachable places. The CLOUDS do not:
  * `clouds.minRadius` is real metres over the map.
  */
@@ -14,7 +14,7 @@
  * The night sky (src/systems/Sky.ts): a gradient dome with baked stars and
  * moon halo, an emissive moon disc that feeds the bloom, and drifting
  * cloud banks. Palette lives in the map's EnvironmentSpec (`sky`); this is
- * geometry and motion. The dome and disc ride at `infiniteDistance`, so radii and
+ * geometry and motion. The dome and disc ride with the eye, so radii and
  * heights are angular conveniences, not reachable places.
  */
 export const sky = {
@@ -92,7 +92,7 @@ export const sky = {
   milkyWayStars: 900,
   /**
    * The cloud MASSES: a ring of faceted, flat-bottomed cloud piles
-   * (`systems/cloudMasses.ts`), lit per facet by `shaders/CloudShader.ts`. They
+   * (`systems/cloudMasses.ts`), lit per facet by `shaders/wgsl/cloud.ts`. They
    * replaced two fBm shells whose soft alpha contour was the one continuous-tone
    * smear left in a frame drawn in hard bands. Every angle here is in DEGREES;
    * the map's `SkySpec` carries the palette and `cloudCover`.
@@ -275,7 +275,8 @@ export const sky = {
      */
     depthMetres: 7000,
     /**
-     * The shading constants `CloudShader` reads: how far the key WRAPS round a
+     * The shading constants of the light (`shaders/wgsl/cloud.ts`, handed them
+     * through `CloudPaint`): how far the key WRAPS round a
      * lump (a volume, not a wall), how much of the dome's horizon colour the
      * lowest clouds take, and the strength of the silver lining on silhouette
      * facets looking toward the light.

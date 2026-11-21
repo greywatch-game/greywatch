@@ -29,7 +29,7 @@
  * owes the support under it**, and the failure is a hole in the weapon rather
  * than anything a build would refuse.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -42,6 +42,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * The magazine's rake — NEGATIVE for the reason every other box magazine here
@@ -189,12 +191,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.51 + BORE_Y, 0.14);
  * to move independently.
  */
 export function buildSniper(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_sniper`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_sniper`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the action: AI's long rectangular receiver, wrapped around the BORE ---
   // Half its section is under the axis, where the other weapons have air, which
@@ -517,15 +520,14 @@ export function buildSniper(
 
   // Merged before the magazine, the bolt and any optic, so none of their parts
   // can end up inside the weapon's own colour groups.
-  const meshes = b.merge("sniper", root);
+  const meshes: ViewSegment[] = b.merge("sniper", root);
 
   // --- magazine: AI's short, deep ten-round box ---
   // Straight and square, and short: it hangs little further under the well
   // than the trigger guard does, which is the read on the one weapon here that
-  // does not hold twenty. Merged into a node of its own so the reload can drop
+  // does not hold twenty. Merged into a joint of its own so the reload can drop
   // it.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.135, 0.055, MAG_RAKE);
   b.upright("mag", POLYMER, [
     { y: -0.078, w: 0.046, d: 0.11, k: 0.12 },
@@ -544,22 +546,20 @@ export function buildSniper(
   ], magPivot);
   meshes.push(...b.merge("sniperMag", magazine));
 
-  // --- the bolt, about the bore, in a node of its own ---
+  // --- the bolt, about the bore, in a joint of its own ---
   // Everything here is built at the weapon's origin and on the axis, because
-  // `ViewModel` turns this node about z to lift the handle: a raceway built
+  // `ViewModel` turns this joint about z to lift the handle: a raceway built
   // anywhere else would swing the bolt through the receiver instead of turning
   // it in one. See `WeaponParts.bolt`.
   //
   // The bore is `BORE_Y` above the origin on this weapon, so the bolt's parts
-  // are built on y = 0 and the node is hung from a fixed SEAT on the bore: the
-  // viewmodel zeroes the bolt node's own transform whenever it puts the part
-  // home, so an offset written on the node itself would be wiped the first
+  // are built on y = 0 and the joint is hung from a fixed SEAT on the bore: the
+  // viewmodel zeroes the bolt joint's own transform whenever it puts the part
+  // home, so an offset written on the joint itself would be wiped the first
   // time it did.
-  const boltSeat = new TransformNode(`${prefix}_boltSeat`, scene);
-  boltSeat.parent = root;
+  const boltSeat = b.joint(`${prefix}_boltSeat`, root);
   boltSeat.position.y = BORE_Y;
-  const bolt = new TransformNode(`${prefix}_bolt`, scene);
-  bolt.parent = boltSeat;
+  const bolt = b.joint(`${prefix}_bolt`, boltSeat);
   b.tube("boltBody", METAL, 0.03, 0.03, 0.18, 0, 0, -0.1);
   b.tube("boltHead", METAL, 0.034, 0.03, 0.024, 0, 0, -0.006);
   // The shroud and the cocking piece — the two parts standing in the open air
@@ -592,7 +592,7 @@ export function buildSniper(
     BOLT_DIR.x * 0.05,
     BOLT_DIR.y * 0.05,
     BOLT_Z,
-    root,
+    b.frame,
     -BOLT_REST,
   );
   b.pin("boltKnob", METAL, 0.036, 0.03, BOLT_DIR.x * 0.094, BOLT_DIR.y * 0.094, BOLT_Z, "x");
@@ -605,7 +605,7 @@ export function buildSniper(
     BOLT_DIR.x * 0.02,
     BOLT_DIR.y * 0.02,
     BOLT_Z,
-    root,
+    b.frame,
     -BOLT_REST,
   );
   meshes.push(...b.merge("sniperBolt", bolt));
@@ -617,7 +617,6 @@ export function buildSniper(
 
   const optics = buildOptics(b, MOUNT, prefix);
   meshes.push(...optics.meshes);
-  b.disposePivots();
 
   return {
     root,

@@ -1,0 +1,590 @@
+/**
+ * CombatFx.ts — The PICTURE of a round: the tracer streak, the impact spark,
+ * the dust disc and the bullet mark, as fixed-size pools.
+ * Owns: the four pools, the `IMPACTS` look table, the tracer's flight and the
+ * impact it spawns on arrival, the tracer's KIT, and the wall query
+ * `drawRounds` makes for a round this client did not resolve.
+ * **Our renderer draws all four pools, and none is a mesh**:
+ * each tracer is a PIECE of its kit (`entities/pieces.ts`) and each mark a
+ * slot of `BulletMarks` (`Game.drawPieces`, `Game.drawMarks`, `BABYLON_EXIT.md`
+ * X4.4b), and since X4.6e each spark and each dust disc a FADE of its kit
+ * (`entities/fades.ts`), drawn in the one back-to-front run among the
+ * see-through panes (`Game.farthestPull`, `render/FarthestRun.ts`), where they
+ * fade as Babylon's transparent sort faded their meshes. Every pipeline of
+ * theirs is on the round's declared list (`Game.roundPipelines`), so nothing
+ * here is posed for the building card's warm-up.
+ * Invariants: it READS the simulation and never writes it — what it draws
+ * reaches it as `CombatSystem.onRound` (wired by `Game`) or as a `drawRounds`
+ * call, and nothing here deals damage, raises a near miss or breaks glass.
+ * Every pool is fixed-size: add new effects to a pool, NEVER allocate per
+ * shot. The authority never builds one — the
+ * simulation half is all `src/sim/SimCore.ts` holds.
+ * Contract: this header. `docs/rendering.md` "Impacts" for the disc and the
+ * mark, `docs/multiplayer.md` for `drawRounds`.
+ *
+ * Split out of `CombatSystem` on the line every mixed system is split on:
+ * the simulation keeps the name and the shot,
+ * and this file keeps everything a GPU is needed for. Its inputs are
+ * `Vector3Like` and are read through their FIELDS: they are the
+ * simulation's, which this view never writes.
+ *
+ * The disc pool is `noGlow`, which the bloom reads every frame; without it
+ * every dust disc blooms like a lamp.
+ * The MARK pool (`BulletMarks`) is the one whose slots outlive the shot, and
+ * the two things that reach out of it are here rather than there: a mark is
+ * owed by the impact KIND (`IMPACTS.mark`, absent on flesh and on glass), and
+ * only ever by a round that stopped on the STATIC world — a hull is "hard"
+ * like any other box and is the one solid thing in the game that drives away
+ * from where it was shot. The simulation says which (`onRound`'s `mark`).
+ * `drawRounds` is the PICTURE without the shot: no target list, no near miss
+ * and no `onShotPath`, so it deals no damage and breaks no glass. It exists for
+ * the rounds this client did not resolve — everybody else's, in a match, where
+ * the authority sends the trigger and nothing else (`docs/multiplayer.md`).
+ * A tracer is a short streak flown from muzzle to impact over several frames,
+ * NOT a muzzle-to-impact beam — the hit is resolved instantly regardless, so
+ * the flight is presentation only and must never gate damage. The impact spark
+ * rides the streak and spawns on arrival: it is the one thing here that waits,
+ * because an impact seen before its round lands is what makes a slowed tracer
+ * read as fake — and `onImpact`, the sound, rides the same clock.
+ */
+import { CONFIG } from "../config";
+import { DISC, Fade, fadeKit, type FadeKit, SPARK } from "../entities/fades";
+import { Piece, pieceKit, type PieceKit, type PiecePart } from "../entities/pieces";
+import { createCylinder, createDisc, createSphere, DOUBLESIDE } from "../geometry/primitives";
+import { Color3, Quaternion as MathQuaternion, Vector3, type Vector3Like } from "../math";
+import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Part } from "../world/parts";
+import { newRayHit, type RayHull, type RayWorld } from "../world/RayWorld";
+import { BulletMarks, type MarkPaint } from "./BulletMarks";
+import type { ImpactKind } from "./CombatSystem";
+
+/**
+ * How each kind looks: the hot core, the dust disc, how big it opens, and the
+ * MARK it leaves once the dust is gone.
+ *
+ * The first three are the moment and the fourth is the minute after it, which
+ * is why `mark` is the one field here whose absence is a statement rather than
+ * a default: a kind with none leaves nothing behind. Flesh does not (there is
+ * no blood in this game), and glass does not (a pane either breaks whole or is
+ * decoration — `docs/world.md`), so the two that mark are the two that throw
+ * dust, and each marks in its own dust's colour a good deal darker. `radius`
+ * is metres, before the per-mark jitter `BulletMarks.place` rolls on top.
+ */
+const IMPACTS: Record<
+  ImpactKind,
+  {
+    spark: string | null;
+    disc: string | null;
+    from: number;
+    to: number;
+    mark: { hex: MarkPaint; radius: number } | null;
+  }
+> = {
+  // A hit on a body gets the spark and NO disc. Flesh does not throw dust on
+  // the world, and the hitmarker plus `Sfx.hit` is where that confirmation
+  // actually lands. There is no blood anywhere in this game and this is not
+  // the pass that introduces it.
+  flesh: { spark: "#ffe680", disc: null, from: 0, to: 0, mark: null },
+  // Stone and timber: the original grey spark, plus a small pale bloom of
+  // dust off the face — and a chip out of the render that stays.
+  hard: {
+    spark: "#c8c8c8",
+    disc: "#b9b4ab",
+    from: 0.15,
+    to: 0.5,
+    mark: { hex: "#2b2723", radius: 0.042 },
+  },
+  // Earth does not spark. It throws more and glows less, so the disc alone,
+  // bigger and duller — and the divot it leaves is bigger and warmer for the
+  // same reason.
+  ground: {
+    spark: null,
+    disc: "#6b5a44",
+    from: 0.2,
+    to: 0.75,
+    mark: { hex: "#4b3a26", radius: 0.062 },
+  },
+  // Glass is the odd one, and it is the ONLY kind not chosen by
+  // `RayHit.surface`: a round passes through a pane rather than stopping on
+  // it, so there is no hit to read a surface off. `GlassSystem` names this
+  // one directly at the crossing point. A bright cold spark and no disc —
+  // glass throws shards, which `DebrisSystem` draws, not dust.
+  glass: { spark: "#cfeaf2", disc: null, from: 0, to: 0, mark: null },
+};
+
+interface Tracer {
+  /**
+   * The streak on screen: a piece of the tracer's kit, which our renderer
+   * draws (`BABYLON_EXIT.md` X4.4b) — its node's quaternion, position and
+   * length (`scaling.y`) the mesh's were.
+   */
+  piece: Piece;
+  /** Muzzle, and the unit direction to the impact point. */
+  from: Vector3;
+  dir: Vector3;
+  /** Metres from muzzle to whatever the round stopped on. */
+  dist: number;
+  /** Metres the leading edge has flown. The tail trails it by `tracerLength`. */
+  head: number;
+  alive: boolean;
+  /** Where the round stopped — `from + dir * dist`, kept for the spark. */
+  impact: Vector3;
+  /**
+   * The impact this round owes, spawned when the streak's head arrives and
+   * nulled so it fires once. Null for a round that stopped on nothing.
+   */
+  impactKind: ImpactKind | null;
+  /**
+   * The surface normal there, copied at spawn so the streak allocates nothing
+   * in flight. Points up when the pick could not supply one, which is the
+   * right guess for the only surface that answers "ground".
+   */
+  impactNormal: Vector3;
+  /**
+   * Whether this round's impact may leave a MARK — which is a question about
+   * what it stopped ON and not about the surface, so it cannot be read off
+   * `impactKind`.
+   *
+   * False for a round that stopped on a HULL. A hull answers "hard" like every
+   * other box in the world and gets the spark and the dust for it, but it is
+   * the one solid thing in this game that MOVES (`docs/vehicles.md`), and a
+   * decal is stood in the world rather than parented to anything — so a mark
+   * on a tank is one hanging in the street the moment it drives off.
+   */
+  impactMark: boolean;
+}
+
+/** One dust disc: a facing quad that opens and fades on the surface. */
+interface Disc {
+  /** What our renderer draws: the mesh it was until `BABYLON_EXIT.md` X4.6e. */
+  fade: Fade;
+  t: number;
+  from: number;
+  to: number;
+}
+
+interface Spark {
+  fade: Fade;
+  t: number;
+}
+
+/**
+ * Every colour a spark or a disc is painted, in `IMPACTS`' order, each once:
+ * a fade's `slot` is its index here plus one (`entities/fades.ts`), and our
+ * renderer is handed the table (`CelMaterialFactory.poolEmissiveRecipe`) as
+ * `getEmissive`'s materials were each handed one colour.
+ */
+export const FADE_COLOURS: readonly string[] = (() => {
+  const out: string[] = [];
+  for (const look of Object.values(IMPACTS)) {
+    for (const hex of [look.spark, look.disc]) if (hex && !out.includes(hex)) out.push(hex);
+  }
+  return out;
+})();
+
+/** The colours of `FADE_COLOURS` as `getEmissive` made each material's `emissiveColor` — what the glow's mask scales. */
+export const FADE_EMISSIVE: readonly Color3[] = FADE_COLOURS.map((hex) => Color3.FromHexString(hex));
+
+/** A colour's slot in `FADE_COLOURS`, 1-based. */
+function slotOf(hex: string): number {
+  return FADE_COLOURS.indexOf(hex) + 1;
+}
+
+/** The tracer's paint: unlit, so a streak at night is its own light. */
+const TRACER = "#ffe680";
+
+/**
+ * The tracer's one part — a unit-tall thin cylinder on Y, stretched along its
+ * flight — as its kit makes it (`pieceKit`): what `MeshBuilder.CreateCylinder`
+ * made a mesh of until `BABYLON_EXIT.md` X4.4b, born at the identity
+ * quaternion as that mesh was given one.
+ */
+export function tracerParts(mats: CelMaterialFactory): PiecePart[] {
+  const part = new Part("tracer0", createCylinder({ height: 1, diameter: 0.055, tessellation: 5 }));
+  part.material = mats.getEmissive(TRACER);
+  part.rotationQuaternion = MathQuaternion.Identity();
+  return [{ part, cel: null, unlit: TRACER, parent: -1 }];
+}
+
+/** Reused by the tracer update so a live streak costs no allocation. */
+const SCRATCH = new Vector3();
+/** Where a drawn round stopped, handed to `spawnTracer`, which copies it. */
+const DRAWN_TO = new Vector3();
+const UP = Vector3.Up();
+const FORWARD = Vector3.Forward();
+
+/**
+ * The transient effects a round throws off, object-pooled. Built once by
+ * `Game` and never rebuilt — a map change clears it.
+ */
+export class CombatFx {
+  private tracers: Tracer[] = [];
+  /**
+   * The tracer's kit, built here once (where the first streak's mesh was made
+   * until `BABYLON_EXIT.md` X4.4b, so its material is asked of the factory at
+   * the same point in its order), and every streak's piece, by slot: what
+   * `Game.drawPieces` hands our renderer.
+   */
+  readonly tracerKit: PieceKit;
+  readonly tracerPieces: Piece[] = [];
+  private sparks: Spark[] = [];
+  private discs: Disc[] = [];
+  /**
+   * The sparks' and the discs' kits (`BABYLON_EXIT.md` X4.6e): the arrays
+   * `MeshBuilder.CreateSphere` and `CreateDisc` made each of their meshes of.
+   */
+  readonly sparkKit: FadeKit = fadeKit(createSphere({ diameter: 0.3, segments: 4 }));
+  readonly discKit: FadeKit = fadeKit(createDisc({ radius: 1, tessellation: 8, sideOrientation: DOUBLESIDE }));
+  /**
+   * Every spark, then every disc, by slot — the order their meshes stood in
+   * the scene, which is what broke a tie in Babylon's sort: what
+   * `Game.farthestPull` reads (never writes).
+   */
+  readonly fades: Fade[] = [];
+  /**
+   * The fourth pool, and the only one whose slots outlive the shot — see
+   * `BulletMarks`. Built here rather than wired by `Game` for the reason the
+   * other three are: it is this file's own picture of a round arriving, and
+   * nothing outside ever raises one. Read (never written) by `Game.drawMarks`,
+   * which hands its standing slots to our renderer (`BABYLON_EXIT.md` X4.4b).
+   */
+  readonly marks: BulletMarks;
+
+  /**
+   * Wired by Game: a round ARRIVED somewhere, at the moment its streak got
+   * there rather than the moment the damage resolved.
+   *
+   * A callback because this file draws the player's rounds and every bot's
+   * and must not know what `Sfx` is. `at` is the tracer's own vector: read
+   * it, do not keep it.
+   */
+  onImpact: (at: Vector3, kind: ImpactKind) => void = () => {};
+
+  /**
+   * The solid world, for `drawRounds`' own wall query. Wired beside
+   * `CombatSystem.setWorld` from `installMap`, so a drawn round stops where a
+   * resolved one would.
+   */
+  private rays: RayWorld | null = null;
+
+  /** `drawRounds`' wall query. Scratch: read inside the call, never held. */
+  private readonly wall = newRayHit();
+
+  setWorld(rays: RayWorld | null): void {
+    this.rays = rays;
+  }
+
+  constructor(mats: CelMaterialFactory) {
+    const fx = CONFIG.effects;
+    this.tracerKit = pieceKit("tracer", tracerParts(mats));
+    for (let i = 0; i < fx.tracerPoolSize; i++) {
+      const piece = new Piece(this.tracerKit);
+      this.tracerPieces.push(piece);
+      this.tracers.push({
+        piece,
+        from: Vector3.Zero(),
+        dir: Vector3.Forward(),
+        dist: 0,
+        head: 0,
+        alive: false,
+        impact: Vector3.Zero(),
+        impactKind: null,
+        impactNormal: Vector3.Up(),
+        impactMark: false,
+      });
+    }
+    for (let i = 0; i < fx.sparkPoolSize; i++) {
+      const fade = new Fade(SPARK);
+      fade.slot = slotOf("#ffe680");
+      this.fades.push(fade);
+      this.sparks.push({ fade, t: 0 });
+    }
+    for (let i = 0; i < fx.discPoolSize; i++) {
+      // DOUBLESIDE as GEOMETRY (`discKit`), as the mesh was built: the pool's
+      // pipeline culls back faces like every unlit one, and a disc is lifted
+      // off its surface and can be looked at from either side of a thin wall.
+      // Out of the bloom — see the header: the run draws no disc in the mask,
+      // or a brown dust disc would bloom like a lamp.
+      const fade = new Fade(DISC);
+      fade.node.quaternion = MathQuaternion.Identity();
+      this.fades.push(fade);
+      this.discs.push({ fade, t: 0, from: 0, to: 1 });
+    }
+    this.marks = new BulletMarks();
+  }
+
+  /**
+   * A round the SIMULATION resolved — `CombatSystem.onRound`, wired by `Game`
+   * to this and to nothing else. The arguments are that event's, and every
+   * vector in it is read here and copied, never held: `to` is the shot's
+   * `hitPoint`, `normal` the wall query's scratch.
+   */
+  drawRound(
+    muzzle: Vector3Like,
+    to: Vector3Like,
+    kind: ImpactKind | null,
+    normal: Vector3Like | null,
+    mark: boolean,
+  ): void {
+    this.spawnTracer(muzzle, to, kind, normal, mark);
+  }
+
+  /**
+   * Rounds SOMEBODY ELSE fired, DRAWN and nothing else — `drawBlast`'s
+   * counterpart, public for the same reason: in a match the authority raises
+   * them with nothing on the wire but who fired, and this client owes the
+   * picture.
+   *
+   * Offline every tracer in the village comes out of `CombatSystem.fire`
+   * (through `onRound`), because this machine resolves every round in it. In a
+   * netplay round it resolves exactly one shooter's — its own — so without
+   * this the rest of the roster fired invisible rounds: the report and the
+   * minimap reveal arrived and nothing left the barrel. See
+   * `Game.drawNetShots`.
+   *
+   * Three things `fire` does are deliberately NOT done here, and each one is
+   * an outcome rather than a picture. No target list is walked, so nothing
+   * takes damage and no near miss is raised — the authority sends `hit`,
+   * `damage` and `nearmiss` itself, and a second opinion here would double
+   * every cue it carries. And `onShotPath` is not raised, so this breaks no
+   * glass: a pane is the authority's (`docs/multiplayer.md`), and a client
+   * breaking one off a drawn round would put a hole in a window nobody shot
+   * through on any other screen.
+   *
+   * What is left is the wall query — the same `castRound` `fire` pays for, so
+   * the streak stops where the round did and the dust comes off the surface it
+   * stopped on. `origin` is the shooter's EYE and `muzzle` is where the streak
+   * is flown from, which is the split `BattleSystem.botFire` already makes.
+   *
+   * **The BURST is one call and one ray**, which is the whole reason the count
+   * is a parameter rather than the caller looping: a snapshot's worth of
+   * rounds off one slot share an origin and an axis by construction — the
+   * client has one pose for them — so the second cast could only ever return
+   * what the first did. What differs is WHEN each one leaves the barrel, and
+   * that is `spacing`, laid back across the interval exactly as the reports
+   * are.
+   */
+  drawRounds(
+    origin: Vector3Like,
+    dir: Vector3Like,
+    muzzle: Vector3Like,
+    range: number,
+    rounds: number,
+    spacing: number,
+    fromHull: RayHull | null = null,
+  ): void {
+    const hitWall =
+      this.rays !== null &&
+      this.rays.castRound(origin, dir, range, this.wall, fromHull);
+    const dist = hitWall ? this.wall.distance : range;
+    // On the FIELDS: either library's vector could arrive here until X6.1f.
+    // Scratch, and handed straight to `spawnTracer`, which copies it.
+    DRAWN_TO.copyFromFloats(
+      origin.x + dir.x * dist,
+      origin.y + dir.y * dist,
+      origin.z + dir.z * dist,
+    );
+    const kind = hitWall ? this.wall.surface : null;
+    const normal = hitWall ? this.wall.normal : null;
+    const mark = hitWall && this.wall.hull === null;
+    for (let i = 0; i < rounds; i++) {
+      this.spawnTracer(muzzle, DRAWN_TO, kind, normal, mark, i * spacing);
+    }
+  }
+
+  update(dt: number): void {
+    // Tracers: a fixed-length streak flying from the muzzle to the impact
+    // point. The head runs out to `dist` and stops there; the tail keeps going
+    // until it catches up, so the streak emerges from the barrel and is eaten
+    // by whatever the round hit rather than popping in and out whole.
+    const fx = CONFIG.effects;
+    for (const tr of this.tracers) {
+      if (!tr.alive) continue;
+      tr.head += fx.tracerSpeed * dt;
+      // Still behind the barrel — see `spawnTracer`. It holds a pool slot,
+      // which is the point: a queued round that lost its slot to the next
+      // shot would be one that never left.
+      if (tr.head < 0) continue;
+      const node = tr.piece.root;
+      node.visible = true;
+      if (tr.impactKind !== null && tr.head >= tr.dist) {
+        this.spawnImpact(tr.impact, tr.impactNormal, tr.impactKind, tr.impactMark);
+        // Nulled so it fires once, and it is also what makes the sound and
+        // the visual one event rather than two things that could disagree.
+        tr.impactKind = null;
+      }
+      const tail = tr.head - fx.tracerLength;
+      if (tail >= tr.dist) {
+        tr.alive = false;
+        node.visible = false;
+        continue;
+      }
+      const back = Math.max(tail, 0);
+      const len = Math.max(Math.min(tr.head, tr.dist) - back, 0.01);
+      // Pooled effect: no per-frame allocation. The sum is Babylon's
+      // `copyFrom(from).addInPlace(scaled)`, component for component.
+      tr.dir.scaleToRef(back + len / 2, SCRATCH);
+      node.position.set(tr.from.x + SCRATCH.x, tr.from.y + SCRATCH.y, tr.from.z + SCRATCH.z);
+      node.scaling.set(1, len, 1);
+    }
+
+    // Sparks: quick scale-out pops.
+    for (const s of this.sparks) {
+      if (s.t > 0) {
+        s.t -= dt;
+        const k = Math.max(0, s.t / 0.18);
+        s.fade.node.scaling.setAll(0.4 + (1 - k) * 1.6);
+        s.fade.visibility = k;
+        if (s.t <= 0) s.fade.node.visible = false;
+      }
+    }
+
+    // Dust discs: open out from `from` to `to` and fade as they go. The fade
+    // is the square of the remaining life rather than the life itself, so
+    // most of the disc's visible time is spent near its opening size — dust
+    // thrown off a wall is briefly dense and then mostly gone, and a linear
+    // alpha reads as a solid plate shrinking.
+    for (const d of this.discs) {
+      if (d.t > 0) {
+        d.t -= dt;
+        const k = Math.max(0, d.t / CONFIG.effects.discLife);
+        d.fade.node.scaling.setAll(d.from + (1 - k) * (d.to - d.from));
+        d.fade.visibility = k * k;
+        if (d.t <= 0) d.fade.node.visible = false;
+      }
+    }
+  }
+
+  /** Clears transient effects between rounds. */
+  clearTransient(): void {
+    for (const tr of this.tracers) {
+      tr.alive = false;
+      tr.impactKind = null;
+      tr.piece.root.visible = false;
+    }
+    for (const s of this.sparks) {
+      s.t = 0;
+      s.fade.node.visible = false;
+    }
+    for (const d of this.discs) {
+      d.t = 0;
+      d.fade.node.visible = false;
+    }
+    // The marks go with them, and this is the only thing that takes one off
+    // the world: they belong to the MAP that was standing when they were
+    // made, and this method is called from `teardownMap` before the next one
+    // is built.
+    this.marks.clear();
+  }
+
+  /**
+   * `kind` is the impact this round owes on arrival, or null if it stopped on
+   * nothing. A stolen slot (exhausted pool) drops its pending impact with the
+   * streak it belonged to, which is right: an impact whose tracer was recycled
+   * would pop with nothing visibly arriving — and would fire a sound with it.
+   *
+   * `normal` is the surface's, or null where there is no disc to orient (a
+   * flesh hit, or a round that stopped on nothing). Every vector is COPIED
+   * here, through its fields, rather than held — so nothing in flight
+   * references a query result, and either library's vector could arrive (until
+   * X6.1f).
+   */
+  private spawnTracer(
+    from: Vector3Like,
+    to: Vector3Like,
+    kind: ImpactKind | null,
+    normal: Vector3Like | null,
+    mark: boolean,
+    delay = 0,
+  ): void {
+    const tr = this.tracers.find((t) => !t.alive) ?? this.tracers[0];
+    tr.from.copyFromFloats(from.x, from.y, from.z);
+    const delta = tr.dir.copyFromFloats(to.x - from.x, to.y - from.y, to.z - from.z);
+    const dist = Math.max(delta.length(), 0.01);
+    delta.scaleInPlace(1 / dist);
+    tr.dist = dist;
+    // A round still waiting its turn starts with its head BEHIND the muzzle —
+    // the delay expressed as the metres it has yet to fly rather than as a
+    // clock of its own, so `update` needs no second timer and the pool stays a
+    // pool. See `drawRounds`, the one caller that passes one.
+    tr.head = -delay * CONFIG.effects.tracerSpeed;
+    tr.alive = true;
+    tr.impact.copyFromFloats(to.x, to.y, to.z);
+    tr.impactKind = kind;
+    tr.impactMark = mark;
+    // Up is the right guess where the pick could not supply one: the only
+    // surface that answers "ground" is the valley floor.
+    if (normal) tr.impactNormal.copyFromFloats(normal.x, normal.y, normal.z);
+    else tr.impactNormal.set(0, 1, 0);
+    // The direction is fixed for the whole flight, so this is set once here and
+    // only `update` moves the streak along it.
+    const node = tr.piece.root;
+    MathQuaternion.FromUnitVectorsToRef(UP, delta, node.quaternion!);
+    node.position.copyFrom(tr.from);
+    node.scaling.set(1, 0.01, 1);
+    node.visible = tr.head >= 0;
+  }
+
+  /**
+   * A round arriving: the hot core, the dust it throws, and the noise of it.
+   *
+   * One entry point for all three so the surface is looked up once and the
+   * sound cannot drift out of step with the picture — they are the same
+   * event, and this is the moment the streak got there rather than the moment
+   * the damage resolved. Whether the sound is actually played is `Sfx`'s
+   * decision, not this file's: it owns the voice budget the sixteen bots
+   * are competing for, and there is nothing useful this side of it could
+   * decide about audibility.
+   */
+  private spawnImpact(
+    pos: Vector3,
+    normal: Vector3,
+    kind: ImpactKind,
+    mark: boolean,
+  ): void {
+    const look = IMPACTS[kind];
+    if (look.spark) this.spawnSpark(pos, look.spark);
+    if (look.disc) this.spawnDisc(pos, normal, look);
+    // Two gates and they ask different things: the KIND says whether this
+    // surface is one that keeps a mark at all, and `mark` says whether what
+    // was hit will still be there to keep it.
+    if (look.mark && mark) {
+      this.marks.place(pos, normal, look.mark.hex, look.mark.radius);
+    }
+    this.onImpact(pos, kind);
+  }
+
+  private spawnDisc(
+    pos: Vector3,
+    normal: Vector3,
+    look: { disc: string | null; from: number; to: number },
+  ): void {
+    const d = this.discs.find((x) => x.t <= 0) ?? this.discs[0];
+    // Off the surface along its own normal. A coplanar quad z-fights with the
+    // wall it was thrown from, and that reads as a broken decal rather than
+    // as dust — see `effects.discLift`.
+    normal.scaleToRef(CONFIG.effects.discLift, SCRATCH);
+    const node = d.fade.node;
+    node.position.copyFrom(pos).addInPlace(SCRATCH);
+    // A disc is built in the XY plane facing +Z, so its facing is the axis
+    // that has to be turned onto the normal.
+    MathQuaternion.FromUnitVectorsToRef(FORWARD, normal, node.quaternion!);
+    d.fade.slot = slotOf(look.disc!);
+    d.from = look.from;
+    d.to = look.to;
+    node.scaling.setAll(look.from);
+    d.fade.visibility = 1;
+    node.visible = true;
+    d.t = CONFIG.effects.discLife;
+  }
+
+  private spawnSpark(pos: Vector3, colorHex: string): void {
+    const s = this.sparks.find((x) => x.t <= 0) ?? this.sparks[0];
+    const node = s.fade.node;
+    node.position.copyFrom(pos);
+    s.fade.slot = slotOf(colorHex);
+    node.scaling.setAll(0.4);
+    node.visible = true;
+    s.t = 0.18;
+  }
+}

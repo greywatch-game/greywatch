@@ -4,7 +4,6 @@
  * its sign, its bay numbers and its date stone. Part of the downtown set: follows the contract in kit/core.ts and
  * the set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -112,11 +111,10 @@ import {
  * has three slots in it you can see the sky through from inside.
  */
 export function buildDepot(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "depot");
+  const b = new Build(mats, "depot");
   const w = p.width ?? 28;
   const d = p.depth ?? 16;
   /** Wall head, where the sawtooth springs from. */

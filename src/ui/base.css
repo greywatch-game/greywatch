@@ -11,10 +11,10 @@
    GREYWATCH HUD
    ---------------------------------------------------------------------
    The interface is split one sheet per module that writes markup —
-   base (this file), hud, overlay, minimap, deploy, loadout, and the editor's
-   panel under src/editor. Each is imported by its own module, so a
-   screen's rules and the code that writes its classes move together and
-   the editor's sheet rides the dynamic import out of the build.
+   base (this file), hud, overlay, minimap, deploy, loadout, and the dev
+   panels under src/viewer and src/dev. Each is imported by its own module, so
+   a screen's rules and the code that writes its classes move together and a
+   dev panel's sheet rides the dynamic import out of the build.
 
    House rules for anything added to ANY of them, learned the hard way:
 

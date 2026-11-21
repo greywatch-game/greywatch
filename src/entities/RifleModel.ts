@@ -8,7 +8,7 @@
  * along with the primitives this is written in. The optics are `optics.ts`'s,
  * shared with the SMG rather than duplicated here.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -21,6 +21,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * Height of the bore above the origin: the middle of the upper receiver.
@@ -130,12 +132,13 @@ const SUPPORT_ELBOW = new Vector3(-0.3, -0.5, 0.12);
  * the lens, and it costs four draws however many boxes go into it.
  */
 export function buildRifle(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_rifle`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_rifle`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- upper receiver: the SCAR's spine. One long, deep aluminium extrusion
   // from the stock hinge to the gas block, with the lower hung under its rear
@@ -551,7 +554,7 @@ export function buildRifle(
     [0.548, BORE_Y + 0.024],
   ], 0.04, 0.004);
   b.pin("gasRegulator", BODY, 0.018, 0.056, 0, BORE_Y + 0.004, 0.575);
-  b.box("regulatorLever", BODY, 0.004, 0.024, 0.008, -0.03, BORE_Y + 0.012, 0.575, b.root, 0.4);
+  b.box("regulatorLever", BODY, 0.004, 0.024, 0.008, -0.03, BORE_Y + 0.012, 0.575, b.frame, 0.4);
   b.tube("barrel", BODY, 0.024, 0.03, 0.18, 0, BORE_Y, 0.692);
   b.tube("barrelShoulder", BODY, 0.03, 0.03, 0.02, 0, BORE_Y, 0.612);
   // Birdcage: rear collar, four struts with the slots between them, open front
@@ -570,14 +573,13 @@ export function buildRifle(
 
   // The rifle itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
-  const meshes = b.merge("rifle", root);
+  const meshes: ViewSegment[] = b.merge("rifle", root);
 
   // The SCAR-H's 20-round 7.62 magazine: STRAIGHT, deep and plain, standing
   // at a slight forward rake. Built AFTER the weapon's own merge and merged
-  // into a node of its own, so the reload can drop it out of the well — see
+  // into a joint of its own, so the reload can drop it out of the well — see
   // `WeaponParts.magazine`.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const magPivot = b.pivot("magPivot", 0, -0.12, 0.066, MAG_RAKE);
   const magRing = (y: number, w: number, d: number, k = 0.18) => ({ y, w, d, k });
   b.upright("magBody", POLYMER, [
@@ -619,7 +621,6 @@ export function buildRifle(
 
   const optics = buildOptics(b, MOUNT, prefix);
   meshes.push(...optics.meshes);
-  b.disposePivots();
 
   return {
     root,

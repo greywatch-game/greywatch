@@ -98,9 +98,10 @@ function ordnanceEffect(id: EquipmentId): OrdnanceEffect {
 /**
  * One rocket or one mine going off: the hull it struck, then the blast.
  *
- * **One copy for both simulations**, and it has to be: the authority's used to
- * be `Game.resolveOrdnance` "to the line", which is what a second copy always
- * says until the day it stops being true. `blasts` is the simulation's own
+ * **One copy, the simulation core's** (offline and on the authority alike),
+ * and it has to be: the authority's used to be `Game.resolveOrdnance` "to the
+ * line", which is what a second copy always says until the day it stops
+ * being true. `blasts` is the simulation's own
  * `GrenadeSystem`, handed in rather than imported — the one implementation of
  * an explosion in the game. A client in a MATCH must not call this at all:
  * its rocket is a prediction and the authority's `explode` event draws the
@@ -120,7 +121,7 @@ export function resolveOrdnance(
   // exists.
   if (hit.hull) hit.hull.takeDamage(e.damage, hit.at, "shell");
   // …and the splash. `by` is whoever fired it, so a kill lands on their row
-  // exactly as a grenade's does — each side's `onBlastHit` is already wired
+  // exactly as a grenade's does — the core's `onBlastHit` is already wired
   // for it and needed no arm.
   blasts.blastAt(hit.at, hit.team, hit.by, {
     radius: e.blast.radius,

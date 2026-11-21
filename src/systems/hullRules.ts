@@ -1,10 +1,11 @@
 /**
- * hullRules.ts — what a hull DOES to the world, stated once for both
- * simulations: a round out of the main gun, a round out of the cupola gun,
+ * hullRules.ts — what a hull DOES to the world, stated once — for the
+ * simulation core, and for a match client's PREDICTED hull round: a round out
+ * of the main gun, a round out of the cupola gun,
  * what the tracks run over, and what a crew owes when its hull brews up.
  * Owns: `fireHullGun`, `fireHullMg`, `crushSweep`, `driverOf` and `crewLost`,
- * and `HullRules`, the context `Game` and `HeadlessGame` each build once to
- * run them against.
+ * and `HullRules`, the context `SimCore` builds once to run them against
+ * (and `Game` once for its netplay prediction, which pays nobody).
  * Invariants: a hull's round goes down the GUN's axis and never the camera's;
  * friendly fire is excluded by construction (every list is the hull's own
  * side's enemies); the direct hit and the splash are two resolutions that
@@ -18,7 +19,7 @@
  * along.
  *
  * **There is one of these because there were two**, `Game.resolveShell` and
- * `HeadlessGame.resolveShell` (and the cupola gun's and the tracks' pairs
+ * `SimCore.resolveShell` (and the cupola gun's and the tracks' pairs
  * beside them), each the other "with the presentation taken out" — which held
  * until it did not: the client's `creditKill` returned nothing while the
  * authority's said whether it paid, and the credit itself had once been
@@ -27,25 +28,27 @@
  * damage, the splash, the hearing or the crush gate is a second thing to keep
  * in step.
  *
- * **What the two sides still differ in is HANDED IN, never branched on.** In a
- * match the client's copy of a round is a PREDICTION: its targets refuse local
+ * **What the two callers differ in is HANDED IN, never branched on.** In a
+ * match the client's copy of a round is a PREDICTION (offline the guns and
+ * the tracks are the core's alone): its targets refuse local
  * damage (`NetSoldier.takeDamage`, `Vehicle.predicted`), so `shot.killed` is
  * false and nothing here can credit a kill, and its `blastAt` declines to draw
  * a splash the authority's `explode` event will draw instead. Neither fact is
  * known in this file.
  */
-import { Vector3 } from "@babylonjs/core";
 import type { Bot } from "../entities/Bot";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
-import { DRIVER, type CrewSeat, type Vehicle } from "../entities/Vehicle";
+import type { Vehicle } from "../entities/Vehicle";
+import { DRIVER, type CrewSeat } from "../entities/hullSeats";
+import { Vector3, type Vector3Like } from "../math";
 import type { CombatSystem, Hittable, ShotResult } from "./CombatSystem";
 import type { GrenadeSystem } from "./GrenadeSystem";
 import { settleKill, type KillLedger } from "./killRules";
 import { UNDRAWN } from "./RoundRandom";
 
 /**
- * Everything a hull's rules ask of the rest of the game, built once per
- * simulation. Methods rather than captured values, because what they answer
+ * Everything a hull's rules ask of the rest of the game, built once by each
+ * caller. Methods rather than captured values, because what they answer
  * with — the roster, the fleet, whether a match is live — changes under them.
  */
 export interface HullRules {
@@ -63,8 +66,13 @@ export interface HullRules {
   bodies(team: Team): readonly Combatant[];
   /** The one implementation of a blast — `GrenadeSystem.blastAt`. */
   blastAt(...args: Parameters<GrenadeSystem["blastAt"]>): void;
-  /** Bots hear it — `BattleSystem.hearGunshot`. */
-  hearGunshot(at: Vector3, team: Team, dir: Vector3): void;
+  /**
+   * Bots hear it — `BattleSystem.hearGunshot`. A PROPERTY rather than a
+   * method signature for `Hittable.takeDamage`'s reason: its vectors are
+   * `Vector3Like`, and only a property makes `strictFunctionTypes` refuse an
+   * implementer that would hand one to a Babylon method.
+   */
+  hearGunshot: (at: Vector3Like, team: Team, dir: Vector3Like) => void;
   /** The PERSON in `seat` of `tank`, or null. Asked before the bot crew. */
   personIn(tank: Vehicle, seat: CrewSeat): Combatant | null;
   /** The bot in `seat` of `tank`, or null — `VehicleCrew.crewOf`. */
@@ -90,6 +98,30 @@ export interface HullRound {
 const MUZZLE = new Vector3();
 const DIR = new Vector3();
 const ROUND: HullRound = { muzzle: MUZZLE, dir: DIR, shot: null! };
+
+/**
+ * How far ahead of a hull's own clock a PERSON's round may be asked, in
+ * seconds — the `early` `Match` hands `fireHullGun` and `fireHullMg` for a
+ * person (a bot crew asks with none). The gate on a person's rate is
+ * somewhere else, and the hull's clock, asked strictly, refuses rounds that
+ * gate let through.
+ * - **That gate is `Match`'s rate bucket**, and this is that bucket's slack
+ *   (`SHOT_SLACK`, `server/claimGates.ts` — `Match` refuses to load if the two
+ *   disagree): the jitter a claimed round arriving on the network's schedule is
+ *   forgiven. It is the only gate there is, offline included — the page's own
+ *   round is a `Match` too, and its player a peer of it.
+ * - **Why 0.15 s.** A client predicts its hull (`gunReady`, `fireMg`) and
+ *   steps it AFTER the trigger in its frame, while the core steps its own
+ *   copy before — so the two clocks count the same steps shifted by one
+ *   frame, and under a varying `dt` the core's can stand up to a frame
+ *   behind. Asked strictly it would refuse the round the page has already
+ *   kicked and drawn, in silence. 0.15 is three times `Game.tick`'s 0.05 s
+ *   frame clamp.
+ * Longer than the cupola gun's whole interval, so on that gun the hull's
+ * clock never refuses a round the gate passed; on the main gun it refuses
+ * only a shell fired through somebody else's reload.
+ */
+export const HULL_EARLY = 0.15;
 
 /**
  * One round out of a hull's MAIN gun, whoever pulled the trigger. Null when
@@ -157,8 +189,8 @@ export function fireHullGun(
   // **A HULL is not a row on the scoreboard** — `shot.target` can be one, armour
   // being answered by its collider rather than by a sphere (`CombatSystem.fire`),
   // and what a burning tank pays is its CREW, through `crewLost` and the
-  // driver's own death. That guard is `paysKiller`'s, inside each side's
-  // `creditKill`, so this site says only WHEN.
+  // driver's own death. That guard is `paysKiller`'s, inside
+  // `SimCore.creditKill`, so this site says only WHEN.
   if (shot.killed && shot.target) {
     settleKill(ctx.ledger, by, shot.target, tank.team, "shell");
   }
@@ -231,7 +263,7 @@ function driverOf(ctx: HullRules, tank: Vehicle): Combatant | null {
 /**
  * What the TRACKS killed this frame: every enemy body a moving hull is
  * standing in, put down and credited to whoever is driving. Run right after
- * `VehicleSystem.update` on both sides.
+ * `VehicleSystem.update` inside `SimCore.step`, on every host.
  *
  * **This is the one thing armour does that is not a weapon**, and it exists
  * because of a rule this game cannot bend: a tank is in no baked structure, so
@@ -305,7 +337,7 @@ export function crushSweep(ctx: HullRules): void {
  * thrown clear of his own hull, which is the only reading of a burning tank
  * that is not a man lying down beside one, and it takes BOTH — a round drops a
  * body where an explosion throws it. A person inside the same hull dies of the
- * same pair, through each simulation's own `onDestroyed`.
+ * same pair, through `SimCore`'s `onDestroyed`.
  *
  * **The ONE door that credits nobody**, and the reason `DeathCause` has a
  * `crew`: the rocket or the shell that destroyed the hull was paid at its own

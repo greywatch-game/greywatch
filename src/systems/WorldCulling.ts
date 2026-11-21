@@ -1,20 +1,49 @@
 /**
- * WorldCulling.ts — What the frame's own mesh walk is allowed to see.
- * Owns: `Scene.getActiveMeshCandidates`, the map's meshes filed into cull
- * cells, and the list handed back to Babylon each frame.
- * There are TWO lists and they run on different clocks: `eligible` is the
- * structural answer, rebuilt only when a cell, a pool or the scene's
- * membership moves, and `candidates` is that list minus whatever is switched
- * off THIS frame (`offer`, run every frame). The second exists because an
- * effect pool idles with `isVisible = false` several times a second and a
- * rebuild is `O(scene)`.
+ * WorldCulling.ts — What the frame's own mesh walk was allowed to see, and
+ * what our renderer's culls are handed in its place.
+ * **The mesh walk is gone** (`BABYLON_EXIT.md` X5.4f): the scene is never
+ * rendered (`core/SceneFrame.ts`), so `Scene.getActiveMeshCandidates` is never
+ * asked, and the candidate list this file handed Babylon every frame — the
+ * `eligible` list and its per-frame `candidates`, the emissive exemption, a
+ * loose mesh's size gate — was retired with it. The prose below argues the
+ * design the cells, the gate and the pools still carry; where it speaks of
+ * the candidate list, read it as the history of the numbers this file still
+ * decides.
+ * Owns: the map's cull CELLS, one a block,
+ * each cell's box grown from the RECORDS of every surface filed under its
+ * block (`SurfaceRecord.bounds`, X3.7a) — every one a surface our renderer
+ * draws, and none a mesh (Babylon's block-keyed meshes were filed into them
+ * until `BABYLON_EXIT.md` X6.1g, none on a shipped build since X4.6e); and the reach
+ * and the size gate this file decides, handed to our
+ * renderer's GPU cull as numbers (`reachGate`) with the box each of its
+ * surfaces is measured to (`reachBoxOf`, by the BLOCK) — and, since
+ * `BABYLON_EXIT.md` X4.4d, whether a cell's block-keyed surfaces are offered
+ * this frame (`offersBlock`), which our renderer's FIRES are drawn by.
+ * Two answers run on different clocks: what a cell OFFERS (`offersBlock`) is
+ * snapshotted only when a cell crosses its threshold (`rebuildList`), and the
+ * pools' verdicts and the gate's numbers are taken every frame (`offer`).
  * Invariants: it NEVER writes `setEnabled`, `isVisible`, `isPickable` or any
- * other property on a mesh — the whole of what it does is decide which meshes
- * Babylon is offered as candidates for the ACTIVE-MESH pass, and nothing else
- * in Babylon or in this game reads that list. So every ray, every collision,
+ * other property on a mesh — the whole of what it does is decide answers our
+ * renderer's DRAWS read and nothing else does: the reach and the size gate
+ * (`reachGate`, `reachBoxOf`), whether a cell's block-keyed surfaces are
+ * offered (`offersBlock`), each pooled body's verdict and fade (`drawsBody`,
+ * `bodyFade`) and the gate asked of a sphere or a hull (`keepsSphere`,
+ * `keepsDetail`, `hullFade`). Until `BABYLON_EXIT.md` X5.4f it also decided
+ * which meshes Babylon was offered as candidates for the ACTIVE-MESH pass;
+ * that list is gone with the walk, and nothing of Babylon's reads anything
+ * here. So every ray, every collision,
  * every shadow caster, every cube probe and every vertex range into a pane is
  * indifferent to it BY CONSTRUCTION. It must stay that way: the moment this
- * disables a mesh it acquires all four of those problems at once.
+ * disables a mesh it acquires all four of those problems at once. A cell is
+ * grown from the map's RECORDS and from nothing else, so it is never a box
+ * nobody measured. (Until `BABYLON_EXIT.md` X6.1g it also filed the map's
+ * block-keyed MESHES, and refused a map whose meshes and records disagreed;
+ * no build makes a mesh since, so there is nothing to file or to disagree.)
+ * A reach asked for a block no cell was grown for answers null rather
+ * than a box (`reachBoxOf`), which the handover refuses, failing the world
+ * (`Game.worldFailed`, the menu and a toast, X3.7b).
+ * Never: writes a property on a mesh; grows a cell's box off anything but a
+ * record's bounds; throws for a build's broken contract.
  *
  * **The frame walks the SCENE, and the scene is the map.**
  * `_evaluateActiveMeshes` iterates every candidate every frame — a Map get for
@@ -38,37 +67,70 @@
  * and a mesh left out of it is skipped ENTIRELY rather than skipped cheaply.
  *
  * **Three classes of mesh, and which class a mesh is in is the whole design.**
+ * What our renderer draws (below) is in none of them: it has no mesh — and
+ * since `BABYLON_EXIT.md` X6.1g nothing in the world is one, so read the
+ * classes as what each kind of surface is decided by. (A
+ * fourth, **hidden**, was the map's collider proxies — invisible boxes the
+ * walk paid full price for and rejected on `isVisible`, 5,929 of 9,002 scene
+ * meshes on the 900/300 proving ground, never candidates at any distance and
+ * most of this file's first win. No collider is a mesh since
+ * `BABYLON_EXIT.md` X5.3e, so there is nothing left to hide.)
  *
- * - **Hidden** — the map's collider proxies, `map.colliders`. Invisible by
- *   construction (`MapBuilder.boxMesh` sets `isVisible = false` and nothing
- *   ever turns one back on), so they can never draw and are never candidates at
- *   ANY distance. This is most of the win and it is exact rather than a trade:
- *   on the 900/300 proving ground 5,929 of 9,002 scene meshes are collider
- *   boxes the walk pays full price for and rejects on `isVisible` after it has
- *   already done everything expensive.
  * - **Blocked** — drawn map geometry carrying `metadata.block`, filed one cull
  *   cell per map block — 48 m on every shipped map, `MapLayout.blockSize` where
  *   one states otherwise — and offered only while the camera is inside `reach`
- *   of that cell's own bounds. That is `BlockMerge`'s output, the ink twins of
- *   it and the merged glazing, which between them are every STRUCTURE on the
- *   map.
- * - **Pooled** — a body's rig, filed under the rig ROOT whose `setEnabled` the
- *   roster already writes, and offered only while that root is enabled. A pool
- *   is built once per roster and re-posed forever, so a rig that is not in the
- *   round is fourteen
- *   meshes and a root the walk pays full price for and rejects — and a roster is the one
- *   thing on a map that a LAYOUT may triple (`MapLayout.perTeam`, 24 on Sarab
- *   against the shipped 8), which turns 336 of these nodes into **1,008**. See
- *   `setPools`. It is also the one class the size gate measures ONCE, off the
- *   root, dropping the body whole rather than mesh by mesh — see `gateOf`.
+ *   of that cell's own bounds. On a shipped build NOTHING was filed here
+ *   from `BABYLON_EXIT.md` X4.6e — the merged glazing was the last of it —
+ *   and on any build nothing is since X6.1g, every block surface being our
+ *   renderer's (below); the cell's box is still grown
+ *   from all of it, every STRUCTURE on the map. The world's FIRES (since
+ *   X4.4d) and the GLAZING (since X4.6e) are no mesh: our renderer draws each
+ *   (`render/FlameDraw.ts`, `render/GlassDraw.ts`) while its block's cell is
+ *   offered, read back by the block (`offersBlock`) — the same cell, the same
+ *   reach and the same hysteresis a filed mesh is offered by — a pane through
+ *   the size gate as a filed mesh was, off its record's sphere
+ *   (`keepsSphere`), and a fire, a light source, through none.
+ * - **Pooled** — what was a body's rig, fourteen meshes the walk paid for
+ *   whether or not the body was in the round. Since `BABYLON_EXIT.md` X4.1d no
+ *   body is a mesh: our renderer draws every one as an instance of its kit
+ *   (`render/BodyDraw.ts`), so a pool files NOTHING into the list. What stays
+ *   here is the body's half of the size gate — measured ONCE, off the body's
+ *   own measure, dropping the body whole (`drawsBody`), which is what this
+ *   class always was the one class to get — handed to the drawing as a
+ *   verdict, as `reachGate` hands the world's numbers to its cull. Since
+ *   X4.1e the verdict has a FADE (`bodyFade`): the same measure ramps a body
+ *   out at the size gate and short of `bodyDrawDistance`, and the drawing
+ *   spends it as a screen door, so a body leaves at either edge without a
+ *   pop.
  * - **Loose** — everything else in the scene: the terrain, the roads, the rim,
- *   the other pools (tracers, shards, ragdolls, grenades, rubble), the sky, the
- *   water, the grass, the viewmodel, the hulls, and every visual an EDITOR
- *   build makes, which is keyed per placement and carries no block at all.
- *   Always ELIGIBLE — but `offer` still drops the ones that are switched off,
- *   which is what reaches the effect pools: they are built once and idled with
- *   `isVisible = false`, and were most of a candidate list the frame could not
- *   draw from.
+ *   the effect pools Babylon drew (every one our renderer's and no mesh now —
+ *   the sparks, the dust discs, the scorch and the blob shadows since X4.6e,
+ *   asked `keepsSphere` of this frame's sphere but the emissive two, which the
+ *   gate never dropped; the tracers, the marks, the brass and the thrown and laid bodies are our
+ *   renderer's and no mesh since `BABYLON_EXIT.md` X4.4b, the size gate
+ *   reaching their cel parts through `keepsSphere`; the blast's billows, the
+ *   shards and the rubble since X4.4c, a billow emissive and so never gated,
+ *   a shard and a chunk asked `keepsSphere` of the sphere it is drawn with
+ *   this frame, `poseView`) (the viewmodel is our renderer's whole since
+ *   `BABYLON_EXIT.md` X4.3d — the optics' glass and the kit card the last of
+ *   it — and no candidate; the sky since X4.5, the grass since X4.6c, the
+ *   field's one sphere asked of `keepsSphere` by `Game.drawGrass`, and the water
+ *   since X4.6d, each body's by `Game.drawWater`). The HULLS were
+ *   loose until `BABYLON_EXIT.md` X4.2b and are no mesh now: our renderer
+ *   draws each as an instance of its kind's kit, and the size gate reaches
+ *   its segments one by one through `keepsSphere` — the test a loose mesh
+ *   gets, asked of a sphere its caller composed this frame. Since X4.2c the
+ *   hull's DETAIL tier asks one more question of the same arithmetic, once a
+ *   hull, of its whole MEASURE (`keepsDetail`): whether its detail segments
+ *   are drawn at all — a swap on top of the per-segment gate, never a drop
+ *   of the hull. Since X4.2d the same measure is asked how much of the hull
+ *   is drawn at all (`hullFade`): a ramp over the last tenth of the map's
+ *   `hullDrawDistance`, which the drawing spends as the bodies' screen door
+ *   — the DISTANCE only, no hull ever dropped by its size.
+ *   Always ELIGIBLE — and `offer` still drops the ones that are
+ *   switched off, which is what reaches the effect pools: they are built once
+ *   and idled with `isVisible = false`, and were most of a candidate list the
+ *   frame could not draw from.
  *
  * **The landform is deliberately loose and that is not an oversight.** A
  * structure past the fog wall draws exactly `fogColor` and stands in front of
@@ -77,28 +139,69 @@
  * only required to sit CLOSE to the fog — so a hole cut in the rim is a hole
  * onto a gradient, and the further up the dome it is the less it is fogColor.
  * They are also a few hundred meshes against several thousand structures.
+ * Drawn by our renderer (X3.5), they keep that answer: no reach, the size
+ * gate per surface, the frustum (`reachBoxOf`).
+ *
+ * **What our renderer draws is no mesh at all** (`systems/BlockHandover.ts`,
+ * `BABYLON_EXIT.md` X3.3, X3.5, X3.6e, X3.7b): every BLOCK surface — the
+ * emissive PALETTE's merges among them — is measured to the box of its
+ * block's cell, which its RECORD helped grow, and the LANDFORM to a box no
+ * reach is ever short of (`reachBoxOf`). The main pass's mesh walk never
+ * sees any of it, and nothing else of Babylon's does either: our renderer
+ * draws it in every pass. What this file decides for the candidates — the
+ * reach, and the size gate's scale this frame — it states as numbers in
+ * `reachGate`, so the GPU cull decides our clusters as this decides a
+ * candidate, and reads no node to do it.
  *
  * The reach is the map's own `fogEnd` plus `CONFIG.graphics.culling.pad`, and
  * on a map whose fog never closes — `fogEnd` past its own diagonal, which the
  * proving ground states on purpose — that is a reach nothing is outside and
- * this degrades to the hidden-collider half alone.
+ * this offers every mesh it is handed.
  */
-import type { AbstractMesh, Mesh, Scene, Vector3 } from "@babylonjs/core";
+import type { Vector3Like } from "../math";
 import { CONFIG } from "../config";
+import type { CanvasSurface } from "../core/CanvasSurface";
+import type { SceneFrame } from "../core/SceneFrame";
+import { type BlockBox, F32_MAX, type ReachGate } from "../render/ClusterCull";
 import type { GameMap } from "../world/MapBuilder";
+
+/**
+ * The reach box of the LANDFORM — the floor, the rim and the road merge, which
+ * our renderer draws (`reachBoxOf`): every point is inside it, so no
+ * reach is ever short of it, and the GPU cull keeps the landform's clusters
+ * to the size gate and the frustum, exactly as `rebuildList` keeps a loose
+ * mesh. **The sky is behind the landform** — see "The landform is
+ * deliberately loose" in the header — so a reach cut into it would be a hole
+ * onto a gradient rather than onto `fogColor`. FINITE, near the largest `f32`
+ * (`F32_MAX`, 3e38), never Infinity: the cull's arithmetic may assume there
+ * is none, and a box from minus to plus the largest float leaves every
+ * distance to it 0.
+ */
+export const NO_REACH: BlockBox = {
+  minX: -F32_MAX,
+  minY: -F32_MAX,
+  minZ: -F32_MAX,
+  maxX: F32_MAX,
+  maxY: F32_MAX,
+  maxZ: F32_MAX,
+};
 
 /**
  * One cull cell: a map block's own world box, and whether what was filed under
  * it is in the frame.
  *
- * The cell does not hold its meshes — `cellOf` points the other way, from a
- * mesh to its cell, because the list is rebuilt by walking the scene in ORDER
- * rather than by concatenating cells (see `rebuildList`).
+ * The cell holds no meshes. Until `BABYLON_EXIT.md` X5.4f a map pointed the
+ * other way, from a mesh to its cell, because the candidate list was rebuilt
+ * by walking the scene in ORDER rather than by concatenating cells; the walk
+ * and the list are gone, and what was left of the filing (`filed`, a set
+ * that deduped a block-keyed mesh and counted it) went at X6.1g with the
+ * last mesh it could hold.
  *
- * The bounds are the MESHES' rather than the block's nominal square, which is
+ * The bounds are the SURFACES' rather than the block's nominal square — read
+ * off each one's record (`SurfaceRecord.bounds`) — which is
  * also why nothing here has to be told how big a block IS on this map: the key
  * is a name and not an alignment claim — a merged block's
- * geometry can hang over its own seam, and a mesh filed by its key can be much
+ * geometry can hang over its own seam, and a surface filed by its key can be much
  * bigger than the square it was filed under. Measuring what is there cannot be
  * wrong in the direction that matters.
  */
@@ -109,151 +212,96 @@ interface Cell {
   maxX: number;
   maxY: number;
   maxZ: number;
-  /** Whether what was filed here is in the candidate list right now. */
-  on: boolean;
-}
-
-/**
- * What `setPools` is handed: something with a root that is switched and meshes
- * that hang off it. `SoldierRig` already IS this shape, which is why nothing
- * here has heard of a soldier — this file may not learn what a body is any more
- * than it has learned what a building is.
- */
-export interface PooledBody {
-  root: AbstractMesh;
-  meshes: readonly AbstractMesh[];
-}
-
-/**
- * One pooled body: the rig root the roster switches, and whether what was filed
- * under it is in the candidate list right now.
- *
- * The root rather than a flag of our own, because it is what `Bot.setEnabled`
- * and `NetSoldier.setEnabled` already write and there must not be a second
- * answer to "is this body in the round". `isEnabled(false)` — the mesh's OWN
- * flag, no ancestor walk — because a rig root is parented to nothing and both
- * of those callers set it directly; asking for the inherited answer would walk
- * a chain to learn what the first byte already said.
- */
-interface Pool {
-  root: AbstractMesh;
-  /** Whether what was filed here is in the candidate list right now. */
+  /** Whether the cell is within reach right now, as `evaluate` last decided (with its hysteresis). */
   on: boolean;
   /**
-   * Whether this body projected under the size gate THIS FRAME — one test
-   * taken off the root in `offer`, read by every mesh filed under it.
-   *
-   * On the pool rather than in a set of its own because it is per body and
-   * per frame, and the body is the thing that already exists: a set would be
-   * rebuilt every frame for the one bit it carries. It runs on a different
-   * clock from `on` — that one is the ROSTER's and marks the list dirty, this
-   * one is the CAMERA's and never does, because a body going too small to see
-   * changes nothing structural.
+   * Whether what is filed here is OFFERED — `on`, snapshotted where
+   * `rebuildList` runs, which is where the candidate list was built until
+   * `BABYLON_EXIT.md` X5.4f, so it changes exactly when a filed mesh's
+   * candidacy did (`offersBlock`). False until the first rebuild after
+   * `setMap`, as a filed mesh was no candidate until then.
    */
-  small: boolean;
+  offered: boolean;
+}
+
+/** A body's world bounding sphere, as `PooledBody.measure` writes it. */
+export interface BodyMeasure {
+  x: number;
+  y: number;
+  z: number;
+  radius: number;
 }
 
 /**
- * Whether a mesh's paint EMITS light, which is the one thing a size gate must
- * never drop.
- *
- * Exact rather than a name test: a material carrying an `emissiveColor` is a
- * light source — `CelMaterialFactory.getEmissive`'s unlit `StandardMaterial`,
- * or the fire (`FlameMaterial`) or the map's emissive palette
- * (`EmissiveWorldMaterial`), which declare one for this test and the glow's.
- * Every lit surface wears a plain `ShaderMaterial`, which has no such property
- * to read.
+ * What `setPools` is handed: a body that is switched, and its one measure.
+ * `SoldierModel.pooledBody` makes one of a rig, which is why nothing here has
+ * heard of a soldier — this file may not learn what a body is any more than it
+ * has learned what a building is. It draws no mesh (`BABYLON_EXIT.md` X4.1d):
+ * what this decides of it is read back by index (`drawsBody`).
  */
-function glows(mesh: AbstractMesh): boolean {
-  const mat = mesh.material as { emissiveColor?: { r: number; g: number; b: number } } | null;
-  const e = mat?.emissiveColor;
-  return e !== undefined && e.r + e.g + e.b > 0.01;
+export interface PooledBody {
+  /**
+   * Whether the body is in the round — the switch `NetSoldier.setEnabled` and
+   * the death cam already write, so there is no second answer to that here.
+   */
+  readonly enabled: boolean;
+  /**
+   * The body's world bounding sphere THIS frame, composed fresh — what the
+   * rig ROOT's capsule answered under a forced `computeWorldMatrix` until the
+   * root stopped being a mesh (`BABYLON_EXIT.md` X4.1a).
+   */
+  measure(out: BodyMeasure): void;
+}
+
+/**
+ * One pooled body: the body the roster switches, and this frame's two answers
+ * about it.
+ */
+interface Pool {
+  body: PooledBody;
+  /** Whether the body was switched on as this frame's list was offered. */
+  on: boolean;
+  /**
+   * How much of this body is drawn THIS FRAME, 0 to 1 — the lesser of its
+   * fade at the distance edge and at the size gate, taken off its measure in
+   * `offer` once, the same answer for the whole body (`BABYLON_EXIT.md`
+   * X4.1e). 0 is not drawn: projected under the size gate, or past the end
+   * of the distance fade. On the pool because it is per body and per frame,
+   * and the body is the thing that already exists.
+   */
+  fade: number;
 }
 
 export class WorldCulling {
-  /**
-   * The list Babylon is handed. An `ISmartArrayLike`, which is `{ data, length
-   * }` and nothing else — written as a plain object rather than a `SmartArray`
-   * so this file imports no Babylon value at all.
-   */
-  private readonly candidates: { data: AbstractMesh[]; length: number } = {
-    data: [],
-    length: 0,
-  };
-
-  /**
-   * What the list would be if nothing in it were switched off — the structural
-   * answer, rebuilt only when a cell, a pool or the scene's membership moves.
-   *
-   * `candidates` is this list minus whatever is switched off THIS frame, and
-   * the two are separate because they change on completely different clocks: a
-   * cell crosses its threshold when the camera has walked twenty metres, and a
-   * tracer goes out four frames after it was fired. Marking the list dirty for
-   * the second would mean a full `O(scene)` rebuild many times a frame, which
-   * is the wrong trade in the other direction — see `offer`.
-   */
-  private eligible: AbstractMesh[] = [];
-
-  /**
-   * How `offer`'s size gate treats a mesh, where the plain per-mesh test is
-   * not the answer — decided once when the list is built rather than per
-   * frame, and ABSENT for the ordinary case.
-   *
-   * Two classes, and each was found by looking at what a naive gate removed.
-   *
-   * **A POOLED BODY maps to its `Pool`, and is gated WITH the body.** A rig is
-   * fourteen meshes and a per-mesh verdict takes the head off a soldier at
-   * 300 m while leaving his torso, which is what the exemption this replaced
-   * was for; measuring the ROOT instead asks the question once and answers it
-   * the same way for every mesh of that body, so the failure it guarded
-   * against cannot occur and the body can still be dropped. It is the same
-   * thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres —
-   * so it needs no per-map number, and it loosens by itself when a sight goes
-   * up and the body gets bigger.
-   *
-   * **Anything EMISSIVE maps to `null` and is never gated at all**, because
-   * the glow makes a sub-pixel emitter visible well past its own geometry and
-   * dropping one puts a lit window out on a night map. The test is exact
-   * rather than a guess at a name: only a light source HAS an `emissiveColor`
-   * at all — see `glows`.
-   *
-   * **A body's own emissive is the POOL's and not the exemption's**, which is
-   * the one place the two classes meet and the order below is what decides it.
-   * A visor is the only emissive on a rig; it belongs to a body that is being
-   * dropped whole, and an exemption would leave a pair of eyes hanging in the
-   * air where the soldier was.
-   */
-  private gateOf = new Map<AbstractMesh, Pool | null>();
-
-  /** The map's collider proxies: never candidates, at any distance. */
-  private hidden = new Set<AbstractMesh>();
-  /** Every drawn map mesh that carries a block, and the cell it was filed in. */
-  private cellOf = new Map<AbstractMesh, Cell>();
   private cells: Cell[] = [];
+  /** Each cell by its block key — what `reachBoxOf` answers our renderer's surfaces off. */
+  private cellByKey = new Map<string, Cell>();
 
   /**
-   * Every mesh of every pooled body, and the pool it was filed in.
-   *
-   * A map of its own rather than a second kind of value in `cellOf`, and that
-   * is ownership rather than tidiness: `setMap` clears the cells because last
-   * build's meshes are gone, and it runs on a path the ROSTER does not — the
-   * editor's rebuild — so a pool sharing that map would be silently unfiled by
-   * a tier-3 rebuild and quietly become loose again.
+   * Every pooled body, in the order `setPools` was handed them — the index
+   * `drawsBody` answers by. Kept apart from the cells, which `setMap` clears
+   * on a path the ROSTER does not run (an install).
    */
-  private poolOf = new Map<AbstractMesh, Pool>();
   private pools: Pool[] = [];
 
-  /** Set when the candidate list no longer matches the state above. */
+  /**
+   * The reach and the size gate as this file decides them THIS frame, for
+   * our renderer's GPU cull (`render/ClusterCull.ts`): rewritten in place by
+   * every `update`. The reach is the distance a cell switches ON at, from
+   * the eye to the cell's box; the size gate is `offer`'s own.
+   */
+  readonly reachGate: ReachGate = {
+    reach: Number.POSITIVE_INFINITY,
+    sizeGate: false,
+    perRad: 0,
+    px2: 0,
+  };
+
+  /** Set when what a cell offers no longer matches the state above. */
   private listDirty = true;
 
-  /**
-   * Whether this frame offers EVERYTHING — every cell, every pool and no size
-   * gate — for the building card's pipeline warm-up (`core/PipelineWarmup.ts`).
-   * See `setWarm`.
-   */
-  private warm = false;
-
   /** Squared distances a cell switches at. Infinite reach culls nothing. */
+  private on = Number.POSITIVE_INFINITY;
   private onSq = Number.POSITIVE_INFINITY;
   private offSq = Number.POSITIVE_INFINITY;
 
@@ -267,71 +315,52 @@ export class WorldCulling {
    * is no behaviour behind it and nothing in the game reads it.
    */
   readonly stats = {
-    scene: 0,
-    hidden: 0,
-    blocked: 0,
+    /** Pooled BODIES (`setPools`), none of them a mesh since X4.1d. */
     pooled: 0,
-    loose: 0,
     cells: 0,
     cellsOn: 0,
     poolsOn: 0,
-    /** The eligible list: what a rebuild produced. */
-    candidates: 0,
-    /** What Babylon was actually handed this frame — `candidates` minus the
-     * meshes that are switched off right now. See `offer`. */
-    offered: 0,
   };
 
-  constructor(private scene: Scene) {
-    // The one hook. Babylon calls this from `_evaluateActiveMeshes` and from
-    // nowhere else that matters here — picking walks `scene.meshes`, a render
-    // target with an explicit `renderList` walks that list, and the collision
-    // coordinator walks the collidable meshes. All three are why this is safe.
-    scene.getActiveMeshCandidates = () => this.candidates;
-    // A flag rather than any real work, because these fire for every part mesh
-    // a build creates and destroys — of the order of a million on a 1500 m map
-    // (`ENGINE_UPGRADE.md`, wall 4) — and the rebuild they ask for is owed once.
-    scene.onNewMeshAddedObservable.add(() => {
-      this.listDirty = true;
-    });
-    scene.onMeshRemovedObservable.add(() => {
-      this.listDirty = true;
-    });
-  }
+  /**
+   * No hook any more: `Scene.getActiveMeshCandidates` was replaced here, and
+   * the scene's mesh-added and mesh-removed observables dirtied the list,
+   * until the scene stopped rendering (`BABYLON_EXIT.md` X5.4f).
+   */
+  constructor(
+    /** The frame whose camera the size gate reads (`activeCamera`, the scene's until `BABYLON_EXIT.md` X6.1f). */
+    private readonly frame: Pick<SceneFrame, "activeCamera">,
+    /** The canvas: the render height and the scaling level the size gate reads (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h). */
+    private readonly surface: Pick<CanvasSurface, "getRenderHeight" | "getHardwareScalingLevel">,
+  ) {}
 
   /**
    * Files a freshly built map. Called from `Game.installMap` and from nowhere
    * else, exactly as `ShadowSystem.setCasters` and `ReflectionSystem.build`
-   * are: last build's meshes are disposed by now, and a cell still holding one
-   * would hand Babylon a dead mesh.
+   * are: a cell left from the last build would measure a world that is gone.
    *
    * `fogEnd` is the MAP's (`EnvironmentSpec.fogEnd`) rather than `CONFIG`'s —
    * it is the fourth thing `installMap` pushes that number into, and for the
    * same reason as the other three: past it there is nothing to see.
    */
   setMap(map: GameMap | null, fogEnd: number): void {
-    this.hidden = new Set();
-    this.cellOf = new Map();
+    this.cellByKey = new Map();
     this.cells = [];
     this.listDirty = true;
     this.evalX = Number.POSITIVE_INFINITY;
     this.evalZ = Number.POSITIVE_INFINITY;
-    this.stats.hidden = 0;
-    this.stats.blocked = 0;
     this.stats.cells = 0;
-    // The lists handed to Babylon, emptied rather than only marked dirty:
-    // `offer` rewrites `candidates` by LENGTH, so everything past it is last
-    // build's meshes, disposed and kept alive by this array alone.
-    this.candidates.data.length = 0;
-    this.candidates.length = 0;
-    this.eligible.length = 0;
-    this.gateOf = new Map();
     if (!map) {
+      this.on = Number.POSITIVE_INFINITY;
       this.onSq = Number.POSITIVE_INFINITY;
       this.offSq = Number.POSITIVE_INFINITY;
       return;
     }
+    this.file(map, fogEnd);
+  }
 
+  /** `setMap`'s filing: the reach, and the cells grown from the map's records. */
+  private file(map: GameMap, fogEnd: number): void {
     const c = CONFIG.graphics.culling;
     // Clamped at zero because the reach is SQUARED below, and a negative one
     // squares back to an enormous positive — which would turn a map claiming
@@ -339,101 +368,233 @@ export class WorldCulling {
     // honest reading of it: only the cell the camera is standing in.
     const on = Math.max(0, fogEnd + c.pad + c.step);
     const off = on + c.hysteresis;
+    this.on = on;
     this.onSq = on * on;
     this.offSq = off * off;
 
-    for (const mesh of map.colliders) {
-      // The invariant this rests on, written as a test rather than as a
-      // comment: a collider that could DRAW is not one this may drop. Nothing
-      // in `MapBuilder` makes one, and if something ever does it falls through
-      // to `loose` and costs a walk rather than disappearing.
-      if (mesh.isVisible) continue;
-      this.hidden.add(mesh);
-      this.stats.hidden++;
-    }
-
-    const byKey = new Map<string, Cell>();
-    const file = (mesh: Mesh): void => {
-      const key: unknown = mesh.metadata?.block;
-      if (typeof key !== "string" || key === "") return;
-      if (this.cellOf.has(mesh) || this.hidden.has(mesh)) return;
-      // A frozen world matrix is already computed and the bounding info with
-      // it, so this is a read rather than a recompute — see `markVisual`.
-      const box = mesh.getBoundingInfo().boundingBox;
-      const lo = box.minimumWorld;
-      const hi = box.maximumWorld;
-      let cell = byKey.get(key);
+    // The cells, grown from EVERY record filed under a block: its bounds were
+    // taken off its arrays before they were released, the numbers a mesh's
+    // bounding info held when one was made. In list order; a box is a min
+    // and a max, which no order moves.
+    const surfaces = map.world.surfaces;
+    for (const record of surfaces) {
+      const key = blockOf(record.metadata);
+      if (key === null) continue;
+      const b = record.bounds;
+      let cell = this.cellByKey.get(key);
       if (cell) {
-        if (lo.x < cell.minX) cell.minX = lo.x;
-        if (lo.y < cell.minY) cell.minY = lo.y;
-        if (lo.z < cell.minZ) cell.minZ = lo.z;
-        if (hi.x > cell.maxX) cell.maxX = hi.x;
-        if (hi.y > cell.maxY) cell.maxY = hi.y;
-        if (hi.z > cell.maxZ) cell.maxZ = hi.z;
+        if (b.minX < cell.minX) cell.minX = b.minX;
+        if (b.minY < cell.minY) cell.minY = b.minY;
+        if (b.minZ < cell.minZ) cell.minZ = b.minZ;
+        if (b.maxX > cell.maxX) cell.maxX = b.maxX;
+        if (b.maxY > cell.maxY) cell.maxY = b.maxY;
+        if (b.maxZ > cell.maxZ) cell.maxZ = b.maxZ;
       } else {
         cell = {
-          minX: lo.x,
-          minY: lo.y,
-          minZ: lo.z,
-          maxX: hi.x,
-          maxY: hi.y,
-          maxZ: hi.z,
+          minX: b.minX,
+          minY: b.minY,
+          minZ: b.minZ,
+          maxX: b.maxX,
+          maxY: b.maxY,
+          maxZ: b.maxZ,
           on: true,
+          offered: false,
         };
-        byKey.set(key, cell);
+        this.cellByKey.set(key, cell);
         this.cells.push(cell);
       }
-      this.cellOf.set(mesh, cell);
-      this.stats.blocked++;
-    };
-
-    for (const mesh of map.visuals) file(mesh);
-    // The glazing is filed under the same key its block is, which is the key
-    // `PaneBlocks` writes it under — a curtain wall and the shaft behind it go
-    // out of the frame together, or the tower is a sheet of glass hanging in
-    // the fog with nothing behind it.
-    for (const group of map.paneGroups) file(group.mesh);
+    }
+    // What a cell offers is read back by its block (`offersBlock`): the
+    // fires and the glazing, by the same key `PaneBlocks` writes a group
+    // under — a curtain wall and the shaft behind it go out of the frame
+    // together, or the tower is a sheet of glass hanging in the fog with
+    // nothing behind it.
     this.stats.cells = this.cells.length;
   }
 
   /**
    * Files the round's pooled bodies. Called from `Game.installBodyPools` and
-   * from nowhere else, on the same terms `setMap` is called on: whatever was
-   * filed last time has been disposed by now, and a pool still holding one
-   * would hand Babylon a dead mesh.
-   *
-   * **Both pools are handed over, not whichever one this round steps.** A
-   * netplay round leaves `BattleSystem`'s rigs built and never enables one, so
-   * they are exactly the case this exists for — sixteen bodies of pure walk —
-   * and an offline round's `NetRoster` is empty and files nothing.
-   *
-   * The ROOT is filed alongside the drawn meshes on purpose: it is an
-   * invisible capsule Babylon rejects late rather than early, and one per body
-   * is one per body.
+   * from nowhere else. Every pooled body is handed over, whether or not this
+   * round enables it; none is a mesh (`BABYLON_EXIT.md` X4.1d), so nothing is
+   * filed into the list — each is measured once a frame in `offer`, and its
+   * verdict read back by its index here (`drawsBody`).
    */
   setPools(bodies: readonly PooledBody[]): void {
-    this.poolOf = new Map();
     this.pools = [];
-    this.listDirty = true;
-    this.stats.pooled = 0;
-    for (const body of bodies) {
-      const pool: Pool = {
-        root: body.root,
-        on: body.root.isEnabled(false),
-        small: false,
-      };
-      this.pools.push(pool);
-      this.poolOf.set(body.root, pool);
-      this.stats.pooled++;
-      for (const mesh of body.meshes) {
-        this.poolOf.set(mesh, pool);
-        this.stats.pooled++;
-      }
-    }
+    for (const body of bodies) this.pools.push({ body, on: body.enabled, fade: 1 });
+    this.stats.pooled = this.pools.length;
   }
 
   /**
-   * Picks this frame's candidate list. Called from `Game.tick` in EVERY state,
+   * Whether pooled body `i` (`setPools`' order) is drawn THIS frame: switched
+   * on as the list was offered, and with some of it left to draw
+   * (`bodyFade` above 0) — not projected under the size gate, nor past the
+   * end of its distance fade — measured once off its own measure and the
+   * same answer for the whole body, its visor with it. What Babylon's mesh
+   * walk decided for every mesh of a rig until our renderer drew bodies
+   * (`BABYLON_EXIT.md` X4.1d); read by `Game.drawBodies` after `update`, the
+   * same frame.
+   */
+  drawsBody(i: number): boolean {
+    const pool = this.pools[i];
+    return pool !== undefined && pool.on && pool.fade > 0;
+  }
+
+  /**
+   * How much of pooled body `i` is drawn this frame, 0 to 1
+   * (`BABYLON_EXIT.md` X4.1e): 1 is whole, between is the share of its
+   * pixels a screen-door dither keeps (`render/BodyDraw.ts`), 0 is not
+   * drawn (`drawsBody`). One number for the whole body, its visor with it,
+   * read by `Game.drawBodies` after `update`, the same frame. See `offer`.
+   */
+  bodyFade(i: number): number {
+    const pool = this.pools[i];
+    return pool !== undefined && pool.on ? pool.fade : 0;
+  }
+
+  /**
+   * The map's body draw distance (`bodyDrawDistanceOf`), which the roster's
+   * switch and the ragdoll pool's refusal are handed too (`setViewDistance`):
+   * here it is where a body's DISTANCE fade ends (`offer`), never a gate of
+   * this file's own. Infinite — no distance fade — until a map pushes one.
+   */
+  setBodyDrawDistance(metres: number): void {
+    this.bodyDraw = metres;
+  }
+
+  /** See `setBodyDrawDistance`. */
+  private bodyDraw = Number.POSITIVE_INFINITY;
+
+  /**
+   * Whether the size gate KEEPS a world sphere this frame — a HULL's segment
+   * (`BABYLON_EXIT.md` X4.2b), since X4.4b a pool's cel part and a bullet
+   * mark (`Game.drawPieces`, `Game.drawMarks`), and since X4.6b a ring's batch
+   * and a flag's surface (`Game.drawZones`), which our renderer draws and
+   * which are no candidate: the test `offer` asks of a loose mesh (`tooSmall`, from the
+   * eye and at the scale it was last handed, and true while the gate is off
+   * — a gate of 0 px, no camera), asked of the sphere its caller
+   * composed. A hull is gated PER SEGMENT, as its meshes were gated while
+   * they were loose: dropping a hull whole would draw at range every part this
+   * gate drops there now. The sphere is the caller's, composed this frame, so
+   * the drop cannot latch on stale bounds (`docs/rendering.md`); read by
+   * `Game.drawHulls` after `update`, the same frame.
+   */
+  keepsSphere(x: number, y: number, z: number, radius: number): boolean {
+    const g = this.reachGate;
+    if (!g.sizeGate) return true;
+    return !tooSmall(x, y, z, radius, this.gateEye, g.perRad, g.px2);
+  }
+
+  /** The eye `offer` gated from last, copied: what `keepsSphere` and `keepsDetail` measure from. */
+  private readonly gateEye = { x: 0, y: 0, z: 0 };
+
+  /**
+   * Whether a HULL draws its FULL set this frame — its DETAIL segments
+   * with the rest (`BABYLON_EXIT.md` X4.2c, A3's detail tier) — asked of the
+   * hull's whole MEASURE as its caller composed it this frame
+   * (`vehicleRig.measureHull`): `tooSmall`, the size gate's own arithmetic,
+   * from the same eye and at the same pixels a radian, against
+   * `CONFIG.graphics.culling.hullDetail` instead of `minPixels`. True — the
+   * full set — while the tier is off: a threshold of 0, no camera. It is a SWAP and nothing
+   * else: no hull is dropped by it, and the per-segment gate
+   * (`keepsSphere`) still answers for every segment drawn, the detail ones
+   * of a hull drawn in full among them (decided 2026-10-31). It has NO
+   * hysteresis band, as `keepsSphere` has none, and that is accepted (the
+   * project owner, 2026-10-31): a hull held at its swap distance toggles its
+   * reduced set on every crossing (`hullDetail`'s doc). Read by
+   * `Game.drawHulls` after `update`, the same frame.
+   */
+  keepsDetail(x: number, y: number, z: number, radius: number): boolean {
+    if (this.detailPerRad === 0) return true;
+    return !tooSmall(x, y, z, radius, this.gateEye, this.detailPerRad, this.detailPx2);
+  }
+
+  /**
+   * How much of a HULL is drawn this frame, 0 to 1 (`BABYLON_EXIT.md`
+   * X4.2d): 1 is whole, between is the share of its pixels the screen door
+   * keeps (`render/HullDraw.ts`), 0 is not drawn — asked once a hull, of
+   * its whole MEASURE as its caller composed it this frame
+   * (`vehicleRig.measureHull`), from the eye `offer` gated from. A ramp
+   * over the last `CONFIG.graphics.culling.hullFade.distance` of the map's
+   * `hullDrawDistance` (`setHullDrawDistance`), off the distance from that
+   * eye to the measure's centre, ending AT the distance: a hull has no
+   * switch at range for the fade to beat, as a body's roster switch is
+   * (`offer`'s distance edge). The DISTANCE only — there is no whole-hull
+   * size edge (decided 2026-10-31: the per-segment gate, `keepsSphere`,
+   * still answers for every segment drawn, faded or not). 1 on a map
+   * that states no distance (`Infinity`, every shipped map) — the literal 1,
+   * so a reader multiplying by it changes nothing. Read by `Game.fadeHulls`
+   * straight after `update`, the same frame, for the drawing and the rotor
+   * wash both.
+   */
+  hullFade(x: number, y: number, z: number): number {
+    const far = this.hullDraw;
+    if (!Number.isFinite(far)) return 1;
+    const e = this.gateEye;
+    const dx = x - e.x;
+    const dy = y - e.y;
+    const dz = z - e.z;
+    const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    return Math.min(1, Math.max(0, (far - d) / (far * CONFIG.graphics.culling.hullFade.distance)));
+  }
+
+  /**
+   * The map's HULL draw distance (`hullDrawDistanceOf`: capped at the fog,
+   * floored at a hull's gun reach, and infinite on a map that states none),
+   * where a hull's fade ends (`hullFade`). Infinite — no fade and no cut,
+   * every hull drawn whole at any range — until a map pushes one, and pushed
+   * by every install (`Game.installMap`), so a map stating none puts it back.
+   */
+  setHullDrawDistance(metres: number): void {
+    this.hullDraw = metres;
+  }
+
+  /** See `setHullDrawDistance`. */
+  private hullDraw = Number.POSITIVE_INFINITY;
+
+  /** The detail tier's pixels a radian this frame (`offer`); 0 while the tier is off. */
+  private detailPerRad = 0;
+  /** `CONFIG.graphics.culling.hullDetail`, squared, as `tooSmall` compares. */
+  private detailPx2 = 0;
+
+  /**
+   * The box our renderer's cull measures a surface's reach to, by the BLOCK
+   * its record is filed under (`metadata.block`): that block's cell — the
+   * bounds of every surface of it, glazing included, what a candidate of it
+   * is offered by — and for `null`, the LANDFORM, `NO_REACH`, which the
+   * reach never cuts, as it never cuts a loose mesh. Surfaces of one block
+   * share the object, and every landform surface shares the one box. A key
+   * no cell was grown for — a record filed under a block grows one, so the
+   * build's contract is broken — answers null, which the caller REFUSES as
+   * it refuses `setMap`'s reasons: the world fails (`BlockHandover.install`,
+   * `Game.worldFailed`), never an uncaught throw inside `installMap`.
+   */
+  reachBoxOf(block: string | null): BlockBox | null {
+    if (block === null) return NO_REACH;
+    return this.cellByKey.get(block) ?? null;
+  }
+
+  /**
+   * Whether the block-keyed surfaces of `block`'s cell are offered THIS
+   * frame — what a mesh filed in that cell was a candidate by, as the list
+   * was last built (`rebuildList`): its cell within reach, with its
+   * hysteresis; false for a block no cell
+   * was grown for, and from `setMap` until the first list after it. Read by
+   * `Game.flamePull` for each world fire (`BABYLON_EXIT.md` X4.4d) and
+   * `Game.glassPull` for each pane group (X4.6e), after
+   * `update`, the same frame — so a fire or a pane is offered exactly when
+   * its mesh was. No size gate here: a fire is a light source, which the gate
+   * never dropped (`glows`), and a pane's is asked of its record's sphere
+   * (`keepsSphere`).
+   */
+  offersBlock(block: string): boolean {
+    return this.cellByKey.get(block)?.offered ?? false;
+  }
+
+  /**
+   * Decides this frame's answers — the cells, the pools' verdicts and the
+   * gate (a candidate list until `BABYLON_EXIT.md` X5.4f). Called from
+   * `Game.tick` in EVERY state,
    * beside `CelMaterialFactory.updateCamera` and for the same reason: every
    * state renders and only some of them simulate, so a menu or a deploy screen
    * with a live view behind it would otherwise be looking at whatever
@@ -441,10 +602,10 @@ export class WorldCulling {
    *
    * Cheap when nothing has moved — the cells are re-evaluated only once the
    * camera has travelled `CONFIG.graphics.culling.step`, the pools are one
-   * property read each, and the list is rebuilt only when one of the two
-   * answers changes.
+   * property read each, and the cells' offers are snapshotted again
+   * (`rebuildList`) only when a cell crosses its threshold or a map is set.
    */
-  update(eye: Vector3): void {
+  update(eye: Vector3Like): void {
     const step = CONFIG.graphics.culling.step;
     const dx = eye.x - this.evalX;
     const dy = eye.y - this.evalY;
@@ -456,39 +617,15 @@ export class WorldCulling {
       this.evaluate(eye.x, eye.y, eye.z);
     }
     // Unconditional, and it is the roster rather than the camera: a body is
-    // switched by DISTANCE from the camera (`BattleSystem`'s three LOD gates)
+    // switched by DISTANCE from the camera (`NetRoster`'s LOD gate)
     // and by being alive, benched, aside or crewed, so there is no travelled
-    // distance this could hang off. It is one property read per BODY — 48 on
-    // the densest map in the tree, against the 1,008 nodes a rebuild answers
-    // for — and it marks the list dirty only on a transition.
-    for (const pool of this.pools) {
-      const on = pool.root.isEnabled(false);
-      if (on === pool.on) continue;
-      pool.on = on;
-      this.listDirty = true;
-    }
+    // distance this could hang off. One property read per BODY — 49 on the
+    // densest roster — and nothing structural: no body is in the list.
+    let poolsOn = 0;
+    for (const pool of this.pools) if ((pool.on = pool.body.enabled)) poolsOn++;
+    this.stats.poolsOn = poolsOn;
     if (this.listDirty) this.rebuildList();
     this.offer(eye);
-  }
-
-  /**
-   * Offers every mesh this file would otherwise hold back, for as long as it is
-   * on: every cell whatever its distance, every pool whether or not its root
-   * is in the round, and no size gate. What is switched OFF is still dropped by
-   * `offer`, because Babylon would drop it too.
-   *
-   * It exists for one caller — the warm-up under the building card, which
-   * draws the whole map once from each vantage so that every pipeline the
-   * round will need is compiled before the round can see the cost — and that
-   * caller turns it on and back off around a single render, so a wait that is
-   * abandoned between frames cannot leave the map unculled. It is still a
-   * claim about the LIST and nothing else: no mesh is written, which is this
-   * file's first invariant.
-   */
-  setWarm(on: boolean): void {
-    if (on === this.warm) return;
-    this.warm = on;
-    this.listDirty = true;
   }
 
   /**
@@ -513,8 +650,11 @@ export class WorldCulling {
   }
 
   /**
-   * The candidate list, and it is `scene.meshes` MINUS things rather than a
-   * list of its own — which is a full walk of the scene, on purpose.
+   * What each cell OFFERS (`offersBlock`), snapshotted when an answer
+   * changes. **Until `BABYLON_EXIT.md` X5.4f this built the candidate list**,
+   * which was `scene.meshes` MINUS things rather than a list of its own — a
+   * full walk of the scene, on purpose; the rest of this comment is that
+   * list's argument, kept as the history of the order it chose.
    *
    * **The order is the reason, and it was measured rather than assumed.** A
    * list assembled as `loose` then `cells` holds exactly the same meshes and
@@ -532,52 +672,28 @@ export class WorldCulling {
    * The walk is `O(scene)` and the per-mesh work is one or two `Map.get`s —
    * against `_evaluateActiveMeshes`, which is `O(candidates)` and does an order
    * of magnitude more per mesh, EVERY frame. This runs only when the answer
-   * changes: a cell crossing its threshold, a pooled body being switched in or
-   * out of the round, or a mesh entering or leaving the scene.
+   * changes: a cell crossing its threshold or a mesh entering or leaving the
+   * scene (a pooled body switched in or out was one until X4.1d; no body is
+   * in the list now).
    */
   private rebuildList(): void {
-    const data = this.eligible;
-    data.length = 0;
-    let loose = 0;
-    for (const mesh of this.scene.meshes) {
-      const cell = this.cellOf.get(mesh);
-      if (cell) {
-        if (cell.on || this.warm) data.push(mesh);
-        continue;
-      }
-      if (this.hidden.has(mesh)) continue;
-      const pool = this.poolOf.get(mesh);
-      if (pool) {
-        if (pool.on || this.warm) data.push(mesh);
-        continue;
-      }
-      loose++;
-      data.push(mesh);
-    }
-    // The pool FIRST, because a rig's visor is both and the body wins — see
-    // `gateOf`. Everything the gate simply tests per mesh is left out, so the
-    // ordinary case is a miss rather than an entry.
-    this.gateOf = new Map();
-    for (const mesh of data) {
-      const pool = this.poolOf.get(mesh);
-      if (pool) this.gateOf.set(mesh, pool);
-      else if (glows(mesh)) this.gateOf.set(mesh, null);
-    }
+    // What a filed surface of each cell is offered by, from now until the
+    // next build — read back by the block (`offersBlock`). The candidate list
+    // this built beside it (`eligible`: `scene.meshes` minus the cells out of
+    // reach, in scene order, and the size gate's per-mesh answers) was
+    // retired with the mesh walk (`BABYLON_EXIT.md` X5.4f).
+    for (const cell of this.cells) cell.offered = cell.on;
     this.listDirty = false;
     let cellsOn = 0;
     for (const cell of this.cells) if (cell.on) cellsOn++;
-    let poolsOn = 0;
-    for (const pool of this.pools) if (pool.on) poolsOn++;
-    this.stats.scene = this.scene.meshes.length;
-    this.stats.loose = loose;
     this.stats.cellsOn = cellsOn;
-    this.stats.poolsOn = poolsOn;
-    this.stats.candidates = data.length;
   }
 
   /**
-   * This frame's list: the eligible meshes minus the ones that are switched
-   * off right now.
+   * This frame's gate and the pools' verdicts — and until `BABYLON_EXIT.md`
+   * X5.4f this frame's candidate LIST, the eligible meshes minus the ones
+   * switched off right now, which the two paragraphs below argue and which
+   * went with the mesh walk.
    *
    * **It drops exactly what `_evaluateActiveMeshes` would drop, and it drops it
    * before the expensive part rather than after.** That walk rejects a mesh on
@@ -585,32 +701,32 @@ export class WorldCulling {
    * `continue`, and it reaches the activation test only if `isVisible &&
    * visibility > 0` — where `alwaysSelectAsActiveMesh` bypasses the FRUSTUM
    * test and not this one. So neither of the two asked here can be a mesh
-   * Babylon would have drawn, whatever else is true of it. That is the same
-   * claim `hidden` already rests on for the collider proxies; this is it made
-   * per frame instead of once per map, which is what reaches a POOL.
+   * Babylon would have drawn, whatever else is true of it. It is the claim
+   * the hidden class rested on for the collider proxies, once per map, until
+   * no collider was a mesh (`BABYLON_EXIT.md` X5.3e), made per frame — which
+   * is what reaches a POOL.
    *
    * **The pools are why it is worth a pass.** Every effect pool in the game is
    * built once and idled with `isVisible = false` — 96 tracers, 54 embers, 48
    * sparks, 48 shards, 40 impacts, 30 blast chunks, 40 grenade parts, 48 mine
-   * parts, 49 blob shadows — and `rebuildList` files all of them as `loose`,
-   * so the frame was being offered a few hundred meshes it could not draw.
+   * parts, 49 blob shadows, when it was measured — and `rebuildList` filed all
+   * of them as `loose`, so the frame was being offered a few hundred meshes it
+   * could not draw. (Every one of those pools is our renderer's and no mesh
+   * since `BABYLON_EXIT.md` X4.6e; the pass stands for any mesh switched off.)
    * Measured on Sarab at a real viewport and a real roster, this halves the
    * list (1,525 → 729) and is worth **+8.9%** of frame rate; the mesh walk is
    * a third of the tick there, so that is most of what the halving predicts.
    * It was measured at the WRONG viewport first and very nearly thrown away;
    * `VERIFYING.md` carries that trap.
    *
-   * `isEnabled()` walks ancestors and `isVisible` does not, which is the right
-   * way round: a rig part is switched by its ROOT, and `setPools` only files
-   * the bodies it is handed.
+   * `isEnabled()` walks ancestors and `isVisible` does not. No body is a
+   * candidate (`BABYLON_EXIT.md` X4.1d): a pooled body is gated before the
+   * walk, by its own switch and measure (`drawsBody`).
    *
    * The order is a subsequence of `eligible`, which is scene order, so
    * `rebuildList`'s argument about `_activeMeshes` ordering survives intact.
    */
-  private offer(eye: Vector3): void {
-    const src = this.eligible;
-    const out = this.candidates.data;
-    const n = src.length;
+  private offer(eye: Vector3Like): void {
     // Pixels per radian, from the camera's own field of view and the height it
     // is rendering at — so the threshold is a size on the SCREEN and needs no
     // per-map tuning. Read once a frame: the FOV moves when a sight goes up.
@@ -623,111 +739,167 @@ export class WorldCulling {
     // the threshold it was tuned at, so a hull holds off until half the range
     // the measurement chose. It fails the other way just as quietly: anything
     // that oversamples the CSS grid shrinks the gate instead and hands back
-    // the CPU `FINDINGS.md` 39 bought (3 px is -0.51 ms there, 2 px -0.11). The level already carries
-    // `devicePixelRatio`, since `Game.applyRenderScale` is what built it from
-    // one, and it is 1 at every default install — so this is arithmetically
-    // the shipped gate on the reference machine and on a fresh install of any
-    // density, and only moves once the player has moved the slider.
-    const cam = this.scene.activeCamera;
+    // the CPU `FINDINGS.md` 39 bought (3 px is -0.51 ms there, 2 px -0.11). The
+    // level already carries `devicePixelRatio`, since `Game.applyRenderScale`
+    // is what built it from one, and it is 1 at every default install — so this
+    // is arithmetically the shipped gate on the reference machine and on a
+    // fresh install of any density, and only moves once the player has moved
+    // the slider.
+    const cam = this.frame.activeCamera;
     const minPx = CONFIG.graphics.culling.minPixels;
-    const gate = !this.warm && minPx > 0 && cam !== null;
-    const engine = this.scene.getEngine();
-    const perRad = gate
-      ? (engine.getRenderHeight() * engine.getHardwareScalingLevel()) /
-        (cam!.fov || 1)
+    const gate = minPx > 0 && cam !== null;
+    const surface = this.surface;
+    const pixelsPerRad = cam !== null
+      ? (surface.getRenderHeight() * surface.getHardwareScalingLevel()) /
+        (cam.fov || 1)
       : 0;
+    const perRad = gate ? pixelsPerRad : 0;
+    // The hulls' detail tier (`keepsDetail`) on the same pixels a radian, and
+    // with its own switch.
+    const detailPx = CONFIG.graphics.culling.hullDetail;
+    this.detailPerRad = detailPx > 0 ? pixelsPerRad : 0;
+    this.detailPx2 = detailPx * detailPx;
     const px2 = minPx * minPx;
-    // **A BODY is measured ONCE, off its root, and drops whole.** One test per
-    // body rather than per mesh, taken before the walk so that the walk reads
-    // an answer instead of computing fourteen of them — and, far more
-    // importantly, so that every mesh of a body gets the SAME answer. See
-    // `gateOf` for why a per-mesh verdict cannot be allowed near a rig.
+    const reachGate = this.reachGate;
+    reachGate.reach = this.on;
+    reachGate.sizeGate = gate;
+    reachGate.perRad = perRad;
+    reachGate.px2 = px2;
+    // The eye a hull's segment is gated from later this frame (`keepsSphere`):
+    // this one, as a loose mesh's was.
+    const gateEye = this.gateEye;
+    gateEye.x = eye.x;
+    gateEye.y = eye.y;
+    gateEye.z = eye.z;
+    // **A BODY is measured ONCE, off its own measure, and drops whole.** One
+    // test per body rather than per mesh — a per-mesh verdict took the head
+    // off a soldier at 300 m while leaving his torso — so every segment of a
+    // body, its visor among them, gets the SAME answer (`drawsBody`, which
+    // our renderer's drawing reads: `BABYLON_EXIT.md` X4.1d). It is the same
+    // thing `bodyDrawDistanceOf` does, in SCREEN space rather than in metres,
+    // so it needs no per-map number and loosens by itself when a sight goes up.
+    //
+    // **And it LEAVES by a fade at both edges, never a pop** (X4.1e,
+    // `CONFIG.graphics.culling.bodyFade`): the same measure answers how much
+    // of the body is drawn, the lesser of two ramps, which the drawing spends
+    // as a screen-door dither (`bodyFade`). A fade built for one gate misses
+    // the other — on a phone the size gate is the NEARER one.
+    const fadeBand = CONFIG.graphics.culling.bodyFade;
+    const bodyDraw = this.bodyDraw;
+    const distanceFade = Number.isFinite(bodyDraw);
+    // Whole above `size` times the gate: compared squared, as `tooSmall` is.
+    const wholePx2 = px2 * fadeBand.size * fadeBand.size;
+    const sizeBand = minPx * (fadeBand.size - 1);
     for (let i = 0; i < this.pools.length; i++) {
       const pool = this.pools[i];
-      if (!gate || !pool.on) {
-        pool.small = false;
+      if (!pool.on) {
+        pool.fade = 0;
         continue;
       }
-      // **The root's matrix is FORCED, and without this the drop LATCHES.**
-      // Babylon computes a world matrix inside `_evaluateActiveMeshes` and
-      // only for CANDIDATES, and that is what refreshes the world bounding
-      // sphere `tooSmall` reads — so a body dropped on stale bounds is never
-      // handed the matrix that would correct them and can never come back,
-      // however close it walks. A rig ROOT is worse off than the meshes that
-      // failure was first found on (`docs/rendering.md`): it is invisible, so
-      // `offer` has always dropped it on the line above and the walk has
-      // never computed it at all — it was reached only incidentally, as the
-      // parent of a child that WAS a candidate, which is exactly the thread
-      // this gate would cut. One forced compose per body per frame, 48 on the
-      // densest map in the tree, also makes the measurement this frame's
-      // rather than last frame's.
-      pool.root.computeWorldMatrix(true);
-      pool.small = this.tooSmall(pool.root, eye, perRad, px2);
-    }
-    let k = 0;
-    for (let i = 0; i < n; i++) {
-      const mesh = src[i];
-      if (!mesh.isVisible || !mesh.isEnabled()) continue;
-      // **The gate is about WORLD geometry and only rendering group 0 holds
-      // any.** Everything above it is drawn against the EYE rather than
-      // standing in the map — the viewmodel — and
-      // their world bounding info is not what this reads: the viewmodel hangs
-      // off the camera and Babylon bakes its matrix inside the render, so at
-      // this point in the frame the gun's bounds are still sitting at the
-      // ORIGIN. Asked for its size, it answered "1.8 px at 726 m" — the
-      // distance from the origin to the player — and the gate deleted the
-      // weapon out of the player's hands. `infiniteDistance` is the same
-      // argument for the sky, which is nowhere at all.
-      if (gate && mesh.renderingGroupId === 0 && !mesh.infiniteDistance) {
-        // ONE lookup, which is why the two answers share a map: this runs on
-        // every candidate every frame, and the emissive exemption used to be
-        // the only question here.
-        const how = this.gateOf.get(mesh);
-        if (how === undefined) {
-          if (this.tooSmall(mesh, eye, perRad, px2)) continue;
-        } else if (how !== null && how.small) {
-          continue;
+      if (!gate && !distanceFade) {
+        pool.fade = 1;
+        continue;
+      }
+      // **The measure is composed FRESH, and without that the drop LATCHES**
+      // (`docs/rendering.md`): a body dropped on stale bounds was never
+      // handed the matrix that would correct them. It is composed off the
+      // body's joints on every call, one root compose per body per frame, so
+      // it is this frame's by construction.
+      pool.body.measure(bodySphere);
+      const dx = bodySphere.x - eye.x;
+      const dy = bodySphere.y - eye.y;
+      const dz = bodySphere.z - eye.z;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      let fade = 1;
+      // THE DISTANCE EDGE. The switch is the roster's (`NetRoster.update`,
+      // past `bodyDrawDistance` off the body's POSITION, its feet), and this
+      // fade must reach ZERO before that switch can turn the body off — a
+      // fade above 0 only ever on a body whose switch is on — or the body
+      // pops at the end of its own fade. The measure's centre is not the
+      // feet, but the feet are inside the measure's sphere, so the two
+      // distances from one eye differ by at most its RADIUS (the triangle
+      // inequality): ending the fade one radius short of the distance makes
+      // it zero wherever the switch could already be off, from an eye at any
+      // height, with no second reading of the roster's point. (A corpse's
+      // root stays where it fell, as its position does; it only sinks.)
+      //
+      // **It is ONE eye only up to a frame.** The roster reads the camera
+      // inside `updateWorld`, before the frame's camera update moves it
+      // (`NetSession.update`'s `cameraPos`), and this reads it after
+      // (`Game.followEye`) — so at the frame the switch goes off, the fade
+      // can be above zero by one frame of the eye's travel over the band: at
+      // 60 fps ~0.004 sprinting on Sarab (6.9 m/s over its 30 m), ~0.014 on
+      // the 78 m maps, ~0.02 in the helicopter at its 32 m/s and twice that
+      // at 30 fps (measured, `BABYLON_EXIT.md` X4.1e: 0.0013 at most). The
+      // screen door keeps no pixel at all below 1/32 (`bodyProgram.ts`), so
+      // only the helicopter's worst can leave one pixel in a 4x4 tile.
+      if (distanceFade) {
+        const end = bodyDraw - bodySphere.radius;
+        const d = Math.sqrt(d2);
+        fade = Math.min(1, Math.max(0, (end - d) / (bodyDraw * fadeBand.distance)));
+      }
+      // THE SIZE EDGE: the same test as ever for the drop (`tooSmall`, so a
+      // body is dropped exactly where it was), and between the gate and
+      // `size` times it a ramp in projected PIXELS.
+      if (gate && fade > 0) {
+        if (tooSmall(bodySphere.x, bodySphere.y, bodySphere.z, bodySphere.radius, eye, perRad, px2)) {
+          fade = 0;
+        } else {
+          const w = 2 * bodySphere.radius * perRad;
+          if (w * w < wholePx2 * d2) {
+            fade = Math.min(fade, Math.max(0, (w / Math.sqrt(d2) - minPx) / sizeBand));
+          }
         }
       }
-      out[k++] = mesh;
+      pool.fade = fade;
     }
-    // Length rather than truncation: the backing array is reused every frame
-    // and Babylon reads `length`, so shrinking `data` would be a free-list
-    // churn this is trying to avoid.
-    out.length = k > out.length ? k : out.length;
-    this.candidates.length = k;
-    this.stats.offered = k;
+    // The candidate walk that followed — the eligible meshes switched on and
+    // through the size gate, handed to Babylon — was retired with the mesh
+    // walk (`BABYLON_EXIT.md` X5.4f): no Babylon mesh is drawn.
   }
+}
 
-  /**
-   * Whether a mesh's bounding sphere projects smaller than the gate, in CSS
-   * pixels of the frame.
-   *
-   * The one place a projected size is measured, because `offer` now asks the
-   * question of two different things — a loose mesh, and a body's ROOT — and
-   * two copies of this arithmetic is two answers that can drift apart.
-   *
-   * `d2 > 1` is the guard on standing inside a thing: the projection diverges
-   * at zero distance and a metre is nearer than anything this should be
-   * dropping.
-   */
-  private tooSmall(
-    mesh: AbstractMesh,
-    eye: Vector3,
-    perRad: number,
-    px2: number,
-  ): boolean {
-    const sphere = mesh.getBoundingInfo().boundingSphere;
-    const c = sphere.centerWorld;
-    const dx = c.x - eye.x;
-    const dy = c.y - eye.y;
-    const dz = c.z - eye.z;
-    const d2 = dx * dx + dy * dy + dz * dz;
-    if (d2 <= 1) return false;
-    // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
-    // per-candidate cost is multiplies and no square root. Taking the root
-    // instead measured as a LOSS at the thresholds that drop little.
-    const w = 2 * sphere.radiusWorld * perRad;
-    return w * w < px2 * d2;
-  }
+/** `offer`'s scratch for a body's measure. */
+const bodySphere: BodyMeasure = { x: 0, y: 0, z: 0, radius: 0 };
+
+/**
+ * Whether a world bounding sphere projects smaller than the gate, in CSS
+ * pixels of the frame.
+ *
+ * The one place a projected size is measured, because `offer` asks the
+ * question of three different things — a loose mesh, a body's measure and a
+ * filed surface's record — `keepsSphere` a fourth, a hull's segment (and a pool's piece or mark), and
+ * `keepsDetail` a fifth, a hull's whole measure against the detail tier's
+ * own threshold; two copies of this arithmetic is two answers that can drift
+ * apart.
+ *
+ * `d2 > 1` is the guard on standing inside a thing: the projection diverges
+ * at zero distance and a metre is nearer than anything this should be
+ * dropping.
+ */
+function tooSmall(
+  cx: number,
+  cy: number,
+  cz: number,
+  radius: number,
+  eye: { readonly x: number; readonly y: number; readonly z: number },
+  perRad: number,
+  px2: number,
+): boolean {
+  const dx = cx - eye.x;
+  const dy = cy - eye.y;
+  const dz = cz - eye.z;
+  const d2 = dx * dx + dy * dy + dz * dz;
+  if (d2 <= 1) return false;
+  // Projected diameter is `2r / dist * perRad`; compared SQUARED, so the
+  // per-candidate cost is multiplies and no square root. Taking the root
+  // instead measured as a LOSS at the thresholds that drop little.
+  const w = 2 * radius * perRad;
+  return w * w < px2 * d2;
+}
+
+/** The block a surface or a mesh is filed under (`metadata.block`), or null for none. */
+export function blockOf(metadata: { block?: unknown } | null | undefined): string | null {
+  const key = metadata?.block;
+  return typeof key === "string" && key !== "" ? key : null;
 }

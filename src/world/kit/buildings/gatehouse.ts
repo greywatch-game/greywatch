@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -20,12 +19,11 @@ import {
  * capturable — it exists so a losing team always has somewhere safe to deploy.
  */
 export function buildGatehouse(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
   const teamColor = p.teamColor ?? "#c9a15e";
-  const b = new Build(scene, mats, "gatehouse");
+  const b = new Build(mats, "gatehouse");
   const w = 18;
   const h = 8;
   const t = 1.2;

@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -86,8 +85,8 @@ import { LAMPLIT, SHOPLIT, offFace, casement, doorway, framing, ROOF_PITCH } fro
  * heard burning.
  */
 
-export function buildTavern(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "tavern");
+export function buildTavern(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "tavern");
   const w = 13;
   const d = 10;
   const g = 3.6;

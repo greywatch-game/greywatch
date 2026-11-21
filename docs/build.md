@@ -2,11 +2,12 @@
 
 Everything the toolchain demands and nothing the game does: the five kinds of
 file allowed into a tree with no authored assets, the one binary that ships and
-why it is never named by path, and the two ways Vite's dependency optimizer has
-already broken a running page. Split out of [`CLAUDE.md`](../CLAUDE.md), which
-keeps the summary; this file is the contract for `vite.config.ts`, for
-`package.json`'s generator scripts, and for anything reaching into
-`@babylonjs/*`.
+why it is never named by path, the two ways Vite's dependency optimizer has
+already broken a running page, and the gate that keeps `@babylonjs/core` out
+of a tree it left. Split out of [`CLAUDE.md`](../CLAUDE.md), which keeps the
+summary; this file is the contract for `vite.config.ts`, for `package.json`'s
+generator scripts, for `@babylonjs/havok` (the one package of Babylon's the
+game still depends on) and for the copies of Babylon's arithmetic in the tree.
 
 Nothing here is about how the game plays. It is here because every rule in it
 was learned by losing a working build, and because none of it belongs to a
@@ -19,7 +20,8 @@ file is not the renderer's contract to carry.
 kit, the cupola gun all three hulls mount, the shoulder tube the third slot
 carries, the two halves of the player's own magazine change, the four beats of
 a bolt cycle and the two blasts, and nothing else in the game is recorded at
-all** — every mesh is built from Babylon primitives at runtime, and every sound
+all** — every mesh is built from primitives at runtime (the copies of
+Babylon's generators in `src/geometry/`), and every sound
 is synthesized WebAudio (`src/core/Sfx.ts`) but for those seventeen. Do not add
 asset files unless explicitly asked. Five exceptions, none authored by hand but
 the fifth, each with a generator in `package.json`:
@@ -143,6 +145,48 @@ without one gets a sentence instead of a black page; what that costs is reach,
 and Firefox on Linux/macOS plus older Android and iOS no longer boot at all.
 Both phones are PWA install targets, so this is a product fact, not a detail.
 
+**The device is the game's since `BABYLON_EXIT.md` X5.4h, and Babylon's
+`WebGPUEngine` is not built.** `main.ts` asks for the adapter and the device
+and configures the canvas's context itself, exactly as the engine's
+`initAsync` did (no limits; no feature but `timestamp-query`, under `?gpu`;
+the preferred format, `RENDER_ATTACHMENT | COPY_SRC`, premultiplied), with the
+boot's three failure branches unchanged — no WebGPU (or an insecure origin),
+no physics, no graphics device. The Babylon `Scene` that stood until
+`BABYLON_EXIT.md` X6.1h was built on a `NullEngine` (`src/core/SceneEngine.ts`,
+deleted with it), Babylon's own data-only engine: no device, no canvas, nothing
+it could compile with; since X6.1h there is no scene and no engine at all. So
+`WebGPUEngine.CreateAsync`'s missing `reject` (a rejected `initAsync` that
+never settled, and a boot screen that said "loading" forever) is no longer a
+trap here: the boot awaits WebGPU's own promises.
+
+**The gate runs AFTER the module graph is evaluated** — `main.ts` imports
+`Game` statically, and everything under it — **so nothing at a module's TOP
+LEVEL may name a WebGPU global** (`GPUBufferUsage`, `GPUTextureUsage`,
+`GPUShaderStage`, `GPUMapMode`, `GPUColorWrite`). They are secure-context
+globals: a browser without WebGPU, or any browser on a LAN address over plain
+http, does not define them, so the import throws a `ReferenceError` before
+`checkWebGPU` runs and the boot card sticks on "Fetching the game" with no
+sentence. A flag a module needs before a device exists is written as a
+LITERAL with the names in a comment (`GlowBlur.ts`' quad usages,
+`GiCompute.ts`' buffer and texture usages, `particleProgram.ts`' `COMPUTE`);
+inside a constructor or a method, where a device already exists, the globals
+are fine. Found by X5.2b's review, which caught two such modules (one of them
+there since X5.1b).
+
+**`scripts/check-webgpu-globals.mjs` holds it, from `npm run build` beside
+`check-babylon-free.mjs`** (added by `BABYLON_EXIT.md` X5.4d's review: until then only
+`kit:hash`'s Node run caught one, and only in a module the world's builders
+reach). It parses every file under `src/` and `main.ts` with TypeScript's parser
+alone — no program, no checker, about a second — and refuses any identifier
+spelled `GPU` and a capital that is READ while the module is evaluated: a
+statement, a top-level initializer, an enum member, a class's `extends`, a
+computed member name, a static field or block. A function's parameters and body
+and an instance field's initializer are exempt (they run once a device exists),
+as are type positions, property names and any name the file binds itself
+(Babylon's `GPUParticleSystem`, while it was one, was an import). It reads syntax, so a function
+CALLED at the top level that names one inside is the case it cannot see — `kit:hash`
+still catches that where it reaches.
+
 ## Havok's `.wasm` is the one binary that ships
 
 ~2 MB, pulled in by `@babylonjs/havok` for the ragdolls and the glass. It is
@@ -161,37 +205,39 @@ content-hashed for exactly this reason.
 **It is REQUIRED and there is no fallback.** The boot gate, and the full account
 of what the optional version cost, are in [`deaths.md`](deaths.md).
 
-## The two WASMs that must never ship, and are not in the bundle at all
+## The two WASMs that never shipped, and cannot be fetched any more
 
-Havok's is the one binary that ships. There are two more the ENGINE will fetch
-at runtime if anything lets it, and they are the reason a shader language is a
-build contract rather than a rendering detail: **glslang and twgsl, four files
-off `cdn.babylonjs.com/v9.28.0/`** (the installed version, which Babylon
-writes into the path itself) — `glslang/glslang.{js,wasm}` and
-`twgsl/twgsl.{js,wasm}`. `WebGPUEngine` builds them lazily, inside
-`prepareGlslangAndTintAsync`, the first time a shader reaching the backend is
+Havok's is the one binary that ships. There were two more Babylon's ENGINE
+would fetch at runtime if anything let it, and they are the reason a shader
+language was a build contract rather than a rendering detail: **glslang and
+twgsl, four files off `cdn.babylonjs.com/v9.28.0/`** (the version installed then,
+which Babylon wrote into the path itself) — `glslang/glslang.{js,wasm}` and
+`twgsl/twgsl.{js,wasm}`. `WebGPUEngine` built them lazily, inside
+`prepareGlslangAndTintAsync`, the first time a shader reaching the backend was
 GLSL rather than WGSL; it is how the WebGPU port compiled the tree's GLSL under
-the new engine for five milestones before the sources were rewritten.
+the new engine for five milestones before the sources were rewritten. No
+`WebGPUEngine` was built from `BABYLON_EXIT.md` X5.4h, no scene or engine at
+all stood from X6.1h, and **since X6.1i the package is not in the tree**
+(below), so nothing is left that could reach the CDN: every shader is WGSL and
+our renderer's own, and nothing could compile another.
 
-**Every shader in the tree is WGSL now, so a fetch is a regression and what it
-costs is the offline promise.** They are not in the bundle, they are not
-precached, and nothing in `sw.js` knows their names — so a build that quietly
-made one shader GLSL again would go to the network on its first DRAW, on a
-device that installed the app to a home screen precisely so it would not have
-to. Nothing about it is visible on a developer's machine.
-
-**Two gates watch for it and both are needed, because each is blind where the
-other sees.** `plans/webgpu-ref/harness.mjs` aborts `**/*.babylonjs.com/**` on
-every page it boots and records every request to it, and `assertNoTranspiler`
-reads `engine._glslang` / `engine._tintWASM` after a sweep that really compiled
-something. A route filter proves only what was REQUESTED and a shader nobody
-compiled requests nothing; the engine state proves the stronger thing and is
-silenced by the abort, since an aborted fetch leaves both fields null. `gate.mjs`
-and `shaders.mjs` fail on both. `VERIFYING.md` has the measurements.
+**A fetch would cost the offline promise**, which is why the tripwire outlived
+its cause: the files are not in the bundle, not precached, and `sw.js` knows
+none of their names, so a request for one goes to the network on a device that
+installed the app precisely so it would not have to. `plans/webgpu-ref/harness.mjs`
+still aborts `**/*.babylonjs.com/**` on every page it boots and records every
+request to it, and `gate.mjs` fails on one. The other half, `assertNoTranspiler`
+reading `engine._glslang` / `engine._tintWASM` off the scene's engine after a
+sweep that really compiled something, is RETIRED with no engine (the frame
+adapter's `transpilers()` answers `null`). `VERIFYING.md` has the measurements
+of when both halves were needed.
 
 ## `optimizeDeps.exclude` in `vite.config.ts` is load-bearing for DEV
 
-The dep optimizer copies the glue into `node_modules/.vite/deps/` and leaves the
+**It holds `@babylonjs/havok` alone, and it stays** (`BABYLON_EXIT.md` row
+"X6.1, `optimizeDeps.exclude`", the owner's): Havok's glue and its `.wasm` are
+the one package of Babylon's that ships, and the core's leaving changed nothing
+about them. The dep optimizer copies the glue into `node_modules/.vite/deps/` and leaves the
 binary behind, so the URL 404s and the SPA fallback answers with `index.html`.
 The error blames the wrong thing twice — an `application/wasm` MIME complaint,
 then `expected magic word 00 61 73 6d, found 3c 21 64 6f` (`<!do`) — and no MIME
@@ -205,82 +251,293 @@ Both halves of that are worth keeping in mind together: the failure is
 **dev-only**, and its error message names a MIME type in a project where no MIME
 type is wrong. Time has been lost tuning the server that was already correct.
 
-## Never add a deep static import into `@babylonjs/core`
+## There was a deep-import rule, and the cut retired it
 
-The same optimizer bites from the other side. A new subpath entry
-(`@babylonjs/core/Shaders/...`) makes Vite re-optimize the dependency
-*mid-session*, which rewrites the chunk files Babylon's OWN dynamic `import()`s
-resolve against — and the ones a running page already holds then 404. It cost a
-debugging session: the casualties were `glowMapGeneration.vertex` and
+While the game ran on `@babylonjs/core`, **a deep static import into it was
+forbidden outright**, and the reason is worth keeping because the same
+optimizer still sits under Havok. A new subpath entry
+(`@babylonjs/core/Shaders/...`) made Vite re-optimize the dependency
+*mid-session*, which rewrote the chunk files Babylon's OWN dynamic `import()`s
+resolved against — and the ones a running page already held then 404'd. It
+cost a debugging session: the casualties were `glowMapGeneration.vertex` and
 `default.vertex`, so the glow layer and every `StandardMaterial` in the game
-silently lost their shaders and **everything that glows stopped glowing, with
-nothing wrong in the renderer at all**. The dev server console names the missing
-chunks; the browser only shows the symptom.
+silently lost their shaders and **everything that glowed stopped glowing, with
+nothing wrong in the renderer at all**. A fresh start re-optimized cleanly and
+hid it, which is why it survived a restart for whoever pulled the change but
+never reproduced for whoever wrote it. The symptom appeared in a subsystem that
+had nothing to do with the import, on a machine that was not the one where the
+import was written — so it was stated as an absolute, and
+`scripts/check-deep-imports.mjs` held the count at zero from `npm run build`.
 
-Confirmed by control: re-adding two such imports to a running server 404s a
-dozen Babylon chunks, removing them is clean. A fresh start (or `rm -rf
-node_modules/.vite`) re-optimizes cleanly and hides it, which is why this
-survives a restart for whoever pulled the change but never reproduces for
-whoever wrote it.
+**The WebGPU port ended with NONE of them rather than six**, the grass the
+worked example (its GLSL includes became fifteen lines of our own rather than
+two new WGSL subpaths), and `BABYLON_EXIT.md` X6.1i deleted the gate with the
+package: **an import of a package that is not installed is the deep import's
+rule and more**, and `check-babylon-free.mjs` (below) refuses every one, in
+the whole tree. What is left of the lesson is Havok's half of it, above: the
+dep optimizer and a package that resolves files against its own location do
+not mix, and the failure is DEV-only.
 
-Anything needing a Babylon shader's source must **wait for Babylon to import
-it** (`OutlineFog.applyWanted` is the worked example) rather than reach for it
-directly.
+## Nothing imports Babylon: `check-babylon-free.mjs`
 
-**The WebGPU port ended with NONE of them rather than six, and the grass is the
-worked example of how.** It used to deep-import `ShadersInclude/instances*` for
-the GLSL includes its vertex stage pastes in; the WGSL twins would have been two
-NEW subpaths, so `src/shaders/wgsl/includes.ts` registers our own
-`celInstancesDeclaration` / `celInstancesVertex` instead. They are fifteen lines
-mirroring `ShadersWGSL/ShadersInclude/instances{Declaration,Vertex}.js` minus
-the branches this game never compiles, and the header names the file and the
-version so an upgrade has something to diff. That is the shape any future need
-for a Babylon include should take. The other pair, `ShadersInclude/bones*`, left
-with the skinned cel variant — there is no rigged asset in the tree, so nothing
-had called it for a long time.
+**`scripts/check-babylon-free.mjs` runs from `npm run build`, and it is the
+one rule here `tsc` cannot see** — a property of the import GRAPH, and of
+files no tsconfig includes, rather than of a file the typecheck reads. Phase 2
+of `BABYLON_EXIT.md` took the simulation off the scene and the authority off
+its engine: every system that decides an outcome holds its state on `src/math`
+and leaves its picture to a view module (`CLAUDE.md`, "Ownership and wiring"),
+and `server/` builds its world from the collision bake with no mesh, no scene
+and no `NullEngine`. Phases 3 to 6 took the client off it too, and X6.1i took
+the package out of `package.json`. The way back is one innocent import — a
+simulation pulls in a helper that pulls in a mesh builder, a script reaches
+for a class to compare with — and nothing else would notice until a clean
+install failed.
 
-**`scripts/check-deep-imports.mjs` is what keeps the count at zero**, and it runs
-from `npm run build` beside the collision check. It is the only absolute rule in
-the project that `tsc` cannot see: a subpath import compiles, typechecks and
-reviews clean, and what it breaks is a session on somebody else's machine. The
-gate matches an import STATEMENT rather than the string, so the several places
-that argue about these paths in prose do not fail the build for naming them, and
-it is scoped to `src/` and `main.ts` — `server/` imports `NullEngine` by subpath
-DELIBERATELY, because there is no Vite optimizer in front of a headless process
-and the barrel would cost seconds of boot for a class it does not use. **An
-empty allow-list is the only kind that stays empty**, which is why the gate went
-in on the milestone that emptied it rather than being left for later.
+**Since X6.1i it reads the WHOLE TREE**, file by file: `src/`, `server/`,
+`main.ts`, `scripts/`, `plans/`, `.claude/skills/` and the two Vite configs.
+**`plans/` and `.claude/skills/` are OPTIONAL and nothing else is**: the Docker
+image's build stage copies neither (nothing in them ships), so the gate on the
+front of its `npm run build` skips the pair with a printed note, `ci.yml`'s
+full checkout still gates both, and any other root missing still fails.
+Every file that NAMES `@babylonjs/core` as a module fails, a declaration file
+(`.d.ts`) included since `skipLibCheck` hides one from `tsc` — an `import` or
+`export … from` of it (`import type` too, since the package is not there to
+name), an `import()`, `require()`, `import.meta.resolve()` or Vite
+`ssrLoadModule()` taking it as a literal, a `declare module` of it or a
+`/// <reference types>` to it, or a relative path into
+`node_modules/@babylonjs/core`. A comment, a header's history or a string a
+census greps for is not an import, and the instruments may compute a specifier
+(a probe importing a page's module by its url) because nothing the package
+could answer is installed. **`@babylonjs/havok` is not refused**: it ships,
+and it depends on nothing of the core's.
 
-The reason this one is stated as an absolute rather than as a caution: the
-symptom appears in a subsystem that has nothing to do with the import, on a
-machine that is not the one where the import was written, and it goes away on
-its own the moment anyone looks hard enough to restart the server. There is no
-version of "be careful with deep imports" that survives that.
+**It still WALKS the value-import graph**, as it did from X2.3: from every file
+under `src/` and `server/` and from `main.ts` (every directory under `src/` was
+added one at a time as `BABYLON_EXIT.md` X3.1 to X6.1h emptied it — rule 6's
+ratchet — and X6.1i made the roots the whole of both), and from every
+SIMULATION module, named one by one in its `SIMULATIONS` list (the left column
+of X2.2's table — `Player` among them, a simulation the authority never
+builds), printing the shortest chain from a root to anything that reaches the
+package, and failing on a computed `import()` there. The whole-tree pass makes
+the list say nothing more about Babylon today; **it is kept unchanged** (the
+owner's, row "X6.1, the gate's simulations"), and re-aiming it at what a
+PICTURE is made of now — no value path from a simulation to `src/render/`,
+`src/ui/` or a view module — is booked for after the exit (`FINDINGS.md` 75). **A new module
+that simulates, or a system split into a simulation and a view, joins that
+list in the commit that makes it**; a view never does, and a listed file that
+no longer exists fails rather than dropping out. Type-only imports are skipped
+on the walk (the tree pass has refused the package's already), re-exports and
+`import()` are followed, an unresolvable relative specifier FAILS, and
+resolution takes a name as written, so `src/math`'s `./vector.ts` style
+resolves. A fourth pass walks from the local match's two entries for NODE
+(`node:*`, `ws`, a built-in by its bare name), since what they reach runs in a
+browser. It replaced `scripts/check-deep-imports.mjs` and the server build's
+`no-babylon` plugin, both deleted at X6.1i.
 
-## A Babylon upgrade owes `npm run merge:hash` against the version before it
+## A map reproduces from its generator: `check-maps.mjs`
 
-**The map build leans on Babylon's internals in four places, and none of them
-fails loudly when an upgrade moves what it copied.** All four are in
-`src/world/parts.ts` and `src/world/merge.ts`, and each is a claim that it does
-exactly what a Babylon routine does, minus a GPU upload:
+**`scripts/check-maps.mjs` (`npm run maps:check`) runs from `npm run build`
+right after the collision bake's staleness check, and it is what holds "the
+generators are the only way to author a map"** (`BABYLON_EXIT.md` X5.3, the
+owner's of 2026-11-08). Each shipped map's generator is re-run with `--out
+<scratch>` — which writes the two files there and nothing in `src/` — and its
+`layout.ts` and `heights.ts` are compared with the committed files byte for
+byte after line-ending normalisation alone (the generators write LF; a Windows
+checkout under `core.autocrlf` holds CRLF). One byte of any other kind fails
+the build, naming the map, the file and the first line that differs. Every map
+in `MAPS` runs at once in child processes, about a second here for the seven
+shipped today, with no GPU and no browser.
 
-- `partSurface` holds `Geometry.delayLoadState` at NOTLOADED for one
-  `applyToMesh`, relying on `setVerticesData` postponing a buffer for a
-  geometry with no mesh yet and on `applyToMesh` skipping `_applyToMesh` while
-  the geometry is not ready.
-- `boxVertexData` scales one cached `CreateBoxVertexData` cube, claiming the
-  same `base * (size / 2)` product Babylon computes per call.
-- `bakePart` is `bakeTransformIntoVertices` on a part's own arrays.
-- `mergeToPart` is `Mesh.MergeMeshes` step for step, and calls
-  `VertexData._mergeCoroutine` — an underscore member, so nothing in Babylon's
-  semver covers it.
+So a change to a map goes into its generator's design section, its parameters
+or its seed, and is re-run (`npm run <map>`), then `npm run collision -- <map>`
+and `npm run parity` — never into `layout.ts` by hand, and there is no overrides
+file. The two checks are a pair and catch different things: `check-collision.mjs`
+says the bake is older than the layout, this says the layout is not its
+generator's. A merge from `develop` owes it as well (`BABYLON_EXIT.md`, "The
+branch"). A generator's map list is `collision-hash.mjs`'s `MAPS`, so a new map
+is checked by the row it already owes there — **and so a new map owes a
+generator**, `scripts/generate-<id>.mjs` taking `--out <dir>`, or the build
+fails on its row; the DEV-only proving ground is not checked.
 
-If an upgrade changes any of those routines, the copy silently stops matching:
-vertices move, or a mesh reaches the scene with nothing on the device and draws
-nothing. So take `npm run merge:hash -- --out before.json` (and the same with
-`--editor`) on the OLD version, upgrade, and run `--against` on the new one,
-on the same machine. A difference is either the upgrade changing Babylon's own
-output or one of these copies having drifted; to tell which, hash the new
-version once more with the copies swapped back for the calls they stand in for
-(`CreateBoxVertexData`, `uploadPart(m).bakeCurrentTransformIntoVertices()`,
-`Mesh.MergeMeshes`) and see which side the difference follows.
+## The simulation's Worker is a second bundle, and two compiler settings it rests on
+
+**`server/localMatchWorker.ts` is its own Rollup build** (`BABYLON_EXIT.md`
+X2.5c): Vite follows `new Worker(new URL("../../server/localMatchWorker.ts",
+import.meta.url))` in `src/net/matchHost.ts` and bundles the Worker's graph
+separately, so `Match`, the core, its systems, the world's data layer and every
+map's layout are emitted TWICE — once in the entry, once in
+`assets/localMatchWorker-*.js` (605 kB, ~136 kB gzipped at X2.5c C5). Each
+map's lazy floor and bake stay chunks of their own, which the Worker now
+imports itself (`Match` loads its world through `loadSimWorld`), and `dist/`
+still holds one copy of each. It is
+content-hashed like every other asset and precached by the same walk of
+`dist/`. The same-thread fallback, `server/localMatch.ts`, is a third chunk
+(`assets/localMatch-*.js`), reached only through `matchHost.ts`'s one dynamic
+`import()`. **`worker.format` is `es`**, because the Worker reaches `MAPS`,
+whose lazy `import()`s Rollup cannot split into the default `iife` format. And
+**a module the Worker imports may not import the module that constructs it** —
+Vite follows the `new Worker(...)` wherever it is written — which is why the
+words both halves share live in `src/net/localWire.ts` rather than in
+`matchHost.ts` or `LocalMatch.ts`.
+
+**`tsconfig.json`'s `useDefineForClassFields` is false**, which is a
+performance setting and the one this build's every class rests on:
+`CLAUDE.md`'s conventions and `docs/profiling.md` ("Finding WHO allocates") have
+the measurement. esbuild reads it from the tsconfig nearest each file, so
+`server/tsconfig.json` inherits it for `dist-server` — the authority's tick got
+7-16% faster the day it flipped. (`lib` went to ES2024 at X2.5b for the
+growable `SharedArrayBuffer` the core's old Worker published through, and back
+to ES2022 at X2.5c C5, when that Worker went.)
+
+## The copies of Babylon, held to its recorded answers: the four copy checks, then `npm run merge:hash`
+
+**There is no Babylon to upgrade** — the package left at `BABYLON_EXIT.md`
+X6.1i, and what this section was for (an upgrade owed four copy checks against
+the new library, then `merge:hash`) is now what a change to a COPY owes. **The
+map build used to lean on Babylon's INTERNALS in four places, none of which
+failed loudly when an upgrade moved what it leaned on, and since
+BABYLON_EXIT.md X1.4 it leaned on none.** Each was a claim that it did exactly
+what a Babylon routine does, minus a GPU upload or a mesh: a cached
+`CreateBoxVertexData` cube scaled per box (gone with X1.2); a part MESH that
+held `Geometry.delayLoadState` at NOTLOADED for one `applyToMesh`, relying on
+how `setVerticesData` postpones a buffer and when `applyToMesh` skips
+`_applyToMesh`; a hand-copied `bakeTransformIntoVertices` over that mesh's own
+arrays; and a hand-copied `Mesh.MergeMeshes` that called
+`VertexData._mergeCoroutine` — an underscore member, which nothing in Babylon's
+semver covers. All three of the last went with X1.4, and so did the mesh they
+served: the world's merges, its vertex bake and its palette run on our own
+buffers, and the world becomes RECORDS once, at the end of the build
+(`worldRecords`, `src/world/parts.ts`), our renderer taking each surface's
+arrays on the way past.
+
+**What is left is nothing at all.** What was left until `BABYLON_EXIT.md`
+X6.1g was public API, in one place: **the one adapter** — `drawnMesh`
+(`src/world/parts.ts`), and `worldMeshes` through it: `VertexData.applyToMesh`
+on a fresh `Mesh`, and `Mesh.setVerticesData` to make a pane block's positions
+writable — reached by nothing but a surface our renderer refused, in a world
+that failed anyway. X6.1g deleted it: no build makes a mesh, and a refusal is
+the world's failure alone. **The colliders were a second**, until
+`BABYLON_EXIT.md` X5.3e: `MeshBuilder.CreateBox` boxes merged by
+`Mesh.MergeMeshes` (`MapBuilder.clusterColliders`, `struts`), read by nothing
+that moves or shoots since X2.1 and by nothing at all once the map editor's
+pick went (X5.3c). A collider is a `WorldBox` and its groups are data now, on
+both sides, so an upgrade cannot move one.
+
+**And the copies, which a change of ours can make WRONG.** The
+geometry every model and every structure is built and merged from is ours
+(`src/geometry/`: the primitive generators, `mergeTransformed`, the transform,
+the bake, the normals — Babylon 9.28's, operation for operation), and so is the
+math under every transform (`src/math/`). Two scripts hold each copy to
+Babylon 9.28's answers: `scripts/geometry-check.mjs` (the generators, the
+merge — `VertexData._mergeCoroutine` was the reference the copy was recorded
+against — the transform, the normals, and since X6.1g the three effects' own
+calls: the blast's icospheres, a rubble chunk's box and a glass shard's
+float32 normals), and
+`scripts/math-check.mjs` (`Vector3`, `Quaternion`, `Matrix`: the compose,
+decompose, multiply and Euler conversions `worldMatrixOf`, `detachPart` and
+`flattenParts` are built from). **Beside it, `scripts/bounds-check.mjs`** holds
+`boundsOf` (`world/worldGeometry.ts`, the bounds `WorldCulling` grows its cells
+from in place of a mesh's bounding info) to the bit against what Babylon's
+`BoundingInfo` answered for a `Mesh` with the same positions frozen at the same
+sixteen floats — over every kit and scatter kind at seeded OFF-identity transforms,
+which is the arm no round's build exercises (its visuals are at identity) and
+which `merge:hash --editor` alone covered until the editor's retirement
+(`BABYLON_EXIT.md` X5.3a) — and holds `worldMatrixOf` to Babylon's
+`TransformNode.computeWorldMatrix` over every one of those parts and seeded
+parent chains, the WALK (Euler to quaternion, the parent multiplied in) that
+`math-check.mjs`'s primitives do not cover; `--perturb` is its negative test
+for both halves.
+**The body sweep is a third copy**:
+`src/world/ellipsoidSweep.ts` is Babylon 9.28's `moveWithCollisions` — the
+collider's triangle test, its response and the coordinator's retry loop —
+ported operation for operation against each `WorldBox`'s twelve triangles
+(Apache-2.0, `licenses/babylonjs.md`), and `scripts/sweep-check.mjs` holds it to
+the BIT (its one mode since X6.1i, once called `exact`: it builds each map as
+the authority does, off the bake, and so needs no browser).
+
+**Babylon's answers are RECORDED TABLES** (`scripts/tables/`,
+`scripts/lib/babylonTable.mjs`; `BABYLON_EXIT.md` row "X6.1, the copy
+checks", the owner's of 2026-11-12): each check's every answer was captured
+once, against the installed 9.28, at 28dc7f0 (`BABYLON_EXIT.md` X6.1i's
+first commit; the checks' recording arms went with the package in the next,
+and the ledger's after X6.1j), and a check now holds ours to them; a re-record
+means checking out that commit's scripts with the package installed. A table
+keeps one 64-bit digest of a GROUP of answers (a case over a block of trials, a kit
+kind, a map's body) rather than the numbers — the bits of every answer are in
+it, so the check is as strict as the live comparison was; it says which group
+moved, never which number (about 85 kB for the four, where the numbers were
+millions). **The inputs are part of what was recorded**: a seed, a count, a
+draw changed is a table nobody can re-record. Where the input is the GAME's —
+`bounds-check`'s kit kinds, `sweep-check`'s maps — the table keeps a digest
+of it beside the answers, and a kind reworked or a map re-laid since reads
+STALE and is not compared; a kind or a map ADDED since reads NEW and one
+removed GONE (so does a scatter kind's rung when a foliage tier's detail
+moves, since it names the group), reported and not compared either, and each
+run prints a line counting the three. **A sudden MASS of STALE groups is
+suspect, not "the art moved"**: a kind's input digest is partly computed
+through `src/math` (a builder's own vector arithmetic, and a scatter kind's
+chains through `flattenParts` → `detachPart` → `worldMatrixOf`), so a copy
+that moved can move it too. Each
+of those two also runs a SEEDED section built from nothing in the game
+(synthetic parts and chains, a synthetic world), and a seeded group — like
+every group of `math-check` and `geometry-check` — added or lost still FAILS,
+and so does one whose INPUT digest moved (the synthetic world carries one):
+only the game's content may read STALE. Every `--perturb` must fail every group it touches. **Since
+nothing can record a new answer, a member ADDED to a copy has no bit-level
+oracle**: `math-check` and `geometry-check` fail on an export no case covers,
+and a case added now has nothing to meet; such a member is proven another way,
+and said so where it lands.
+
+**So a change to a copy is three runs, in this order, on the same machine.**
+Take `npm run merge:hash -- --out before.json` (and `npm run kit:hash -- --out`)
+before it. Make it. Run `node scripts/geometry-check.mjs`,
+`node scripts/math-check.mjs`, `node scripts/bounds-check.mjs` and
+`node scripts/sweep-check.mjs` — the copies against Babylon 9.28's recorded
+answers — then `npm run merge:hash -- --against before.json`. A copy check
+that fails is the copy no longer Babylon's arithmetic, and which arithmetic the
+game should follow is then a decision, not a fix. **What `merge:hash` holds of
+a collider is DATA** — `colliderBoxes` hashed, `boxGroups` as indices,
+`rayGroups` and `terrainGeometry` hashed a group or a block an entry — and its two collider-MESH lists (`colliders`,
+`terrainColliders`) were retired with the meshes at X5.3e: a baseline older
+than that is compared on everything else and the two lists are said, not
+compared.
+
+**A baseline taken before `BABYLON_EXIT.md` X4.6e differs by design, and a
+`before.json` must be taken on the same side of it.** `merge:hash --against`
+one older shows every round's glazing visual losing its `mesh` (a round's
+glazing is our renderer's, no mesh made of it), and the ones that were a
+probe slot's material renamed (`cel-glass-#2a333b#1` is
+`cel-glass-#2a333b`: `getGlass` lost its slot); `paneGroups` fingerprint by
+the group's record (`PaneGroup.record`), the surface index its mesh had, so
+they compare equal across it. `kit:hash --against` one older shows `drawing
+changed 537` (car 94, depot 40, office 31, shophouse 82, tower 290) and
+`colliders changed 0`: its stub factory names a material by the call's
+arguments, and `Build.pane`'s `getGlass` call lost its slot argument. Measured
+at X4.6e's review: with that call given its old four arguments back, the
+same run against 8bf7789's baseline is `identical`.
+
+**And `kit:hash` runs with no Babylon since X6.1a, its record restated off what
+the drawing IS** (`scripts/kit-hash.mjs`' header): no `NullEngine`, `Scene`,
+`StandardMaterial`, `Mesh`, `TransformNode` or `BoundingInfo` is made — a
+builder takes no scene since X6.1d (its pictures are cached under the stub
+factory it is handed, a scene's stand-in until then) and a material is a plain
+named object — and a part is hashed as its attributes and
+indices WHOLE (each array's type, its numbers as exact doubles), its
+transform as far as it decides the matrix (the quaternion where the part or
+joint carries one, else its Euler angles — `worldMatrixOf`'s choice, so a dead
+Euler write is no change; X6.1a's review), its material's name and its
+metadata, where it was
+hashed as the Babylon mesh it used to become (float32, the quaternion zeroing
+the Euler angles, and in `--models` every flag Babylon's defaults supplied).
+The bounding box Babylon computed is restated off `boundsOf`, the defaults are
+dropped, and a math value is spelled by kind and value whichever library made
+it, so moving a builder onto `src/math/` cannot move a fingerprint by
+spelling. **So a fingerprint taken before X6.1a is of the other format and
+compares with nothing**: take the BEFORE with the same script. At X6.1a's
+parent the two instruments saw the same builds — every key, no error, and
+every build that one called equal to another the other did too, drawing,
+colliders and `set` alike (3,722 kit builds, 244 model builds) — and `--feet`
+printed the same table. X6.1a's review changed the format once more (the
+rotation above), so a fingerprint taken before it compares with nothing
+either; the review's and X6.1a's saw the same builds in the same classes on
+the same game, and the colliders' hashes did not move.

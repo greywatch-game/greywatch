@@ -1,0 +1,39 @@
+{
+ "maps": {
+  "greyfen": {
+   "fight": "83e8e74ef36916ba",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "hollowmere": {
+   "fight": "549487ba93bceefe",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "coldharbour": {
+   "fight": "de5622634abca6e7",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "harrowmead": {
+   "fight": "3ae90f2f08fb0643",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "sarab": {
+   "fight": "986c2e35557fb679",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "cinderhaven": {
+   "fight": "2f97c9072ab1762b",
+   "seed": 777,
+   "at": "9e3bc86"
+  },
+  "kurenai": {
+   "fight": "cd58b73111eacbdd",
+   "seed": 777,
+   "at": "9e3bc86"
+  }
+ }
+}

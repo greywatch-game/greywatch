@@ -2,8 +2,10 @@
  * mapTypes.ts — The shapes a built map is described in: what a layout's flags,
  * spawns, hardstandings, water and grass are once `MapBuilder` has read them,
  * the collider box and the pane every query and the collision bake carry, the
- * editor's per-item index, and `GameMap` itself.
- * Owns: types and nothing else — no value, no Babylon object, no code path.
+ * layout item a piece names (`ItemRef`), and `GameMap` itself.
+ * Owns: types and nothing else — no value, no Babylon object, no code path,
+ * and since `BABYLON_EXIT.md` X6.1g no Babylon type either: a built map's
+ * drawn world is RECORDS (`GameMap.world`), and no field holds a mesh.
  * Every import here is `import type`, so a module that reads a `GameMap`
  * pulls nothing in at runtime by naming one.
  * Invariants: `MapBuilder` re-exports every name here, so the readers that
@@ -12,13 +14,12 @@
  * into `colliderBoxes` or `panes` is an IDENTITY on both sides of the wire —
  * both are rules about how `MapBuilder` fills these, stated where the field is.
  * Must NOT grow a function: what builds or moves one of these lives in
- * `MapBuilder.ts` (`collider()`, `recordBox`, `repositionItem`) or in
+ * `MapBuilder.ts` (`collider()`) or in
  * `merge.ts` (`PaneBlocks`), never beside the shape.
  */
-import type { Mesh, Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "../math";
 import type { WaterAmbienceId } from "../core/Sfx";
 import type { VehicleKind } from "../entities/vehicleKinds";
-import type { BoxSpec } from "./BuildingKit";
 import type { CollisionField } from "./CollisionField";
 import type { CoverMap } from "./CoverMap";
 import type { NavGrid } from "./NavGrid";
@@ -26,6 +27,21 @@ import type { ObstacleField } from "./ObstacleField";
 import type { RayWorld } from "./RayWorld";
 import type { RoadFootprint } from "./roads";
 import type { TerrainField } from "./TerrainField";
+import type { ScatterField } from "./scatterVariants";
+import type { WorldGeometry, WorldSurface } from "./worldGeometry";
+
+/**
+ * One floor block's collider as data: its positions (three a vertex, in the
+ * world's space — the block stands at identity) and its triangles, three
+ * indices each, wound for Babylon's left-handed default as every triangle in
+ * the world is. The arrays are the floor block's values, in the types its
+ * collider clone held when it was a mesh (`BABYLON_EXIT.md` X5.3e took the
+ * mesh away; `parts.ts`' `plainGeometryOf`).
+ */
+export interface TerrainGeometry {
+  readonly positions: ArrayLike<number>;
+  readonly indices: ArrayLike<number>;
+}
 
 /** A capturable flag. */
 export interface ControlPointDef {
@@ -171,8 +187,9 @@ export interface GrassRect {
 }
 
 /**
- * A collider's world-space geometry, kept alongside the mesh so the nav grid
- * can compute surface heights analytically instead of firing 25,600 rays.
+ * A collider's world-space geometry, kept alongside the drawn surface it
+ * stands in for so the nav grid can compute surface heights analytically
+ * instead of firing 25,600 rays.
  */
 export interface WorldBox {
   w: number;
@@ -207,7 +224,7 @@ export interface WorldBox {
  * **Only a `breakable` pane is one of these.** Most of a city's glazing is
  * hung on something solid and never goes, and none of it is here — a sheet
  * that cannot be taken away has nothing to say to the sweep, the wire or the
- * authority, and is a mesh and nothing else (see `PaneSpec.breakable`).
+ * authority, and is drawn glazing and nothing else (see `PaneSpec.breakable`).
  *
  * **The index into `GameMap.panes` IS the pane's identity**, on the client and
  * on the authority alike, exactly as an index into `colliderBoxes` is. Both
@@ -225,8 +242,9 @@ export interface WorldPane {
   cz: number;
   rotY: number;
   /**
-   * Where this pane's 24 positions live in `PaneGroup.mesh`'s vertex buffer.
-   * Collapsing them to the pane's own centre is what takes it off the screen.
+   * Where this pane's 24 positions live in its group's vertex buffer — our
+   * renderer's (`render/GlassDraw.ts`). Collapsing them onto the first is what
+   * takes it off the screen.
    */
   vertexStart: number;
   vertexCount: number;
@@ -242,7 +260,7 @@ export interface WorldPane {
 }
 
 /**
- * One placement's glazing: the merged mesh, and the breakable panes with
+ * One placement's glazing: the merged surface, and the breakable panes with
  * vertices in it — usually none, because most glass never goes anywhere.
  *
  * Merged per placement and kept out of `BlockMerge`, so a building's glass is
@@ -251,7 +269,13 @@ export interface WorldPane {
  * `MapBuilder.paneGroup`.
  */
 export interface PaneGroup {
-  mesh: Mesh;
+  /**
+   * Its surface's index in the build's list: what names its record in
+   * `GameMap.world` and its draw in a round — glazing is our renderer's
+   * (`render/GlassDraw.ts`, X4.6e) and no mesh is made of it (the field that
+   * held one went at `BABYLON_EXIT.md` X5.3e, null on every build since X5.3c).
+   */
+  record: number;
   /** Indices into `GameMap.panes`. */
   panes: number[];
   /**
@@ -276,47 +300,19 @@ export interface PaneGroup {
 }
 
 /**
- * Which layout item a mesh came from. Present in `metadata.editorRef` only on
- * editor builds — the shipped path merges across placements, so a mesh there
- * belongs to a whole map block rather than to any one item.
+ * Which layout item a PIECE came from: an entry of the layout's `placements`
+ * or `scatter`, by its index. The block merge makes a placement unrecoverable
+ * as a mesh; `GameMap.world.pieces` is where each surface's ranges still name
+ * the item they were built for (`worldGeometry.ts`), and `merge:hash` hashes
+ * that table.
  */
-export interface EditorRef {
+export interface ItemRef {
   list: "placements" | "scatter";
   index: number;
 }
 
-/** One layout item's geometry, so the editor can move or rebuild it alone. */
-export interface EditorItem {
-  visuals: Mesh[];
-  colliders: Mesh[];
-  /** Positions in `GameMap.colliderBoxes` of this item's boxes. */
-  boxes: number[];
-  /**
-   * The builder's own collider specs, in the structure's local space, in the
-   * same order as `colliders`/`boxes`. Kept so a move or rotate can be
-   * recomputed exactly — `repositionItem` needs the pre-transform boxes, and
-   * the world-space ones have already had the placement baked into them.
-   */
-  localBoxes: BoxSpec[];
-}
-
-/**
- * Per-item geometry index. Built only when `build()` is given `editor: true`;
- * that mode also skips the BlockMerge pass, because merging across placements
- * is exactly what makes a single placement unrecoverable afterwards.
- */
-export interface EditorIndex {
-  placements: EditorItem[];
-  scatter: EditorItem[];
-}
-
-/** Opt-in build behaviour. Absent in the shipped path. */
+/** Opt-in build behaviour. */
 export interface BuildOptions {
-  /**
-   * Keep geometry per layout item and tag it, at the cost of the block merge:
-   * ~1740 draws against ~150. Fine for authoring, never for play.
-   */
-  editor?: boolean;
   /**
    * How full a tree's crown is, 0..1 — the player's `Settings.foliage`
    * resolved through `CONFIG.graphics.foliage`, handed to every scatter
@@ -326,9 +322,40 @@ export interface BuildOptions {
    * `buildJungleTree`).
    */
   foliage?: number;
+  /**
+   * Precompute the nav graph's FLOW FIELDS — one per flag and both home
+   * spawns. Absent is true. **The page passes false for its own (offline)
+   * match**: the AI that steers by them is the authority's — that `Match`, in
+   * its host (`src/net/matchHost.ts`) — whose own world builds its own
+   * (`buildSimWorld`), so on the page they were seven fields per map nobody
+   * read, built behind the loading card and relaxed again on every broken
+   * pane (`NavGrid.openBox` relaxes only the fields there are). The graph
+   * itself is built either way — `standableAt` and the viewer need it. A
+   * netplay round's keeps them (the scratch netplay smoke steers its walker by
+   * them); the viewer sweeps the one it draws on demand.
+   */
+  navFields?: boolean;
+  /**
+   * Handed every surface and its index in `GameMap.world.surfaces`, in the
+   * one moment its ARRAYS can still be read — before they are released
+   * (`worldRecords`, and `SurfaceRecord` for why they go) — and answering
+   * whether OUR renderer draws it in every pass: `false` is a REFUSAL, which
+   * fails the world (`BABYLON_EXIT.md` X3.7b; no build makes a mesh of it
+   * instead since X6.1g). For a renderer of our own that uploads a surface
+   * itself (`systems/BlockHandover.ts`, which the game passes on every
+   * build). Absent is the records alone, nothing handed and nothing drawn.
+   */
+  onSurface?: (surface: WorldSurface, index: number) => boolean;
+  /**
+   * Handed the scatter as our renderer draws it — every worn variant a set
+   * of instances (`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4b) — once
+   * a build, after the block merge, on a shipped build only. Its arrays are
+   * the taker's: nothing else keeps them. Absent is no field built at all.
+   */
+  onScatter?: (field: ScatterField) => void;
 }
 
-/** The built world: geometry is in the scene, this is the queryable part. */
+/** The built world: its drawn surfaces as records (`world`), and the queryable part. */
 export interface GameMap {
   /**
    * The PLAY square's side, centred on the origin. Everything authored, every
@@ -362,11 +389,7 @@ export interface GameMap {
   /**
    * The side of the square the FLOOR was tessellated over — the map's
    * `MapLayout.terrainBlock`, or `BLOCK_SIZE`, and independent of `blockSize`.
-   *
-   * The editor's terrain brush is the reader: a stroke names the patches it
-   * moved by the same arithmetic `terrainPatches` cut them with, and a brush
-   * that assumed 48 on a map that states otherwise re-tessellates the wrong
-   * meshes and silently leaves the ones under the cursor stale.
+   * `PhysicsWorld` reads it to bucket the floor's blocks.
    */
   terrainBlock: number;
   controlPoints: ControlPointDef[];
@@ -381,9 +404,12 @@ export interface GameMap {
    * modules. See `VehicleSpawnDef`.
    */
   vehicleSpawns: VehicleSpawnDef[];
-  /** Invisible collider proxies — the only pickable, collidable geometry. */
-  colliders: Mesh[];
-  /** The same colliders as plain boxes, for the nav grid. */
+  /**
+   * The colliders, as plain boxes — and there is nothing else to a collider:
+   * no mesh is made of one on either side (`BABYLON_EXIT.md` X5.3e). What
+   * every ray and sweep (`rays`, `collidables`), the nav grid, the cover bake,
+   * the obstacle field, the AO bake and the collision bake read.
+   */
   colliderBoxes: WorldBox[];
   /**
    * An ALBEDO per `colliderBoxes` entry, as `r, g, b` triples in the same
@@ -394,7 +420,7 @@ export interface GameMap {
    * the collision bake and has no materials to average — so this is kept off
    * `WorldBox` and out of the bake, and neither `npm run collision` nor
    * `npm run parity` has heard of it. It must stay PARALLEL to
-   * `colliderBoxes`: `MapBuilder.recordBox` is the one place either grows.
+   * `colliderBoxes`: `MapBuilder.collider` is the one place either grows.
    */
   colliderAlbedo?: Float32Array;
   /**
@@ -413,26 +439,32 @@ export interface GameMap {
   partBoxes?: WorldBox[];
   /**
    * The `strut` boxes — ray geometry with no body behind it — grouped by the
-   * collider mesh each group was merged into.
+   * placement that declared them (one collider mesh a group until
+   * `BABYLON_EXIT.md` X5.3e; the groups are unchanged).
    *
    * Not in `colliderBoxes` on purpose: everything derived from geometry reads
    * that list, and none of it can represent a 0.1 m rail (see
    * `BoxSpec.rayOnly`). The grouping is carried rather than flattened because
-   * the server has to rebuild and merge the same meshes from the bake, and it
-   * cannot recover from a flat list which boxes were one fence.
+   * the collision bake carries it to the server, which rebuilds the same list
+   * from it, and a flat list cannot say which boxes were one fence.
    */
   rayGroups: WorldBox[][];
   /**
-   * The `colliderBoxes` indices that were merged into one collider mesh each,
-   * one entry per merged mesh — a scatter region's props, grouped by locality.
+   * The `colliderBoxes` indices grouped by locality — the scatter's blocking
+   * props, one entry per `CLUSTER` square (one merged collider mesh each until
+   * `BABYLON_EXIT.md` X5.3e; the groups are unchanged, byte for byte).
    *
    * Unlike `rayGroups` these boxes ARE in `colliderBoxes` and everything
-   * derived from geometry still sees them one at a time; the grouping is about
-   * nothing but what a ray meets. Boxes named by no group are their own mesh,
-   * which is every collider a structure builder makes.
+   * derived from geometry still sees them one at a time. The grouping is the
+   * order a SWEEP breaks a tie in (`RayWorld`'s rank: every box named nowhere,
+   * in index order, then each group's boxes, group by group) — the order
+   * Babylon's walk met the client's collider meshes in, which the feel of a
+   * body leaning on two boxes was tuned against — and the only thing that
+   * still reads it. Boxes named by no group are every collider a structure
+   * builder makes.
    *
    * Carried rather than recomputed for the same reason `rayGroups` is: the
-   * server rebuilds these meshes from the bake, and the grouping is a decision
+   * server ranks the same boxes from the bake, and the grouping is a decision
    * the client made rather than a property of the boxes.
    * See `MapBuilder.clusterColliders`.
    */
@@ -452,24 +484,33 @@ export interface GameMap {
    */
   panes: WorldPane[];
   /**
-   * The merged glazing meshes — all of the map's glass, not only the panes
-   * above, which hold their vertices in these.
+   * The merged glazing groups — all of the map's glass, not only the panes
+   * above, which hold their vertices in these: a surface of our renderer's
+   * each.
    */
   paneGroups: PaneGroup[];
   /**
-   * The floor's collider blocks, a SUBSET of `colliders`.
-   *
-   * They are called out because they are the one collider with no `WorldBox`
-   * behind it (a heightfield is not a box — see `MapBuilder.buildValley`), so
-   * anything that wants the whole solid world as geometry has to take
-   * `colliderBoxes` for the boxes and these for the floor.
-   * `RagdollSystem` is the caller: it needs the real mesh to rest a body on.
-   * Picking them out of `colliders` by name would work and is exactly the sort
-   * of string-sniffing that breaks silently when a name changes.
+   * The floor's collider blocks as GEOMETRY, one entry a floor block in the
+   * build's order: the very vertex and index arrays each block is made of.
+   * The floor is the one collider with no `WorldBox` behind it (a
+   * heightfield is not a box — see `MapBuilder.buildValley`), so anything
+   * that wants the whole solid world as geometry takes `colliderBoxes` for
+   * the boxes and these for the floor. `PhysicsWorld` is the reader — it
+   * rests a body on the floor. **Empty on the authority**: it has no Havok.
    */
-  terrainColliders: Mesh[];
-  /** Drawn geometry, merged per colour. */
-  visuals: Mesh[];
+  terrainGeometry: TerrainGeometry[];
+  /**
+   * The drawn world: what the build KEPT of its surfaces — one
+   * `SurfaceRecord` per surface, in list order: its world bounds, its block,
+   * its piece ranges, its material and the very metadata object its part
+   * carried, whether its positions are writable, and its counts. Every one is
+   * our renderer's in every pass, and none is a mesh (`BABYLON_EXIT.md`
+   * X6.1g deleted `visuals`, the list of the meshes Babylon was made of the
+   * world — on a shipped build none since X4.6e). **Not its vertex arrays**,
+   * which went to the device — see `SurfaceRecord`. Empty on the authority,
+   * which draws nothing (`paneGroups`' reason).
+   */
+  world: WorldGeometry;
   /** Walkable-surface graph with one precomputed flow field per objective. */
   nav: NavGrid;
   /** Sub-cell collision the nav grid is too coarse to express. */
@@ -482,25 +523,34 @@ export interface GameMap {
    * Here beside `nav`, `cover` and `obstacles` rather than built by whoever
    * wants one, for the reason all three are: it is derived from the finished
    * collider set, it is built once per map, and the authority gets the same
-   * object off `buildServerWorld` without a server-only variant. See
+   * object off `buildSimWorld` without a server-only variant. See
    * `world/RayWorld.ts`, and `ENGINE_UPGRADE.md` wall 2 for what it replaced.
    */
   rays: RayWorld;
   /**
-   * The same collider set indexed for a SWEEP — which meshes a moving body's
-   * collision sphere could touch — so `moveWithCollisions` walks a street
-   * rather than the map.
+   * The sweep every moving body goes through — the player on foot, a hull
+   * driving, a wreck coasting (`world/CollisionField.ts`).
    *
-   * `rays`' counterpart and here for the identical reason, one question later:
-   * that one answers a LINE analytically and took every pick off the scene,
-   * and this one narrows the last whole-scene walk left behind, which no
-   * analytic query can replace because it MOVES a body rather than asking
-   * about one. See `world/CollisionField.ts` for what it measured and for the
-   * superset rule a caller owes it.
+   * Built over `rays` and holding nothing of its own: a sweep's candidates are
+   * `RayWorld.bodyNear`'s, so a sweep sees exactly the boxes and hulls every
+   * ray sees, and a pane a round has broken is out of both at once. It is the
+   * one thing here that MOVES a body rather than answering a question about
+   * one, which is why it is a field of its own rather than a method on `rays`.
    */
   collidables: CollisionField;
-  /** Baked directional cover over the nav graph, for the AI. */
-  cover: CoverMap;
+  /**
+   * Baked directional cover over the nav graph, for the AI — or null on a
+   * world no AI is stepped on.
+   *
+   * **The page's build carries none**: its one
+   * reader is `BattleSystem`, and the page has none — offline the bots are the
+   * simulation core's, whose world `buildSimWorld` rebuilds from the same boxes
+   * and bakes its own cover over, and in a match they are the authority's. Baking
+   * it here as well cost the page a second copy of the largest per-map table
+   * after the nav graph (15.5 MB on Cinderhaven) and its build time, for nothing.
+   * Every world a `BattleSystem` is handed (`buildSimWorld`'s) has one.
+   */
+  cover: CoverMap | null;
   /** Shallow-water bodies from the layout; empty when the map is dry. */
   water: WaterRect[];
   /** Grass fields from the layout; empty when the map is bald. */
@@ -524,7 +574,5 @@ export interface GameMap {
    * layout declares no terrain, which is the whole of the old behaviour.
    */
   terrain: TerrainField;
-  /** Per-item geometry. Editor builds only — undefined in play. */
-  editor?: EditorIndex;
   dispose(): void;
 }

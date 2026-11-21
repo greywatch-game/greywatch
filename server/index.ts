@@ -2,13 +2,15 @@
  * server/index.ts — Process entry: the two HTTP endpoints, the WebSocket
  * listener, and the match registry.
  * Owns: accepting a socket, parsing the first message, routing the peer to a
- * `Match`, creating matches and bounding how many exist, and the liveness sweep
- * every socket in the process is pinged by. It owns no simulation and no game
- * rules — everything past the handshake belongs to `Match`.
+ * `Match` over the socket's `PeerTransport` (`wsTransport`), creating matches
+ * and bounding how many exist, and the liveness sweep every socket in the
+ * process is pinged by. It owns no simulation and no game rules — everything
+ * past the handshake belongs to `Match`.
  * Invariants: nothing here trusts a client. A socket that does not open with a
  * well-formed `join` at the right protocol version is closed, and a peer is
  * only ever given the slot the roster hands out. Never import a rendering
- * system; see `server/README.md` for what a NullEngine cannot do.
+ * system, or anything else that reaches Babylon — `server/README.md`, and
+ * `scripts/check-babylon-free.mjs`, which fails the build on the path.
  *
  * **Everything an anonymous socket may spend is bounded here**, because this is
  * the only place one exists: a peer that has not said `join` holds no slot and
@@ -39,7 +41,7 @@ import {
   PROTOCOL_VERSION,
   type MatchList,
 } from "../src/net/protocol";
-import { Match } from "./Match";
+import { Match, type PeerTransport } from "./Match";
 import { readClientMessage } from "./wire";
 
 /**
@@ -164,7 +166,7 @@ const socketsPerAddress = new Map<string, number>();
  * nothing at all: TCP keepalive is what eventually notices, and Node leaves
  * that at the OS default, which on Linux is TWO HOURS before the first probe.
  * For all of that time the peer's roster slot is held, the bot that would have
- * backfilled it stays benched, `HeadlessGame` keeps a `NetPlayer` nobody owns
+ * backfilled it stays benched, `SimCore` keeps a `SimPlayer` nobody owns
  * in the rewind history, and the socket counts against `MAX_SOCKETS_PER_IP`
  * for the very address the player is reconnecting from — the cap above makes
  * the last of those worse than it was, which is what turned this from a known
@@ -190,9 +192,9 @@ const PING_MS = 15_000;
  * scoreboard's ping column — and those pongs land here too.** Nothing is
  * weakened by that: any pong is the far end's network stack answering, which is
  * the whole of what this deadline asks, and a peer that has stopped existing
- * produces neither kind. The traffic goes only one way — `Match` tags its own
- * pings so an untagged pong from THIS sweep is not mistaken for an answer to
- * one of its measurements.
+ * produces neither kind. The traffic goes only one way — `wsTransport` tags
+ * `Match`'s pings so an untagged pong from THIS sweep is not mistaken for an
+ * answer to one of its measurements.
  *
  * Weak on purpose: `wss.clients` is what holds a socket alive, and this must
  * not be a second thing that remembers one after it has closed.
@@ -240,7 +242,7 @@ let nextMatchId = 1;
  * it, and nothing here needs to know what maps exist.
  */
 function createMatch(mapId?: string, bots = true): Match {
-  const match = new Match(`m${nextMatchId++}`, mapId, bots);
+  const match = new Match(`m${nextMatchId++}`, { map: mapId, bots });
   match.onRetired = () => matches.delete(match.id);
   matches.set(match.id, match);
   return match;
@@ -470,6 +472,42 @@ setInterval(() => {
   }
 }, PING_MS);
 
+/**
+ * A `ws` socket as `Match` reaches a peer through one (`PeerTransport`).
+ *
+ * **The PONG TOKEN lives here because the sharing does.** The liveness sweep
+ * above pings the very same socket on its own clock, and its pongs arrive on
+ * the socket's one `pong` event beside the answers to `Match`'s pings for the
+ * scoreboard — so `Match`'s ping carries a token and only a pong echoing the
+ * latest one is raised as `pong`, or the match would time its own ping
+ * against somebody else's answer. A pong carries the payload of the ping that
+ * caused it (RFC 6455), so the token is the whole of the test, and the sweep's
+ * own pongs (which carry none) still clear its deadline in the listener below.
+ *
+ * Wired only once a peer is past the handshake: `Match.admit` calls `listen`
+ * synchronously, before its first await, which is what lets the handshake's
+ * own `message` listener come off without a frame falling between the two.
+ */
+function wsTransport(socket: WebSocket): PeerTransport {
+  let token = 0;
+  return {
+    get open() {
+      return socket.readyState === socket.OPEN;
+    },
+    send: (text) => socket.send(text),
+    close: () => socket.close(),
+    ping: () => socket.ping(String(++token)),
+    listen(handlers) {
+      socket.on("message", (raw) => handlers.message(String(raw)));
+      socket.on("close", () => handlers.closed());
+      socket.on("error", () => handlers.closed());
+      socket.on("pong", (data) => {
+        if (data.toString() === String(token)) handlers.pong();
+      });
+    },
+  };
+}
+
 wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
   // FIRST, and before anything can throw. A `WebSocket` is an EventEmitter, so
   // an `error` with no listener is not swallowed — it is thrown, out of ws's
@@ -582,7 +620,13 @@ wss.on("connection", (socket: WebSocket, req: IncomingMessage) => {
     // failure there must close the socket rather than leave a client waiting
     // on a welcome that is never coming.
     route.match
-      .admit(socket, msg.name, msg.weapon, msg.equipment, msg.throwable)
+      .admit(
+        wsTransport(socket),
+        msg.name,
+        msg.weapon,
+        msg.equipment,
+        msg.throwable,
+      )
       .catch((err: unknown) => {
         console.error("admit failed:", err);
         refuse("could not start a match");

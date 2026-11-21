@@ -15,17 +15,19 @@
  *   the geometry returned is still origin-local, because MapBuilder still
  *   rotates and translates it. Declaring one owes an entry in BuildingKit's
  *   CONFORMS_TO_TERRAIN.
- * - Geometry here is a PART, not a mesh in the ordinary sense: `Build` makes
- *   everything through `world/parts.ts`, so a part holds its vertices and has
- *   no device buffer, no bounding info and no submesh. It may be read,
- *   transformed, merged and disposed, and may never be DRAWN, PICKED or
- *   COLLIDED WITH — uploading parts a merge throws away was half of a 1500 m
- *   build (see `world/parts.ts`). Anything new here uses those factories; a raw
- *   `MeshBuilder` call puts its geometry on the device on the way to being
- *   thrown away, and buys back its share of that silently.
- * - Builders NEVER set metadata.solid, checkCollisions, or isPickable — the
- *   visual/collider split is MapBuilder's job; builders only declare where
- *   collider boxes go, and what kind: `BoxSpec.porous` is the one property of
+ * - Geometry here is a PART (`world/parts.ts`), not a mesh: a
+ *   `GeometryBuffer` built by `src/geometry/` with a name, a local transform
+ *   and a material, and no Babylon object under it. `MapBuilder` merges parts
+ *   as parts, and they become records in one place (`worldRecords`), our
+ *   renderer taking their arrays on the way past — no mesh. Anything
+ *   new here builds through `src/geometry/` (`createBox`, `createCylinder`,
+ *   `computeNormals`, a `GeometryBuffer` of finished vertices) — never through
+ *   Babylon's `MeshBuilder` or `VertexData`, whose output is not a part and
+ *   whose arithmetic `scripts/geometry-check.mjs` is the only proof ours
+ *   matches.
+ * - Builders NEVER make a collider — the visual/collider split is
+ *   MapBuilder's job (`collider()`, a `WorldBox` and no mesh); builders only
+ *   declare where collider boxes go, and what kind: `BoxSpec.porous` is the one property of
  *   a collider a builder decides, because only the builder knows its box is
  *   standing in for a shape that is mostly gaps.
  * - Collider top faces must stay within CONFIG.nav.stepHeight of adjacent
@@ -41,11 +43,15 @@
  *   inside a 0.4 m wall, the boarding closes over it, and the elevation is
  *   drawn as one flat colour with a door in it. `buildBarn` owns the worked
  *   version, and its header says what that cost.
+ * - A builder is `(mats, params?, ctx?)` and is handed NO scene
+ *   (`BABYLON_EXIT.md` X6.1d): the material factory is the one object it
+ *   builds against, and the pictures a carriageway wears (`groundMaterial`)
+ *   are cached under it (`world/textures.ts`), one cache a session as the
+ *   scene's was.
  * - No Hollowmere special-casing; register new builders in
  *   BuildingKit.ts's BUILDERS.
  */
-import { Matrix, Mesh, Quaternion, Scene, Vector3, VertexData } from "@babylonjs/core";
-import type { ShaderMaterial } from "@babylonjs/core";
+import type { MaterialKey } from "../../shaders/MaterialKey";
 import { CONFIG } from "../../config";
 import type {
   CelMaterialFactory,
@@ -53,8 +59,11 @@ import type {
 } from "../../shaders/CelShader";
 import type { AmbienceId } from "../../core/Sfx";
 import type { LightSpec } from "../environment";
+import { computeNormals, GeometryBuffer } from "../../geometry/buffer";
+import { createBox, createCylinder } from "../../geometry/primitives";
+import { Matrix, Quaternion, Vector3 } from "../../math";
 import { flamePart } from "../flame";
-import { partBox, partCylinder, partSurface } from "../parts";
+import { Part } from "../parts";
 import type { TerrainField } from "../TerrainField";
 import type { RoadFootprint, RoadSurface } from "../roads";
 import type { RoadJoin, RoadStrip } from "../roadPaths";
@@ -112,7 +121,7 @@ export interface BoxSpec {
 
   /**
    * Stops a round and a sightline, and is not a body at all: no
-   * `checkCollisions`, invisible to `SOLID_ONLY`, and — the part with teeth —
+   * `checkCollisions`, not a body to `RayWorld.castBody`, and — the part with teeth —
    * **no `WorldBox`**, so the nav grid, the cover bake, the obstacle field and
    * the AO bake never see it. Declared by `Build.strut`, which is where the
    * reasoning lives.
@@ -131,10 +140,10 @@ export interface BoxSpec {
    * pane. Declared by `Build.pane({ breakable: true })` and by nothing else.
    *
    * Intact, it is exactly `porous` — a body walks into it, a round goes
-   * through — which is why the two pick predicates in `solid.ts` need no new
-   * term for glass at all. Broken, `GlassSystem` clears `solid` outright and
-   * it leaves both. That is the whole of the mechanism; the flag exists so the
-   * things that must NOT see a pane can name it.
+   * through — which is why `RayWorld`'s two queries, `castBody` and
+   * `castRound`, need no new term for glass at all. Broken, `RayWorld.remove`
+   * clears its box and it leaves both. That is the whole of the mechanism;
+   * the flag exists so the things that must NOT see a pane can name it.
    *
    * Three of them: `CoverMap` (bots would take cover behind a window),
    * `vertexShading` (glass casts no ambient shadow), and the collision bake,
@@ -230,8 +239,8 @@ export interface BuildParams {
    * The corners are drawn as arcs (`radius`), and where a path's end meets
    * another path, or two paths cross, the junction is resolved by the network
    * rather than by the layout: see `world/roadPaths.ts`. Local rather than world
-   * coordinates so that moving the placement moves the road, which is what the
-   * editor's gizmo does to everything else.
+   * coordinates so that moving the placement moves the road, as it moves
+   * everything else.
    */
   path?: readonly (readonly [number, number])[];
   /**
@@ -282,7 +291,7 @@ export interface BuildParams {
    *
    * The two are different questions because they cost different things. A lens
    * is `Build.glow` — an emissive box that takes the glow's bloom and
-   * `EmissiveFog`'s per-pixel fade for free and spends NO light slot. A light
+   * unlit draws' per-pixel fog fade for free and spends NO light slot. A light
    * is one of sixteen, uploaded nearest-first, and a street full of them
    * evicts the interior fixtures a lit building is legible by. So a map lights
    * the few columns whose pool of light is somewhere a player stands, and lets
@@ -359,8 +368,8 @@ export interface BuildCtx {
  *
  * The position is what makes the builder a function of WHERE it stands, and
  * that is what puts every builder that calls it in `CONFORMS_TO_TERRAIN` —
- * without it the editor would translate a dragged house and leave it wearing
- * the door of the spot it left. Absent (a caller with no placement), the size
+ * without it the map editor (while there was one) would translate a dragged
+ * house and leave it wearing the door of the spot it left. Absent (a caller with no placement), the size
  * alone decides.
  */
 export function streetSeed(w: number, d: number, h: number, ctx?: BuildCtx): number {
@@ -570,7 +579,7 @@ export interface LocalSound {
 
 /** What every builder returns. */
 export interface Structure {
-  meshes: Mesh[];
+  meshes: Part[];
   colliders: BoxSpec[];
   lights: LocalLight[];
   sounds: LocalSound[];
@@ -589,7 +598,7 @@ export interface Structure {
    * ranges off. The two are index-for-index, exactly as `meshes`/`colliders`
    * are not.
    */
-  paneMeshes: Mesh[];
+  paneMeshes: Part[];
   panes: PaneSpec[];
   /**
    * The parts among `meshes` built from finished vertices (`surface`,
@@ -599,7 +608,7 @@ export interface Structure {
    * refusal, through `GameMap.partBoxes`) skips these, or one burnt
    * cottage's stones would bald the whole square they stand in.
    */
-  freeform: Set<Mesh>;
+  freeform: Set<Part>;
 }
 
 // --- village palette -------------------------------------------------------
@@ -771,7 +780,7 @@ export const ROOM_GLOW = "#4e3a1f";
  * which is exactly why `buildStreetLight` carried no lens at all until the map
  * moved to an hour that wanted one. Sodium orange survives the bloom as a
  * colour rather than as a hole in the frame, and it holds its hue as
- * `EmissiveFog` takes it into the haze.
+ * the fog takes it into the haze.
  */
 export const LAMP_SODIUM = "#ff9a3c";
 /**
@@ -861,19 +870,19 @@ export type GuardSide = "+x" | "-x" | "+z" | "-z";
 /**
  * Accumulator handed to each builder. Keeps the builders declarative — they
  * describe a shape as a list of boxes and cylinders rather than juggling
- * Babylon handles.
+ * meshes; each word hands back the `Part` it made, which a builder may still
+ * turn, scale or mark before it returns.
  */
 export class Build implements Structure {
-  meshes: Mesh[] = [];
+  meshes: Part[] = [];
   colliders: BoxSpec[] = [];
   lights: LocalLight[] = [];
   sounds: LocalSound[] = [];
-  paneMeshes: Mesh[] = [];
+  paneMeshes: Part[] = [];
   panes: PaneSpec[] = [];
-  freeform = new Set<Mesh>();
+  freeform = new Set<Part>();
 
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
     private tag: string,
     /**
@@ -903,11 +912,10 @@ export class Build implements Structure {
     z: number,
     color: string,
     rot?: { x?: number; y?: number; z?: number },
-  ): Mesh {
-    const m = partBox(
+  ): Part {
+    const m = new Part(
       `${this.tag}-box${this.meshes.length}`,
-      { width: w, height: h, depth: d },
-      this.scene,
+      createBox({ width: w, height: h, depth: d }),
     );
     m.position.set(x, y, z);
     if (rot) m.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
@@ -933,11 +941,10 @@ export class Build implements Structure {
     color: string,
     trans: TranslucencySpec,
     rot?: { x?: number; y?: number; z?: number },
-  ): Mesh {
-    const m = partBox(
+  ): Part {
+    const m = new Part(
       `${this.tag}-sheet${this.meshes.length}`,
-      { width: w, height: h, depth: d },
-      this.scene,
+      createBox({ width: w, height: h, depth: d }),
     );
     m.position.set(x, y, z);
     if (rot) m.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
@@ -961,11 +968,10 @@ export class Build implements Structure {
     y: number,
     z: number,
     paving: RoadSurface,
-  ): Mesh {
-    const m = partBox(
+  ): Part {
+    const m = new Part(
       `${this.tag}-ground${this.meshes.length}`,
-      { width: w, height: h, depth: d },
-      this.scene,
+      createBox({ width: w, height: h, depth: d }),
     );
     m.position.set(x, y, z);
     m.material = this.groundMaterial(paving);
@@ -980,12 +986,8 @@ export class Build implements Structure {
    * Still origin-local: whoever built the vertices did so in the structure's
    * own frame, because MapBuilder rotates and translates the result.
    */
-  surface(data: VertexData, color: string): Mesh {
-    const m = partSurface(
-      `${this.tag}-surface${this.meshes.length}`,
-      data,
-      this.scene,
-    );
+  surface(data: GeometryBuffer, color: string): Part {
+    const m = new Part(`${this.tag}-surface${this.meshes.length}`, data);
     m.material = this.mats.get(color, this.depthUnits);
     this.meshes.push(m);
     this.freeform.add(m);
@@ -1002,12 +1004,8 @@ export class Build implements Structure {
    * on the same material, and the way to guarantee that is for both to name a
    * `RoadSurface` and neither to be able to name anything else.
    */
-  groundSurface(data: VertexData, paving: RoadSurface): Mesh {
-    const m = partSurface(
-      `${this.tag}-surface${this.meshes.length}`,
-      data,
-      this.scene,
-    );
+  groundSurface(data: GeometryBuffer, paving: RoadSurface): Part {
+    const m = new Part(`${this.tag}-surface${this.meshes.length}`, data);
     m.material = this.groundMaterial(paving);
     this.meshes.push(m);
     this.freeform.add(m);
@@ -1028,15 +1026,15 @@ export class Build implements Structure {
    * soil is not wet stone, and Coldharbour's sheen is tuned at 24 degrees of
    * sun on the stated premise that it never reaches an avenue.
    */
-  private groundMaterial(paving: RoadSurface): ShaderMaterial {
+  private groundMaterial(paving: RoadSurface): MaterialKey {
     if (paving === "cobble") {
       return this.mats.getGroundTextured(
         "cobble",
-        getCobblestoneTexture(this.scene),
+        getCobblestoneTexture(this.mats),
         COBBLE_TEX_SCALE,
         {
           spec: CONFIG.graphics.spec.cobble,
-          bump: getCobblestoneBumpTexture(this.scene),
+          bump: getCobblestoneBumpTexture(this.mats),
           bumpScale: CONFIG.graphics.cobbleBumpScale,
           depthUnits: this.depthUnits,
         },
@@ -1048,10 +1046,10 @@ export class Build implements Structure {
     const { metersPerTile, bumpScale } = ROAD_PATTERNS[paving];
     return this.mats.getGroundTextured(
       `road-${paving}`,
-      getRoadTexture(this.scene, paving, base),
+      getRoadTexture(this.mats, paving, base),
       1 / metersPerTile,
       {
-        bump: getRoadBumpTexture(this.scene, paving),
+        bump: getRoadBumpTexture(this.mats, paving),
         bumpScale,
         depthUnits: this.depthUnits,
       },
@@ -1074,10 +1072,13 @@ export class Build implements Structure {
    * no obstacle field, no AO. That is deliberate and it is why the coarse box
    * is not optional — the navigation half of a fence is that box's job, and a
    * 0.18 m post is a shape `NavGrid` cannot represent anyway (see `guard`).
-   * `MapBuilder` merges a placement's struts into ONE collider mesh, which is
-   * what makes the fidelity affordable: measured over Hollowmere's fences, 161
-   * loose post/rail boxes cost every ray in the game ~17%, and the same
-   * geometry merged per fence costs the ground probe 1.4% and a shot 0.3%.
+   * `MapBuilder` groups a placement's struts into ONE `rayGroups` entry, and
+   * that grouping is what made the fidelity affordable while a ray was a pick
+   * and each group a merged collider mesh: measured over Hollowmere's fences,
+   * 161 loose post/rail boxes cost every ray in the game ~17%, and the same
+   * geometry merged per fence cost the ground probe 1.4% and a shot 0.3%.
+   * `RayWorld` answers off the boxes now, and no collider is a mesh
+   * (`BABYLON_EXIT.md` X5.3e).
    */
   strut(
     w: number,
@@ -1088,7 +1089,7 @@ export class Build implements Structure {
     z: number,
     color: string,
     rot?: { x?: number; y?: number; z?: number },
-  ): Mesh {
+  ): Part {
     this.colliders.push({
       w,
       h,
@@ -1112,7 +1113,7 @@ export class Build implements Structure {
    * world drawn SEE-THROUGH (`CelMaterialFactory.getGlass` — a reflection of
    * the sky over the tint of whatever stands behind it). A `breakable` one
    * also keeps an identity through both of `MapBuilder`'s merges, so
-   * `GlassSystem` can collapse this sheet and no other when something crosses
+   * `GlassFx` can collapse this sheet and no other when something crosses
    * it; the rest are glazing, drawn and nothing more. See `PaneSpec` for which
    * a sheet should be and why the answer is what is BEHIND it.
    *
@@ -1180,7 +1181,7 @@ export class Build implements Structure {
       /** The palette colour of the mass behind the sheet. See the header. */
       backed?: string;
     },
-  ): Mesh {
+  ): Part {
     if (import.meta.env.DEV && opts?.rotZ !== undefined && opts.breakable) {
       throw new Error(
         "pane: a raked sheet cannot be breakable — a PaneSpec carries no " +
@@ -1195,10 +1196,9 @@ export class Build implements Structure {
           "room. See Build.pane.",
       );
     }
-    const m = partBox(
+    const m = new Part(
       `${this.tag}-pane${this.paneMeshes.length}`,
-      { width: w, height: h, depth: d },
-      this.scene,
+      createBox({ width: w, height: h, depth: d }),
     );
     m.position.set(x, y, z);
     if (opts?.rotY) m.rotation.y = opts.rotY;
@@ -1206,12 +1206,7 @@ export class Build implements Structure {
     // The one alpha-blended material in the world, and the only builder call
     // that reaches it: a pane is glass because `pane` made it, not because
     // somebody passed the glass colour to `box`.
-    m.material = this.mats.getGlass(
-      opts?.color ?? GLASS,
-      CONFIG.graphics.glass,
-      0,
-      opts?.backed ?? null,
-    );
+    m.material = this.mats.getGlass(opts?.color ?? GLASS, CONFIG.graphics.glass, opts?.backed ?? null);
     this.paneMeshes.push(m);
     this.panes.push({ w, h, d, x, y, z, rotY: opts?.rotY, breakable: opts?.breakable });
     return m;
@@ -1226,7 +1221,7 @@ export class Build implements Structure {
     y: number,
     z: number,
     color: string,
-  ): Mesh {
+  ): Part {
     this.colliders.push({ w, h, d, x, y, z });
     return this.box(w, h, d, x, y, z, color);
   }
@@ -1242,11 +1237,10 @@ export class Build implements Structure {
     z: number,
     color: string,
     rot?: { x?: number; y?: number; z?: number },
-  ): Mesh {
-    const m = partCylinder(
+  ): Part {
+    const m = new Part(
       `${this.tag}-cyl${this.meshes.length}`,
-      { height, diameterTop: dTop, diameterBottom: dBot, tessellation: tess },
-      this.scene,
+      createCylinder({ height, diameterTop: dTop, diameterBottom: dBot, tessellation: tess }),
     );
     m.position.set(x, y, z);
     if (rot) m.rotation.set(rot.x ?? 0, rot.y ?? 0, rot.z ?? 0);
@@ -1273,11 +1267,10 @@ export class Build implements Structure {
     z: number,
     color: string,
     opts?: { overGlass?: true },
-  ): Mesh {
-    const m = partBox(
+  ): Part {
+    const m = new Part(
       `${this.tag}-glow${this.meshes.length}`,
-      { width: w, height: h, depth: d },
-      this.scene,
+      createBox({ width: w, height: h, depth: d }),
     );
     m.position.set(x, y, z);
     m.material = this.mats.getEmissive(color, opts?.overGlass);
@@ -1290,8 +1283,8 @@ export class Build implements Structure {
    * `glow` for finished vertices: a batch of lenses as one emissive surface
    * (`StoneBatch.flushGlow`) — `surface` is to `box` what this is to `glow`.
    */
-  glowSurface(data: VertexData, color: string, opts?: { overGlass?: true }): Mesh {
-    const m = partSurface(`${this.tag}-glows${this.meshes.length}`, data, this.scene);
+  glowSurface(data: GeometryBuffer, color: string, opts?: { overGlass?: true }): Part {
+    const m = new Part(`${this.tag}-glows${this.meshes.length}`, data);
     m.material = opts?.overGlass ? this.mats.getEmissive(color, true) : this.mats.getEmissive(color);
     m.metadata = { noInk: true };
     this.meshes.push(m);
@@ -1305,13 +1298,8 @@ export class Build implements Structure {
    * so beside this with `light` and `sound`, at the flame, as the brazier does.
    * Never a shadow caster: it moves.
    */
-  flame(radius: number, height: number, x: number, y: number, z: number, embers?: number): Mesh {
-    const m = flamePart(
-      `${this.tag}-flame${this.meshes.length}`,
-      { radius, height, embers },
-      this.scene,
-      this.mats,
-    );
+  flame(radius: number, height: number, x: number, y: number, z: number, embers?: number): Part {
+    const m = flamePart(`${this.tag}-flame${this.meshes.length}`, { radius, height, embers }, this.mats);
     m.position.set(x, y, z);
     this.meshes.push(m);
     return m;
@@ -1543,7 +1531,7 @@ export class Build implements Structure {
     y: number,
     z: number,
     color: string,
-  ): Mesh {
+  ): Part {
     // Cross-section, counter-clockwise in XY. The +Z face walks it in order,
     // the -Z face walks it reversed, and the quad bridging edge i is
     // front[i], back[i], back[i+1], front[i+1].
@@ -1559,7 +1547,7 @@ export class Build implements Structure {
     const uvs: number[] = [];
     const indices: number[] = [];
     // Each face carries its own vertices, so ComputeNormals returns true face
-    // normals — the same hard edges CreateBox gives every other piece here.
+    // normals — the same hard edges createBox gives every other piece here.
     const tri = (a: number[], b: number[], c: number[]): void => {
       for (const v of [a, b, c]) {
         positions.push(v[0], v[1], v[2]);
@@ -1575,15 +1563,8 @@ export class Build implements Structure {
       tri(front[i], back[j], front[j]);
     }
 
-    const data = new VertexData();
-    data.positions = positions;
-    data.uvs = uvs;
-    data.indices = indices;
-    const normals: number[] = [];
-    VertexData.ComputeNormals(positions, indices, normals);
-    data.normals = normals;
-
-    const m = this.surface(data, color);
+    const normals = computeNormals(positions, indices);
+    const m = this.surface(new GeometryBuffer({ positions, normals, uvs, indices }), color);
     m.position.set(x, y, z);
     return m;
   }
@@ -1892,15 +1873,10 @@ export class StoneBatch {
     for (const [color, data] of this.drain()) b.glowSurface(data, color, opts);
   }
 
-  private drain(): [string, VertexData][] {
-    const out: [string, VertexData][] = [];
+  private drain(): [string, GeometryBuffer][] {
+    const out: [string, GeometryBuffer][] = [];
     for (const [color, set] of this.sets) {
-      const data = new VertexData();
-      data.positions = set.pos;
-      data.normals = set.nrm;
-      data.uvs = set.uv;
-      data.indices = set.idx;
-      out.push([color, data]);
+      out.push([color, new GeometryBuffer({ positions: set.pos, normals: set.nrm, uvs: set.uv, indices: set.idx })]);
     }
     this.sets.clear();
     return out;
@@ -1943,7 +1919,7 @@ export type V3 = [number, number, number];
  * Finished triangles with their winding decided per triangle.
  *
  * `outward` is a HINT, not a normal: the triangle is flipped if Babylon's own
- * face normal — `(v1 - v2) x (v3 - v2)`, `VertexData.ComputeNormals` in a
+ * face normal — `(v1 - v2) x (v3 - v2)`, `computeNormals` (Babylon's) in a
  * left-handed scene — points away from it. So the ring loops below can walk
  * in whatever order is convenient, and a roof built upside down in the head
  * of whoever edits this still comes out facing the sky.
@@ -1978,19 +1954,13 @@ export class Mesher {
     this.tri(a, c, d, outward);
   }
 
-  data(): VertexData {
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.indices = this.indices;
+  data(): GeometryBuffer {
     const uvs: number[] = [];
     for (let i = 0; i < this.positions.length; i += 3) {
       uvs.push(this.positions[i], this.positions[i + 2]);
     }
-    data.uvs = uvs;
-    const normals: number[] = [];
-    VertexData.ComputeNormals(this.positions, this.indices, normals);
-    data.normals = normals;
-    return data;
+    const normals = computeNormals(this.positions, this.indices);
+    return new GeometryBuffer({ positions: this.positions, normals, uvs, indices: this.indices });
   }
 }
 
@@ -2006,7 +1976,7 @@ export class Mesher {
  * round and a mirrored copy of it.
  *
  * **A front face's cross product `(q - p) x (r - p)` points INTO the solid** —
- * `CreateBoxVertexData`'s winding and `TerrainField.quad`'s, which is Babylon's
+ * `createBox`'s winding and `TerrainField.quad`'s, which is Babylon's
  * left-handed default. This helper shipped with the test the other way round
  * and nothing complained: an inside-out solid draws its FAR faces, each lit as
  * if it faced the eye, so a slab of slate or thatch looked right to within its
@@ -2041,14 +2011,8 @@ export function convexSolid(b: Build, from: Point3[], to: Point3[], color: strin
     const j = (i + 1) % from.length;
     face([from[i], from[j], to[j], to[i]]);
   }
-  const data = new VertexData();
-  data.positions = positions;
-  data.uvs = uvs;
-  data.indices = indices;
-  const normals: number[] = [];
-  VertexData.ComputeNormals(positions, indices, normals);
-  data.normals = normals;
-  b.surface(data, color);
+  const normals = computeNormals(positions, indices);
+  b.surface(new GeometryBuffer({ positions, normals, uvs, indices }), color);
 }
 
 /** Where a member laid from `a` to `c` along its own Z stands, and how it is turned. */

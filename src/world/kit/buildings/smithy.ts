@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -75,8 +74,8 @@ import { SHOPLIT, offFace, casement, ROOF_PITCH } from "./village";
  * through one being the cheaper lie. The floor from the street to the anvil is
  * kept clear.
  */
-export function buildSmithy(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "smithy");
+export function buildSmithy(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "smithy");
   const w = 9;
   const d = 8;
   const h = 4.4;

@@ -27,7 +27,7 @@
  * circle is drawn here.
  */
 import "./minimap.css";
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3Like } from "../math";
 import { CONFIG } from "../config";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPoint } from "../systems/ConquestSystem";
@@ -396,7 +396,7 @@ export class Minimap {
    */
   update(
     dt: number,
-    playerPos: Vector3,
+    playerPos: Vector3Like,
     playerYaw: number,
     points: ControlPoint[],
     bodies: readonly Combatant[],

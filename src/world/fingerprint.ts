@@ -4,8 +4,8 @@
  * agree. Read by `server/parity.ts` and by the browser half of
  * `scripts/check-world-parity.mjs`.
  * Invariants: pure — takes a `GameMap`, allocates a small object, touches
- * nothing. It must stay runnable in both a browser and a NullEngine process,
- * so no DOM and no rendering. Every field must be deterministic: anything
+ * nothing. It must stay runnable in both a browser and the authority's plain
+ * Node process, so no DOM, no rendering and no Babylon. Every field must be deterministic: anything
  * seeded from `Math.random()` or from frame timing would make two correct
  * builds disagree and turn this from a check into noise.
  *
@@ -59,22 +59,24 @@ export interface WorldFingerprint {
    * catch different faults: the count catches a bake that predates the flag or
    * a server that dropped the groups, and the hash catches timber standing
    * somewhere else from where the client draws it. `groups` matters on its own
-   * because grouping decides how the geometry is merged, and a server that
-   * merged them differently would pick against the same triangles with a
-   * different bounding box.
+   * because the grouping is what the bake carries (it decided how the
+   * geometry was merged while a ray was a pick), and a server that grouped
+   * them differently has read a different bake.
    */
   rayGroups: number;
   rayBoxes: number;
   rayHash: string;
   /**
-   * The clustering of the SOLID boxes — how many merged collider meshes a
-   * scatter region's props were gathered into, and which boxes went into each.
+   * The clustering of the SOLID boxes — how many groups a scatter region's
+   * props were gathered into (a merged collider mesh each until
+   * `BABYLON_EXIT.md` X5.3e), and which boxes went into each.
    *
    * The nav graph is blind to this one too, and completely: a cluster changes
-   * nothing about the world, only how many bounding tests a ray pays to meet
-   * it. That is precisely why it belongs here — a server that ignored
-   * `boxGroups` would agree with the client about every box on the map and
-   * quietly do hundreds of times the picking work per shot, with nothing
+   * nothing about the world's shape, only the order a body's sweep breaks a
+   * tie in (`RayWorld`'s rank) — and, while a ray was a pick, how many
+   * bounding tests it paid. That is precisely why it belongs here — a server
+   * that ignored `boxGroups` would agree with the client about every box on
+   * the map and quietly slide a wedged hull the other way, with nothing
    * visible on either side to say so.
    */
   boxGroups: number;
@@ -125,7 +127,7 @@ export function worldFingerprint(map: GameMap): WorldFingerprint {
   }
 
   // Order-dependent on purpose: two sides that built the same timber in a
-  // different order have merged it into different meshes.
+  // different order, or split it into different groups, hold different lists.
   const ray: number[] = [];
   for (const group of map.rayGroups) {
     ray.push(group.length);
@@ -134,7 +136,7 @@ export function worldFingerprint(map: GameMap): WorldFingerprint {
 
   // The grouping alone: the boxes themselves are already covered by the nav
   // graph and the volume, so what is left to disagree about is which of them
-  // share a mesh.
+  // share a group, and in what order (a body's sweep breaks ties in it).
   const groups: number[] = [];
   for (const group of map.boxGroups) {
     groups.push(group.length, ...group);

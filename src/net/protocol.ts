@@ -1,6 +1,7 @@
 /**
- * net/protocol.ts — The wire format, and the ONLY module both the client and
- * the multiplayer server import.
+ * net/protocol.ts — The wire format, and with its local twin (`localWire.ts`,
+ * a match the page hosts) the only modules of `net/` the multiplayer server
+ * imports.
  * Owns: every message shape, the tick/rate constants both sides must agree on,
  * and the slot/entity vocabulary. Pure types and plain constants — no Babylon,
  * no DOM, no `CONFIG`, nothing with a side effect. It is imported by a Node
@@ -10,8 +11,11 @@
  * client may only ever ASK (`ClientMessage`), never assert. A client's claimed
  * hit is a hint the server re-resolves, never a fact — see `docs/multiplayer.md`.
  * Vectors cross the wire as plain `[x, y, z]` tuples rather than `Vector3`,
- * because `Vector3` is a Babylon class with private `_x` fields that neither
- * `JSON.stringify` nor a `DataView` encoder has any business knowing about.
+ * so the wire's spelling is the protocol's and never a class's: a Babylon
+ * `Vector3` serialized as `_x`/`_y`/`_z` and `src/math`'s as `x`/`y`/`z`
+ * (`BABYLON_EXIT.md` X6.1e searched for either reaching the wire, and none
+ * does), and neither `JSON.stringify` nor a `DataView` encoder has any
+ * business knowing which.
  *
  * The one import in the file is a TYPE, and it is allowed for the reason the
  * ban above exists: `import type` is erased, so `ScoreKind` costs this module
@@ -24,6 +28,7 @@
  */
 import type { DamageKind } from "../systems/CombatSystem";
 import type { ScoreKind } from "../systems/ScoreBook";
+import type { DeathCause } from "../systems/killRules";
 
 /**
  * Protocol version. Bumped on any incompatible change; a mismatch is refused.
@@ -111,6 +116,21 @@ export const SNAPSHOT_HZ = 20;
 
 /** How often a client uploads its own movement. */
 export const INPUT_HZ = 20;
+
+/**
+ * The longest frame a client steps its own body by, in seconds: a longer
+ * frame is clamped to it (`Game.tick`), and the time past it is simply not
+ * walked.
+ *
+ * **Part of the wire's contract rather than a client's tuning**, because the
+ * authority prices a sample on it: a peer's FIRST stamped `move` has no
+ * earlier stamp to be measured against, so what it may honestly cover is one
+ * upload interval plus the most a single frame could overshoot it — this
+ * (`FIRST_STAMP_GAP`, `server/Match.ts`). A client that stepped longer frames
+ * would have its honest first walk refused as `speed`; one that stepped
+ * shorter merely leaves the budget unspent.
+ */
+export const MAX_FRAME_DT = 0.05;
 
 /** How much position history the server keeps per combatant, for rewind. */
 export const REWIND_WINDOW_MS = 400;
@@ -201,7 +221,22 @@ export interface MatchList {
  * anybody. See `server/Roster.ts`.
  */
 export type SlotOccupant =
-  | { kind: "bot" }
+  | {
+      kind: "bot";
+      /**
+       * This bot carries a rocket launcher (`Bot.launcher`), so its body is
+       * drawn with the tube slung across its back. Present (true) on those
+       * bots only and absent on every other: a fact about the POOL SLOT, fixed
+       * for the life of the match, so it rides the roster rather than every
+       * snapshot. A person in the slot is not that bot and carries nothing.
+       *
+       * Additive, and no `PROTOCOL_VERSION` bump: an older client ignores it
+       * and draws no tube, which is what a client of a server always drew; a
+       * newer client against an older server draws none either. Nothing it
+       * says reaches an outcome.
+       */
+      launcher?: boolean;
+    }
   | { kind: "human"; peerId: string; name: string };
 
 export interface SlotState {
@@ -256,7 +291,7 @@ export interface EntityState {
    *
    * **The authority's own blend, not the key a client is holding**, and that is
    * the point of sending a number rather than the boolean the client already
-   * sends up. `NetPlayer` eases this exactly as `Player.syncCombatant` does,
+   * sends up. `SimPlayer` eases this exactly as `Player.syncCombatant` does,
    * and drops the eye and the hit sphere along it; a client draws the body from
    * the same number and puts its local copy of those spheres in the same place.
    * So what an observer aims at and what the server rewinds are the same shape
@@ -624,6 +659,16 @@ export type ServerEvent =
       health: number;
       /** As `kill`'s: optional, and absent is a round. */
       kind?: DamageKind;
+      /**
+       * `false` for the one blow NOBODY dealt — the leash's, `kill`'s
+       * `killer: -1` — whose `from` is then a placeholder (the origin) and no
+       * bearing: no damage arc points at it and no death cam is thrown off
+       * it. Absent is a blow somebody dealt, which is every blow an older
+       * server sends and every other blow this one does; additive, and an
+       * older client reads the placeholder as it always has, so no
+       * `PROTOCOL_VERSION` bump.
+       */
+      dealt?: false;
     }
   /**
    * A round cracked past this client's own head without connecting.
@@ -649,6 +694,26 @@ export type ServerEvent =
    */
   | { e: "nearmiss"; at: Vec3 }
   /**
+   * A throw, a rocket or a mine this client asked for was REFUSED, so the
+   * one it booked is given back.
+   *
+   * **Addressed to the thrower**, `nearmiss`'s way and for the same reason:
+   * it is the answer to their own ask and nobody else's business. A client
+   * PREDICTS its pouch — it spends the grenade, the rocket or the mine as it
+   * asks, a round trip before the authority decides — so a refusal it never
+   * heard of would leave its count one short of the authority's until the
+   * body died. Sent only while the body is ALIVE (a dead one's pouch is
+   * refilled by its next kit) and never for an empty pouch, since the two
+   * counts move together and empty means empty on both sides. The give-back
+   * is capped at what the kit carries, so an answer the client did not need
+   * cannot overfill it.
+   *
+   * Additive: an older client has no arm for it and keeps the drift it always
+   * had, and a newer one against an older server simply never hears one — so
+   * no `PROTOCOL_VERSION` bump.
+   */
+  | { e: "refused"; item: "grenade" | "rocket" | "mine" }
+  /**
    * A round the authority agrees landed — the shooter's own hitmarker, arriving
    * a round trip after the prediction it either claims or corrects.
    *
@@ -660,8 +725,38 @@ export type ServerEvent =
    * before the snapshot shows it. `Match` sends it to one peer; the client still
    * checks `shooter`, because the two halves deploy separately and an older
    * server broadcasts it with this same shape.
+   *
+   * **`cause` says WHAT landed, and absent is a ROUND** — the only cause an
+   * older server sends, and the only one a client predicts in full
+   * (`HitCredits`). The others are the shooter's feedback for what nothing on
+   * the page resolves: a grenade's or a mine's
+   * BLAST on a body, a burn that KILLED, a body under the TRACKS, and a hull
+   * gun's round that KILLED — the page predicts a shell's and a belt's hit,
+   * and only the kill is the authority's to add. Each is sent only where the
+   * shooter's screen owes it a mark, so a burn ticking four times a second
+   * sends nothing until it kills. Only a cause-less `hit` is a round's
+   * VERDICT, and only that one may claim a `HitCredits` credit.
+   *
+   * **The causes arrived without a `PROTOCOL_VERSION` bump, and that has one
+   * cost, during a rolling deploy alone.** An older client has no `cause` to
+   * read, so it takes every `hit` for a round's verdict: one landing while a
+   * rifle round's credit is pending is paired off against it, the marker it
+   * owed is swallowed, and the rifle's own verdict then finds no credit and
+   * marks again — one wrong marker, late. Nothing else on that client moves:
+   * no state, no score, no body is decided by a `hit`, so the two ends never
+   * disagree about the round or about what a person is doing — the line a
+   * bump is for (3 to 7, above). A bump would instead refuse every older
+   * page at the handshake until it reloaded — a match nobody on a stale tab
+   * can join, to save a cosmetic mark that heals with that same reload.
    */
-  | { e: "hit"; shooter: number; victim: number; killed: boolean; headshot: boolean }
+  | {
+      e: "hit";
+      shooter: number;
+      victim: number;
+      killed: boolean;
+      headshot: boolean;
+      cause?: Exclude<DeathCause, "round" | "crew" | "other">;
+    }
   | { e: "died"; slot: number; by: number; respawnIn: number }
   /**
    * A weapon went off in this slot. Public, and the only thing on the wire that
@@ -874,8 +969,13 @@ export interface Welcome {
   t: "welcome";
   version: number;
   matchId: string;
-  /** The slot this client owns. */
+  /**
+   * The slot this client owns — or -1 for a WATCHER (`Match.watch`), which
+   * owns none: it is drawn the round and is nobody in it. Only the owner of a
+   * match the page hosts can be one; no `ClientMessage` asks for it.
+   */
   slot: number;
+  /** The side this client is on. A watcher's is 0: a side to paint from, deciding nothing. */
   team: NetTeam;
   mapId: string;
   now: number;
@@ -896,6 +996,32 @@ export interface Welcome {
    * and saying nothing is how it is said.
    */
   brokenPanes?: number[];
+  /**
+   * The slot table's block width a team (`Roster.perTeam`): team 1's first
+   * slot. `CONFIG.bots.maxPerTeam` on a server's match, whose table is the
+   * ceiling so a rotation never renumbers anybody; the map's OWN roster on a
+   * match the page owns, which never rotates and
+   * whose slots are the offline round's bot indices. A client numbers its
+   * bodies by it (`NetRoster.setBlockWidth`) rather than by `CONFIG`, or
+   * every snapshot about team 1 on an owned match is addressed to a hole.
+   *
+   * Absent from an older server, which reads as the ceiling — the only width
+   * a server's match has ever had — so this arrived without a
+   * `PROTOCOL_VERSION` bump: no number a version-7 server sends means
+   * anything different, and the version is checked for equality at the
+   * handshake, so a page and a local match are always one build.
+   *
+   * On a WATCHER's welcome (`slot: -1`, `Match.watch`) it is the same width,
+   * because a watcher draws the same table.
+   *
+   * **Named for the TABLE and not `perTeam`, because the two differ.**
+   * `MapLayout.perTeam` is how many bodies a side the map FIELDS; this is how
+   * wide the table's block is. On an owned match they are one number, but a
+   * server's match on an 8-a-side map says 24 here while it fields 8, and a
+   * reader taking this for the fielded count would build sixteen bodies too
+   * many.
+   */
+  blockWidth?: number;
 }
 
 /**
@@ -1011,7 +1137,7 @@ export interface Rejected {
  * missed message is corrected by the next one and a joiner is right on arrival.
  *
  * **Sent only when it changes**, which is a few times a minute rather than
- * twenty times a second: `Match` compares `HeadlessGame.scores.version` against
+ * twenty times a second: `Match` compares `SimCore.scores.version` against
  * what it last sent, on the same tick the snapshot goes out. Thirty-two numbers
  * on a snapshot that carries none of them is the trade the `fire` event makes
  * next door — the wire says a thing once rather than repeating it at the
@@ -1020,7 +1146,7 @@ export interface Rejected {
  * All three arrays are indexed by slot and always the full roster's length, so
  * a client indexes them with the same number it indexes everything else with.
  * Deaths are counted at the victim's door and kills at the killer's, once each
- * — see `HeadlessGame.creditKill`.
+ * — see `SimCore.creditKill`.
  *
  * Additive, like `fire`: an older client ignores a message type it has no case
  * for, and a newer client against an older server simply shows a board of
@@ -1239,7 +1365,7 @@ export interface Join {
    * arrived mangled, is the game everybody already had.
    *
    * What it does on the authority is field ZERO bodies a side out of the bot
-   * pool (`HeadlessGame.startRound`), which is `MapLayout.perTeam` reaching a
+   * pool (`SimCore.startRound`), which is `MapLayout.perTeam` reaching a
    * match through the number that was already there rather than a new kind of
    * absence — a bot in a botless match is set aside exactly as a bot on a map
    * that does not field its slot is. The SEATS are untouched: sixteen people
@@ -1462,6 +1588,17 @@ export interface DriveMessage {
    */
   aimYaw: number;
   aimPitch: number;
+  /**
+   * Set on the FIRST drive sent after this client applied a `hullcorrect`
+   * (`NetSession`), and on no other. It tells the authority the motion since
+   * the last report is the correction's — the hull was put back and its
+   * vertical motion stopped (`Vehicle.correctTo`) — so the crash test rebases
+   * here instead of reading the stop as a landing (`reportedLanding.ts`, "A
+   * broken series"). A CLAIM like everything else here: honoured only while
+   * a correction the authority sent is unanswered (`Match.onDrive`), and a
+   * rebase it buys still pays any touchdown it was hiding.
+   */
+  resync?: 1;
 }
 
 /**

@@ -6,12 +6,12 @@ projectile at all, and what is deliberately not built. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
 for `src/config/equipment.ts`, `src/entities/equipment.ts`,
 `src/entities/RpgModel.ts`, `src/entities/MineModel.ts`,
-`src/systems/AntiTankSystem.ts`, and for `Game`'s `fireOrdnance` /
+`src/systems/AntiTankSystem.ts`, `src/systems/AntiTankFx.ts`, and for `Game`'s `fireOrdnance` /
 `launchRocket` / `layMine` / `resolveOrdnance` / `armourOffered`.
 
 ## The shape of it
 
-The kit is five things and one line of map data:
+The kit is six things and one line of map data:
 
 | the thing | what it owns |
 | --- | --- |
@@ -19,17 +19,21 @@ The kit is five things and one line of map data:
 | `config/equipment.ts` | the two items: what one is worth, how a rocket flies, how a mine arms, and how each is carried |
 | `entities/equipment.ts` | the derivation from that table to a `WeaponSetup` the carry path can hold, and to the `OrdnanceEffect` a detonation is spent through |
 | `entities/RpgModel.ts` / `MineModel.ts` | what each looks like at both ends: the thing in the hands and the thing in the world |
-| `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test |
+| `systems/AntiTankSystem.ts` | the rocket pool, the mine pool, the arm clocks and the trigger test — a SIMULATION: a rocket's and a mine's position is its own `src/math` `pos` field, nothing here is a mesh, and the authority runs it whole |
+| `systems/AntiTankFx.ts` | the PICTURE of both pools: a `RocketBody` per rocket slot (faced down its velocity, the motor guttering off metres flown) and a `MineBody` per mine (the lamp off the arm clock), posed off `rocketSlots`/`mineSlots` after every `update` and never writing them — each a PIECE of the rocket's or the mine's kit, both built here once, which OUR renderer draws since `BABYLON_EXIT.md` X4.4b (`docs/rendering.md`, "The pools, ours"; neither is a mesh). Client only; `net/NetOrdnance` draws the wire's copies through the same two bodies and the same kits |
 
-`Game` is the only place they meet, exactly as with every other system. It holds
-the pick (`Game.equipment`), decides whether there is a slot for it
-(`armourOffered`), branches the trigger into `fireOrdnance`, and answers the one
-question the system asks about a world it may not know.
+They meet where every other system does: the simulation's half in `SimCore`,
+the page's in `Game`. `Game` holds the pick (`Game.equipment`), decides whether
+there is a slot for it (`armourOffered`), branches the trigger into
+`fireOrdnance` (an `ordnance` message to the authority, offline as in a match),
+and the core answers the one question the system asks about a world it may not
+know.
 
 **There is no third system-to-system edge.** `AntiTankSystem` has never heard of
 a `VehicleSystem`, a `Vehicle`, a `Player` or a `GrenadeSystem`: it asks "is there a
 hostile hull within this many metres of this point" through `hullNear` and
-announces "this went off, on this" through `onDetonated`, and `Game` wires both.
+announces "this went off, on this" through `onDetonated`, and `SimCore` wires
+both (`Game` wires `hullNear` again for the page's own predicted rocket).
 
 ## One slot, two items, and why they are one decision
 
@@ -205,7 +209,7 @@ inside it.
 
 It is a position, a clock and a distance test, and it costs one comparison per
 live mine per frame against one callback answer. **Nothing about it is a
-collider**: a hull drives THROUGH the mesh, and what sets it off is `hullNear`.
+collider**: a hull drives THROUGH the plate, and what sets it off is `hullNear`.
 
 **Only a hull sets one off.** That is the name of the weapon and it is the only
 rule a player has to be told, because it is what makes a mine safe to lay across
@@ -379,7 +383,11 @@ Five things are load-bearing:
 the squad's FIRST body when it cuts the squads — a fixed slot rather than a roll,
 so a team fields exactly `perSquad` of them however the pool is seeded. It rides
 the pool slot the way the skill seed does, so it survives a bench, a respawn and
-a round.
+a round. It is a plain field, and the tube on the back is the CLIENT's: `Match`
+reads it off the pool onto the roster (`SlotOccupant.launcher`, a bot's row
+only) and `NetSession` switches the rig's tube from that
+(`NetSoldier.setLauncher`) — offline and online alike, the offline page being a
+client of its own match.
 
 **A bot's launcher is for ARMOUR and nothing else**, and that test is the first
 line of `considerRocket` rather than a band or a chance, because it is the rule
@@ -406,15 +414,21 @@ An AT gunner carries a rifle and a tube, and the tube is over their shoulder
 until there is armour to point it at — which is the honest shape as well as the
 cheap one. What it buys is the thing a player in a hull actually needs: being
 able to tell WHICH body in a squad is the one that can hurt them, from the side,
-at range, in one silhouette. `Bot.launcher` is a property rather than a field so
-that the write and the mesh are one statement.
+at range, in one silhouette. It rides the ROSTER rather than the snapshot
+because it is a fact about the pool slot, fixed for the match: a person sitting
+in that slot is not the bot and wears no tube.
 
 **On the server this runs exactly as it does offline**, and it has to: the bots
-in a match are simulated there and nowhere else, so a `HeadlessGame` that wired
-nothing would field the only squads in the game with no answer to a tank.
-`HeadlessGame.wire` installs the same `fireRocketFor` `Game` does, less the
-sound — which is the authority's to ANNOUNCE (`hearGunshot`, and the `fire`
-event `Match.onOrdnance` raises) rather than to play.
+are simulated in the core and nowhere else — the page's own match's offline, the
+server's in a match — so a `SimCore` that wired nothing would field squads with
+no answer to a tank. `SimCore.wire` installs `fireRocketFor`, with no sound:
+it flies the rocket (`AntiTankSystem.launchToward`), lets the other side's bots
+HEAR it (`BattleSystem.hearGunshot`) and emits `EV.rocket`, which `Match` does
+not relay. The page hears a bot's launch the way it hears anybody else's —
+when the rocket first appears in a snapshot and is first posed
+(`NetOrdnance.onLaunch`, wired in `Game.wireNet` to `Sfx.launcher`). The
+`fire` event `Match.onOrdnance` notes (`noteFire`, kind `rpg`) is a PERSON's
+rocket, at that person's claim gate, and never a bot's.
 
 ## The models, and the one pose knob they needed
 
@@ -481,11 +495,15 @@ Four things are load-bearing:
   line of sight and collapses it further; inboard opens it. Only the hip pose
   takes it. The AIMED pose is derived from the sight, and a yaw baked into that
   would swing the reticle off the axis the rockets fly down.
-- **A parked rocket or mine is DISABLED, not invisible.** Babylon's `isVisible`
-  hides the mesh it is set on and nothing under it, so a pool of eight hidden
-  rockets leaves eight sets of fins and eight motors standing at the world
-  origin. `setEnabled` takes the subtree. (`GrenadeModel` gets away with
-  `isVisible` only because it toggles its pip by hand.)
+- **A parked rocket or mine is switched off WHOLE, not hidden part by
+  part.** While they were Babylon meshes, `isVisible` hid the mesh it was set
+  on and nothing under it, so a pool of eight hidden rockets would have left
+  eight sets of fins and eight motors standing at the world origin, and
+  `setEnabled` took the subtree; since `BABYLON_EXIT.md` X4.4b each is a PIECE
+  our renderer draws and the switch is the piece's (`Piece.enabled`) —
+  `RocketBody.show` and `MineBody.hide`, the one door each for both pools that
+  draw one. The mine's lamp keeps a switch of its own on top of it
+  (`PieceNode.visible`), as the frag's pip does.
 
 The launcher takes `prism`'s entry in `CONFIG.sights` rather than declaring one
 of its own — 2x is what a launcher's optic is for — and the mine's "sight" is a

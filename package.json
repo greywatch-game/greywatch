@@ -9,7 +9,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-collision.mjs && node scripts/check-deep-imports.mjs && node scripts/check-audio.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
+    "build": "node scripts/check-collision.mjs && node scripts/check-maps.mjs && node scripts/check-webgpu-globals.mjs && node scripts/check-babylon-free.mjs && node scripts/check-audio.mjs && npm run typecheck && vite build && node scripts/check-proving.mjs",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit && tsc --noEmit -p server/tsconfig.json",
     "collision": "node scripts/bake-collision.mjs",
@@ -18,6 +18,7 @@
     "simulate": "vite build -c vite.server.config.ts && node dist-server/simulate.js",
     "simulate:dev": "vite build -c vite.server.config.ts --mode development && node dist-server-dev/simulate.js",
     "parity": "node scripts/check-world-parity.mjs",
+    "corecheck": "vite build -c vite.server.config.ts && node dist-server/corecheck.js",
     "shots": "node scripts/capture-map-shots.mjs",
     "textures": "node scripts/generate-water-textures.mjs",
     "icons": "node scripts/generate-icons.mjs",
@@ -33,10 +34,10 @@
     "audio:measure": "node scripts/measure-audio.mjs",
     "loc": "node scripts/loc.mjs",
     "kit:hash": "node scripts/kit-hash.mjs",
-    "merge:hash": "node scripts/merge-hash.mjs"
+    "merge:hash": "node scripts/merge-hash.mjs",
+    "maps:check": "node scripts/check-maps.mjs"
   },
   "dependencies": {
-    "@babylonjs/core": "^9.28.0",
     "@babylonjs/havok": "^1.3.14",
     "ws": "^8.21.3"
   },

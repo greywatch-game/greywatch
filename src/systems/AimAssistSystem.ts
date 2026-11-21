@@ -16,10 +16,10 @@
  * a committed push always wins. LOS is `RayWorld.blocked` (walls block
  * assist; a fence the round would pass through does not). Called by Game before CameraSystem.update.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { InputManager } from "../core/InputManager";
 import { clamp, smoothstep } from "../core/math";
+import { Vector3, type Vector3Like } from "../math";
 import type { RayWorld } from "../world/RayWorld";
 
 /**
@@ -27,7 +27,7 @@ import type { RayWorld } from "../world/RayWorld";
  * system doesn't import another system. Anything hitscan can target works.
  */
 export interface AimTarget {
-  readonly center: Vector3;
+  readonly center: Vector3Like;
   readonly invulnerable?: boolean;
 }
 
@@ -101,6 +101,8 @@ export class AimAssistSystem {
    */
   private prevCenter = new Vector3();
   private prevOrigin = new Vector3();
+  /** The eye-to-target difference, re-filled per candidate and per pull. */
+  private readonly toTarget = new Vector3();
   private haveHistory = false;
 
   /** Scratch for the line-of-sight cast — no per-frame allocation. */
@@ -142,7 +144,7 @@ export class AimAssistSystem {
   update(
     dt: number,
     input: InputManager,
-    origin: Vector3,
+    origin: Vector3Like,
     forward: Vector3,
     aimYaw: number,
     aimPitch: number,
@@ -186,7 +188,15 @@ export class AimAssistSystem {
     let bestDist = 0;
     for (const t of targets) {
       if (t.invulnerable) continue;
-      const to = t.center.subtract(origin);
+      // A target's centre is a `Vector3Like` — it could be either library's
+      // until X6.1f — so the difference is taken on its fields, in the order
+      // Babylon's `subtract` takes it, and only the scratch meets Babylon's
+      // methods.
+      const to = this.toTarget.copyFromFloats(
+        t.center.x - origin.x,
+        t.center.y - origin.y,
+        t.center.z - origin.z,
+      );
       const distSq = to.lengthSquared();
       if (distSq > a.maxDistance * a.maxDistance || distSq < 0.25) continue;
       const dist = Math.sqrt(distSq);
@@ -298,7 +308,13 @@ export class AimAssistSystem {
         lookRate *
         smoothstep(0, 1, t) *
         dt;
-      const dir = best.center.subtract(origin).normalize();
+      const dir = this.toTarget
+        .copyFromFloats(
+          best.center.x - origin.x,
+          best.center.y - origin.y,
+          best.center.z - origin.z,
+        )
+        .normalize();
       yaw += clamp(wrapPi(Math.atan2(dir.x, dir.z) - aimYaw), -pull, pull);
       pitch += clamp(Math.asin(clamp(dir.y, -1, 1)) - aimPitch, -pull, pull);
 
@@ -322,8 +338,9 @@ export class AimAssistSystem {
       pitch *= 1 - clamp(Math.sign(pitch) * (input.stickLookY + dragY), 0, 1);
     }
 
-    this.prevCenter.copyFrom(best.center);
-    this.prevOrigin.copyFrom(origin);
+    this.prevCenter.copyFromFloats(best.center.x, best.center.y, best.center.z);
+    // By its fields: the origin is `Player.eyePos`, which is `src/math`'s.
+    this.prevOrigin.copyFromFloats(origin.x, origin.y, origin.z);
     this.haveHistory = true;
     return { stickMult, yaw, pitch };
   }
@@ -358,11 +375,11 @@ function bubbleAngle(radius: number, dist: number): number {
   );
 }
 
-function dirYaw(to: Vector3, from: Vector3): number {
+function dirYaw(to: Vector3Like, from: Vector3Like): number {
   return Math.atan2(to.x - from.x, to.z - from.z);
 }
 
-function dirPitch(to: Vector3, from: Vector3): number {
+function dirPitch(to: Vector3Like, from: Vector3Like): number {
   const dx = to.x - from.x;
   const dy = to.y - from.y;
   const dz = to.z - from.z;

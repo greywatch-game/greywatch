@@ -1,97 +1,120 @@
 /**
- * core/PipelineWarmup.ts — Where the building card stands the camera while the
- * round's render pipelines are compiled, and when it may stop.
- * Owns: the list of vantages, which one is being drawn from, how many frames
- * have been spent there and how many of them compiled nothing, and the wall
- * clock the whole warm-up is capped by. Owns no camera, no mesh and no system:
- * `Game` places the camera at `vantage`, draws the frame, and reports back
- * through `afterFrame` how many pipelines Babylon's cache had built by the end
- * of it. It decides WHEN, never HOW.
- * Invariants: it ends. Every path through `afterFrame` either holds the
- * vantage, moves to the next one or reports done, and the frame cap per
- * vantage and the wall-clock cap both end it whatever the counter does — a
- * warm-up that cannot settle must not hang the card any more than the
- * reflection drain may. A vantage is held until it has drawn
- * `CONFIG.graphics.warmup.quietFrames` in a row that created nothing, because
- * a mesh whose effect is still compiling is SKIPPED by a frame rather than
- * compiled by it and turns up on the next one.
- * Never: reads the scene, touches the GPU, or allocates per frame.
+ * core/PipelineWarmup.ts — When the building card may come down: the wait
+ * for every pipeline of OUR renderer the round can use.
+ * Owns: `DeclaredPipelines`, the shape of one entry of the round's DECLARED
+ * list; which of the declared entries have settled, how many of our
+ * renderer's compiles settled while it waited, and the wall clock it is
+ * capped by.
+ * Owns no camera, no mesh, no draw and no system: `Game` declares the list
+ * (`Game.roundPipelines`), draws its frames as any `loading` frame, and asks
+ * `afterFrame` after each one's render; our renderer's cache it is handed and
+ * reads (`CompileProgress`). It decides WHEN, never HOW.
+ * Invariants: it ends. It waits for every entry of the declared list settled
+ * — the bodies, the hulls, the weapon, the bodies' shadow map, the lamps'
+ * proxies, every effect pool of ours, the sky, the post chain, the glow's
+ * blur and the irradiance volume, each asked once at `Game`'s construction —
+ * and nothing of ours left compiling, which is the map's own (the world's
+ * groups, its depth passes — the lamps' atlas's casters among them — the
+ * probes' bake, the palette's mask, asked as its install built them), under
+ * `CONFIG.graphics.warmup.oursCapMs`; a cap reached names the entries still
+ * unsettled (a DEV warning) and ends the wait whatever the counters say — a
+ * wait that cannot settle must not hang the card any more than the
+ * reflection drain may. A group of ours still compiling draws NOTHING, so the
+ * round must not open on one; a compile of ours that FAILS fails the world
+ * under the card (`BABYLON_EXIT.md` X3.7b: `Game.worldFailed`). "Ours" is the
+ * whole of our renderer's cache, so a compile a torn-down map left in flight
+ * holds the wait too — at worst a slower card, since a later map reuses what
+ * it built.
+ * Never: reads the scene, touches the GPU, stands the camera anywhere, or
+ * allocates per frame.
  *
- * **Why the pipelines are DRAWN rather than pre-built.** Babylon 9.28 has
- * `engine.createRenderPipelineAsync`, which builds one without a draw — but a
- * pipeline is keyed on the effect, the vertex layout, the target's formats,
- * the blend, the depth state, the cull, the write mask and the depth bias, and
- * every one of those would have to be restated by hand for every mesh in every
- * pass. A restatement that is wrong in one field compiles a pipeline nothing
- * ever asks for, and the stall it was meant to remove stays exactly where it
- * was, silently. A real frame states all of them by construction.
+ * **Nothing is DRAWN for a pipeline's sake, because ours are not compiled by
+ * drawing.** Our renderer states every field of a pipeline itself and asks for
+ * it ahead of the frame (`render/PipelineCache.ts`), so the card only has to
+ * wait for them; and once it is down the cache is SEALED (`PipelineCache.seal`),
+ * so a compile in play is a DEV warning naming what the list missed. **There
+ * were VANTAGES here until `BABYLON_EXIT.md` X5.4c**: the card stood the camera
+ * at each home spawn and each flag in turn and drew the whole map from there,
+ * frustum and cull cells off, until a frame compiled nothing — because Babylon
+ * compiled a pipeline on the first draw that needed one, and a restatement of
+ * every field by hand (`engine.createRenderPipelineAsync`) that was wrong in one
+ * would have built a pipeline nothing asked for and left the stall where it
+ * was. As Babylon's draws left the round (the post chain's last at X5.2d, the
+ * irradiance volume's computes at X5.1b, every pool by X4.6e), the vantages had
+ * less and less to compile, and X5.4a's log and X5.4c's showed them compiling
+ * NOTHING in either cache on all seven shipped maps — fifteen installs, eleven
+ * vantages each — so X5.4c retired them, and with them the read of Babylon's
+ * pipeline cache's miss count, the quiet-frame rule and its two caps.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import type { CompileProgress } from "../render/PipelineCache";
 
-/** Where a vantage's eye stands above the point it is taken at. */
-const EYE_HEIGHT = 1.7;
+/**
+ * One entry of the round's declared pipelines: a draw of ours whose every
+ * pipeline was asked once, at `Game`'s construction, and the promise it
+ * settles when all of them have (true built, false one failed — the failure
+ * is the draw's to tell, at its install).
+ */
+export interface DeclaredPipelines {
+  readonly name: string;
+  readonly ready: Promise<boolean>;
+}
 
 export class PipelineWarmup {
-  /** The eyes to draw from, in order. */
-  private readonly vantages: Vector3[];
-  private index = 0;
-  /** Frames drawn at the current vantage. */
-  private frames = 0;
-  /** Of those, how many in a row created nothing. */
-  private quiet = 0;
-  /** The cache's creation count after the last frame. */
-  private lastCount: number;
   private readonly since = performance.now();
-  /** Pipelines this warm-up has seen built, for the DEV line at the end. */
-  private built = 0;
+  /** Our cache's settled count when the wait opened, for the DEV line at the end. */
+  private readonly settledAtStart: number;
+  /** Of the declared entries, which have settled (by index, made once a wait) and how many have not. */
+  private readonly declaredSettled: boolean[];
+  private declaredPending: number;
 
   /**
-   * `points` are where a life can start or be fought over — the spawns and the
-   * flags. Each becomes an eye at standing height above it; the frustum is off
-   * for these frames, so which way it faces does not matter, but where it
-   * STANDS does: the shadow window, the bodies' map and the lamps that win a
-   * shadow tile are all chosen around the eye.
+   * `ours` is our renderer's cache and `declared` the round's declared list
+   * (`Game.roundPipelines`), waited on by name.
    */
-  constructor(points: readonly Vector3[], createdSoFar: number) {
-    this.vantages = points.map(
-      (p) => new Vector3(p.x, p.y + EYE_HEIGHT, p.z),
-    );
-    this.lastCount = createdSoFar;
-  }
-
-  /** Where this frame's eye stands, or null once there is nowhere left. */
-  get vantage(): Vector3 | null {
-    return this.vantages[this.index] ?? null;
+  constructor(
+    private readonly ours: CompileProgress,
+    private readonly declared: readonly DeclaredPipelines[],
+  ) {
+    this.settledAtStart = ours.settled;
+    this.declaredSettled = declared.map(() => false);
+    this.declaredPending = declared.length;
+    declared.forEach((entry, i) => {
+      const settle = (): void => {
+        this.declaredSettled[i] = true;
+        this.declaredPending--;
+      };
+      void entry.ready.then(settle, settle);
+    });
   }
 
   /**
-   * One frame, reported after its render. `created` is the pipeline cache's
-   * running count. Returns true when the warm-up is over — every vantage
-   * settled, or the cap reached.
+   * One frame, reported after its render. Returns true when the wait is over —
+   * every declared entry settled and nothing of ours compiling, or the cap
+   * reached.
    */
-  afterFrame(created: number): boolean {
-    const cfg = CONFIG.graphics.warmup;
-    const fresh = created - this.lastCount;
-    this.lastCount = created;
-    this.built += fresh;
-    this.frames++;
-    this.quiet = fresh > 0 ? 0 : this.quiet + 1;
-    if (this.quiet >= cfg.quietFrames || this.frames >= cfg.maxFramesPerVantage) {
-      this.index++;
-      this.frames = 0;
-      this.quiet = 0;
-    }
-    const done = this.index >= this.vantages.length;
-    const overrun = performance.now() - this.since >= cfg.capMs;
-    if ((done || overrun) && import.meta.env.DEV) {
+  afterFrame(): boolean {
+    const cap = CONFIG.graphics.warmup.oursCapMs;
+    const now = performance.now();
+    const compiling = this.ours.compiling;
+    const waiting = compiling > 0 || this.declaredPending > 0;
+    if (waiting && now - this.since < cap) return false;
+    if (import.meta.env.DEV) {
+      if (waiting) {
+        // Once, at the cap: the names of what is still out.
+        const unsettled = this.declared.filter((_, i) => !this.declaredSettled[i]).map((e) => e.name);
+        console.warn(
+          `[warmup] ${compiling} of our renderer's pipeline(s) still compiling, ` +
+            `${this.declaredPending} of ${this.declared.length} declared draw(s) unsettled` +
+            (unsettled.length > 0 ? ` (${unsettled.join(", ")})` : "") +
+            `, after ${cap} ms — what they draw is missing from the frame until they land`,
+        );
+      }
       console.info(
-        `[warmup] ${this.built} pipeline(s) from ${Math.min(this.index, this.vantages.length)}` +
-          ` of ${this.vantages.length} vantage(s) in ` +
-          `${Math.round(performance.now() - this.since)} ms` +
-          (overrun && !done ? " — over the cap, the rest compiles in the round" : ""),
+        `[warmup] ${this.ours.settled - this.settledAtStart} of our pipeline(s) settled in ` +
+          `${Math.round(now - this.since)} ms waiting for ours`,
       );
     }
-    return done || overrun;
+    return true;
   }
 }

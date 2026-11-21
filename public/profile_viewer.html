@@ -33,6 +33,14 @@
 
   The phase tree comes from the capture (`ProfileReport.tree`); `FALLBACK_TREE`
   below is only for captures older than that field. See docs/profiling.md.
+
+  It reads EVERY report version, old fields and new: report version 38
+  (`BABYLON_EXIT.md` X5.4g) retired Babylon's instruments — `counters`, the
+  draw and mesh series, a hitch's Babylon counters, `gpu.mainPass`,
+  `pipelines.named` with a creation's `effect` and `defines`, a trace's
+  `draws` track and the `shadowPass` phase — so every place that reads one
+  draws it where it is and leaves its tile, column or panel out where it is
+  not, rather than printing a dash for a field the build never had.
 -->
 <style>
   :root { color-scheme: light dark; }
@@ -625,7 +633,7 @@ table.compiles td.num { text-align: right; font-variant-numeric: tabular-nums; }
       </div>
     </div>
 
-    <div class="panel">
+    <div class="panel" id="p-counters">
       <header><h2>Draw calls &amp; active meshes</h2></header>
       <div class="body flush">
         <div class="chart">
@@ -660,23 +668,35 @@ table.compiles td.num { text-align: right; font-variant-numeric: tabular-nums; }
 const FALLBACK_TREE = {
   input: "frame", roundBehind: "frame", gameplay: "frame",
   driver: "gameplay", onFoot: "gameplay", world: "gameplay",
-  net: "world", conquest: "world", vehicles: "world", bots: "world",
+  /* `sim` is the simulation core's step and its phases (report version 14),
+     and a ROOT from version 15 (BABYLON_EXIT.md X2.5b: in a Worker it runs
+     on another thread) — so it is in FALLBACK_ROOTS, not here, and its
+     children stay under it. A v14 capture carries its own tree, which puts
+     it under `world`. `simWait`, `simSync` and `simPublish` were the old
+     host's hop (version 15 only, gone in 16), and `conquest` and `glass`
+     are kept for the older traces that carry them, as those three are. */
+  net: "world", simWait: "world", simSync: "world",
+  simConquest: "sim", simVehicles: "sim", simBots: "sim",
+  simGrenades: "sim", simAntiTank: "sim", simPublish: "sim",
+  conquest: "world", vehicles: "world", bots: "world",
   combat: "world", grenades: "world", antiTank: "world", physics: "world",
   glass: "world",
   camera: "gameplay", zones: "gameplay", hud: "gameplay",
   localShadows: "camera",
   hudDraw: "frame", post: "frame", culling: "frame", gi: "frame", audio: "frame",
   render: "frame",
+  // `shadowPass` (to report v37) and `drawOverlay` (to v23) are kept for the
+  // traces that carry them: a trace states no tree.
   shadowPass: "render", glow: "render", drawWorld: "render", drawOverlay: "render",
 };
 
 /* The phases nothing contains. `present` is deliberately ABSENT from the tree
-   above rather than parented to `frame`: it is what the engine does AFTER the
+   above rather than parented to `frame`: it is the frame's submit AFTER the
    tick returns, so drawing it inside `frame` would draw a containment that does
    not exist. A capture carries its own `roots` (report version 3 and later);
    this is the fallback for older ones and for a TRACE, which has nowhere to
    state either. */
-const FALLBACK_ROOTS = ["frame", "present"];
+const FALLBACK_ROOTS = ["frame", "present", "sim"];
 
 let PARENT = {}, KIDS = {}, DEPTH = {}, ORDER = [];
 
@@ -837,13 +857,28 @@ function gpuRead(r) {
     };
   }
   if (g.frameMeasurable === true) {
-    return { state: "empty", why: "the counter is measurable here but resolved nothing — check the Babylon internals it rides on" };
+    // From report v38 the counter is the game's own frame timer; before it,
+    // Babylon's, read through three of its internals.
+    return {
+      state: "empty",
+      why: r.version >= 38
+        ? "the frame timer was built but no reading landed in this window"
+        : "the counter is measurable here but resolved nothing — check the Babylon internals it rides on",
+    };
   }
   return {
     state: "ambiguous",
     why: "0 samples on a capture older than report v9, which cannot distinguish " +
       "\"the GPU took no time\" from \"this browser could not measure it\" — re-take it",
   };
+}
+
+/* Our renderer's culls' GPU time (`gpu.cull`, report version 18), or null
+   where the capture has no reading of it. It needs no browser flag, so it can
+   stand where `gpuRead` says the whole frame could not be measured. */
+function gpuCull(r) {
+  const c = r.gpu && r.gpu.cull;
+  return c && c.samples > 0 ? c : null;
 }
 
 /* The window's long-animation-frame totals, which are only readable from
@@ -966,9 +1001,65 @@ function renderReport(r) {
     ["window", fmt(r.window.seconds, 2) + " s"],
     ["taken", (r.takenAt || "").replace("T", " ").replace(/\..*$/, "")],
   ];
+  /* Which build took it (report version 25): the commit and the day, `+` for
+     a working tree with changes, `dev` for the dev server. */
+  if (r.build) bits.push(["build", r.build]);
   /* The round's seed (report version 12), which `?seed=` takes to play the
      round again. Null in a match and before a first round — nothing to say. */
   if (r.seed != null) bits.push(["seed", String(r.seed)]);
+  /* Which thread the simulation stepped on (report version 15): `worker` puts
+     `sim` beside the frame, `page` inside it. */
+  if (r.simMode) bits.push(["sim", r.simMode]);
+  /* Our renderer's take of the map's blocks (report version 17). Its draws are
+     NOT in the draw-call counter, which is Babylon's. A capture before version
+     20 may say surfaces were handed back to Babylon (a refused main pass
+     handed back the whole map); since then nothing is. */
+  const ours = r.blocks;
+  if (ours && ours.taken > 0) {
+    let line = ours.drawn + " draws, " + ours.taken + " blocks, " + ours.clusters + " clusters";
+    if (ours.handedBack > 0) line += ", " + ours.handedBack + " handed back";
+    bits.push(["ours", line]);
+  }
+  /* Our renderer's bodies on the last frame (report version 21). Not in the
+     draw-call counter either: since BABYLON_EXIT.md X4.1d no body is, so a
+     v20 capture from such a build simply has none of them anywhere. */
+  const bodies = r.bodies;
+  if (bodies && bodies.instances > 0) {
+    bits.push(["bodies", bodies.drawn + " draws, " + bodies.masked + " mask draws, " + bodies.instances + " bodies"]);
+  }
+  /* Our renderer's hulls on the last frame (report version 22). Not in the
+     draw-call counter: since BABYLON_EXIT.md X4.2b no hull is. */
+  const hulls = r.hulls;
+  if (hulls && hulls.instances > 0) {
+    bits.push(["hulls", hulls.drawn + " draws, " + hulls.instances + " hulls"]);
+  }
+  /* Our renderer's weapon on the last frame (report version 23). Not in the
+     draw-call counter: since BABYLON_EXIT.md X4.3c no opaque part of it is,
+     and since X4.3d (report version 24) no part of it at all — the optics'
+     glass and the kit card are counted here too. */
+  const view = r.view;
+  if (view && view.drawn > 0) {
+    bits.push(["weapon", view.drawn + " draws, " + view.masked + " mask draws"]);
+  }
+  /* Our renderer's effect pools on the last frame (report version 26): the
+     tracers, the brass, the thrown and laid bodies and the bullet marks —
+     and since version 27 the blast's billows and the glass shards and
+     rubble, their draws in the same two counts. Not in the draw-call
+     counter: since BABYLON_EXIT.md X4.4b none of them is, nor since X4.4c
+     a billow, shard or chunk (the sparks, the dust discs and the scorch
+     still are). A v26 capture has no billows or debris to show. Since
+     version 28 the fires too — every world fire and molotov flame drawn,
+     a draw each, none in the draw-call counter since X4.4d; a v27 capture
+     has no fires to show. Since version 29 the draws count the cloud ring's
+     one as well (X4.5b), and since version 30 the dome's and the moon's and the
+     mask draws the moon's bloom (X4.5c), which alone raise no line. */
+  const pools = r.pools;
+  if (pools && pools.instances + pools.marks + (pools.billows || 0) + (pools.debris || 0) + (pools.fires || 0) > 0) {
+    let line = pools.drawn + " draws, " + pools.masked + " mask draws, " + pools.instances + " pieces, " + pools.marks + " marks";
+    if (pools.billows !== undefined) line += ", " + pools.billows + " billows, " + pools.debris + " debris";
+    if (pools.fires !== undefined) line += ", " + pools.fires + " fires";
+    bits.push(["pools", line]);
+  }
   for (const [k, v] of bits) {
     const d = el("div");
     if (k) d.appendChild(el("b", null, k + " "));
@@ -1104,6 +1195,18 @@ function renderReport(r) {
       gpu.state === "unmeasurable" ? "browser cannot" : "0 samples",
       gpu.state === "unmeasurable" || gpu.state === "ambiguous" ? "fault" : null));
   }
+  /* Our renderer's culls (report version 18): a part of the GPU frame, on
+     rows of their own, so it is a second tile and never a share of the first.
+     Absent where nothing timed them — no `?gpu`, an older capture, or a
+     window in which nothing was culled. */
+  const cull = gpuCull(r);
+  if (cull) {
+    stats.appendChild(tile(
+      "GPU cull", fmt(cull.meanMs * 1000, 0), " µs",
+      "p95 " + fmt(cull.p95Ms * 1000, 0) + " · max " + fmt(cull.maxMs * 1000, 0) +
+        " · " + cull.samples + " sampled",
+      "gpu"));
+  }
   const lt = loafTotals(r);
   if (lt) {
     stats.appendChild(tile(
@@ -1121,13 +1224,17 @@ function renderReport(r) {
       pl.modules + " modules · " + pl.hitchesNear + " of " + f.hitches + " slow frames on one",
       pl.hitchesNear ? "gpu" : null));
   }
-  const c = r.counters || {};
-  stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
-  // Particles are only on a capture from a build that measures them, and the
-  // line says nothing rather than "0.00 ms" on one that does not.
-  const walkSub = "rtt " + fmt(c.renderTargetsMs, 2) + " ms"
-    + (c.particlesMs != null ? " / particles " + fmt(c.particlesMs, 2) + " ms" : "");
-  stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", walkSub));
+  // Babylon's counters, to report v37: absent from v38 on, and so are their
+  // tiles rather than two tiles of dashes.
+  const c = r.counters;
+  if (c) {
+    stats.appendChild(tile("Draw calls", String(c.drawCalls != null ? c.drawCalls : "—"), "", (c.activeMeshes != null ? c.activeMeshes + " meshes" : "")));
+    // Particles are only on a capture from a build that measures them, and the
+    // line says nothing rather than "0.00 ms" on one that does not.
+    const walkSub = "rtt " + fmt(c.renderTargetsMs, 2) + " ms"
+      + (c.particlesMs != null ? " / particles " + fmt(c.particlesMs, 2) + " ms" : "");
+    stats.appendChild(tile("Mesh walk", fmt(c.meshWalkMs, 2), " ms", walkSub));
+  }
 
   /* charts */
   const series = r.series;
@@ -1224,7 +1331,23 @@ function renderReport(r) {
     kv("Graphics", "not recorded — a capture before report v10");
   }
   kv("Pointer", dev.coarsePointer == null ? "not recorded" : dev.coarsePointer ? "coarse (touch defaults)" : "fine");
-  kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
+  // What the rows were DRAWN at (report version 18), most frames first; an
+  // older capture has only the size read at save, which says nothing about
+  // its frames. A canvas that did not follow its window is a different
+  // workload from the one the window implies, so it is said in capitals.
+  const sizes = r.viewport || null;
+  if (sizes && sizes.length) {
+    const stale = sizes.filter(v => !v.matched).reduce((a, v) => a + v.frames, 0);
+    kv("Viewport", sizes.map(v => v.window + "  →  " + v.backingStore +
+        (v.matched ? "" : " (STALE: the window makes " + v.expected + ")") +
+        (sizes.length > 1 ? " · " + v.frames + " frames" : "")).join("  |  ") +
+      (sizes.length > 1 ? " — MIXED: resized inside this window" : "") +
+      (stale ? " — " + stale + " frames drawn on a canvas that did not follow its window" : ""));
+    kv("At save", (dev.window || "?") + "  →  " + (dev.backingStore || "?"));
+  } else {
+    kv("Viewport", (dev.window || "?") + "  →  " + (dev.backingStore || "?") +
+      " — read at save; a capture before report v18 does not say what its frames were drawn at");
+  }
   kv("Pixel ratio", String(dev.devicePixelRatio != null ? dev.devicePixelRatio : "?"));
   kv("Cores / memory", (dev.hardwareConcurrency || "?") + " ×  " + (dev.deviceMemoryGb != null ? dev.deviceMemoryGb + " GB" : "?"));
   kv("Browser", dev.userAgent || "?");
@@ -1236,8 +1359,11 @@ function renderCompiles(pl, bar) {
   if (!pl || !pl.observed) { panel.hidden = true; return; }
   panel.hidden = false;
   const list = pl.recent || [];
+  // A creation's Babylon effect and its defines, to report v37 (`named`, the
+  // builder found to name them); from v38 a creation is its label alone.
+  const named = pl.named !== undefined;
   $("n-compiles").textContent = pl.render + " render · " + pl.compute + " compute · " +
-    pl.modules + " modules" + (pl.named ? "" : " · unnamed — Babylon's builder was not found") +
+    pl.modules + " modules" + (pl.named === false ? " · unnamed — Babylon's builder was not found" : "") +
     (list.length < pl.render + pl.compute + pl.modules ? " · newest " + list.length + " listed" : "");
   if (!list.length) {
     const tr = el("tr"), td = el("td", "empty", "Nothing was created in this window — so no slow frame in it was a first-use compile.");
@@ -1245,7 +1371,9 @@ function renderCompiles(pl, bar) {
     return;
   }
   const head = el("tr");
-  for (const k of ["ago", "kind", "frame", "shader", "pass", "defines"]) head.appendChild(el("th", null, k));
+  for (const k of named ? ["ago", "kind", "frame", "shader", "pass", "defines"] : ["ago", "kind", "frame", "label"]) {
+    head.appendChild(el("th", null, k));
+  }
   table.appendChild(head);
   for (const e of list) {
     const tr = el("tr");
@@ -1254,11 +1382,13 @@ function renderCompiles(pl, bar) {
     const fm = el("td", null, e.frameMs ? fmt(e.frameMs, 1) + " ms" : "—");
     if (e.frameMs >= bar) fm.className = "slow";
     tr.appendChild(fm);
-    tr.appendChild(el("td", null, e.effect || "—"));
+    if (named) tr.appendChild(el("td", null, e.effect || "—"));
     tr.appendChild(el("td", "mono", (e.label || "").replace(/^RenderPipeline_/, "") || "—"));
-    const df = el("td", "mono defs", (e.defines || "").replace(/#define /g, "").replace(/\s*\n\s*/g, " ").trim() || "—");
-    df.title = e.defines || "";
-    tr.appendChild(df);
+    if (named) {
+      const df = el("td", "mono defs", (e.defines || "").replace(/#define /g, "").replace(/\s*\n\s*/g, " ").trim() || "—");
+      df.title = e.defines || "";
+      tr.appendChild(df);
+    }
     table.appendChild(tr);
   }
 }
@@ -1283,7 +1413,15 @@ function renderBench(r) {
   $("n-bench").textContent = notes.join(" · ");
   if (!seg) return;
   const head = el("tr");
-  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "draws", "gpu"]) {
+  // The size column is only drawn when a stretch was resized, drew a stale
+  // canvas, or differs from the rest (report version 18) — otherwise it is
+  // the Viewport row's one size on every line.
+  const all = (seg.groups || []).concat(seg.list || []);
+  const sized = all.some(s => s.backingStore !== undefined && (s.sizes > 1 || s.staleFrames > 0 ||
+    s.backingStore !== all[0].backingStore));
+  // Babylon's draw count, to report v37.
+  const draws = all.some((s) => s.drawCalls !== undefined);
+  for (const k of ["", "frames", "fps", "mean", "p95", "1% low", "tick", "render", "sim"].concat(draws ? ["draws"] : [], ["gpu", "cull"], sized ? ["size"] : [])) {
     head.appendChild(el("th", null, k));
   }
   table.appendChild(head);
@@ -1297,8 +1435,18 @@ function renderBench(r) {
     tr.appendChild(el("td", "num", fmt(s.onePercentLow, 1) + " ms"));
     tr.appendChild(el("td", "num", fmt(s.tick, 2) + " ms"));
     tr.appendChild(el("td", "num", fmt(s.render, 2) + " ms"));
-    tr.appendChild(el("td", "num", String(s.drawCalls)));
+    // The core's step on the rows that ran one (report version 14); "—" on a
+    // stretch that stepped nothing and on an older capture, which never said.
+    tr.appendChild(el("td", "num", s.sim ? fmt(s.sim.mean, 2) + " ms" : "—"));
+    if (draws) tr.appendChild(el("td", "num", String(s.drawCalls)));
     tr.appendChild(el("td", "num", s.gpuSamples ? fmt(s.gpuFrame, 2) + " ms" : "—"));
+    // Our culls (report version 18), in microseconds: "—" where none landed.
+    tr.appendChild(el("td", "num", s.gpuCullSamples ? fmt(s.gpuCull * 1000, 0) + " µs" : "—"));
+    if (sized) {
+      tr.appendChild(el("td", "num", (s.backingStore || "?") +
+        (s.sizes > 1 ? " MIXED (" + s.sizes + ")" : "") +
+        (s.staleFrames > 0 ? " STALE ×" + s.staleFrames : "")));
+    }
     table.appendChild(tr);
   };
   for (const g of seg.groups || []) row(g, "group");
@@ -1489,12 +1637,16 @@ function hitchRow(h, read, below) {
   const w = (k, v) => { const x = el("div"); x.appendChild(el("b", null, k + " ")); x.appendChild(document.createTextNode(v)); where.appendChild(x); };
   w("at", "(" + h.x + ", " + h.y + ", " + h.z + ")");
   w("bots", String(h.botsAlive));
-  w("draws", String(h.drawCalls));
-  w("meshes", String(h.activeMeshes));
-  w("walk", fmt(h.meshWalkMs, 2) + " ms");
-  w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
-  if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
+  // Babylon's counters on the frame, to report v37.
+  if (h.drawCalls != null) {
+    w("draws", String(h.drawCalls));
+    w("meshes", String(h.activeMeshes));
+    w("walk", fmt(h.meshWalkMs, 2) + " ms");
+    w("rtt", fmt(h.renderTargetsMs, 2) + " ms");
+    if (h.particlesMs != null) w("particles", fmt(h.particlesMs, 2) + " ms");
+  }
   if (GPU_OK && h.gpuFrameMs > 0) w("gpu", fmt(h.gpuFrameMs, 2) + " ms");
+  if (h.gpuCullMs > 0) w("cull", fmt(h.gpuCullMs * 1000, 0) + " µs");
   if (h.createdNear != null) w("compiled", h.createdOn + " here, " + h.createdNear + " within 2 frames");
   if (h.heapMb) w("heap", fmt(h.heapMb, 1) + " MB");
   det.appendChild(where);
@@ -1848,6 +2000,10 @@ function drawGpu(r, gpu) {
     (r.gpu && r.gpu.mainPass && r.gpu.mainPass.frames
       ? " The main pass alone is " + fmt(r.gpu.mainPass.meanMs, 3) +
         " ms — in this pipeline that is the final full-screen quad, not the scene."
+      : "") +
+    (gpuCull(r)
+      ? " Our culls' compute passes, inside it, are " + fmt(gpuCull(r).meanMs * 1000, 0) +
+        " µs mean over " + gpuCull(r).samples + " frames of their own."
       : "");
 
   hover(canvas, $("t-gpu"), n, X, (i) =>
@@ -1949,6 +2105,9 @@ function renderTrace(t) {
 
   flame = { spans, marks, gcs, t0, t1, view0: t0, view1: t1, maxDepth, lanes, laneOf, gut: 0 };
   drawFlame();
+  // Babylon's draw counter track, to report v37's builds: a trace from a later
+  // build carries none, and the panel goes rather than standing empty.
+  $("p-counters").hidden = !counters.length;
   drawCounters(counters, t0, t1);
 
   // Totals, as the same ladder the report uses.

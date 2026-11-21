@@ -2,13 +2,17 @@
  * MineModel.ts — What an anti-tank mine looks like, in the hands and on the
  * ground.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
- * with nothing re-tuned, plus `buildMineBody` for the one `AntiTankSystem`
- * lays.
+ * with nothing re-tuned, plus `minePieceParts` for the one `AntiTankSystem`
+ * lays and `AntiTankFx` draws.
  * Invariants: the carried mine is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The laid mine is DRESSING: no `solid` flag, no
  * `WorldBox`, not pickable. A tank drives THROUGH it and the trigger is a
- * distance test, never a collision.
+ * distance test, never a collision. Both are built as `Part`s on
+ * `src/geometry/` buffers: the carried one's become SEGMENTS our renderer
+ * draws (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the
+ * laid one's the KIT our renderer draws every laid mine as an instance of
+ * (`entities/pieces.ts`, X4.4b) — neither is a mesh.
  *
  * Two builders in one file for the reason `RpgModel` is one: the plate a
  * player is holding and the plate lying in the road are the same object, and
@@ -22,8 +26,11 @@
  * closer to the eye and does nothing else, which is exactly what looking hard
  * at a thing in your hands does.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
+import { createCylinder, createSphere } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { Part } from "../world/parts";
+import type { PiecePart } from "./pieces";
 import {
   BODY,
   METAL,
@@ -33,6 +40,8 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /** The plate's outside diameter, in weapon units (~1.4 per metre). */
 const PLATE_DIA = 0.42;
@@ -55,12 +64,13 @@ const SUPPORT_ELBOW = new Vector3(-0.34, -0.5, -0.34);
  * ~40 parts, merged to one mesh per colour like every other model here.
  */
 export function buildMine(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_mine`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_mine`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // The plate itself, lying flat: a squat cylinder standing on its own axis,
   // so it is built with `pin` on the Y axis rather than with `tube`.
@@ -96,7 +106,6 @@ export function buildMine(
   const finish = b.takeFinish();
 
   const sight = buildMineTell(b, root, prefix);
-  b.disposePivots();
 
   return {
     root,
@@ -108,7 +117,7 @@ export function buildMine(
     support: { hand: SUPPORT_HAND, elbow: SUPPORT_ELBOW },
     sights: { kind: "fixed", sight: "iron", assembly: sight },
     finish,
-    meshes: root.getChildMeshes(false) as Mesh[],
+    meshes: b.meshesOn(root, true),
   };
 }
 
@@ -124,40 +133,35 @@ export function buildMine(
  */
 function buildMineTell(
   b: WeaponBuild,
-  parent: TransformNode,
+  parent: Joint,
   prefix: string,
 ): SightAssembly {
-  const node = new TransformNode(`${prefix}_mine_tell`, b.scene);
-  node.parent = parent;
+  const node = b.joint(`${prefix}_mine_tell`, parent);
 
   const lamp = b.lit(
-    MeshBuilder.CreateSphere(
-      `${prefix}_mineLamp`,
-      { diameter: 0.03, segments: 6 },
-      b.scene,
-    ),
+    new Part(`${prefix}_mineLamp`, createSphere({ diameter: 0.03, segments: 6 })),
     node,
   );
   // Proud of the fuze's own ink shell, the rule every lit part in the kit
   // follows.
   lamp.position.set(0, 0.028, 0);
 
-  const sightCenter = new TransformNode(`${prefix}_mine_sightCenter`, b.scene);
-  sightCenter.parent = node;
-  sightCenter.position = new Vector3(0, 0.14, 0.02);
-  return { root: node, sightCenter, meshes: node.getChildMeshes(true) as Mesh[] };
+  const sightCenter = b.joint(`${prefix}_mine_sightCenter`, node);
+  sightCenter.position.set(0, 0.14, 0.02);
+  return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
-/** One laid mine's meshes. The lamp is parented to the body and moves with it. */
-export interface MineMeshes {
-  mesh: Mesh;
-  lamp: Mesh;
-}
+/** The plate's paint, the pressure plate's, and the fuze lamp's (unlit). */
+const MINE_BODY = "#3a3f34";
+const MINE_PLATE = "#22261f";
+const MINE_LAMP = "#ff4a3a";
 
 /**
- * Builds one laid mine, hidden, at WORLD scale — everything above this
- * function is in the viewmodel's units and none of those numbers may be
- * carried down here.
+ * One laid mine at WORLD scale — everything above this function is in the
+ * viewmodel's units and none of those numbers may be carried down here — as
+ * the three parts of its kit (`pieceKit`): the plate, the pressure plate hung
+ * from it and the fuze lamp hung from it, each painted and placed as its mesh
+ * was until `BABYLON_EXIT.md` X4.4b.
  *
  * A third of a metre across and eight centimetres proud of the road, which is
  * what a real one is and small enough that the thing a driver has to spot is
@@ -168,58 +172,36 @@ export interface MineMeshes {
  * you could still drive over.
  *
  * A mine is dressing with a fuze on it: no `solid` flag, no `WorldBox`, not
- * pickable. A tank drives THROUGH the mesh, and what sets it off is
+ * pickable. A tank drives THROUGH the piece, and what sets it off is
  * `AntiTankSystem`'s distance test against the hull's centre.
  */
-export function buildMineBody(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): MineMeshes {
+export function minePieceParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   // Nothing here is derived from `CONFIG.equipment.mine`: the trigger radius
   // is four metres of ground a hull has to be over, and a plate drawn that
   // size would be a manhole cover. What the mine LOOKS like is a mine.
-  const mesh = MeshBuilder.CreateCylinder(
-    name,
-    { height: 0.08, diameter: 0.34, tessellation: 10 },
-    scene,
-  );
-  mesh.material = mats.get("#3a3f34");
-  mesh.isPickable = false;
+  const body = new Part(name, createCylinder({ height: 0.08, diameter: 0.34, tessellation: 10 }));
+  body.material = mats.get(MINE_BODY);
 
-  const plate = MeshBuilder.CreateCylinder(
-    `${name}Plate`,
-    { height: 0.04, diameter: 0.22, tessellation: 10 },
-    scene,
-  );
-  plate.parent = mesh;
+  const plate = new Part(`${name}Plate`, createCylinder({ height: 0.04, diameter: 0.22, tessellation: 10 }));
   plate.position.y = 0.055;
-  plate.material = mats.get("#22261f");
-  plate.isPickable = false;
+  plate.material = mats.get(MINE_PLATE);
 
-  const lamp = MeshBuilder.CreateSphere(
-    `${name}Lamp`,
-    { diameter: 0.07, segments: 6 },
-    scene,
-  );
-  lamp.parent = mesh;
+  const lamp = new Part(`${name}Lamp`, createSphere({ diameter: 0.07, segments: 6 }));
   // Standing proud of the plate's ink shell — the grenade pip's rule, and for
   // the same reason: it is the only warning the thing gives.
   lamp.position.y = 0.095;
-  lamp.material = mats.getEmissive("#ff4a3a");
+  lamp.material = mats.getEmissive(MINE_LAMP);
   lamp.metadata = { noInk: true };
-  lamp.isPickable = false;
-  // The lamp is toggled INSIDE an enabled mine — dark while it arms, lit once
-  // it is live — so it keeps its own `isVisible` on top of the subtree switch
-  // below.
-  lamp.isVisible = false;
+  // The lamp is switched INSIDE a laid mine — dark while it arms, lit once
+  // it is live — so it keeps its own switch (`PieceNode.visible`) on top of
+  // the piece's (`Piece.enabled`).
 
   // Ink, or a dark plate on a dark road is invisible from the one direction it
   // matters from — which for the object a driver is meant to notice in time is
   // the whole ball game.
-  // Disabled rather than invisible, for the reason `buildRocket` gives at
-  // length: `isVisible` does not reach a child, and a pool of sixteen hidden
-  // mines would leave sixteen pressure plates lying at the world origin.
-  mesh.setEnabled(false);
-  return { mesh, lamp };
+  return [
+    { part: body, cel: MINE_BODY, unlit: null, parent: -1 },
+    { part: plate, cel: MINE_PLATE, unlit: null, parent: 0 },
+    { part: lamp, cel: null, unlit: MINE_LAMP, parent: 0 },
+  ];
 }

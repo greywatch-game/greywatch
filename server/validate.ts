@@ -26,7 +26,7 @@
  * player yanked backwards by a bad rejection has a worse experience than
  * everyone has from a cheat that buys 19% speed.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like } from "../src/math";
 import { CONFIG } from "../src/config";
 import type { GameMap } from "../src/world/MapBuilder";
 
@@ -70,13 +70,14 @@ const MAX_SPEED = CONFIG.player.moveSpeed * CONFIG.player.sprintMult;
  * Checks one reported step.
  *
  * `dt` is the elapsed CLIENT time between this sample and the last accepted
- * one. It is clamped by the caller — a client that claims a huge `dt` would
+ * one. It is bounded by the caller (`Match.onStamp`: per sample, and in sum by
+ * when the samples ARRIVED) — a client that claims a huge `dt` would
  * otherwise buy itself a proportionally huge legal step, which is the obvious
  * way to dress a teleport up as a lag spike.
  */
 export function validateMove(
   map: GameMap,
-  from: Vector3,
+  from: Vector3Like,
   to: { x: number; y: number; z: number },
   dt: number,
 ): Verdict {
@@ -96,7 +97,7 @@ export function validateMove(
   // map whose edge is open. Being outside the play square is not a cheat there
   // and must not be treated as one: it is ordinary ground with ordinary floor
   // under it, and what a player standing on it is doing is running out of time
-  // — the leash's business, in `HeadlessGame`, and nothing to do with whether
+  // — the leash's business, in `SimCore`, and nothing to do with whether
   // the step they just reported was possible. Past the borderland there is
   // genuinely nothing: no floor, no nav cell and four boundary colliders in
   // the way, so a position out there is a claim about a place that does not
@@ -412,7 +413,7 @@ export function validateDrive(
 /**
  * The verdict `validateDrive` hands back, reused so the path that runs at
  * `INPUT_HZ` per driver allocates nothing — `SCRATCH`'s rule below, and
- * `HeadlessGame.applyDrive`'s, which writes into the object `remoteFor` has
+ * `SimCore.applyDrive`'s, which writes into the object `remoteFor` has
  * already handed out for the same reason.
  */
 const DRIVE: DriveVerdict = {

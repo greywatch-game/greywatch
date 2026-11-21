@@ -1,7 +1,7 @@
 /**
  * floorSurfaces.ts — What the valley floor is MADE of: the roster of ground
  * surfaces a map may state, and the one place a floor material is built.
- * Owns: the surface table (label, world scale, relief) and `floorMaterial`.
+ * Owns: the surface table (name, world scale, relief) and `floorMaterial`.
  * Owns no colour — that is `EnvironmentSpec.floorColor`, and this reads it.
  *
  * A surface is a PATTERN, not a place. The tones are derived from the map's
@@ -11,9 +11,9 @@
  *
  * **`flat` is a real member of the list, not the absence of one.** It is what
  * Hollowmere is, it is the only variant that costs no texture sample per
- * ground pixel, and a map has to be able to choose it in the editor after
- * trying the others — an id that meant "unset" could be reached by clearing a
- * field but never by picking it.
+ * ground pixel, and a map has to be able to state it after trying the others
+ * — an id that meant "unset" could be reached by leaving a field out but never
+ * by naming it.
  *
  * The material is deliberately MATTE. `getGroundTextured` registers a spec'd
  * material for `setGroundSpec` to re-apply the map's sheen to, and that sheen
@@ -22,7 +22,7 @@
  * which also keeps it out of that registry — see `CelMaterialFactory.applySpec`,
  * which only records the materials it actually makes glossy.
  */
-import type { Scene, ShaderMaterial } from "@babylonjs/core";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import {
   getFloorBumpTexture,
@@ -32,8 +32,6 @@ import {
 
 /** One textured surface's world scale and relief. */
 interface FloorSurface {
-  /** Shown in the editor's picker. */
-  label: string;
   /**
    * Metres spanned by one texture repeat. Bigger reads as coarser ground and
    * repeats less often across a 240 m valley; smaller reads as finer grain and
@@ -63,33 +61,22 @@ interface FloorSurface {
  * without the other.
  */
 const SURFACES: Record<FloorPatternId, FloorSurface> = {
-  dirt: { label: "dirt", metersPerTile: 4, bumpScale: 0.05 },
-  gravel: { label: "gravel", metersPerTile: 2.5, bumpScale: 0.03 },
-  sand: { label: "sand", metersPerTile: 5, bumpScale: 0.015 },
-  turf: { label: "turf", metersPerTile: 4.5, bumpScale: 0.03 },
+  dirt: { metersPerTile: 4, bumpScale: 0.05 },
+  gravel: { metersPerTile: 2.5, bumpScale: 0.03 },
+  sand: { metersPerTile: 5, bumpScale: 0.015 },
+  turf: { metersPerTile: 4.5, bumpScale: 0.03 },
   // Settled clods ~46 cm across, carved ~4 cm deep between their crowns, and
   // moss pillowed over them. Deeper than `dirt` because a mound spends its
   // depth on a slope where a plate spends it on a step: at 0.025 this was a
   // centimetre of parallax and read as a painted sheet.
-  loam: { label: "forest loam", metersPerTile: 5.5, bumpScale: 0.08 },
+  loam: { metersPerTile: 5.5, bumpScale: 0.08 },
 };
 
 /** What a map may state for its floor. `flat` is the shipped, untextured one. */
 export type FloorSurfaceId = "flat" | FloorPatternId;
 
 /** The default: the plain cel colour the floor was before surfaces existed. */
-export const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
-
-/** The picker's roster, in the order it is offered. */
-export const FLOOR_SURFACE_IDS: readonly FloorSurfaceId[] = [
-  "flat",
-  ...(Object.keys(SURFACES) as FloorPatternId[]),
-];
-
-/** A surface's name for the editor. */
-export function floorSurfaceLabel(id: FloorSurfaceId): string {
-  return id === "flat" ? "flat colour" : SURFACES[id].label;
-}
+const DEFAULT_FLOOR_SURFACE: FloorSurfaceId = "flat";
 
 /**
  * The material every terrain block wears.
@@ -106,19 +93,18 @@ export function floorSurfaceLabel(id: FloorSurfaceId): string {
  */
 export function floorMaterial(
   mats: CelMaterialFactory,
-  scene: Scene,
   floorColor: string,
   surface: FloorSurfaceId | undefined,
-): ShaderMaterial {
+): MaterialKey {
   const id = surface ?? DEFAULT_FLOOR_SURFACE;
   if (id === "flat") return mats.get(floorColor);
   const spec = SURFACES[id];
   return mats.getGroundTextured(
     `${id}-${floorColor.slice(1)}`,
-    getFloorTexture(scene, id, floorColor),
+    getFloorTexture(mats, id, floorColor),
     1 / spec.metersPerTile,
     {
-      bump: getFloorBumpTexture(scene, id),
+      bump: getFloorBumpTexture(mats, id),
       bumpScale: spec.bumpScale,
     },
   );

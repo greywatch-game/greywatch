@@ -1,11 +1,14 @@
 /**
  * environment.ts — EnvironmentSpec: the declarative shape of a map's look
  * (palette, lighting direction, fog, mist, sky, water, particles) plus
- * applyEnvironment(), which pushes it into the cel materials and scene.
+ * applyEnvironment(), which hands it to the material factory (whose fields
+ * our renderer's frame is filled from) and the frame's clear colour.
  * Pure data in, uniforms out — a second map adds one new spec, no code here.
  */
-import { Color3, Color4, Scene, Vector3 } from "@babylonjs/core";
+import { Color3, type Color4, Vector3 } from "../math";
 import type { CelMaterialFactory, SpecSpec } from "../shaders/CelShader";
+import { CONFIG } from "../config";
+import { HULL_REACH } from "../entities/vehicleKinds";
 import type { FloorSurfaceId } from "./floorSurfaces";
 
 /** A dynamic point light carried by a prop, registered when the prop is placed. */
@@ -192,7 +195,7 @@ export interface SkySpec {
    */
   air?: { density?: number; intensity?: number };
   /**
-   * The cloud masses (`systems/cloudMasses.ts`, lit by `CloudShader`): the
+   * The cloud masses (`systems/cloudMasses.ts`, lit by `shaders/wgsl/cloud.ts`): the
    * colour a facet turned AWAY from the key light takes. Wants to sit between
    * the sky behind it and the ground under it — a cloud's shadow side is lit by
    * both — and to be clearly darker than `horizonColor`, or a low cloud has no
@@ -370,8 +373,8 @@ export interface EnvironmentSpec {
    *
    * It is a MATERIAL, so unlike everything else here it is baked at build time
    * rather than pushed as a uniform: changing it needs the map rebuilt, which
-   * is why the editor treats it as a structural edit and why `workLight.ts`
-   * leaves it alone along with the two rim colours.
+   * is why the viewer's `workLight.ts` leaves it alone along with the two rim
+   * colours.
    */
   floorSurface?: FloorSurfaceId;
   /**
@@ -396,8 +399,7 @@ export interface EnvironmentSpec {
   fogEnd: number;
   /**
    * How far a BODY is worth drawing, in metres, overriding `fogEnd` for the
-   * three gates that ask that question — the bots' rig LOD
-   * (`BattleSystem.viewDistance`), the remote roster's
+   * two gates that ask that question — the roster's
    * (`NetRoster.viewDistance`) and the ragdoll pool's one remaining refusal
    * (`RagdollSystem.viewDistance`). Absent is `fogEnd`, which is what every
    * shipped map states by saying nothing, so this changes no map that does not
@@ -408,30 +410,76 @@ export interface EnvironmentSpec {
    * world goes to `fogColor`, so it is exactly right for the WALK
    * (`WorldCulling`, whose reach stays `fogEnd` and must — a structure dropped
    * inside the fog does not fade, it vanishes). A body is the other case: it
-   * is nineteen merged meshes and it is two pixels tall at four hundred
-   * metres, and a frame that is DRAW-CALL bound (`docs/rendering.md`) pays the
-   * whole nineteen for those two pixels. Coldharbour and Harrowmead already
+   * is two pixels tall at four hundred metres, and when this field was made it
+   * was nineteen merged meshes a DRAW-CALL bound frame (`docs/rendering.md`)
+   * paid in full for those two pixels; since X4.1d it is an instance in every
+   * rank's draw, and what it still costs is its composes, its share of each
+   * rank's span and its pixels. Coldharbour and Harrowmead already
    * see past their own diagonals, so both of them draw every rig on the map at
    * all times; at 1500 m that is the largest bucket in the frame.
    * `ENGINE_UPGRADE.md` S8 is this field.
    *
-   * **A body still POPS where it is dropped**, which is the whole of the cost
-   * and the reason this defaults to the fog rather than to a number: past
-   * `fogEnd` a body is `fogColor` in front of `fogColor` and dropping it cannot
-   * move a pixel, and inside it a body vanishing is a thing a player can see.
-   * So a map states this only when it has decided that a soldier a few pixels
-   * tall is worth less than the draws — and it is capped at `fogEnd`
-   * (`bodyDrawDistanceOf`), because a body drawn past the fog is a body drawn
-   * as fog.
+   * **A body no longer POPS where it is dropped; it FADES** (`BABYLON_EXIT.md`
+   * X4.1e): a screen door over the last tenth of this distance, the ramp
+   * ending one measure-radius short of it (`WorldCulling.setBodyDrawDistance`,
+   * `CONFIG.graphics.culling.bodyFade`), so the body is gone before the
+   * roster's switch takes it. A stated distance is therefore a LOOK call — a
+   * soldier thinning out of a view the player can see — rather than a pop,
+   * and it still defaults to the fog rather than to a number: past `fogEnd` a
+   * body is `fogColor` in front of `fogColor` and dropping it cannot move a
+   * pixel. So a map states this only when it has decided that a soldier a few
+   * pixels tall is worth less than what drawing him costs — and it is capped at
+   * `fogEnd` (`bodyDrawDistanceOf`), because a body drawn past the fog is a
+   * body drawn as fog.
    *
    * **The two riders stay pinned to each other**, which is what
-   * `config/fogWall.ts` exists to say: `bots.lodDisableDistance` and
-   * `bots.death.maxDistance` are the same distance BY CONSTRUCTION, and they
-   * still are — all three systems above are handed the one number this
+   * `config/fogWall.ts` exists to say: the roster's draw gate and the
+   * ragdoll pool's (`RagdollSystem.viewDistance`) are the same distance BY
+   * CONSTRUCTION, and they
+   * still are — both systems above are handed the one number this
    * resolves to, so a corpse can never be refused a tumble somewhere its rig
    * is still being drawn.
    */
   bodyDrawDistance?: number;
+  /**
+   * How far a HULL is worth drawing, in metres (`BABYLON_EXIT.md` X4.2d,
+   * `PERF_PLAN.md` A3): past it no tank, truck or helicopter is drawn, and
+   * over its last tenth one FADES out — the bodies' screen door, measured
+   * to the hull's whole measure (`WorldCulling.hullFade`,
+   * `CONFIG.graphics.culling.hullFade`) — so a stated distance is a look
+   * call rather than a pop. Clamped to `fogEnd` as `bodyDrawDistance` is,
+   * but ABSENT is no distance at all (`hullDrawDistanceOf`, which argues
+   * why "unaffected" cannot be the fog for a hull): every hull drawn at any
+   * range, which is what every shipped map states by saying nothing. It is
+   * the CULL's alone: the
+   * authority never reads it, nothing a hull does in the round depends on
+   * it, and a hull's shadow stays its collider box whatever this says.
+   *
+   * **A hull is a GUN as well as a picture, and that is what floors this.**
+   * A body past `bodyDrawDistance` is past every bot's engagement range
+   * (55 m, `bots.perception.engageRange`); a hull is not: its crew may be a
+   * PERSON, and a tank's shell carries 340 m and splashes 7 m past where it
+   * stops (`vehicles.tank.gun`), the truck's and the helicopter's guns 210,
+   * the tank's cupola gun 190. A hull faded out while its gun still reaches
+   * the player looking for it is an unseen shooter, and no setting may buy
+   * one: so a stated distance is RAISED to `hullDrawFloor()` — the fade
+   * starts no nearer than the farthest a hull's fire can land
+   * (`HULL_REACH.fire`), plus how far a viewer's eye stands from what of
+   * him it can hit (`HULL_REACH.eye`, a helicopter's chase camera at worst)
+   * and how far a muzzle stands from its hull's measure centre
+   * (`hullFade.muzzle`) — ~419 m on today's numbers. The bots' own reach
+   * is far inside that (a crew engages at 95 m, its gunner at 70,
+   * `vehicles.crew`), as is the launcher's that hunts a hull (a rocket's
+   * ~157 m, a bot's 75); the binding number is the gun's, because a person
+   * can sit behind it. On a map whose `fogEnd` is short of the floor the
+   * field can shorten nothing (it resolves to no distance): no cut there is
+   * both inside the fog and past the reach.
+   *
+   * **No shipped map states it** (X4.2d): A3's measured +15.4% at 420 m on
+   * Cinderhaven was Babylon's per-mesh cost, and what it buys under our
+   * renderer is a look call per map, taken after.
+   */
+  hullDrawDistance?: number;
   mistColor: string;
   mistHeight: number;
   mistStrength: number;
@@ -442,7 +490,7 @@ export interface EnvironmentSpec {
    * ABSENT IS CLEAN, so a map that says nothing is unaffected and this shipped
    * without touching five of the six. The ramp itself is always baked (it is
    * map-independent geometry — see `CONFIG.wear`), so this is a pair of
-   * uniforms and nothing here needs a rebuild: the editor's work light
+   * uniforms and nothing here needs a rebuild: the viewer's work light
    * re-derives it with every other palette field, and a map may be dirtied and
    * cleaned in a live round.
    *
@@ -594,23 +642,135 @@ export function bodyDrawDistanceOf(env: EnvironmentSpec): number {
 }
 
 /**
- * Push an environment into the scene clear color and every cel material's
- * lighting/fog uniforms. The scene has no Babylon lights — this is how light
+ * The nearest a map may set `EnvironmentSpec.hullDrawDistance` to, in metres
+ * — the floor under it that keeps a hull WHOLE wherever its guns can reach
+ * the player looking for it (`BABYLON_EXIT.md` X4.2d). The fade starts at
+ * `1 - hullFade.distance` of the distance, measured from the eye to the
+ * hull's measure centre, so the distance must be at least the farthest from
+ * that centre to the eye of anybody its fire can hurt — the fire's reach
+ * from a muzzle (`HULL_REACH.fire`), the viewer's eye from what of him it
+ * can hit (`HULL_REACH.eye`) and the muzzle from the measure's centre
+ * (`hullFade.muzzle`), end to end, which the triangle inequality makes a
+ * bound — over that share: ~419 m today, the tank's shell and the
+ * helicopter's chase camera. **Two of the three terms follow the kinds by
+ * themselves and one is GUARDED**: the fire (a gun's `range`, its
+ * `blastRadius`) and the eye (a chase camera's `anchorHeight` and
+ * `distance`, the hull's box) are read off every kind's spec
+ * (`HULL_REACH`), so a longer gun, a bigger blast, a further camera or a
+ * fourth kind moves the floor with no edit here; the muzzle's offset is a
+ * fact about the DRAWING — a barrel's length, a turret's place on the hull —
+ * which no spec states, so it is a measured number in the config, and a DEV
+ * build checks every kind's muzzles and gunner's sight against it through
+ * their whole traverse whenever the hull kits are built, and throws if one
+ * reaches past it (`vehicleModels.ts`' `checkMuzzleReach`). A longer barrel
+ * or a fourth kind's gun therefore owes that term a raise, and is told so.
+ */
+export function hullDrawFloor(): number {
+  const fade = CONFIG.graphics.culling.hullFade;
+  return (HULL_REACH.fire + HULL_REACH.eye + fade.muzzle) / (1 - fade.distance);
+}
+
+/**
+ * How far a hull is worth drawing on this map, resolved — the one place
+ * `EnvironmentSpec.hullDrawDistance` is read, handed to the cull once by
+ * `installMap` (`WorldCulling.setHullDrawDistance`). **`Infinity` is
+ * UNAFFECTED** — no fade and no cut, every hull drawn at any range as it
+ * always was — and it is the answer for a map that states nothing.
+ *
+ * **Absent is `Infinity` rather than `fogEnd`, deliberately, and that is
+ * what "unaffected" costs.** A body's default is its `fogEnd` because the
+ * roster switches a body off there anyway; nothing ever cut a HULL, so a
+ * default at the fog would fade every far hull over the last tenth of it —
+ * Sarab's 504-560 m and Cinderhaven's 1,125-1,250 are 74.5-100% and
+ * 79.8-100% fog (the shader mixes in the SQUARE of the linear ramp,
+ * `celSurface.ts`), not all of it — and drop one standing out of the SKY
+ * past it: a hull past `fogEnd` is drawn in pure `fogColor`, and that is
+ * still a silhouette against a sky whose horizon colour is only required to
+ * sit close to the fog (the landform's argument, `WorldCulling`'s header). A
+ * picture change on every armour map that set nothing.
+ *
+ * **Capped at `fogEnd`** when a map does state one past it, as a body's is:
+ * past the fog a hull is no longer a hull a player can read — a flat
+ * `fogColor` silhouette, no detail, no paint, no side — so a map that has
+ * chosen to cut hulls at all has nothing left out there worth the drawing,
+ * and the fade ends where the fog does, under 75-100% fog on Sarab's numbers.
+ * And **RAISED to `hullDrawFloor()`** when it states one inside a hull's
+ * gun reach, so that no setting buys an unseen shooter (the field's doc).
+ * **A map whose fog closes INSIDE the floor gets `Infinity`**: no distance
+ * there is both at or inside the fog (the cap) and past the gun reach (the
+ * floor), and of the two the floor is the fairness rule — a cut at the fog
+ * would put the fade inside the reach the floor exists to keep whole — so
+ * such a map's hulls are drawn as they always were, fog and all. Every case is enforced in every
+ * build, the floor being a fairness rule rather than a look, and SAID in a
+ * dev one: a stated number that is not the one a round gets is one its
+ * author should see.
+ */
+export function hullDrawDistanceOf(env: EnvironmentSpec): number {
+  const stated = env.hullDrawDistance;
+  if (stated === undefined) return Number.POSITIVE_INFINITY;
+  const floor = hullDrawFloor();
+  const fog = env.fogEnd;
+  if (floor > fog) {
+    if (import.meta.env.DEV) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated}: this map's fogEnd ${fog} closes inside a hull's gun reach` +
+          ` (hullDrawFloor ${floor.toFixed(1)} m), so it can shorten nothing; no hull draw distance.`,
+      );
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+  if (import.meta.env.DEV) {
+    if (stated > fog) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated} is past fogEnd ${fog};` +
+          " a hull out there is only a fogColor silhouette against the sky. Clamping to fogEnd.",
+      );
+    } else if (stated < floor) {
+      console.warn(
+        `[environment] hullDrawDistance ${stated} is inside a hull's gun reach;` +
+          ` raised to ${floor.toFixed(1)} m (hullDrawFloor), or a hull could fire unseen.`,
+      );
+    }
+  }
+  return Math.min(fog, Math.max(stated, floor));
+}
+
+/**
+ * The frame's clear colour off an environment, into `clearColor` (the
+ * frame's, `SceneFrame.clearColor` — `scene.clearColor` until
+ * `BABYLON_EXIT.md` X6.1h): the one write of it in the tree.
+ * `applyEnvironment` calls it, and `Game`'s constructor calls it alone for the
+ * map the menu boots on, so the frame under the boot's fade is that map's flat
+ * colour rather than Babylon's default slate (`docs/states.md`). The reel and
+ * a teardown do not reach it: after a round the colour is the last map's.
+ */
+export function applyClearColor(clearColor: Color4, env: EnvironmentSpec): void {
+  const sky = Color3.FromHexString(env.skyColor);
+  // Alpha 1, and it is the frame's alpha channel rather than the canvas's: that
+  // channel is TRANSLUCENT COVERAGE for `CelInk`, which scales its stroke by
+  // `1 - a`. A pixel of sky carries 1, the dome's literal, on every map; this
+  // clear stands in for the dome on a frame with no map, and nowhere else, every
+  // shipped map stating one. **The kit screen is what that is for**: the card
+  // leaves the coverage under it as it found it, so over a clear of 0 the half of
+  // the weapon's outline lying on the card is inked and over a 1 it is not, and
+  // the owner kept that for the kit screen over the menu, a constant half stroke
+  // (`BABYLON_EXIT.md` X4.5a's row, X4.5c).
+  // Nothing downstream sees it — the ink consumes it and writes 1, and the grade at
+  // the end of the chain writes 1 again.
+  clearColor.copyFromFloats(sky.r, sky.g, sky.b, 1);
+}
+
+/**
+ * Push an environment into the frame's clear colour and every cel material's
+ * lighting/fog uniforms. There are no Babylon lights — this is how light
  * reaches the shader.
  */
 export function applyEnvironment(
-  scene: Scene,
+  clearColor: Color4,
   env: EnvironmentSpec,
   mats: CelMaterialFactory,
 ): void {
-  const sky = Color3.FromHexString(env.skyColor);
-  // Alpha 0, and it is the frame's alpha channel rather than the canvas's: that
-  // channel is TRANSLUCENT COVERAGE for `CelInk`, everything opaque writes 0
-  // into it and every alpha-blended draw accumulates into it, so the clear is
-  // where "nothing has covered this pixel yet" is stated. Nothing downstream
-  // sees it — the ink consumes it and writes 1, and the grade at the end of the
-  // chain writes 1 again.
-  scene.clearColor = new Color4(sky.r, sky.g, sky.b, 0);
+  applyClearColor(clearColor, env);
 
   const [dx, dy, dz] = env.lighting.direction;
   const lit = env.lighting;
@@ -647,6 +807,6 @@ export function applyEnvironment(
   // The ground's wet sheen is the map's weather, and it is tuned against the
   // key light's elevation — which this function has just changed. Pushed here
   // rather than from `installMap` so it lands BEFORE the map's materials are
-  // built, and so the editor's work light re-derives it like everything else.
+  // built, and so the viewer's work light re-derives it like everything else.
   mats.setGroundSpec(env.groundSpec);
 }

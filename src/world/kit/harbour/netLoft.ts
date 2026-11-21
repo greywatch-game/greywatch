@@ -7,7 +7,6 @@
  * byte in the order they always were; what varies is seeded off where it
  * stands (`streetSeed`), never `Math.random()`. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -113,12 +112,11 @@ import {
  * low enough to walk over, overhead, or standing on a collider.
  */
 export function buildNetLoft(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "netloft");
+  const b = new Build(mats, "netloft");
   const w = p.width ?? 9;
   const d = p.depth ?? 7;
   /** Clear headroom under the loft floor. */

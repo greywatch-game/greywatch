@@ -3,7 +3,7 @@
  * where the reload is: what the weapon does, where both hands are, where both
  * magazines are and what the action is doing, every frame.
  * Owns: the reload's choreography — its curves and its physics — and NOTHING
- * that is a scene object. `ViewModel` owns the nodes and writes what this
+ * that is a scene object. `ViewModel` owns the joints and writes what this
  * hands back onto them, the same split `Player` and the per-shot kick already
  * make: one side decides the motion, the other draws it.
  *
@@ -29,8 +29,11 @@
  * - It allocates nothing per frame. Every vector is a field, and the keyed
  *   tracks and impact lists are built once per style and ending, the first
  *   time each is played.
+ * - Its vectors and quaternions are `src/math`'s (`BABYLON_EXIT.md` X4.3b),
+ *   Babylon's arithmetic bit for bit, so the pose it hands the viewmodel's
+ *   joints is the number it handed the nodes.
  */
-import { Quaternion, Vector3 } from "@babylonjs/core";
+import { Quaternion, Vector3 } from "../math";
 import { CONFIG } from "../config";
 import { clamp01 } from "../core/math";
 import type { ReloadAction, ReloadStyleId } from "./weaponKit";
@@ -110,7 +113,7 @@ export class ReloadPose {
   readonly triggerRot = new Quaternion();
 
   /**
-   * The weapon's own magazine node: in the well until the old magazine moves,
+   * The weapon's own magazine joint: in the well until the old magazine moves,
    * gone while the hand is at the pouch, and the FRESH magazine from the
    * moment it is in the hand. Offsets from seated, rotation about its mouth.
    */
@@ -452,7 +455,7 @@ export class ReloadGesture {
   }
 
   /**
-   * Both magazines. The weapon's own node is the one in the well and then the
+   * Both magazines. The weapon's own joint is the one in the well and then the
    * FRESH one; the clone is the SPENT one, dropped free on a dry reload or
    * stripped out in the hand on a tactical one. They trade places on the frame
    * the old magazine first moves, where the two are identical and in the same

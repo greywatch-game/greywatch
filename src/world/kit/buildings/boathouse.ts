@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -89,8 +88,8 @@ import { SHOPLIT, offFace, framing, THATCH_PITCH, THATCH_DEPTH, WEATHERBOARD } f
  * One light, as before: a lantern hung from the middle truss. The one by the
  * boat door is glow only, the chapel's rule for fixtures past the first.
  */
-export function buildBoathouse(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "boathouse");
+export function buildBoathouse(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "boathouse");
   const w = 11;
   const d = 13;
   const h = 4.6;

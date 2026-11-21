@@ -7,7 +7,6 @@
  * variation comes from a builder's params, never `Math.random()`. Never
  * imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   ALLOY,
@@ -48,12 +47,11 @@ import {
  * On a slope it steps between piers, `buildStoneWall`'s way (`groundRun`).
  */
 export function buildCompoundWall(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "compound");
+  const b = new Build(mats, "compound");
   const len = p.length ?? 14;
   const h = p.height ?? 2.6;
   const skin = p.tint ?? MUDBRICK;
@@ -117,11 +115,10 @@ export function buildCompoundWall(
  * — and drawing it as one slab reads as a retaining wall.
  */
 export function buildBlastWall(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "blastwall");
+  const b = new Build(mats, "blastwall");
   const len = p.length ?? 12;
   const h = p.height ?? 3.4;
   const panels = Math.max(2, Math.round(len / 1.6));
@@ -150,11 +147,10 @@ export function buildBlastWall(
  * would be a wall, and this map has walls.
  */
 export function buildSandbags(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "sandbags");
+  const b = new Build(mats, "sandbags");
   const len = p.length ?? 6;
   const h = p.height ?? 1.15;
   const courses = Math.max(2, Math.round(h / 0.28));
@@ -210,12 +206,11 @@ export function buildSandbags(
  * a hitscan stopping in the sky.
  */
 export function buildPylon(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "pylon");
+  const b = new Build(mats, "pylon");
   const h = p.height ?? 8.4;
   /** Distance to the NEXT pole along local +X. 0 draws no span. */
   const span = p.length ?? 0;
@@ -267,7 +262,7 @@ export function buildPylon(
     // not to be — and Sarab's open ground rolls five metres over a swell, so
     // a run across one had cable hanging in mid-air at every second station.
     // `BuildCtx` already carries the terrain and the Y this placement was
-    // dropped to, so the rise is one sample and the editor gets it for free.
+    // dropped to, so the rise is one sample.
     let rise = 0;
     if (ctx) {
       const nx = ctx.x + span * Math.cos(ctx.rotY);

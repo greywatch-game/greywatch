@@ -4,7 +4,12 @@
  * `?nominimap` — and `?seed=`, which overrides no setting but the ROUND's
  * seed (`systems/RoundRandom.ts`), for every round of the session — and
  * `?bench=<map>`, which overrides the session itself: the page plays the
- * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`).
+ * benchmark on that map instead of offering a menu (`bench/BenchScript.ts`) —
+ * and `?nocull` and `?nofrustum`, which take our renderer's culls out, for an
+ * A/B on a device (`BABYLON_EXIT.md`), and `?cullcheck`, which reads those
+ * culls back on the device. (`?babylonworld`, the A/B against Babylon's
+ * world, went with Babylon's world meshes at X3.7b; the last build that has
+ * it is tagged `exit-babylonworld`.)
  * Owns: reading them once, validating each against its own table, the rule
  * that an override BEATS the setting it shadows, and the list of which ones a
  * capture must say were forced. Owns the URL-flag reader `FrameProfile` uses
@@ -22,6 +27,7 @@
  * be offered — `?nominimap` is a flag precisely because losing the map is not
  * a setting.
  */
+import type { CullMode } from "../render/ClusterCull";
 import { isVolumetricRung, type VolumetricRung } from "../shaders/Volumetrics";
 import { parseSeed } from "../systems/RoundRandom";
 import {
@@ -97,6 +103,21 @@ export class UrlOverrides {
    */
   readonly bench: string | null;
   /**
+   * `?nofrustum` — our culls keep everything the reach and the size gate
+   * keep, the frustum untested; `?nocull` — they keep EVERYTHING, the reach
+   * and the size gate off too (`render/ClusterCull.ts`'s `CullMode`). The
+   * other half of that A/B: whether a cull's decision or the draw after it is
+   * wrong. `?nocull` wins when both are set.
+   */
+  readonly cullMode: CullMode;
+  /**
+   * `?cullcheck` — our culls' verdicts read back off the GPU about once a
+   * second and replayed on the CPU, with the plane test re-run in each form
+   * it has been written in, on the glass (`render/CullCheck.ts`). The third
+   * half of the A/B: WHICH test a device's GPU gets wrong, and in which form.
+   */
+  readonly cullCheck: boolean;
+  /**
    * Which of the above the URL set, by the name a capture files it under —
    * `graphics.forced`, so a report off a device nobody here owns says which of
    * its numbers were somebody's experiment rather than the player's choice.
@@ -118,11 +139,15 @@ export class UrlOverrides {
     this.minimap = !urlFlag("nominimap");
     this.seed = parseSeed(urlParam("seed"));
     this.bench = urlParam("bench");
+    this.cullMode = urlFlag("nocull") ? "none" : urlFlag("nofrustum") ? "nofrustum" : "full";
+    this.cullCheck = urlFlag("cullcheck");
     const forced: string[] = [];
     if (this.giForced) forced.push("gi");
     if (this.shadowsForced) forced.push("shadows");
     if (this.volumetricsForced) forced.push("volumetrics");
     if (!this.minimap) forced.push("minimap");
+    if (this.cullMode !== "full") forced.push(this.cullMode === "none" ? "nocull" : "nofrustum");
+    if (this.cullCheck) forced.push("cullcheck");
     this.forced = forced;
   }
 

@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -62,12 +61,11 @@ import { BRONZE, GRANITE, GRANITE_DARK, KAYA, PAPER, SHU, SUMI } from "./palette
  * carried down to the ground under that post.
  */
 export function buildTorii(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "torii");
+  const b = new Build(mats, "torii");
   const span = p.width ?? 4.6;
   const h = p.height ?? 6;
   const color = p.tint ?? SHU;

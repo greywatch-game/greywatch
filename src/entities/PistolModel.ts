@@ -24,8 +24,10 @@
  * numbers. Units are the models' throughout: ~1.4 per metre, which puts this
  * weapon at 0.33 long against the rifle's 1.27.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
+import { createSphere } from "../geometry/primitives";
 import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Part } from "../world/parts";
 import {
   BODY,
   METAL,
@@ -37,6 +39,8 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * The grip's rake — the 1911's signature ~18° off vertical, measured off the
@@ -116,12 +120,13 @@ const PISTOL_EYE_RELIEF = 0.33;
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildPistol(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_pistol`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_pistol`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the barrel: the one part of the top half that does NOT recoil ---
   // Built on the frame, under the slide, and long enough to fill it: a slide
@@ -283,15 +288,14 @@ export function buildPistol(
   // The frame is finished. Merged before the slide is built, so nothing on the
   // slide can land in the frame's colour groups — the slide is the one half of
   // this weapon that moves.
-  const meshes = b.merge("pistol", root);
+  const meshes: ViewSegment[] = b.merge("pistol", root);
 
   // --- slide: flat-topped, its nose dropping over the recoil spring ---
-  // A node of its own (`WeaponParts.slide`), at identity, so a reload that ran
+  // A joint of its own (`WeaponParts.slide`), at identity, so a reload that ran
   // the weapon dry can hold it back on the slide stop and drop it home. The
   // sights are machined into it and hang off it below; so do the bushing and
   // the recoil-spring plug, which ride in its nose.
-  const slide = new TransformNode(`${prefix}_slide`, scene);
-  slide.parent = root;
+  const slide = b.joint(`${prefix}_slide`, root);
   b.slab("slide", BODY, [
     [0.143, -0.032],
     [0.143, SLIDE_TOP - 0.004],
@@ -342,15 +346,14 @@ export function buildPistol(
   b.shell("plug", METAL, 0.008, 0.004, 0.01, -0.021, 0.146, 10);
   meshes.push(...b.merge("pistolSlide", slide));
 
-  // --- the magazine, in a node of its own so the reload can drop it ---
+  // --- the magazine, in a joint of its own so the reload can drop it ---
   // The only magazine in the kit that is INSIDE the weapon: all a seated one
   // shows is the floorplate under the grip. So the body is built too, sized to
   // sit wholly within the grip's walls — invisible while it is home, and the
   // whole point of the animation the moment it slides out. It leaves along the
   // grip's own rake (`magDrop`), which at 18° off vertical is the difference
   // between a magazine coming out and one passing through the front strap.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   // Held clear of the grip's own walls on every face — a body sized flush with
   // the cavity would share its bottom plane with the grip and z-fight along it
   // the moment the floorplate below stopped covering the seam.
@@ -380,7 +383,6 @@ export function buildPistol(
   // reload, which has already broken the aim.
   const sight = buildFixedIrons(b, prefix, slide);
   meshes.push(...sight.meshes);
-  b.disposePivots();
 
   return {
     root,
@@ -420,10 +422,9 @@ export function buildPistol(
 function buildFixedIrons(
   b: WeaponBuild,
   prefix: string,
-  parent: TransformNode,
+  parent: Joint,
 ): SightAssembly {
-  const node = new TransformNode(`${prefix}_sight_iron`, b.scene);
-  node.parent = parent;
+  const node = b.joint(`${prefix}_sight_iron`, parent);
 
   // Rear: a low dovetailed body ramped up from the front — snag-free, the way
   // a carry sight is — and two posts, the notch being the gap between them.
@@ -470,21 +471,16 @@ function buildFixedIrons(
     { x: 0, z: FRONT_SIGHT_Z - 0.011 },
   ]) {
     const bead = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_sightDot`,
-        { diameter: 0.005, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_sightDot`, createSphere({ diameter: 0.005, segments: 6 })),
       node,
     );
     bead.position.set(dot.x, SIGHT_Y - 0.004, dot.z);
   }
 
-  const sightCenter = new TransformNode(`${prefix}_iron_sightCenter`, b.scene);
-  sightCenter.parent = node;
-  sightCenter.position = new Vector3(0, SIGHT_Y, REAR_SIGHT_Z);
-  // The builder has already parented its merged colour groups and its dots to
-  // `node`, so the node itself is the list — the same bookkeeping-free rule
+  const sightCenter = b.joint(`${prefix}_iron_sightCenter`, node);
+  sightCenter.position.set(0, SIGHT_Y, REAR_SIGHT_Z);
+  // The builder has already hung its merged colour groups and its dots from
+  // `node`, so the joint itself is the list — the same bookkeeping-free rule
   // `buildOptics` follows.
-  return { root: node, sightCenter, meshes: node.getChildMeshes(true) as Mesh[] };
+  return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }

@@ -1,19 +1,35 @@
 /**
  * Vehicle.ts — One vehicle: what it is made of physically, how it drives, where
  * its gun points, and what it feels of a round.
- * Owns: the hull's collider mesh, the `VehicleRig` hanging off it, the drive
- * state, the turret and gun angles, the CUPOLA gun's own two angles, both
- * weapons' clocks, which of its two seats are filled, and the health.
+ * Owns: the hull's collider box as plain fields (`pos`, `yaw`, `present`, the
+ * sweep's ellipsoid), the drive state, the turret and gun angles, the CUPOLA
+ * gun's own two angles, both weapons' clocks, which of its two seats are
+ * filled, the health, and the `HullPose` its joints are drawn at.
+ * Invariants:
+ * - **The SIMULATION and nothing else**: no
+ *   `@babylonjs/core`, no mesh, no rig, no scene — every vector is
+ *   `src/math`'s — so the authority builds the same hull a client does.
+ * - **Nothing it asks is read off a node.** Where the hull is, is `pos`;
+ *   whether it is on the field, `present`; where its three muzzles are, the
+ *   node chain replayed off `pos`, `yaw` and `shown` — what the joints hold AS
+ *   DRAWN, guards and all — bit for bit (`entities/hullFrame.ts`). `shown` is
+ *   written behind the guards the node writes had, and a view copies it.
+ * - **What it looks like is the client's** (`entities/VehicleView.ts`): the
+ *   body mesh, the rig, the belts, the masts and the paint. A view READS this
+ *   hull — `pos`, `yaw`, `present`, `alive`, `pose` — and is TOLD, through
+ *   one `HullPicture`, the four things a picture must hear as they happen;
+ *   nothing a picture is told reaches an outcome, and a hull with no picture
+ *   (the authority's) runs the identical arithmetic.
  * Owns NO rules about who is in it, when it respawns or what its shell does
  * when it lands — those are `VehicleSystem`'s and `Game`'s respectively, the
  * same split `Bot` has against `BattleSystem`.
  *
  * Two parts of it live in files of their own, and both are HANDED what they
- * read of the hull rather than reaching for it. `HullFlex` is the sprung
- * body's three springs and the whips — a picture, and nothing else. A
- * `FlightModel` is the rotor and the disc's attitude, built only for a kind
- * whose spec states `flight`; the hull's position, velocity and `lift` stay
- * here, because the ground path writes them too.
+ * read of the hull rather than reaching for it. `HullSprings` is the sprung
+ * body's three springs — on the muzzle's path, so simulated. A `FlightModel`
+ * is the rotor and the disc's attitude, built only for a kind whose spec
+ * states `flight`; the hull's position, velocity and `lift` stay here, because
+ * the ground path writes them too.
  *
  * ## TWO guns, two owners, and one world frame between them
  *
@@ -25,27 +41,29 @@
  * relative. `turretYaw` is world, so turning the hull under a laid gun does
  * not drag it; `mgYaw` is world for exactly the same reason one node further
  * out, so traversing the TURRET under a laid machine gun does not drag that
- * either. `aimMg` writes both differences onto the rig and nothing else in the
- * game ever sees a local angle.
+ * either. `aimMg` writes both differences into the pose a view draws the rig
+ * from, and nothing else in the game ever sees a local angle.
  *
  * The machine gun is stepped by `VehicleSystem` through `aimMg`/`setMg` rather
  * than inside `update`, because its owner and the hull's need not be the same
  * kind of thing — a person can drive a hull off the wire while a bot lays its
  * cupola gun on the authority. See `aimMg`.
  *
- * ## The one solid mesh in the game that MapBuilder did not make
+ * ## The one solid thing in the game that MapBuilder did not make
  *
- * Every other `metadata.solid` mesh is a collider proxy from `MapBuilder`, and
- * the rule in `CLAUDE.md` is that geometry added by any other path is invisible
- * to navigation. A hull is that geometry, deliberately, and it is the RAGDOLL
- * precedent rather than an exception to the world layer's:
+ * Every other collider is a box `MapBuilder` made, and the rule in `CLAUDE.md`
+ * is that geometry added by any other path is invisible to navigation. A hull
+ * is that geometry, deliberately, and it is the RAGDOLL precedent rather than
+ * an exception to the world layer's:
  *
- * - It is `solid`, so it is in both pick predicates. A round stops on it, a
- *   sightline breaks on it, the ground probe finds it, and a player can climb
- *   onto the deck. That is the whole of what a tank is to anything holding a
- *   rifle.
- * - It has `checkCollisions`, so `moveWithCollisions` — the player's, and the
- *   other tank's — is held out of it.
+ * - It is a box to every ray (`rayBox`, through `RayWorld.hulls`), both
+ *   questions: a round stops on it, a sightline breaks on it, and a player can
+ *   climb onto the deck (`deckAt`). That is the whole of what a tank is to
+ *   anything holding a rifle. A view's body MESH is no collider at all: never
+ *   `solid`, never pickable.
+ * - It is in every SWEEP — the player's and the other hulls' — because
+ *   `rayBox` is what `RayWorld.bodyNear` hands a sweep as well as what a ray
+ *   meets, behind the same gate (`hide` ends both).
  * - It emits NO `WorldBox`, so the nav graph, the cover bake, the obstacle
  *   field, the AO bake and the collision bake have never heard of it. Bots walk
  *   through a parked tank exactly as they walk through a corpse, and for the
@@ -54,7 +72,7 @@
  *
  * ## The collision sphere is on an ARM, so the hull is pushed out of walls
  *
- * `moveWithCollisions` sweeps a TRANSLATION and nothing else, and this vehicle
+ * The sweep moves a TRANSLATION and nothing else, and this vehicle
  * moves its own collider two other ways. The sphere rides `hull.length / 2 -
  * collideRadius` — 1.4 m — off the hull's centre (`aimCollider`), so the YAW
  * carries it round on that arm at up to `turnRate * 1.4`, through whatever the
@@ -72,27 +90,20 @@
  * ejects the hull at `drive.freeRate` off `ObstacleField.resolve`. See that
  * method, and `docs/vehicles.md`.
  *
- * ## ...and the sweep is handed a STREET rather than the map
+ * ## ...and the sweep is the game's own
  *
- * `moveWithCollisions` walks `scene.meshes` — every collidable mesh on the map,
- * up to `collisionRetryCount` times a call — which was the last whole-scene
- * walk in the game and, measured on Sarab's six hulls, **96% of everything the
- * vehicles cost**: 2.21 ms of the fleet's 2.30 a frame. `update` narrows it
- * through `body.surroundingMeshes`, which is Babylon's own field for exactly
- * this, off `map.collidables` — see `world/CollisionField.ts` for the grid and
- * `setGround` for how a hull gets one.
+ * `moveBody` over `map.collidables` (`world/CollisionField.ts`) — Babylon's
+ * `moveWithCollisions` ported, bit for bit, and fed the boxes near the hull
+ * rather than walking the scene's meshes. Walking the whole scene was once 96%
+ * of everything Sarab's fleet cost (2.21 ms of 2.30 a frame); a narrowed walk
+ * took it to 0.12 ms, and the port is cheaper per move than that narrowed
+ * walk was (`scripts/sweep-check.mjs` times the two side by side).
+ * `setGround` is how a hull gets one.
  *
- * **It is lossless only while the list is a SUPERSET of what the sweep can
- * reach, and `update` CHECKS that rather than trusting it** — a sphere that
- * began inside a box is EJECTED rather than swept, and an ejection is not
- * bounded by the step. A sweep that outran its list is thrown away and re-run
- * against the whole scene, which is the old code path, so the answer is the old
- * answer.
+ * ## ...and it may not ask the sweep for less than a millimetre
  *
- * ## ...and it may not ask the engine for less than a millimetre
- *
- * `moveWithCollisions` writes the position back only when the move exceeds
- * `CollisionsEpsilon`, and returns the mesh where it was otherwise. From rest
+ * The sweep writes the position back only when the move exceeds
+ * `COLLISIONS_EPSILON`, and leaves the hull where it was otherwise. From rest
  * the first frame asks for `accel * dt^2` — a third of a millimetre at 120 fps
  * — so the hull did not move, the blocked check called that walked-into-
  * something, and `s = 0.35 * (s + accel * dt)` pinned the drive at 0.021 m/s
@@ -130,7 +141,7 @@
  * budget decision as much as a design one.** The old single probe was
  * `scene.pickWithRay` with a `solid` predicate — the same call that used to make
  * `Player.probeGround` the most expensive thing the game did per frame, because
- * Babylon walks every mesh in the scene to answer it. Six of those is not a
+ * Babylon walked every mesh in the scene to answer it. Six of those is not a
  * thing that can be afforded; six bucket lookups over the collider boxes are
  * free by comparison, and the two had already been measured against each
  * other, with a VEHICLE named as the query's better first customer. The one
@@ -147,9 +158,10 @@
  *
  * **The chase camera still casts, and it still has to take its own hull out of
  * the answer first** — see `VehicleCamera.pullIn`, which is the only such query
- * a driver pays. It passes the hull as `RayWorld`'s `skip` now rather than
- * clearing `isPickable` around a `scene.pickWithRay`; the flag is still read,
- * by `rayBox`, and still for that reason.
+ * a driver pays. It passes the hull as `RayWorld`'s `skip` rather than
+ * clearing `isPickable` around a `scene.pickWithRay`, as do the dismount's
+ * floor test and a crew's sightline (`RayWorld.blocked`); there is no flag on
+ * the hull left to clear.
  *
  * ## It can also FLY, and it is the same ten contacts
  *
@@ -167,8 +179,12 @@
  * exactly as a tank is. `jolt` is the arrival — it was always "what the ground
  * did to the hull's vertical motion this frame", which on a machine that flies
  * is the whole of a touchdown, so the skids compress through
- * `HullFlex.flexHeave` with no new code and the crash check is a reading of a
- * number that was already there. And a hull nobody is in winds its rotor down,
+ * `HullSprings.flexHeave` with no new code and the crash check is a reading of a
+ * number that was already there (`crashCost`, `crash`). **That check charges a
+ * hull this class STEPS** — a bot's or nobody's; one a person flies is posed
+ * from their reports, and the core charges it off them through the same two
+ * methods and `restAt`, this file's plank asked of a reported position
+ * (`src/sim/reportedLanding.ts`). And a hull nobody is in winds its rotor down,
  * `lift` returns to 0, and the parked-hull skip stops the probe exactly as it
  * does for armour.
  *
@@ -181,7 +197,11 @@
  * `yaw`, the collider box and `center` are rules. The hull's PITCH and ROLL are
  * a picture: they lean the drawn vehicle onto the ground it stands on and the
  * collider never tilts with them, so nothing that shoots, aims or walks can
- * disagree with what it sees by more than the lean. `turretYaw` is a WORLD
+ * disagree with what it sees by more than the lean. **The one way the picture
+ * reaches an outcome is where a round LEAVES**: the turret rides the lean and
+ * the springs, so each muzzle is replayed off them as drawn (`shown`), and
+ * both are therefore simulated on the authority too — a direction is never
+ * read off them. `turretYaw` is a WORLD
  * angle rather than one relative to the hull, because everything that reads it
  * — the gun's direction, the marker on the HUD, the shell — wants it in the
  * world, and only the drawn node wants the difference.
@@ -203,7 +223,7 @@
  * had just been stood on.
  *
  * **There is a THIRD, it is a distance rather than an angle, and it shares the
- * other two's budget.** `HullFlex.flexHeave` moves `rig.sprung` in Y, so a
+ * other two's budget.** `HullSprings.flexHeave` moves `rig.sprung` in Y, so a
  * landing compresses onto the bump stop and a hull going light over a crest
  * lifts off its own tracks. It answers to what the GROUND did to the hull's
  * vertical motion and to nothing the driver asked for, which is why the other
@@ -217,48 +237,58 @@
  * hull leaning under the turret cannot carry the gun off the aim — which is
  * the whole of why the reticle can still not lie.
  *
- * `trackRun` is the other picture, and the one that is DERIVED rather than
+ * The belts are the other picture, and the one that is DERIVED rather than
  * decided: the drive is still one speed and one yaw rate, and the two track
- * speeds are read off them by the gauge. Nothing in the game may key off it —
- * a track that has run further than the hull has moved is a slipping track and
- * not a faster tank.
+ * speeds are read off them by the gauge — by the VIEW, which is told the speed,
+ * the yaw rate and the linkage each frame (`HullPicture.rolled`) and keeps the
+ * run itself. Nothing in the game may key off it — a track that has run
+ * further than the hull has moved is a slipping track and not a faster tank.
  *
  * ## The antennae, and why there is no physics engine in them
  *
  * The two whips are the third picture and the furthest out: they answer to the
  * acceleration the drive achieved (the suspension's own input), to how fast the
  * hull node they hang off is TURNING, and to the wind. That is two damped
- * springs a mast — `HullFlex.flexAntennae` — and it is deliberately not Havok.
+ * springs a mast — `HullWhips.step`, the client's — and it is deliberately not
+ * Havok.
  * The engine in this tree is stepped by hand for corpses and glass shards,
- * things nothing reads back and nothing steers; a hull is moved by
- * `moveWithCollisions` and ridden up over a kerb by `standOnGround`, which is a
+ * things nothing reads back and nothing steers; a hull is moved by the sweep
+ * and ridden up over a kerb by `standOnGround`, which is a
  * teleport to a solver, and a jointed chain hung off it would crack every time
  * a tank climbed a kerb. What is bought instead is a whip that is clamped,
  * tunable and free. See `docs/vehicles.md`.
  */
-import {
-  AbstractEngine,
-  type AbstractMesh,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { angleDelta } from "../core/math";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { DamageKind, ShotOptions } from "../systems/CombatSystem";
 import { UNDRAWN, type Rand } from "../systems/RoundRandom";
 import { rotateToLocalXZ, topFaceHeight, type LocalXZ } from "../world/boxGeometry";
 import type { WorldBox } from "../world/MapBuilder";
-import { narrowedMove, type CollisionField } from "../world/CollisionField";
+import {
+  COLLISIONS_EPSILON,
+  moveBody,
+  type CollisionField,
+  type SweepBody,
+} from "../world/CollisionField";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { RayHull } from "../world/RayWorld";
 import { TerrainField } from "../world/TerrainField";
 import type { Combatant, Team } from "./Combatant";
+import { Vector3, type Vector3Like, type Vector3Ref } from "../math";
 import { FlightModel } from "./FlightModel";
-import { HullFlex } from "./HullFlex";
-import type { VehicleRig } from "./vehicleRig";
+import {
+  HULL_MG_MUZZLE,
+  HULL_MG_SIGHT,
+  HULL_MUZZLE,
+  hullPointToRef,
+  newHullPose,
+  zeroHullPose,
+  type HullFrame,
+  type HullPoint,
+  type HullPose,
+} from "./hullFrame";
+import { DRIVER, GUNNER } from "./hullSeats";
+import { HullSprings } from "./HullSprings";
 import type { VehicleSpec } from "../config/vehicles";
 
 /** What the driver is asking for this frame. */
@@ -352,7 +382,7 @@ export interface GunAngles {
  *
  * It lives on the gun rather than in whoever pulls the trigger, because there
  * are two of those and they are in different PROCESSES: `Game` fires a
- * player's shell and `HeadlessGame` re-fires it, and two copies of a statement
+ * player's shell and `SimCore` re-fires it, and two copies of a statement
  * about what a shell is would be two things to keep in step across a wire whose
  * whole point is that they agree.
  */
@@ -391,84 +421,6 @@ function mgShotFor(spec: VehicleSpec, hull: Vehicle): ShotOptions {
     falloffFar: spec.mg.falloffFar,
     fromHull: hull,
   };
-}
-
-/**
- * The two jobs inside a hull, as an index into `Vehicle.seats`.
- *
- * **They are a PAIR and not a list**, which is why this is two constants and a
- * union rather than an enum that could grow: the driver's seat carries the
- * sticks and the main gun and the gunner's carries the cupola gun, and a third
- * would be a body with nothing to do. Everything that crosses the wire, the
- * roster or the HUD names a seat with one of these two numbers.
- */
-export type CrewSeat = 0 | 1;
-/** The sticks, the main gun, and the only seat that can move the hull. */
-export const DRIVER: CrewSeat = 0;
-/** The cupola gun, and nothing else at all. */
-export const GUNNER: CrewSeat = 1;
-
-/**
- * The two jobs, in the order they are filled: a hull gets a driver before it
- * gets a gunner.
- *
- * **That order is the rule, not a convenience.** A tank with a man on the
- * cupola gun and nobody at the sticks is a pillbox; a tank with a driver and
- * an empty cupola is a tank. So every sweep that fills a seat walks this list
- * and takes the first free one, which is also exactly what a player boarding
- * gets — see `chooseSeat` below, where the same rule is stated once for both
- * processes.
- *
- * **Here rather than in `VehicleCrew`, where it was, because it is what a
- * VEHICLE has and not what the AI does with one**: `Game.crewLine` walks it to
- * draw one entry per chair, which is how a hull with a seat count other than
- * two would draw the seats it actually has rather than the two a tank has.
- */
-export const SEATS: readonly CrewSeat[] = [DRIVER, GUNNER];
-
-/**
- * Who is in one chair, as far as a PERSON asking for it is concerned: nobody,
- * a bot (who may be turned out of it), or a person (who never is).
- */
-export type SeatHolder = "open" | "bot" | "player";
-
-/**
- * Which chair a person asking for `want` gets, or -1 for none — **the one
- * statement of the boarding rule, asked by the client to word its prompt and
- * by the authority to grant it**, so the chair a prompt names is the chair the
- * server seats you in. Two algorithms used to stand here, one per process, and
- * the client's read the crew off its own `VehicleCrew`, which in a match has
- * no crews in it: a full hull with a bot driving was offered as TAKE OVER GUN.
- *
- * In order: the chair asked for if it is free; the OTHER one if that is free;
- * the chair asked for if a bot holds it; the other if a bot holds that. The
- * last two are evictions — **a bot crew never denies the player their own
- * armour** — and the caller does the evicting, since what holds a bot is each
- * process's own business. A PERSON is never moved. A boarder from the ground
- * asks for `DRIVER`, which is what makes the first man aboard drive.
- *
- * `only` is a CROSSING: a player already in the hull naming the other chair
- * gets that chair or nothing, because the fall-back would be the chair they
- * just left and a swap against a bot gunner would put them back where they
- * started.
- *
- * Takes the two holders as values rather than a lookup so a caller asking
- * every frame allocates nothing.
- */
-export function chooseSeat(
-  driver: SeatHolder,
-  gunner: SeatHolder,
-  want: CrewSeat,
-  only = false,
-): CrewSeat | -1 {
-  const other: CrewSeat = want === DRIVER ? GUNNER : DRIVER;
-  const wanted = want === DRIVER ? driver : gunner;
-  const otherHeld = want === DRIVER ? gunner : driver;
-  if (wanted === "open") return want;
-  if (!only && otherHeld === "open") return other;
-  if (wanted === "bot") return want;
-  if (!only && otherHeld === "bot") return other;
-  return -1;
 }
 
 /** A tank standing still, for the frames nobody is driving one. */
@@ -610,15 +562,129 @@ function slewRate(
   return rate + Math.max(-step, Math.min(step, want - rate));
 }
 
-export class Vehicle implements Combatant, RayHull {
-  /** The collider box, and the thing that MOVES. See the header. */
-  readonly body: Mesh;
-  readonly rig: VehicleRig;
+/**
+ * What a PICTURE of a hull must be told as it happens, rather than read off it
+ * afterwards — the client's `VehicleView`, and on the authority nobody.
+ *
+ * **Four events, and each is here because polling would get it wrong.** A
+ * placing resets a rig the simulation may step again before the view next
+ * looks; a shot cracks the masts once, between two steps; and the belts and
+ * the whips are integrators, which must see every step the hull takes with
+ * that step's own numbers. Everything else a view needs — where the hull is,
+ * whether it is on the field, whether it has burned, what its joints hold — is
+ * STATE, and the view reads it.
+ *
+ * **Nothing a picture is told may come back.** Every argument is a number the
+ * hull has already decided, each call is made after it has, and a hull with no
+ * picture runs the same arithmetic to the bit — which is the whole of why the
+ * authority, which builds none, fights the same fight.
+ */
+export interface HullPicture {
+  /** A fresh hull is on its hardstanding (`placeAt`): the rig back to rest. */
+  placed(): void;
+  /** The main gun has fired (`fireGun`): the masts crack. */
+  kicked(): void;
   /**
-   * What the hull's own mass does to the drawing — the sprung body's three
-   * springs and the whips. A picture and nothing else; see `HullFlex`.
+   * The hull has been destroyed (`wreck`): the charred paint goes on. Told
+   * rather than read off `alive`, because the fight that wrecks a hull runs
+   * AFTER the frame's view update, and a poll would paint it a frame late.
    */
-  private readonly flex: HullFlex;
+  wrecked(): void;
+  /**
+   * The running gear's frame — what the belts and the wheels are drawn off.
+   * `moved` is whether the hull moved or turned; `linkage` is true when
+   * `steer` is the driver's LINKAGE (`update`), whose change alone redraws the
+   * wheels, and false when it is derived off the wire's motion
+   * (`updateRemote`), which redraws them only when something moved.
+   */
+  rolled(
+    dt: number,
+    speed: number,
+    yawRate: number,
+    steer: number,
+    rotorRun: number,
+    moved: boolean,
+    linkage: boolean,
+  ): void;
+  /**
+   * The hull's own mass has been stepped: what the whips bend against — the
+   * drive's acceleration, the lateral one, and the mast FEET's attitude (the
+   * ground lean and the springs, summed as held, not as drawn).
+   */
+  flexed(
+    dt: number,
+    accel: number,
+    lateral: number,
+    footPitch: number,
+    footRoll: number,
+  ): void;
+}
+
+export class Vehicle implements Combatant, RayHull {
+  /**
+   * Where the collider box's CENTRE is — the hull's position, and the one
+   * thing about it that MOVES. Everything the hull is answered by reads this:
+   * `rayBox`, the sweep (through `sweeper`), the ten contacts, the push-out,
+   * the three muzzles. `center` is the exported copy, and a view's body mesh
+   * a follower placed here.
+   */
+  readonly pos = new Vector3();
+  /**
+   * The sweep's ellipsoid — its three radii, axis-aligned, and where its centre
+   * sits from `pos`. The OFFSET is written per frame, because it carries the
+   * sphere to the leading end of the hull; see `aimCollider`.
+   */
+  private readonly ellipsoid = new Vector3();
+  private readonly ellipsoidOffset = new Vector3();
+  /**
+   * The hull as `moveBody` sweeps it: its own position and ellipsoid, the same
+   * three objects rather than copies, so a kept move lands on `pos` directly.
+   */
+  private readonly sweeper: SweepBody = {
+    position: this.pos,
+    ellipsoid: this.ellipsoid,
+    ellipsoidOffset: this.ellipsoidOffset,
+  };
+  /**
+   * Is this hull on the field at all? True from `placeAt` until `hide` — a
+   * WRECK is still present, because a burnt-out hull in the street is cover —
+   * and the one gate every ray, every sweep, the deck and the crush read
+   * through `rayBox`. A view's body mesh follows it (enabled and pickable
+   * exactly while it holds); nothing here reads either flag.
+   */
+  get present(): boolean {
+    return this.isPresent;
+  }
+  private isPresent = true;
+  /**
+   * What the joints on the way to each muzzle hold, AS DRAWN — the ground
+   * lean, the springs, the turret's local yaw and the three gun angles, each
+   * written behind the guard its node write had. The three muzzles are
+   * replayed off this (`entities/hullFrame.ts`), and a view copies it onto the
+   * rig (`pose`). `HullSprings` writes the `sprung` channels.
+   */
+  private readonly shown = newHullPose();
+  /**
+   * The joints as drawn, for a VIEW to copy onto its nodes and for nothing
+   * else to write. See `shown`.
+   */
+  get pose(): Readonly<HullPose> {
+    return this.shown;
+  }
+  /** This kind's joints and extents, the model's numbers. See `HullFrame`. */
+  readonly frame: HullFrame;
+  /**
+   * What the hull's own mass does to its sprung body — three springs, on the
+   * muzzle's path. See `HullSprings`.
+   */
+  private readonly springs: HullSprings;
+  /**
+   * Who is drawing this hull, told the four things in `HullPicture` as they
+   * happen. Null on the authority, which draws nothing; set by the client's
+   * `VehicleViews` when it builds the view, and nothing here reads anything
+   * back from it.
+   */
+  picture: HullPicture | null = null;
   /**
    * The rotor and the disc — null on a hull that cannot fly, which is
    * `spec.flight` resolved once, the same bargain `flies` makes. See
@@ -770,33 +836,6 @@ export class Vehicle implements Combatant, RayHull {
   /** Along the hull's own forward. Negative is reverse. */
   speed = 0;
   /**
-   * How far each track has run over the ground, in metres, left then right.
-   *
-   * **A PICTURE, and the only piece of drive state that is.** Nothing reads it
-   * but `setTrackRun`; the drive itself is one speed and one yaw, exactly as it
-   * was before the tracks moved. What it costs to keep is two additions a
-   * frame, and what it buys is the one thing a hull sliding along the street on
-   * a static band cannot do — look driven rather than dragged.
-   *
-   * The split is the tank's, not the drive's: a hull turning at `w` runs its
-   * outer track faster than its inner one by `w * TRACK_GAUGE / 2`, so a
-   * neutral-steer pivot (which a hull whose `steerAtRest` is 1 can do at a
-   * standstill, and which is the only kind that ever reaches this line with no
-   * speed on it) comes out as the two tracks going opposite ways, and a hull that is being STOPPED by
-   * something still runs them, because `speed` is what the drive achieved.
-   */
-  private readonly trackRun: [number, number] = [0, 0];
-  /**
-   * The stick position the running gear was last DRAWN at, and nothing else —
-   * no part of the drive reads it.
-   *
-   * It exists so the skip in `update` can stay the physical question it is
-   * ("has this hull moved or turned?") while still letting a parked vehicle's
-   * wheels answer the stick. Reset with the tracks, because a respawned hull
-   * is drawn straight.
-   */
-  private steerShown = 0;
-  /**
    * Where the STEERING has actually got to, -1..1, as against where the driver
    * is asking for it — see `steerTo`.
    */
@@ -832,7 +871,7 @@ export class Vehicle implements Combatant, RayHull {
   private groundRollTarget = 0;
   /**
    * What the ground did to the hull's own vertical velocity this frame, in
-   * m/s, written by `standOnGround` and spent by `HullFlex.flexHeave`.
+   * m/s, written by `standOnGround` and spent by `HullSprings.flexHeave`.
    *
    * Held as a field rather than passed because a WRECK spends it too: a hull
    * killed off a kerb still falls, still lands and still settles on its
@@ -865,13 +904,11 @@ export class Vehicle implements Combatant, RayHull {
    * every frame and nothing about the drive changed.
    *
    * **It stays horizontal on every kind.** The vertical is `standOnGround`'s
-   * alone: two owners on `body.position.y` would have the collision ellipsoid
+   * alone: two owners on `pos.y` would have the collision ellipsoid
    * (whose floor sits `climbHeight/2` up) stopping a descent that the plank
    * then puts back, once a frame, for ever.
    */
   private readonly vel = new Vector3();
-  /** What was last drawn, so a turning disc opens the `stirred` gate. */
-  private rotorShown = 0;
   private velY = 0;
   /**
    * How fast the ground under the tracks actually moved the hull this frame,
@@ -989,21 +1026,11 @@ export class Vehicle implements Combatant, RayHull {
    */
   private obstacles: ObstacleField | null = null;
   /**
-   * The collidable MESHES, bucketed — what `moveWithCollisions` is narrowed to.
-   *
-   * Null until a map hands one over, and a hull with none sweeps the whole
-   * scene exactly as it always did. That fallback is a correctness floor and
-   * not a mode: it is slow rather than wrong, which is the right way round for
-   * a field nothing but `installMap` is supposed to leave unset.
+   * The sweep the hull moves by (`world/CollisionField.ts`). Null only before
+   * `setGround`, which `VehicleSystem.build` calls the moment the hull is
+   * made; a hull with none would step unobstructed.
    */
   private collidables: CollisionField | null = null;
-  /**
-   * The list handed to `body.surroundingMeshes` each sweep — this hull's own,
-   * not shared, because Babylon holds the array on the mesh across the call and
-   * two hulls sweeping off one scratch would be the second one's street under
-   * the first one's tracks.
-   */
-  private readonly nearby: AbstractMesh[] = [];
   // Scratch. This runs every frame a tank exists; nothing below allocates.
   private readonly step = new Vector3();
   /** Where the push-out would put the hull. See `freeFromWalls`. */
@@ -1022,12 +1049,11 @@ export class Vehicle implements Combatant, RayHull {
   private clearing = false;
 
   constructor(
-    scene: Scene,
-    mats: CelMaterialFactory,
     readonly team: Team,
     /**
-     * WHAT this hull is: what to call it, every number it runs on, and the
-     * function that draws it.
+     * WHAT this hull is: what to call it, every number it runs on, and where
+     * its joints are. Never what it looks like — that is the client's
+     * (`entities/vehicleModels.ts`), and a hull has never heard of it.
      *
      * **Handed in rather than reached for**, because a `Vehicle` is one hull of
      * whatever KIND its hardstanding named and this file may not know which —
@@ -1036,21 +1062,18 @@ export class Vehicle implements Combatant, RayHull {
      * kind becomes one of these, and `VehicleSystem.build` is its only caller.
      *
      * Stated structurally rather than imported as `VehicleType`, so the
-     * dependency runs one way: the registry knows about the models, and the
+     * dependency runs one way: the registry knows about the frames, and the
      * hull knows about neither.
      */
     private type: {
       readonly name: string;
       readonly spec: VehicleSpec;
-      readonly build: (
-        scene: Scene,
-        mats: CelMaterialFactory,
-        team: Team,
-      ) => VehicleRig;
+      readonly frame: HullFrame;
     },
   ) {
     const t = this.type.spec;
     this.spec = t;
+    this.frame = this.type.frame;
     this.name = this.type.name;
     this.health = t.maxHealth;
     this.hitRadius = t.hitRadius;
@@ -1066,34 +1089,21 @@ export class Vehicle implements Combatant, RayHull {
         : t.drive.climbSlope * t.drive.maxSpeed + t.drive.launchSpeed;
     // `this` is handed in so the round can be taken out of its OWN hull's wall
     // query — see `ShotOptions.fromHull`. It is only a reference: nothing here
-    // calls `rayBox`, and the collider two lines below is what it will read.
+    // calls `rayBox`.
     this.shellShot = shellShotFor(t, this);
     this.mgShot = mgShotFor(t, this);
-    this.body = MeshBuilder.CreateBox(
-      `hull-body-${team}`,
-      { width: t.hull.width, height: t.hull.height, depth: t.hull.length },
-      scene,
-    );
-    this.body.isVisible = false;
-    this.body.isPickable = true;
-    this.body.checkCollisions = true;
-    // Both predicates, on purpose: a hull is somewhere a body may not be AND
-    // something a round stops on. Neither `porous` nor `rayOnly` — those two
-    // describe a fence, which is a thing that is one to a body and the other to
-    // a bullet, and a tank is both to both.
-    this.body.metadata = { solid: true };
-    // A circle, because Babylon's collision ellipsoid does not turn with the
-    // mesh — see `CONFIG.vehicles.tank.drive.collideRadius`.
+    // A circle, because the sweep's ellipsoid does not turn with the hull —
+    // see `CONFIG.vehicles.tank.drive.collideRadius`.
     //
     // **Its floor sits a CLIMB HEIGHT above the tracks, and that is what makes
-    // a tank drive over things.** `moveWithCollisions` has no notion of
+    // a tank drive over things.** The sweep has no notion of
     // climbing: it slides along a vertical face whatever its height, so a hull
     // whose collider reached the ground would be stopped dead by a 0.3 m kerb
     // however generous the ground query was. Lifting the floor means anything
     // shorter than `climbHeight` is simply not in the way horizontally, and
     // `standOnGround` — which accepts a surface from exactly the same band —
-    // then rides the hull up over it. It is the same trick the player's capsule
-    // plays with its own 5 cm, at the scale tracks deserve.
+    // then rides the hull up over it. It is the same trick the player's sweep
+    // ellipsoid plays with its own 5 cm, at the scale tracks deserve.
     //
     // What it costs is that the bottom `climbHeight` of the hull is not a
     // collider: a tank shoulders THROUGH the bottom of a barrier for the few
@@ -1103,26 +1113,20 @@ export class Vehicle implements Combatant, RayHull {
     // The OFFSET is written per frame rather than here, because it carries the
     // sphere to the leading end of the hull and that is a world direction that
     // turns with the tank. See `aimCollider`.
-    this.body.ellipsoid = new Vector3(
+    this.ellipsoid.set(
       t.drive.collideRadius,
       (t.hull.height - t.drive.climbHeight) / 2,
       t.drive.collideRadius,
     );
-    this.body.ellipsoidOffset = new Vector3(0, t.drive.climbHeight / 2, 0);
+    this.ellipsoidOffset.set(0, t.drive.climbHeight / 2, 0);
 
-    this.rig = this.type.build(scene, mats, team);
-    this.rig.root.parent = this.body;
-    // The rig is drawn with `y = 0` at the bottom of the tracks and the
-    // collider box is centred on the hull, so the model hangs half a hull
-    // below the box's own origin.
-    this.rig.root.position.y = -t.hull.height / 2;
-    this.flex = new HullFlex(this.rig, t);
+    this.springs = new HullSprings(t, this.frame, this.shown);
     this.flight = t.flight !== null ? new FlightModel(t.flight, t.drive) : null;
   }
 
   /**
    * Hands the hull the world it stands on: the collider boxes it rides over,
-   * the heightfield under them, and the same colliders as MESHES for the sweep.
+   * the heightfield under them, and the sweep it drives by.
    *
    * The first two in one call because a contact takes the higher of the two and
    * a hull holding one without the other answers half a question — the boxes
@@ -1131,9 +1135,9 @@ export class Vehicle implements Combatant, RayHull {
    * The third is the same collider set a third way round and is here rather
    * than in a setter of its own for the same reason: it is a fact about the
    * world this hull is standing in, it arrives from `installMap` with the other
-   * two, and a hull that had the boxes but not the meshes would be one whose
-   * ground probe knew about a wall its own drive was pricing against the whole
-   * map. See `world/CollisionField.ts`.
+   * two, and a hull that had the boxes but not the sweep would be one whose
+   * ground probe knew about a wall its drive could not meet. See
+   * `world/CollisionField.ts`.
    */
   setGround(
     terrain: TerrainField,
@@ -1151,10 +1155,11 @@ export class Vehicle implements Combatant, RayHull {
    *
    * Everything a round could have left behind is written here rather than at
    * the moment of destruction, for the reason `Player.fullReset` gives: the
-   * rig is pooled and never disposed, so the only guarantee worth having is
-   * that what comes BACK is clean.
+   * hull and its rig are pooled and never disposed, so the only guarantee
+   * worth having is that what comes BACK is clean. The rig's half of that is
+   * the picture's, told on the same call (`HullPicture.placed`).
    */
-  placeAt(pos: Vector3, yaw: number): void {
+  placeAt(pos: Vector3Like, yaw: number): void {
     const t = this.spec;
     this.alive = true;
     this.health = t.maxHealth;
@@ -1170,20 +1175,16 @@ export class Vehicle implements Combatant, RayHull {
     this.mgRideYaw = yaw;
     this.mgNextT = 0;
     this.speed = 0;
-    this.trackRun[0] = 0;
-    this.trackRun[1] = 0;
-    this.steerShown = 0;
     this.steerHeld = 0;
     this.groundPitch = 0;
     this.groundRoll = 0;
-    this.flex.reset();
+    this.springs.reset();
     this.jolt = 0;
     this.velY = 0;
     this.riseRate = 0;
     this.vel.setAll(0);
     this.lift = 0;
     this.flight?.reset();
-    this.rotorShown = 0;
     this.lastTarget = pos.y + t.hull.height / 2;
     this.grounded = true;
     this.climbOwed = 0;
@@ -1197,48 +1198,30 @@ export class Vehicle implements Combatant, RayHull {
     this.seats[GUNNER] = false;
     this.floorY = pos.y;
     this.needsGround = true;
-    this.body.position.set(pos.x, pos.y + t.hull.height / 2, pos.z);
-    this.body.rotation.y = yaw;
+    this.pos.set(pos.x, pos.y + t.hull.height / 2, pos.z);
     // The sphere with it, or a fresh hull stands on its hardstanding carrying
     // the offset the LAST one's heading left behind — which nothing would
     // notice until the first frame somebody drove it. Everything a round could
     // have left behind is written here, and this is one of them.
     this.aimCollider();
-    // A fresh hull is solid again — destruction cleared this, and the pooled
-    // mesh is the same one. See `destroy`.
-    this.body.metadata = { solid: true };
-    this.body.checkCollisions = true;
-    this.body.isPickable = true;
-    this.rig.reset();
-    this.body.setEnabled(true);
+    // A fresh hull is on the field again — `hide` cleared this, and the pooled
+    // hull is the same one.
+    this.isPresent = true;
+    // The joints back to rest: the muzzles are read off the record, and a
+    // fresh rig's every joint is zero — which is what the picture puts its rig
+    // back to on the same call.
+    zeroHullPose(this.shown);
     this.sync();
-  }
-
-  /** Takes the hull off the field outright — the frame after a wreck is done. */
-  hide(): void {
-    this.body.setEnabled(false);
-    this.body.checkCollisions = false;
-    this.body.isPickable = false;
+    this.picture?.placed();
   }
 
   /**
-   * Takes the hull out of the world. Called only by `VehicleSystem.build`,
-   * which is to say once per map install.
-   *
-   * **Never `dispose(false, true)`.** Every material on this rig came out of
-   * `CelMaterialFactory`'s shared per-colour cache (`mats.get`), which is the
-   * same cache the WORLD is painted from — so the second flag disposes paint
-   * that the map's own meshes are holding, and the factory hands the dead
-   * material out again on the next `get` because nothing takes it back out of
-   * the cache. The failure is silent and it is not local: a `ShaderMaterial`
-   * that has been disposed never reports ready, and Babylon skips a mesh whose
-   * material is not ready, so most of the city simply stops being drawn on the
-   * second round of a map that has armour on it. The rig's meshes are this
-   * hull's; the paint on them is everybody's.
+   * Takes the hull off the field outright — the frame after a wreck is done.
+   * Out of every ray, every sweep, the deck and the crush at once, because all
+   * of them ask `rayBox`, which asks `present`.
    */
-  dispose(): void {
-    this.rig.root.dispose(false);
-    this.body.dispose();
+  hide(): void {
+    this.isPresent = false;
   }
 
   /**
@@ -1413,13 +1396,13 @@ export class Vehicle implements Combatant, RayHull {
    * answering at all. Absent, it is the skyline, which is every kind of ground
    * this game has but one.
    */
-  washTo(out: Vector3, floor = -Infinity): number {
+  washTo(out: Vector3Ref, floor = -Infinity): number {
     const fl = this.flight;
     if (!fl || !this.alive) return 0;
     const f = fl.spec;
     const power = fl.rotorPower();
     if (power <= 0) return 0;
-    const p = this.body.position;
+    const p = this.pos;
     const ground = Math.max(this.skylineAt(p.x, p.z), floor);
     const clear = p.y - this.spec.hull.height / 2 - ground;
     if (clear >= f.washHeight) return 0;
@@ -1429,7 +1412,7 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /** Where the gun actually points, in the world. NOT where the player is looking. */
-  gunDirToRef(out: Vector3): Vector3 {
+  gunDirToRef<T extends Vector3Ref>(out: T): T {
     const cp = Math.cos(this.gunPitch);
     return out.set(
       cp * Math.sin(this.turretYaw),
@@ -1447,27 +1430,18 @@ export class Vehicle implements Combatant, RayHull {
    * unreachable, and a `Vector3` nobody reads is a cheaper way to say that than
    * a nullable every call site has to unwrap.
    *
-   * **The matrix is FORCED, and that is `narrowedMove`'s trap one level down
-   * the rig rather than a tidy-up.** `getAbsolutePosition` computes the world
-   * matrix itself, but only if the node reports itself out of sync — and a
-   * TransformNode's own test never fails on a moved position (Babylon's
-   * `Vector3` carries no dirty flag), so what actually invalidates a rig joint
-   * on a CLIENT is its PARENT having been recomputed by the render walk, which
-   * bumps `_childUpdateId`. **The AUTHORITY never renders**, so nothing ever
-   * bumped it: the first read of this muzzle computed a correct answer and
-   * every read afterwards, for the life of the process, returned that same
-   * point. Measured on Sarab over a headless round — a hull driven to
-   * (115, -26) still fired every shell from the (-192, -217) hardstanding it
-   * spawned on, `fireHullGun` casting the round's ray from there and
-   * `VehicleCrew.lay` solving the gun's bearing from there. Forcing it walks
-   * the chain up to the hull (`computeWorldMatrix(true)` recurses into the
-   * parent WITH the force) and costs a client nothing but the compose it was
-   * about to do anyway.
+   * **It is ARITHMETIC, off the hull's own fields** (`entities/hullFrame.ts`):
+   * the float32 node chain from the collider box down to the muzzle, replayed
+   * off `pos`, `yaw`, the drawn pose and the kind's frame, bit for bit what
+   * `muzzle.computeWorldMatrix(true)` returns off the rig — a forced read
+   * walks every ancestor, so it is the FRESH chain. There is no node in it to
+   * force, which is the point: an UNFORCED read off a rig that never renders
+   * answers with the first value it ever computed for the life of the process
+   * (a hull driven to (115, -26) on Sarab still fired every shell from the
+   * (-192, -217) hardstanding it spawned on).
    */
-  muzzleToRef(out: Vector3): Vector3 {
-    const muzzle = this.rig.muzzle ?? this.rig.turret;
-    muzzle.computeWorldMatrix(true);
-    return out.copyFrom(muzzle.getAbsolutePosition());
+  muzzleToRef<T extends Vector3Ref>(out: T): T {
+    return this.pointToRef(HULL_MUZZLE, out);
   }
 
   /**
@@ -1482,7 +1456,7 @@ export class Vehicle implements Combatant, RayHull {
    * axis at the camera is what keeps this the one place a lay becomes a
    * direction.
    */
-  mgDirToRef(out: Vector3, pitchOffset = 0): Vector3 {
+  mgDirToRef<T extends Vector3Ref>(out: T, pitchOffset = 0): T {
     const pitch = this.mgPitch + pitchOffset;
     const cp = Math.cos(pitch);
     return out.set(
@@ -1494,29 +1468,42 @@ export class Vehicle implements Combatant, RayHull {
 
   /**
    * The cupola gun's muzzle in world space: where a round starts and its flash
-   * is lit. Forced for `muzzleToRef`'s reason, and it is the same bug — on the
-   * authority `fireHullMg` cast every belt round from the hardstanding too.
+   * is lit. Arithmetic for `muzzleToRef`'s reason — on the authority, as a
+   * node read, `fireHullMg` once cast every belt round from the hardstanding.
    */
-  mgMuzzleToRef(out: Vector3): Vector3 {
-    this.rig.mgMuzzle.computeWorldMatrix(true);
-    return out.copyFrom(this.rig.mgMuzzle.getAbsolutePosition());
+  mgMuzzleToRef<T extends Vector3Ref>(out: T): T {
+    return this.pointToRef(HULL_MG_MUZZLE, out);
   }
 
   /**
    * Where the gunner's eye goes when he puts the sight up: the optic head this
    * hull draws, in world space. `mgMuzzleToRef`'s twin one fitting along, and
-   * forced for the same reason — `VehicleCamera` is a client, but a node that
-   * is merely MOVED never reports itself out of sync and the cost is a compose
-   * the frame was about to do anyway.
+   * arithmetic the same way — the chain down to `rig.mgSight`, replayed.
    *
-   * **It is the RIG's answer and not a number the camera holds**, which is the
-   * whole of why the three kinds need no branch between them: a sight is a
-   * fitting, the model that draws the fitting is what says where it is, and
+   * **It is the MODEL's answer and not a number the camera holds**, which is
+   * the whole of why the three kinds need no branch between them: a sight is
+   * a fitting, the model that draws the fitting states where it is
+   * (`HullFrame.mgSightAt`, the offset its node is placed from), and
    * `VehicleRig.mgSight` carries the two clearances it has to keep.
    */
-  mgSightToRef(out: Vector3): Vector3 {
-    this.rig.mgSight.computeWorldMatrix(true);
-    return out.copyFrom(this.rig.mgSight.getAbsolutePosition());
+  mgSightToRef<T extends Vector3Ref>(out: T): T {
+    return this.pointToRef(HULL_MG_SIGHT, out);
+  }
+
+  /** The three points, off `pos`, `yaw`, the drawn pose and the frame. */
+  private pointToRef<T extends Vector3Ref>(point: HullPoint, out: T): T {
+    const p = this.pos;
+    return hullPointToRef(
+      this.frame,
+      p.x,
+      p.y,
+      p.z,
+      this.yaw,
+      -this.spec.hull.height / 2,
+      this.shown,
+      point,
+      out,
+    );
   }
 
   /** Is the belt-fed gun's own rate limit spent? `fireMg`'s gate, asked outside. */
@@ -1631,7 +1618,8 @@ export class Vehicle implements Combatant, RayHull {
   }
 
   /**
-   * The cupola gun's two nodes, from the world angles above.
+   * The cupola gun's two joints, from the world angles above, into the pose
+   * (`rig.mgMount` and `rig.mgGun` as a view draws them).
    *
    * Drawn relative to the TURRET and held in the world, exactly as the main
    * gun is drawn relative to the hull and held in the world — traversing the
@@ -1639,10 +1627,11 @@ export class Vehicle implements Combatant, RayHull {
    * whole of what `mgYaw` being a world angle buys.
    */
   private drawMg(): void {
-    this.rig.mgMount.rotation.y = angleDelta(this.turretYaw, this.mgYaw);
+    const s = this.shown;
+    s.mgMountY = angleDelta(this.turretYaw, this.mgYaw);
     // A positive X rotation tips a box's +Z face DOWN, so the elevation is the
     // negative of it — the main gun's own convention one node along.
-    this.rig.mgGun.rotation.x = -this.mgPitch;
+    s.mgGunX = -this.mgPitch;
   }
 
   /**
@@ -1680,13 +1669,13 @@ export class Vehicle implements Combatant, RayHull {
     // before the gun was laid.
     //
     // The bearing is the turret's LOCAL yaw, which the drawn node already
-    // carries, and each term below is that one vector resolved onto the axis
-    // it acts on. ELEVATION is deliberately not in it: the gun's arc is -8 to
+    // carries (`shown.turretY`, written with it), and each term below is that
+    // one vector resolved onto the axis it acts on. ELEVATION is deliberately not in it: the gun's arc is -8 to
     // +18 deg, so the horizontal share of the recoil never falls below 95%,
     // and the vertical remainder would be a HEAVE — which the couple argued
     // for under `suspension.gunKick` says a body standing on tracks does not
     // feel.
-    const phi = this.rig.turret.rotation.y;
+    const phi = this.shown.turretY;
     const along = Math.cos(phi);
     const across = Math.sin(phi);
     // The shove, spent against the drive over the next second. Only the share
@@ -1697,9 +1686,32 @@ export class Vehicle implements Combatant, RayHull {
     // not driven sideways by its own gun either.
     this.speed -= g.recoilSpeed * along;
     // ...and the hull ROCKS and the MASTS crack, which are a second and a third
-    // fact off the same bearing. Both are pictures, so both are `HullFlex`'s.
-    this.flex.kick(along, across);
+    // fact off the same bearing. The rock is the springs', which are on the
+    // muzzle's path; the crack is the picture's alone.
+    this.springs.kick(along, across);
+    this.picture?.kicked();
     return true;
+  }
+
+  /**
+   * This hull's half of a main-gun round fired somewhere else — a POSED
+   * hull's (`updateRemote`), whose gate and round were the authority's, told
+   * by the wire's `cannon` (`Game.onNetEvent`).
+   *
+   * `fireGun`'s three facts that a hull cannot work out from where it ended
+   * up: the loader's clock restarting (the HUD's `loadProgress`), the sprung
+   * body rocking off the gun's bearing, and the masts cracking. It stops
+   * there, because the shove on `speed` is measured from the ground the real
+   * hull covered; a hull this page PREDICTS fired through `fireGun` itself.
+   * Decides nothing.
+   */
+  mirrorShot(): void {
+    const g = this.spec.gun;
+    if (!g || !this.armed || !this.alive) return;
+    this.reloadT = g.cooldown;
+    const phi = this.shown.turretY;
+    this.springs.kick(Math.cos(phi), Math.sin(phi));
+    this.picture?.kicked();
   }
 
   /**
@@ -1709,7 +1721,7 @@ export class Vehicle implements Combatant, RayHull {
    * Returns whether this hit finished the hull, exactly as a body's does, so
    * `CombatSystem.fire` and `GrenadeSystem.blastAt` need no arm for vehicles.
    */
-  takeDamage(amount: number, _from?: Vector3, kind: DamageKind = "bullet"): boolean {
+  takeDamage(amount: number, _from?: Vector3Like, kind: DamageKind = "bullet"): boolean {
     if (!this.alive) return false;
     // A hull in a match is drawn from the wire and damaged by nobody but the
     // authority — see `predicted`. Refused rather than merely unrecorded, so
@@ -1729,7 +1741,7 @@ export class Vehicle implements Combatant, RayHull {
   /**
    * The hull burns. It KEEPS its collider for `wreckTime` — a wreck in the
    * street is cover, and that is the whole reason destruction is not simply
-   * `setEnabled(false)` — but it stops being a target: `alive` is false, so it
+   * `hide` — but it stops being a target: `alive` is false, so it
    * leaves every list `hittablesAgainst` builds, and bots stop shooting a thing
    * that is already dead.
    */
@@ -1780,8 +1792,14 @@ export class Vehicle implements Combatant, RayHull {
     // moment it most obviously does.
     this.flight?.stop();
     this.lift = 0;
+    // The charred repaint is the view's, TOLD on the same call: while the
+    // page hosted its own core, the battle, the grenades and the rockets that
+    // wreck a hull all stepped after the frame's `VehicleViews.update`, so a
+    // view reading `alive` painted the wreck on the next frame and drew one
+    // frame of a live hull burning. A page posing hulls off the wire wrecks
+    // one in `Game.syncNetVehicles`, and is told here the same way.
+    this.picture?.wrecked();
     this.wreckT = CONFIG.vehicles.wreckTime;
-    this.rig.paint(true);
     this.onDestroyed();
   }
 
@@ -1844,8 +1862,8 @@ export class Vehicle implements Combatant, RayHull {
    * steer is `err * steerGain` and is a continuous quantity, so the limit only
    * bites where a bot's own heading error saturates the stick.
    *
-   * It is the DRAWN wheels' angle as well, because `steerShown` is fed from
-   * this rather than from the stick — a truck whose wheels snapped to full
+   * It is the DRAWN wheels' angle as well, because the picture is told this
+   * (`HullPicture.rolled`) rather than the stick — a truck whose wheels snapped to full
    * lock while the hull turned in over a quarter of a second would be telling
    * two stories about one linkage.
    *
@@ -1889,7 +1907,7 @@ export class Vehicle implements Combatant, RayHull {
    * `steerAtRest: 1` and `turnAtSpeed: 1`, which collapses the authority to a
    * flat `turnRate` at every speed, and a flat yaw authority at every speed is
    * what a tail rotor IS. The bank is drawn by `leanToGround` at
-   * `drive.airTiltRate`, the skids flex on `HullFlex.flexHeave`, and the
+   * `drive.airTiltRate`, the skids flex on `HullSprings.flexHeave`, and the
    * arrival is `jolt`. What is genuinely new is a thrust vector and a
    * collective, and both are `FlightModel`'s.
    */
@@ -1899,7 +1917,7 @@ export class Vehicle implements Combatant, RayHull {
     fl: FlightModel,
   ): [number, number] {
     const f = fl.spec;
-    const p = this.body.position;
+    const p = this.pos;
 
     // --- the rotor, which turns whether the machine is going anywhere or not ---
     // See `FlightModel.spool`.
@@ -1937,7 +1955,6 @@ export class Vehicle implements Combatant, RayHull {
     const steer = this.steerTo(wantSteer, dt);
     const yawRate = steer * this.steerAuthority() * power;
     this.yaw += yawRate * dt;
-    this.body.rotation.y = this.yaw;
 
     // --- the cyclic and the thrust, which are the disc's ---
     // The attitude the stick commands and the bank the turn draws, then the
@@ -1970,8 +1987,8 @@ export class Vehicle implements Combatant, RayHull {
    *
    * `drive` is null for a hull nobody is in, which is not the same as one being
    * driven with the sticks centred: an empty tank still has to be put on the
-   * ground it is standing on (the map under it can change — a pane breaks, the
-   * editor rebuilds) and still runs its wreck clock, but its turret stays where
+   * ground it is standing on (the map under it can change — a pane breaks)
+   * and still runs its wreck clock, but its turret stays where
    * the last driver left it rather than walking back to the hull's heading.
    */
   update(dt: number, drive: DriveInput | null): void {
@@ -2023,7 +2040,6 @@ export class Vehicle implements Combatant, RayHull {
       steer = this.steerTo(d.steer, dt);
       yawRate = steer * this.steerAuthority();
       this.yaw += yawRate * dt;
-      this.body.rotation.y = this.yaw;
       // The velocity a hull whose only way of travelling is FORWARDS has. This
       // is the vector the move used to build for itself at the step; holding it
       // as state is what lets a rotor put a different one there.
@@ -2063,18 +2079,10 @@ export class Vehicle implements Combatant, RayHull {
     // it costs the parked pair nothing. It is the LINKAGE that is compared
     // rather than the stick, so a parked truck winds its wheels over the same
     // quarter-second a moving one does instead of snapping them.
-    if (
-      stirred ||
-      steer !== this.steerShown ||
-      rotorRun !== this.rotorShown
-    ) {
-      const differential = (yawRate * this.rig.gauge) / 2;
-      this.trackRun[0] += (this.speed + differential) * dt;
-      this.trackRun[1] += (this.speed - differential) * dt;
-      this.rig.setRun(this.trackRun[0], this.trackRun[1], steer, rotorRun);
-      this.steerShown = steer;
-      this.rotorShown = rotorRun;
-    }
+    //
+    // The belts themselves are the picture's (`HullPicture.rolled`): what it
+    // is told is the drive this frame decided, and the gate is its own.
+    this.picture?.rolled(dt, this.speed, yawRate, steer, rotorRun, stirred, true);
 
     // **Aimed on a TURN as well as on a move, and that is a fix rather than a
     // tidy-up.** The offset is a world vector swung by the yaw, so a hull that
@@ -2088,12 +2096,13 @@ export class Vehicle implements Combatant, RayHull {
     if (stirred) this.aimCollider();
 
     // **The gate is the DISTANCE this frame asks for and not the speed, because
-    // the engine's own gate is a distance — and a speed here was a hull that
+    // the sweep's own gate is a distance — and a speed here was a hull that
     // could not pull away from a standstill.**
     //
-    // `moveWithCollisions` writes the position back only when the move it
-    // worked out exceeds `CollisionsEpsilon`, one millimetre, and silently
-    // returns the mesh where it was otherwise. From rest the first frame asks
+    // The sweep writes the position back only when the move it worked out
+    // exceeds `COLLISIONS_EPSILON`, one millimetre — Babylon's
+    // `CollisionsEpsilon`, kept — and silently leaves the hull where it was
+    // otherwise. From rest the first frame asks
     // for `accel * dt^2` — a third of a millimetre at 120 fps — so the hull did
     // not move, the check below read that as walked-into-something and docked
     // the speed to a third, and the two settled into a fixed point:
@@ -2104,19 +2113,18 @@ export class Vehicle implements Combatant, RayHull {
     // machine — seconds of a tank refusing to pull away at 120 fps and nothing
     // at all under about 40.
     //
-    // Asking below the engine's threshold is asking for nothing, so the frames
+    // Asking below the sweep's threshold is asking for nothing, so the frames
     // that would ask are skipped outright: `speed` goes on building at the
     // throttle's rate and the hull is moving inside three frames. Nothing is
     // lost by not asking — those frames never moved the hull anyway.
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
-    if (asked > AbstractEngine.CollisionsEpsilon) {
-      // **The street, not the map** — see `world/CollisionField.ts` for the
-      // three rules this one call is standing on, and the header above for
-      // what it was worth on this hull.
-      const before = this.body.position.x;
-      const beforeZ = this.body.position.z;
-      narrowedMove(this.body, this.step, this.collidables, this.nearby);
+    if (asked > COLLISIONS_EPSILON) {
+      // The sweep — see `world/CollisionField.ts`. `this` is the hull doing
+      // it, which is what takes the hull's own box out of its own list.
+      const before = this.pos.x;
+      const beforeZ = this.pos.z;
+      moveBody(this.collidables, this.sweeper, this.step, this);
       // Walked into something: drop the speed rather than grinding along it at
       // full throttle. `moveWithCollisions` already slid the hull, so this is
       // about the ENGINE noise and the driver's read, not about the position —
@@ -2133,8 +2141,8 @@ export class Vehicle implements Combatant, RayHull {
       // third exactly when the hull needed the speed to leave. Being shoved
       // backwards is not the engine note this is about; being held is.
       const progress =
-        ((this.body.position.x - before) * this.step.x +
-          (this.body.position.z - beforeZ) * this.step.z) /
+        ((this.pos.x - before) * this.step.x +
+          (this.pos.z - beforeZ) * this.step.z) /
         asked;
       if (progress >= 0 && progress < asked * 0.5) {
         // **Both, and one of them is redundant on every kind — which is two
@@ -2150,7 +2158,7 @@ export class Vehicle implements Combatant, RayHull {
 
     if (stirred || this.clearing) this.freeFromWalls(dt);
     this.standOnGround(dt);
-    this.flex.flexHeave(dt, this.jolt);
+    this.springs.flexHeave(dt, this.jolt);
     if (fl) {
       // **The commanded attitude wins in the AIR and the ground's wins on the
       // skids, and it is `grounded` that decides — a state, and never a kind.**
@@ -2166,11 +2174,16 @@ export class Vehicle implements Combatant, RayHull {
       // vertical motion this frame", which on a machine that flies is the whole
       // of an arrival — so this reads a number that was already there rather
       // than detecting a landing. Spent as `shell` so `resist` cannot shrug it
-      // off, and through the one door damage takes.
-      const over = this.jolt - fl.spec.crashJolt;
-      if (over > 0) {
-        this.takeDamage(over * fl.spec.crashDamage, undefined, "shell");
-      }
+      // off, and through the one door damage takes (`crashCost`, `crash`).
+      //
+      // **This is the crash of a hull the simulation STEPS** — a bot's, or
+      // nobody's. A hull a PERSON flies is `update`d only as their page's
+      // prediction, whose `takeDamage` refuses (`predicted`), and posed in the
+      // simulation from their reports (`updateRemote`), so its crash is the
+      // same arithmetic asked of the REPORTED motion instead:
+      // `src/sim/reportedLanding.ts`, which reproduces this `jolt` from the
+      // reports and is held to this line by `npm run corecheck`.
+      this.crash(this.crashCost(this.jolt));
     }
     // ...and climbing costs speed, for the same reason walking into a wall
     // does. Spent here rather than inside the ground so it lands BEFORE the
@@ -2231,10 +2244,7 @@ export class Vehicle implements Combatant, RayHull {
     }
     // Drawn relative to the hull, held in the world: turning the hull under a
     // held gun must not drag the gun round with it.
-    this.rig.turret.rotation.y = angleDelta(this.yaw, this.turretYaw);
-    // A positive X rotation tips a box's +Z face DOWN, so the gun's elevation
-    // is the negative of it.
-    if (this.rig.gun) this.rig.gun.rotation.x = -this.gunPitch;
+    this.drawTurret();
 
     // Sideways is `speed * yawRate` and nothing else: a neutral-steer pivot at a
     // standstill has no lateral acceleration in it, and a hull that leaned into
@@ -2243,9 +2253,10 @@ export class Vehicle implements Combatant, RayHull {
     const lateral = this.speed * yawRate;
     this.leanHull(dt, accel, lateral);
     // After the hull, never before it: the whips answer to how fast the node
-    // they hang off is turning, and that rate is a difference `leanHull` has
-    // only just finished computing.
-    this.flex.flexAntennae(dt, accel, lateral);
+    // they hang off is turning, and `HullWhips.step` takes that rate as a
+    // difference across steps of the attitude handed over here — which has
+    // to be the one `leanHull` has just finished computing, not last step's.
+    this.flexed(dt, accel, lateral);
     this.sync();
   }
 
@@ -2269,10 +2280,9 @@ export class Vehicle implements Combatant, RayHull {
    * from one to the other on the frame the plank catches it, with no landing to
    * detect.
    *
-   * **The move is `narrowedMove` because there is no other kind of move in this
-   * game** — it is the third of the three sweeps `CLAUDE.md` allows, and a
-   * sweep that walked `scene.meshes` would price a burning hull on the size of
-   * the map. A wreck that hits a building has ARRIVED: the velocity is re-read
+   * **The move is the sweep (`moveBody`) because there is no other kind of move
+   * in this game** — it is the third of the three sweeps, and the same one a
+   * live hull drives by. A wreck that hits a building has ARRIVED: the velocity is re-read
    * off the ground actually covered rather than docked by a fraction, so a slide
    * along a wall keeps the along-wall share and a head-on stop keeps nothing.
    * Bounded by what was ASKED, because a sphere being ejected out of a box
@@ -2284,7 +2294,7 @@ export class Vehicle implements Combatant, RayHull {
    * when the speed changes direction, which a friction cannot do.
    */
   private coast(dt: number): void {
-    if (!this.body.isEnabled()) return;
+    if (!this.isPresent) return;
     const w = CONFIG.vehicles;
     const was = Math.hypot(this.vel.x, this.vel.z);
     if (was > 1e-4) {
@@ -2307,11 +2317,11 @@ export class Vehicle implements Combatant, RayHull {
 
     this.step.copyFrom(this.vel).scaleInPlace(dt);
     const asked = this.step.length();
-    if (asked > AbstractEngine.CollisionsEpsilon) {
-      const p = this.body.position;
+    if (asked > COLLISIONS_EPSILON) {
+      const p = this.pos;
       const beforeX = p.x;
       const beforeZ = p.z;
-      narrowedMove(this.body, this.step, this.collidables, this.nearby);
+      moveBody(this.collidables, this.sweeper, this.step, this);
       const dx = p.x - beforeX;
       const dz = p.z - beforeZ;
       const covered = Math.hypot(dx, dz);
@@ -2383,11 +2393,11 @@ export class Vehicle implements Combatant, RayHull {
    * a mesh that is not there.
    */
   private settle(dt: number, accel: number): void {
-    if (this.body.isEnabled()) {
+    if (this.isPresent) {
       this.standOnGround(dt);
       // A wreck settles on its springs after it falls, for the reason its
       // masts keep stirring: it is still a mass standing on the ground.
-      this.flex.flexHeave(dt, this.jolt);
+      this.springs.flexHeave(dt, this.jolt);
       // `update`'s rule, and it is `grounded` that decides rather than a kind:
       // the commanded attitude wins in the air and the ground's wins on the
       // skids. `tiltPitch`/`tiltRoll` are frozen wherever the shot left them,
@@ -2404,8 +2414,9 @@ export class Vehicle implements Combatant, RayHull {
       // freeze-frame, and a wreck whose whips settle and then move in the
       // wind is the only thing on it still saying the world is running. After
       // the hull, never before it, for `update`'s reason: the rate they bend
-      // against is a difference `leanHull` has only just finished computing.
-      this.flex.flexAntennae(dt, 0, 0);
+      // against is `HullWhips.step`'s difference across the attitudes handed
+      // over, so what is handed over must be the one `leanHull` just set.
+      this.flexed(dt, 0, 0);
     }
     this.sync();
   }
@@ -2442,7 +2453,7 @@ export class Vehicle implements Combatant, RayHull {
    * what happened to it.
    */
   correctTo(x: number, y: number, z: number): void {
-    const p = this.body.position;
+    const p = this.pos;
     const wantY = y + this.spec.hull.height / 2;
     // A hair over float noise in a position that has been through a socket, and
     // well under anything a correction is ever sent for.
@@ -2502,7 +2513,7 @@ export class Vehicle implements Combatant, RayHull {
     const t = this.spec;
     const c = t.drive;
     const half = t.hull.height / 2;
-    const p = this.body.position;
+    const p = this.pos;
     const speedWas = this.speed;
 
     // What the hull actually covered, resolved onto the heading it arrived
@@ -2541,7 +2552,6 @@ export class Vehicle implements Combatant, RayHull {
     }
     const yawRate = dt > 0 ? angleDelta(this.yaw, yaw) / dt : 0;
     this.yaw = yaw;
-    this.body.rotation.y = yaw;
     p.x = x;
     p.z = z;
     // See the header: the probe owns `y` unless the wire says the hull is
@@ -2623,32 +2633,28 @@ export class Vehicle implements Combatant, RayHull {
     // helicopter hovering perfectly still is exactly the hull the old gate
     // would have frozen the rotor on.
     const rotorRun = fl ? fl.rotorRun : 0;
-    if (
-      this.speed !== 0 ||
-      yawRate !== 0 ||
-      rotorRun !== this.rotorShown
-    ) {
-      const differential = (yawRate * this.rig.gauge) / 2;
-      this.trackRun[0] += (this.speed + differential) * dt;
-      this.trackRun[1] += (this.speed - differential) * dt;
+    const picture = this.picture;
+    if (picture) {
       // **The steer a watcher sees is DERIVED here and reported nowhere**,
       // which is the bargain the lean, the heave and the belts already make:
       // the wire carries where a hull ended up and every client works the
       // picture out for itself. A yaw rate over the turn the drive could have
       // asked for at this speed IS the stick that produced it.
       const turn = this.steerAuthority();
-      this.rig.setRun(
-        this.trackRun[0],
-        this.trackRun[1],
+      picture.rolled(
+        dt,
+        this.speed,
+        yawRate,
         Math.abs(turn) > 1e-4 ? Math.max(-1, Math.min(1, yawRate / turn)) : 0,
         rotorRun,
+        this.speed !== 0 || yawRate !== 0,
+        false,
       );
-      this.rotorShown = rotorRun;
     }
     if (Math.abs(this.speed) > 1e-3) this.aimCollider();
 
     this.standOnGround(dt);
-    this.flex.flexHeave(dt, this.jolt);
+    this.springs.flexHeave(dt, this.jolt);
     // **The commanded attitude wins in the AIR and the ground's wins on the
     // skids**, which is `update`'s line and `update`'s reason: it is
     // `grounded` that decides, a state and never a kind, so a remote hull
@@ -2670,21 +2676,20 @@ export class Vehicle implements Combatant, RayHull {
       this.turretYaw = this.yaw;
       this.gunPitch = 0;
     }
-    this.rig.turret.rotation.y = angleDelta(this.yaw, this.turretYaw);
-    if (this.rig.gun) this.rig.gun.rotation.x = -this.gunPitch;
+    this.drawTurret();
 
     const accel = dt > 0 ? (this.speed - speedWas) / dt : 0;
     const lateral = this.speed * yawRate;
     this.leanHull(dt, accel, lateral);
-    this.flex.flexAntennae(dt, accel, lateral);
+    this.flexed(dt, accel, lateral);
     this.sync();
   }
 
   /**
    * Carries the collision sphere to the LEADING end of the hull.
    *
-   * Babylon's `ellipsoidOffset` is a WORLD-space displacement of the collider
-   * from the mesh's origin and is not rotated by anything, so the bias along
+   * The sweep's `ellipsoidOffset` is a WORLD-space displacement of the collider
+   * from the hull's centre and is not rotated by anything, so the bias along
    * the hull's forward has to be rebuilt whenever the hull turns — which is
    * every frame it is driven. Written only on the frames the hull actually
    * moves, since that is the only time the offset is read.
@@ -2703,7 +2708,7 @@ export class Vehicle implements Combatant, RayHull {
     // zero — see `leadSign`.
     if (Math.abs(this.speed) > 1e-3) this.leadSign = this.speed > 0 ? 1 : -1;
     const bias = (t.hull.length / 2 - t.drive.collideRadius) * this.leadSign;
-    this.body.ellipsoidOffset.set(
+    this.ellipsoidOffset.set(
       Math.sin(this.yaw) * bias,
       t.drive.climbHeight / 2,
       Math.cos(this.yaw) * bias,
@@ -2731,8 +2736,8 @@ export class Vehicle implements Combatant, RayHull {
    *   `update` now aims it on a turn as well, which turns the teleport into
    *   the rate above — and a rate is a thing this can beat.
    *
-   * A body has neither problem: `Player`'s capsule is round, centred, and
-   * turning it moves nothing.
+   * A body has neither problem: `Player`'s sweep ellipsoid is round, centred,
+   * and has no yaw to turn.
    *
    * ## Why the engine cannot do it
    *
@@ -2756,7 +2761,7 @@ export class Vehicle implements Combatant, RayHull {
    * and an underside above the hull's roof is an archway.
    *
    * **The correction is the SPHERE's and the hull carries it**, so it is
-   * applied to `body.position` and not to the offset — the offset is where the
+   * applied to `pos` and not to the offset — the offset is where the
    * sphere sits on the tank, and moving it would leave the collider somewhere
    * the vehicle is not.
    *
@@ -2771,8 +2776,8 @@ export class Vehicle implements Combatant, RayHull {
     this.clearing = false;
     if (!obstacles) return;
     const t = this.spec;
-    const p = this.body.position;
-    const e = this.body.ellipsoidOffset;
+    const p = this.pos;
+    const e = this.ellipsoidOffset;
     const cx = p.x + e.x;
     const cz = p.z + e.z;
     const tracks = p.y - t.hull.height / 2;
@@ -2837,7 +2842,7 @@ export class Vehicle implements Combatant, RayHull {
   rideableAt(x: number, z: number, reach: number): boolean {
     const t = this.spec;
     const c = t.drive;
-    const tracks = this.body.position.y - t.hull.height / 2;
+    const tracks = this.pos.y - t.hull.height / 2;
     if (
       this.obstacles?.wallAt(x, z, tracks + c.climbHeight, tracks + t.hull.height)
     ) {
@@ -2934,7 +2939,7 @@ export class Vehicle implements Combatant, RayHull {
     // metres it is about to climb. Measured before it was split: every bearing
     // refused for the first two seconds of every takeoff, and a machine that
     // answered by backing off its own hardstanding.
-    const belly = this.body.position.y - this.spec.hull.height / 2;
+    const belly = this.pos.y - this.spec.hull.height / 2;
     // Floored so a hover is a long time rather than a division by zero, and
     // `speed` rather than the velocity's magnitude because the probes are laid
     // along the HEADING: what this is asking is how fast the hull is closing on
@@ -2966,10 +2971,10 @@ export class Vehicle implements Combatant, RayHull {
    * at an angle. `rotX` is 0 and stays 0: the collider never tilts, only the
    * PICTURE leans.
    *
-   * The enabled/pickable gate is `SOLID_ONLY`'s, deliberately — a WRECK keeps
-   * its collider for `wreckTime` because a burnt-out hull in the street is
-   * cover, and a body may stand on it for exactly as long as a round stops on
-   * it. `hide` is what ends both.
+   * The gate is `rayBox`'s, `present`, deliberately — a WRECK keeps its
+   * collider for `wreckTime` because a burnt-out hull in the street is cover,
+   * and a body may stand on it for exactly as long as a round stops on it.
+   * `hide` is what ends both.
    */
   deckAt(x: number, z: number, ceiling: number, floor: number): number | null {
     const b = this.rayBox();
@@ -3004,10 +3009,10 @@ export class Vehicle implements Combatant, RayHull {
    * are unrotated because `rotX` is 0 on this box and stays 0 — `rayBox`
    * writes it once and the collider never tilts, only the picture leans.
    *
-   * The enabled/pickable gate is `rayBox`'s, so a hull that has been taken
-   * away crushes nothing. A WRECK still can, and never does: nothing moves one.
+   * The gate is `rayBox`'s (`present`), so a hull that has been taken away
+   * crushes nothing. A WRECK still can, and never does: nothing moves one.
    */
-  crushes(center: Vector3, feet: number, radius: number): boolean {
+  crushes(center: Vector3Like, feet: number, radius: number): boolean {
     const b = this.rayBox();
     if (!b) return false;
     // The cheap half first: two comparisons that reject a body on the deck
@@ -3035,35 +3040,37 @@ export class Vehicle implements Combatant, RayHull {
    * ray — `RayHull`'s one method.
    *
    * The gate and the scratch are `deckAt`'s, which is what this was factored
-   * out of, and both are the same statement made twice over: the enabled and
-   * pickable terms are `SOLID_ONLY`'s, deliberately, because a WRECK keeps its
-   * collider for `wreckTime` and a round stops on it for exactly as long as a
-   * body may stand on it. `hide` is what ends both. `rotX` is 0 and stays 0:
+   * out of, and both are the same statement made twice over: the gate is
+   * `present` and nothing else, because a WRECK keeps its collider for
+   * `wreckTime` and a round stops on it for exactly as long as a body may
+   * stand on it. `hide` is what ends both. It reads the FIELDS — `pos` and
+   * `yaw` — and never the body mesh, so another hull's sweep meets this one
+   * where it is this instant, mid-update included. `rotX` is 0 and stays 0:
    * the collider never tilts, only the PICTURE leans.
    *
-   * The two callers that must take their OWN hull out of a query pass `this`
-   * as `RayWorld`'s `skip` rather than writing `isPickable` around the call,
-   * which is what they did to a `scene.pickWithRay`.
+   * The callers that must take their OWN hull out of a query pass `this` as
+   * `RayWorld`'s `skip` (`castBody`, `castRound`, `blocked`); they used to
+   * write `isPickable` around a `scene.pickWithRay`, and there is no such flag
+   * on the hull any more.
    */
   rayBox(): WorldBox | null {
-    if (!this.body.isEnabled() || !this.body.isPickable) return null;
+    if (!this.isPresent) return null;
     const hull = this.spec.hull;
     const b = this.deckBox;
     b.w = hull.width;
     b.h = hull.height;
     b.d = hull.length;
-    b.cx = this.body.position.x;
-    b.cy = this.body.position.y;
-    b.cz = this.body.position.z;
-    b.rotY = this.body.rotation.y;
+    b.cx = this.pos.x;
+    b.cy = this.pos.y;
+    b.cz = this.pos.z;
+    b.rotY = this.yaw;
     return b;
   }
 
   /**
    * The hull as a `WorldBox`, rewritten per query and never held across one. A
-   * scratch rather than a field kept in step with the body, because the
-   * body is what moves and a cached copy is a second opinion about where the
-   * tank is; and never a real entry in `colliderBoxes`, because everything that
+   * scratch rather than a box kept in step with `pos`, because `pos` is what
+   * moves and a cached copy is a second opinion about where the tank is; and never a real entry in `colliderBoxes`, because everything that
    * reads that list was baked before this hull moved. `rotX` is written once
    * here and never again.
    */
@@ -3098,6 +3105,128 @@ export class Vehicle implements Combatant, RayHull {
     const box = this.obstacles?.groundAt(x, z, ceiling, floor) ?? null;
     const ground = this.terrain.surfaceAt(x, z);
     return box !== null && box > ground ? box : ground;
+  }
+
+  /**
+   * The PLANK the ten contacts hold up, for a hull at `x, z` heading `yaw`
+   * whose tracks are at `tracks` — the resting plane's height under the
+   * centre, in feet terms (`floorY`), with the attitude it was solved at left
+   * in `plankRise` (nose-up, positive) and `plankRoll`. The two passes the
+   * header of `standOnGround` describes, and nothing else: no state of the
+   * hull's is read but its spec, its world and the arguments, and none is
+   * written but `h` and those two angles.
+   *
+   * **A function of its arguments so that two callers ask ONE question.**
+   * `standOnGround` asks it where the hull stands; `restAt` asks it where a
+   * REPORT says the hull stood (`src/sim/reportedLanding.ts`), which is how
+   * the core charges a person's landing exactly as this method's own `jolt`
+   * charges a bot's. `tracks` sets the band (`climbHeight` over it, `probeLength`
+   * under it), so a caller wanting `standOnGround`'s answer passes the height
+   * the tracks were at BEFORE the vertical step, as it does.
+   */
+  private plankUnder(
+    x: number,
+    z: number,
+    yaw: number,
+    tracks: number,
+    h: Float64Array,
+  ): number {
+    const c = this.spec.drive;
+    const ceiling = tracks + c.climbHeight;
+    const floor = tracks - c.probeLength;
+    // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
+    const fx = Math.sin(yaw);
+    const fz = Math.cos(yaw);
+    const reach = this.frame.contactReach;
+    const wide = this.frame.gauge / 2;
+    // Fore to aft; right belt then left within each row. `contactLong` and
+    // `contactLat` reproduce this order and both passes below walk it.
+    for (let i = 0; i < CONTACT_COUNT; i++) {
+      const l = contactLong(i, reach);
+      const lat = contactLat(i, wide);
+      h[i] = this.supportAt(
+        x + fx * l + fz * lat,
+        z + fz * l - fx * lat,
+        ceiling,
+        floor,
+      );
+    }
+
+    // --- the attitude the contacts are asking for ---
+    const lim = c.tiltLimit;
+    // Named apart from `core/math`'s `clamp` on purpose: this one is the hull's
+    // own tilt limit closed over, not the general three-argument one, and a
+    // local shadowing that name is how the two get confused.
+    const toTiltLimit = (v: number) => Math.max(-lim, Math.min(lim, v));
+    const front = Math.max(h[0], h[1]);
+    const rear = Math.max(h[CONTACT_COUNT - 2], h[CONTACT_COUNT - 1]);
+    let right = -Infinity;
+    let left = -Infinity;
+    for (let i = 0; i < CONTACT_COUNT; i += 2) {
+      if (h[i] > right) right = h[i];
+      if (h[i + 1] > left) left = h[i + 1];
+    }
+    // Nose-up, and positive. A positive X rotation tips the nose DOWN, so what
+    // the drawn node is given is the negative of it.
+    const rise = toTiltLimit(Math.atan2(front - rear, reach * 2));
+    const roll = toTiltLimit(Math.atan2(right - left, wide * 2));
+    this.plankRise = rise;
+    this.plankRoll = roll;
+
+    // --- the height that attitude needs ---
+    const tanRise = Math.tan(rise);
+    const tanRoll = Math.tan(roll);
+    let plank = -Infinity;
+    for (let i = 0; i < CONTACT_COUNT; i++) {
+      // What this contact would put the hull's centre at, given the lean: the
+      // plane is `y + l * tanRise + lat * tanRoll`, so the centre it demands is
+      // the contact less those two.
+      const need =
+        h[i] - contactLong(i, reach) * tanRise - contactLat(i, wide) * tanRoll;
+      if (need > plank) plank = need;
+    }
+    return plank;
+  }
+
+  /** `plankUnder`'s attitude, read back by its caller on the next line. */
+  private plankRise = 0;
+  private plankRoll = 0;
+  /** `restAt`'s contacts, apart from `contacts` so a report never disturbs the hull's own. */
+  private readonly restContacts = new Float64Array(CONTACT_COUNT);
+
+  /**
+   * Where this hull's CENTRE would rest on its plank at `x, z` heading `yaw`,
+   * with its tracks banded off `tracks` — `standOnGround`'s `target`, asked
+   * of a position the hull is not at. The core's one reader is a person's
+   * REPORTED landing (`src/sim/reportedLanding.ts`); writes nothing the hull
+   * is standing on.
+   */
+  restAt(x: number, z: number, yaw: number, tracks: number): number {
+    return this.plankUnder(x, z, yaw, tracks, this.restContacts) + this.spec.hull.height / 2;
+  }
+
+  /**
+   * What an arrival of `jolt` m/s costs this machine, in hull points before
+   * `resist` — `(jolt - crashJolt) * crashDamage` over the threshold, and 0
+   * under it or on a hull that cannot fly. The ONE copy of the crash's
+   * arithmetic: `update` spends it on its own `jolt` (a bot's or nobody's
+   * hull), and the core on the jolt a person's REPORTS made
+   * (`src/sim/reportedLanding.ts`). Both spend it through `crash`.
+   */
+  crashCost(jolt: number): number {
+    const fl = this.flight;
+    if (!fl) return 0;
+    const over = jolt - fl.spec.crashJolt;
+    return over > 0 ? over * fl.spec.crashDamage : 0;
+  }
+
+  /**
+   * The crash, spent: `cost` as a `shell`, so `resist` cannot shrug it off,
+   * and through the one door damage takes — whose consequences (the burn, the
+   * crew, the person in the seat) are therefore every other blow's.
+   */
+  crash(cost: number): void {
+    if (cost > 0) this.takeDamage(cost, undefined, "shell");
   }
 
   /**
@@ -3144,7 +3273,7 @@ export class Vehicle implements Combatant, RayHull {
     const t = this.spec;
     const c = t.drive;
     const half = t.hull.height / 2;
-    const p = this.body.position;
+    const p = this.pos;
     this.climbOwed = 0;
     // Nothing measured yet, so nothing for the springs: a hull that skips the
     // question below owes `flexHeave` a zero rather than last frame's landing.
@@ -3159,61 +3288,11 @@ export class Vehicle implements Combatant, RayHull {
     if (Math.abs(this.speed) > 1e-3 || this.lift > 0) this.needsGround = true;
     if (!this.needsGround && this.grounded) return;
 
-    const tracks = p.y - half;
-    const ceiling = tracks + c.climbHeight;
-    const floor = tracks - c.probeLength;
-    // Forward is `(sin yaw, cos yaw)`, so right is `(cos yaw, -sin yaw)`.
-    const fx = Math.sin(this.yaw);
-    const fz = Math.cos(this.yaw);
-    const reach = this.rig.contactReach;
-    const wide = this.rig.gauge / 2;
-    const h = this.contacts;
-    // Fore to aft; right belt then left within each row. `contactLong` and
-    // `contactLat` reproduce this order and both passes below walk it.
-    for (let i = 0; i < CONTACT_COUNT; i++) {
-      const l = contactLong(i, reach);
-      const lat = contactLat(i, wide);
-      h[i] = this.supportAt(
-        p.x + fx * l + fz * lat,
-        p.z + fz * l - fx * lat,
-        ceiling,
-        floor,
-      );
-    }
-
-    // --- the attitude the contacts are asking for ---
-    const lim = c.tiltLimit;
-    // Named apart from `core/math`'s `clamp` on purpose: this one is the hull's
-    // own tilt limit closed over, not the general three-argument one, and a
-    // local shadowing that name is how the two get confused.
-    const toTiltLimit = (v: number) => Math.max(-lim, Math.min(lim, v));
-    const front = Math.max(h[0], h[1]);
-    const rear = Math.max(h[CONTACT_COUNT - 2], h[CONTACT_COUNT - 1]);
-    let right = -Infinity;
-    let left = -Infinity;
-    for (let i = 0; i < CONTACT_COUNT; i += 2) {
-      if (h[i] > right) right = h[i];
-      if (h[i + 1] > left) left = h[i + 1];
-    }
-    // Nose-up, and positive. A positive X rotation tips the nose DOWN, so what
-    // the drawn node is given is the negative of it.
-    const rise = toTiltLimit(Math.atan2(front - rear, reach * 2));
-    const roll = toTiltLimit(Math.atan2(right - left, wide * 2));
-    this.groundPitchTarget = -rise;
-    this.groundRollTarget = roll;
-
-    // --- the height that attitude needs ---
-    const tanRise = Math.tan(rise);
-    const tanRoll = Math.tan(roll);
-    let plank = -Infinity;
-    for (let i = 0; i < CONTACT_COUNT; i++) {
-      // What this contact would put the hull's centre at, given the lean: the
-      // plane is `y + l * tanRise + lat * tanRoll`, so the centre it demands is
-      // the contact less those two.
-      const need =
-        h[i] - contactLong(i, reach) * tanRise - contactLat(i, wide) * tanRoll;
-      if (need > plank) plank = need;
-    }
+    // The plank under where the hull stands now, banded off where its tracks
+    // are — see `plankUnder`, which `restAt` asks the same question through.
+    const plank = this.plankUnder(p.x, p.z, this.yaw, p.y - half, this.contacts);
+    this.groundPitchTarget = -this.plankRise;
+    this.groundRollTarget = this.plankRoll;
     this.floorY = plank;
 
     const target = plank + half;
@@ -3294,18 +3373,25 @@ export class Vehicle implements Combatant, RayHull {
 
   /**
    * The whole of the drawn hull's attitude: the ground it is standing on,
-   * written here, plus what its own mass is doing to it, which `HullFlex.lean`
-   * writes. Both halves are written from this one call.
+   * written here, plus what its own mass is doing to it, which
+   * `HullSprings.lean` writes. Both halves are written into the pose from this
+   * one call.
    *
    * Cosmetic in the strict sense — the collider box never tilts, so nothing
    * here can move where a round goes, where a body may stand or what a
    * sightline breaks on. A driver reads it and nothing else does.
    *
-   * The write is guarded rather than unconditional because two of these are
-   * parked on hardstandings doing nothing for most of a round, and an
-   * assignment to a `TransformNode`'s rotation is a world matrix to recompute
-   * whether or not the number changed. Same rule as `trackRun`'s skip and
-   * `needsGround`'s.
+   * The write is guarded rather than unconditional. It began as a saving, the
+   * rule of the belts' skip and `needsGround`'s — two of these are parked
+   * doing nothing for most of a round, and an assignment to a
+   * `TransformNode`'s rotation recomputed a world matrix whether or not the
+   * number changed — but since `BABYLON_EXIT.md` X4.2a there is no node: the
+   * view copies this record onto joints that cost nothing to write. It stays
+   * for what it DECIDES: the muzzles are replayed off the record, so the 1e-5
+   * by which it trails the ground is on the muzzle's path (changing it moves
+   * the fight hash), and the record is what the view's own guards copy bit
+   * for bit, a zero's sign included (`VehicleView`'s header: an unguarded
+   * `-0` written over a `0` is a different bit in the drawn matrix).
    */
   private leanHull(dt: number, accel: number, lateral: number): void {
     this.leanToGround(dt);
@@ -3317,23 +3403,38 @@ export class Vehicle implements Combatant, RayHull {
     // `sprung` beside the heave. Summed onto one node, a nose-down dive took
     // the tracks down with it and drove the leading end of the vehicle under
     // the road — which is what the ground had just finished standing it on.
-    const g = this.rig.hull.rotation;
+    //
+    // Compared against what is DRAWN, which `shown` holds: the record is
+    // written here and nowhere else (bar the reset in `placeAt`), a view copies
+    // it onto `rig.hull`, and the muzzles are read off the record — so the
+    // 1e-5 by which the drawn lean may trail the ground's is on the muzzle's
+    // path too.
+    const s = this.shown;
     if (
-      Math.abs(this.groundPitch - g.x) > 1e-5 ||
-      Math.abs(this.groundRoll - g.z) > 1e-5
+      Math.abs(this.groundPitch - s.hullX) > 1e-5 ||
+      Math.abs(this.groundRoll - s.hullZ) > 1e-5
     ) {
-      g.x = this.groundPitch;
-      g.z = this.groundRoll;
+      s.hullX = this.groundPitch;
+      s.hullZ = this.groundRoll;
     }
-    // The suspension half, and the rate the mast feet turn at off the two
-    // summed. See `HullFlex.lean`.
-    this.flex.lean(
+    // The suspension half. See `HullSprings.lean`.
+    this.springs.lean(dt, accel, lateral, this.gearLoad());
+  }
+
+  /**
+   * Tells the picture the hull's mass has been stepped, with what its whips
+   * bend against: the two accelerations and the mast feet's attitude, the
+   * ground lean and the springs summed as HELD (`HullPicture.flexed`). Right
+   * after `leanHull` on every path that leans, which is what makes the feet's
+   * rate a difference across one step.
+   */
+  private flexed(dt: number, accel: number, lateral: number): void {
+    this.picture?.flexed(
       dt,
       accel,
       lateral,
-      this.gearLoad(),
-      this.groundPitch,
-      this.groundRoll,
+      this.groundPitch + this.springs.pitch,
+      this.groundRoll + this.springs.roll,
     );
   }
 
@@ -3370,7 +3471,7 @@ export class Vehicle implements Combatant, RayHull {
    *
    * **A suspension is a spring between a mass and the ground, and it deflects
    * in proportion to the load ACROSS it.** Every input
-   * `HullFlex.flexSuspension` reads is an acceleration, and an acceleration
+   * `HullSprings.flexSuspension` reads is an acceleration, and an acceleration
    * only becomes a lean because the gear has to push the hull sideways to
    * produce it. A machine hanging from a rotor is not being pushed sideways by
    * anything it is standing on — the disc is doing all of it, at the top — so
@@ -3433,19 +3534,31 @@ export class Vehicle implements Combatant, RayHull {
 
   /**
    * Derives the three exported points from the collider box. The only place
-   * they are written, the same rule `Player.syncCombatant` follows.
+   * any of them is written, the same rule `Player.syncCombatant` follows — and
+   * every method that moves `pos` or turns `yaw` ends here, so between frames
+   * the points and the box agree.
    */
   private sync(): void {
     const t = this.spec;
-    const p = this.body.position;
+    const p = this.pos;
     const feet = p.y - t.hull.height / 2;
     this.position.set(p.x, feet, p.z);
-    this.center.copyFrom(p);
+    this.center.set(p.x, p.y, p.z);
     this.eyePos.set(p.x, feet + t.cupolaHeight, p.z);
   }
 
-  /** Where the gun is pointing, as a fresh vector. Per event, never per frame. */
-  get gunDir(): Vector3 {
-    return this.gunDirToRef(new Vector3());
+  /**
+   * The turret's local yaw and the gun's elevation into the pose the main
+   * muzzle is read off (and a view draws `rig.turret`/`rig.gun` from).
+   * Relative to the hull and held in the world: turning the hull under a held
+   * gun must not drag the gun round with it. A positive X rotation tips a
+   * box's +Z face DOWN, so the gun's elevation is the negative of it. An
+   * unarmed hull has no gun joint, and its pose's `gunX` is never read.
+   */
+  private drawTurret(): void {
+    const s = this.shown;
+    s.turretY = angleDelta(this.yaw, this.turretYaw);
+    if (this.frame.gun) s.gunX = -this.gunPitch;
   }
+
 }

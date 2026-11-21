@@ -1,7 +1,7 @@
 /**
  * TerrainField.ts — The valley floor's height, and the one place that knows it.
  * Owns: sampling a map's Heightfield at any (x, z), editing it, and
- * tessellating it into per-block VertexData for MapBuilder to hang meshes on —
+ * tessellating it into per-block `GeometryBuffer`s for MapBuilder to hang meshes on —
  * plus `terrainSlab`, which bends a flat footprint (a road) onto that same
  * surface, so ground-hugging dressing is cut against the floor by the one file
  * that knows its shape, and its two siblings for a road that bends in plan
@@ -23,10 +23,13 @@
  * level map costs exactly what it used to.
  *
  * This file must NOT create meshes, materials or colliders — it hands back
- * VertexData and lets MapBuilder own the scene.
+ * `GeometryBuffer`s (`src/geometry/`) and lets MapBuilder own the world, and it
+ * imports nothing from Babylon: the server reads it too, and the client hands
+ * a patch to our renderer through `world/parts.ts`'s `worldRecords` (a mesh
+ * through its `vertexDataOf` until `BABYLON_EXIT.md` X6.1g).
  */
-import { VertexData } from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { computeNormals, GeometryBuffer } from "../geometry/buffer";
 import { clamp } from "../core/math";
 import type { Heightfield, WaterRect } from "./layout";
 
@@ -34,7 +37,7 @@ import type { Heightfield, WaterRect } from "./layout";
 export interface TerrainPatch {
   /** Map-block key, `${bx},${bz}` — the same convention BlockMerge uses. */
   key: string;
-  data: VertexData;
+  data: GeometryBuffer;
 }
 
 /**
@@ -278,22 +281,12 @@ export class TerrainField {
     const cell = this.field?.cell ?? 1;
     return { x: -this.half + i * cell, z: -this.half + j * cell };
   }
-
-  /** Nearest grid vertex to a world position, clamped into the grid. */
-  nearestVertex(x: number, z: number): { i: number; j: number } {
-    const f = this.field;
-    if (!f) return { i: 0, j: 0 };
-    return {
-      i: Math.round(clamp((x + this.half) / f.cell, 0, f.size)),
-      j: Math.round(clamp((z + this.half) / f.cell, 0, f.size)),
-    };
-  }
 }
 
 /**
  * A pool's surface height: whatever the rect asks for, or ankle-deep over its
- * own bed. Lives here rather than in WaterSystem so the editor's proxy and the
- * real water cannot end up at different heights — they did, and a translucent
+ * own bed. Lives here rather than in WaterSystem so a stand-in (the map
+ * editor's proxy was one) and the real water cannot end up at different heights — they did, and a translucent
  * sheet hanging over a dug basin looks exactly like the ground disappearing.
  */
 export function waterY(r: WaterRect, terrain: TerrainField): number {
@@ -304,13 +297,13 @@ export function waterY(r: WaterRect, terrain: TerrainField): number {
  * The steepest gradient the nav graph will link across: `NavGrid.link` joins
  * neighbouring surfaces only within `stepHeight`, and its cells are
  * `nav.cellSize` apart. Terrain steeper than this severs its own links and
- * strands whatever is beyond it, which is why the editor validates against it
- * and the brush reports it.
+ * strands whatever is beyond it, which is why the viewer's `validate` checks
+ * against it.
  */
 export const MAX_WALKABLE_GRADE = CONFIG.nav.stepHeight / CONFIG.nav.cellSize;
 
 /**
- * Tessellates the floor, one VertexData per map block.
+ * Tessellates the floor, one `GeometryBuffer` per map block.
  *
  * Two fast paths keep a mostly-level map cheap. With no heightfield at all the
  * whole floor is a single quad — the same two triangles the old flat ground box
@@ -324,9 +317,9 @@ export function terrainPatches(
   /**
    * The patch's side, in metres — `MapLayout.terrainBlock`, or `BLOCK_SIZE`.
    * **A whole number of terrain cells**, or the round below cuts somewhere
-   * other than where the caller said. All three callers — `buildValley`, the
-   * server's `terrainColliders` and the editor's brush — must pass the same
-   * map's value or they tessellate different floors.
+   * other than where the caller said. One caller, `buildValley`, with the
+   * map's `MapLayout.terrainBlock` (the map editor's brush was a second until
+   * `BABYLON_EXIT.md` X5.3c).
    */
   blockSize: number,
 ): TerrainPatch[] {
@@ -381,9 +374,8 @@ export function terrainPatches(
   // the whole way round the map.
   //
   // `size` is not consulted, here or above: the extent is the FIELD's, and the
-  // borderland is the field's too. That is what lets both callers — the client's
-  // `buildValley` and the server's `terrainColliders` — get the same floor
-  // without either of them being told the margin exists.
+  // borderland is the field's too. That is what lets the caller, the client's
+  // `buildValley`, get the floor without being told the margin exists.
   const m = Math.round(terrain.margin / f.cell);
   if (m > 0) {
     // Blocks four times the floor's, because nobody fights out here: what the
@@ -474,7 +466,7 @@ function uniformHeight(
 export function terrainSlab(
   terrain: TerrainField,
   s: SlabSpec,
-): VertexData | null {
+): GeometryBuffer | null {
   const f = terrain.field;
   if (!f) return null;
   // The field's own extent, for `TerrainField.half`'s reason: this is what the
@@ -672,7 +664,7 @@ export function terrainRibbon(
   top: number,
   thickness: number,
   caps: readonly [boolean, boolean],
-): VertexData {
+): GeometryBuffer {
   let minX = Infinity;
   let minZ = Infinity;
   let maxX = -Infinity;
@@ -776,7 +768,7 @@ export function terrainFan(
   kerb: readonly boolean[],
   top: number,
   thickness: number,
-): VertexData {
+): GeometryBuffer {
   const step = drapeStep(
     terrain,
     Math.min(cx, ...xs),
@@ -992,16 +984,10 @@ class Accum {
    * `facesUp` is the floor's own invariant, not every caller's: a slab's skirt
    * points sideways by design, so only the ground asserts it.
    */
-  finish(facesUp = true): VertexData {
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.uvs = this.uvs;
-    data.indices = this.indices;
-    const normals: number[] = [];
-    VertexData.ComputeNormals(this.positions, this.indices, normals);
-    data.normals = normals;
+  finish(facesUp = true): GeometryBuffer {
+    const normals = computeNormals(this.positions, this.indices);
     if (facesUp) assertFacesUp(normals);
-    return data;
+    return new GeometryBuffer({ positions: this.positions, uvs: this.uvs, indices: this.indices, normals });
   }
 }
 
@@ -1009,12 +995,12 @@ class Accum {
  * A heightfield has no overhangs, so every normal must point up. If one does
  * not, the winding is inverted — and that failure is completely silent: the
  * meshes are built, the materials compile, nav and picking are unaffected
- * (Babylon's triangle picking is two-sided), and the only symptom is a floor
+ * (Babylon's triangle picking was two-sided), and the only symptom is a floor
  * that is back-face culled and lit from below, i.e. an invisible world with a
  * clean console. Worth a dev-time assertion precisely because nothing else
  * catches it.
  */
-function assertFacesUp(normals: readonly number[]): void {
+function assertFacesUp(normals: ArrayLike<number>): void {
   if (!import.meta.env.DEV) return;
   for (let i = 1; i < normals.length; i += 3) {
     if (normals[i] < 0) {

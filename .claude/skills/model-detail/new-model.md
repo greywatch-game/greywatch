@@ -22,12 +22,14 @@ server's bake — follows from what the builder declares.
   stair lane).
 - **Signature**:
   ```ts
-  export function buildThing(scene: Scene, mats: CelMaterialFactory, p: BuildParams = {}, ctx?: BuildCtx): Structure {
-    const b = new Build(scene, mats, "thing");
+  export function buildThing(mats: CelMaterialFactory, p: BuildParams = {}, ctx?: BuildCtx): Structure {
+    const b = new Build(mats, "thing");
     ...
     return b;
   }
   ```
+  No scene (`BABYLON_EXIT.md` X6.1d): the factory is all a builder is
+  handed, and the pictures a ground surface wears are cached under it.
   Drop `ctx` if it neither seeds nor reads the ground. Build at the ORIGIN,
   unrotated, ground at y = 0; the layout's `rotY` turns it. Every part through
   `Build` — never `MeshBuilder` directly.
@@ -40,9 +42,9 @@ server's bake — follows from what the builder declares.
 
 1. `src/world/BuildingKit.ts`: import it and add `thing: buildThing` to
    `BUILDERS` (grouped with its set). `BuilderKind` derives from this.
-2. `src/editor/params.ts`: a `PARAMS` row listing exactly the `BuildParams` it
-   reads, with the builder's own defaults (`[]` if none). It is a `Record` over
-   `BuilderKind`, so this is a compile error until done.
+2. (There was a `src/editor/params.ts` row here, the map editor's inspector
+   table; it went with the editor, `BABYLON_EXIT.md` X5.3c. A builder's params
+   are documented in its own header and on `BuildParams`.)
 3. A NEW param: add the field to `BuildParams` in `kit/core.ts` with a doc
    comment saying which builder reads it and what it means. The bag is shared
    and flat on purpose; reuse `width`/`depth`/`height`/`length`/`ruined`/`lit`

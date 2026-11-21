@@ -86,8 +86,8 @@ export interface MapDef {
    * way today.
    *
    * **The resolved object is the map's, not a copy**, because the module cache
-   * hands back the same one every time — which is what lets the editor's
-   * terrain brush write through it and the next rebuild read the edits back.
+   * hands back the same one every time, so every build of the map reads one
+   * floor.
    * Go through `loadHeights` rather than calling this directly; it is what
    * `heightsOf` can answer synchronously afterwards.
    */
@@ -198,8 +198,8 @@ const HARROWMEAD: MapDef = {
  *
  * Its layout was SEEDED by `scripts/generate-sarab.mjs` rather than typed —
  * `sarab/layout.ts`'s header carries that argument — and it is an ordinary
- * layout file in every other way: the editor opens it, patches it and saves it
- * exactly as it does Harrowmead's. It shares no module with the other four and
+ * layout file in every other way, and its generator is its only author, as
+ * every map's is. It shares no module with the other four and
  * must not.
  */
 const SARAB: MapDef = {
@@ -333,9 +333,9 @@ const KURENAI: MapDef = {
  *
  * **It has one because the AUTHORITY is a thing that has to be measured too.**
  * Everything S0 through S8 priced was a client frame; a match server steps the
- * same simulation for sixteen slots at a fixed 60 Hz under NullEngine, has no
+ * same simulation for sixteen slots at a fixed 60 Hz with no engine, has no
  * canvas and so cannot run `MapBuilder`, and rebuilds the solid world from this
- * bake and nothing else (`server/world.ts`). Without one, the one process whose
+ * bake and nothing else (`src/sim/simWorld.ts`). Without one, the one process whose
  * budget is a TICK could be run on every map in the tree except the only one
  * the size of the map this document exists for. `npm run simulate:dev proving`
  * is what that bought.

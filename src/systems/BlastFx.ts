@@ -1,18 +1,26 @@
 /**
  * BlastFx.ts — What a blast LOOKS like: six of its eight layers, drawn as
- * billows in one material.
- * Owns: the blast slots (one thin-instanced mesh each), the shared mesh the
- * sparks and the burning fragments' trails are drawn in, every billow's
- * motion, and the dust's colour. `GrenadeSystem` owns it and calls it; the
- * server never builds one (`GrenadeOptions.dust`), because nothing here is a
- * rule — where a blast is and whom it hurts are decided before this is asked
- * to draw it.
+ * billows in one paint.
+ * Owns: the blast slots (one BATCH of billows each), the shared batch the
+ * sparks and the burning fragments' trails are drawn in, the two icospheres
+ * every billow is an instance of (`shapes`), every billow's motion, and the
+ * dust's colour. `GrenadeFx` owns it and calls it, on the simulation's
+ * `onBlast` and `onIgnited`; the server never builds one, because nothing
+ * here is a rule — where a blast is and whom it hurts are decided before this
+ * is asked to draw it. Its points and normals are `Vector3Like`, read through
+ * their FIELDS: the simulation's are `src/math`'s.
  * Invariants: nothing allocates after construction — a billow is a record in
  * a fixed pool and a frame is property writes into three typed arrays per
- * mesh. `power` scales sizes, reaches, speeds and COUNTS and never a time
- * (`docs/grenades.md`). Every mesh here is a unit icosphere at identity whose
- * instances carry the whole transform, so its bounding box is set by hand
- * every frame from the billows it drew — and it is never a shadow caster.
+ * batch. `power` scales sizes, reaches, speeds and COUNTS and never a time
+ * (`docs/grenades.md`). Every billow is an instance of a unit icosphere at
+ * identity carrying the whole transform, so a batch's bounds are set by hand
+ * every frame from the billows it drew — the sphere `BoundingInfo.reConstruct`
+ * made of them for the batch's mesh until `BABYLON_EXIT.md` X4.4c, which our
+ * renderer's frustum test, its front-to-back order and the glow's distance
+ * fade all read (`Game.blastPull`) — and none is ever a shadow caster. Since
+ * X4.4c no mesh is made here: our renderer draws every batch
+ * (`render/BlastDraw.ts`, `Game.drawBlasts`), and a batch is drawn exactly
+ * while it holds a billow, as its mesh was visible.
  * Contract: `docs/grenades.md`, "The blast is EIGHT layers".
  *
  * WHAT A BILLOW IS. A record with an age, a life and a CLOSED-FORM motion:
@@ -26,28 +34,33 @@
  * life and is gone at the end of it. `BlastShader` turns those four numbers
  * into fire, smoke and wisps.
  *
- * WHY ONE MESH PER SLOT RATHER THAN ONE FOR EVERYTHING. The glow fades a
- * mesh's bloom with the distance to its BOUNDING SPHERE's centre
- * (`GlowRules.colour`), so a mesh has to be one place: a slot is one blast.
- * The small mesh is the exception and its bloom is only ever sparks and the
+ * WHY ONE BATCH PER SLOT RATHER THAN ONE FOR EVERYTHING. The glow fades a
+ * batch's bloom with the distance to its BOUNDING SPHERE's centre
+ * (`GlowRules.colour`), so a batch has to be one place: a slot is one blast.
+ * The small batch is the exception and its bloom is only ever sparks and the
  * hot heads of trails, a metre or two from the blast that threw them.
+ *
+ * ## Licence
+ *
+ * `BillowBatch.end`'s bounding sphere only is restated from Babylon.js 9.28
+ * (`Culling/boundingSphere.js`' `reConstruct`, as
+ * `Culling/boundingInfo.js`' `reConstruct` called it under the identity),
+ * which is licensed under the Apache License, Version 2.0
+ * (`licenses/babylonjs.md`; https://www.apache.org/licenses/LICENSE-2.0).
+ * "Babylon.js — Copyright 2023 The Babylon.js team" (its NOTICE). Changes
+ * from the original: the extent set by hand from the billows drawn (each
+ * one's larger half-extent and its lumps) in place of a mesh's vertices.
  */
-import {
-  Color3,
-  MeshBuilder,
-  Quaternion,
-  Vector3,
-  type Mesh,
-  type Scene,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { BlastMaterial } from "../shaders/BlastShader";
+import { createIcoSphere } from "../geometry/primitives";
+import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
+import type { BlastPaint } from "../shaders/BlastShader";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { EnvironmentSpec } from "../world/environment";
 
 /** What the blast went off on, as `GrenadeSystem.probeGround` answers it. */
 export interface BlastSurface {
-  normal: Vector3;
+  normal: Vector3Like;
 }
 
 /**
@@ -114,7 +127,7 @@ interface Streamer {
   size: number;
 }
 
-/** One blast: the slot's mesh, its billows, and when it goes quiet. */
+/** One blast: the slot's batch, its billows, and when it goes quiet. */
 interface Slot {
   batch: BillowBatch;
   billows: Billow[];
@@ -123,51 +136,55 @@ interface Slot {
 }
 
 /**
- * A mesh's worth of instances: the three buffers, the running bounds, and the
- * one place a billow's pose is turned into a matrix.
+ * One of the two icospheres a billow is an instance of: its arrays, as
+ * `CreateIcoSphereVertexData` made them — by `src/geometry/`'s copy since
+ * `BABYLON_EXIT.md` X6.1g (`createIcoSphere`, held to Babylon's bit for bit
+ * by `geometry-check`), doubles in a `Float64Array` where Babylon's were a
+ * `number[]`, which our renderer copies into float32 the same (`BlastDraw`).
  */
-class BillowBatch {
-  readonly mesh: Mesh;
-  private readonly cap: number;
-  private readonly matrices: Float32Array;
-  private readonly shapes: Float32Array;
-  private readonly warmth: Float32Array;
-  private count = 0;
+export interface BillowShape {
+  /** xyz a vertex. */
+  readonly positions: ArrayLike<number>;
+  readonly indices: ArrayLike<number>;
+}
+
+/**
+ * A batch of instances — what one thin-instanced MESH was until
+ * `BABYLON_EXIT.md` X4.4c: the three buffers, the running bounds, the sphere
+ * they make, and the one place a billow's pose is turned into a matrix. Read
+ * by `Game.drawBlasts` and our renderer's pull; written only here.
+ */
+export class BillowBatch {
+  /** Which icosphere its billows are instances of: 0 the slots', 1 the small batch's. */
+  readonly shape: number;
+  /** The most billows it holds. */
+  readonly cap: number;
+  /** Each instance's matrix, `Matrix.m`'s layout — the thin instances' `world0..3`. */
+  readonly matrices: Float32Array;
+  /** Each instance's heat, dissolve, seed and dust — the `billow` attribute. */
+  readonly shapes: Float32Array;
+  /** Each instance's warmth. */
+  readonly warmth: Float32Array;
+  /** How many instances it drew last — the mesh's `thinInstanceCount`. */
+  count = 0;
+  /** Whether it is drawn — the mesh's `isVisible`: it holds a billow. */
+  visible = false;
+  /**
+   * Its bounding sphere as `BoundingInfo.reConstruct` made it for the mesh
+   * (`BoundingSphere.reConstruct` under the identity: the centre and half
+   * the extent's diagonal) — as of the last frame it drew anything.
+   */
+  readonly centre = new Vector3();
+  radius = 0;
   private readonly min = new Vector3();
   private readonly max = new Vector3();
 
-  constructor(
-    scene: Scene,
-    name: string,
-    material: BlastMaterial,
-    cap: number,
-    subdivisions: number,
-  ) {
+  constructor(shape: number, cap: number) {
+    this.shape = shape;
     this.cap = cap;
     this.matrices = new Float32Array(cap * 16);
     this.shapes = new Float32Array(cap * 4);
     this.warmth = new Float32Array(cap);
-    const mesh = MeshBuilder.CreateIcoSphere(
-      name,
-      { radius: 1, subdivisions, flat: false },
-      scene,
-    );
-    mesh.material = material;
-    mesh.isPickable = false;
-    // Not `noInk`: the ink finding the edges between billows IS the drawing.
-    mesh.metadata = { noShadowCaster: true };
-    // The bounds are this class's, set from the billows every frame — Babylon
-    // would otherwise walk every instance's box, and before the first frame
-    // take all `cap` identity matrices as the mesh's extent.
-    mesh.doNotSyncBoundingInfo = true;
-    mesh.thinInstanceSetBuffer("matrix", this.matrices, 16, false);
-    mesh.thinInstanceSetBuffer("billow", this.shapes, 4, false);
-    mesh.thinInstanceSetBuffer("warmth", this.warmth, 1, false);
-    mesh.thinInstanceCount = 0;
-    mesh.computeWorldMatrix(true);
-    mesh.freezeWorldMatrix();
-    mesh.isVisible = false;
-    this.mesh = mesh;
   }
 
   begin(): void {
@@ -266,30 +283,20 @@ class BillowBatch {
   }
 
   end(): void {
-    const mesh = this.mesh;
     if (this.count === 0) {
-      if (mesh.isVisible) mesh.isVisible = false;
+      this.visible = false;
       return;
     }
-    mesh.thinInstanceCount = this.count;
-    mesh.thinInstanceBufferUpdated("matrix");
-    mesh.thinInstanceBufferUpdated("billow");
-    mesh.thinInstanceBufferUpdated("warmth");
-    mesh.getBoundingInfo().reConstruct(this.min, this.max, mesh.getWorldMatrix());
-    if (!mesh.isVisible) mesh.isVisible = true;
+    // `BoundingSphere.reConstruct`, operation for operation.
+    this.radius = Vector3.Distance(this.min, this.max) * 0.5;
+    this.max.addToRef(this.min, this.centre).scaleInPlace(0.5);
+    this.visible = true;
   }
 
   hide(): void {
     this.count = 0;
-    this.mesh.isVisible = false;
+    this.visible = false;
   }
-}
-
-/** A batch holding one upright, hot, metre-wide billow — see `BlastFx.warm`. */
-function warmBillow(batch: BillowBatch): void {
-  batch.begin();
-  batch.push(0, 0, 0, 1, 1, 0, 1, 0, 1, 0, 0, 0, 1);
-  batch.end();
 }
 
 function newBillow(): Billow {
@@ -391,27 +398,38 @@ const _q = new Quaternion();
 const _t1 = new Vector3();
 const _t2 = new Vector3();
 const _up = new Vector3(0, 1, 0);
+/** The surge's ground normal, copied off whichever library handed it in. */
+const _normal = new Vector3();
 
 export class BlastFx {
   private readonly slots: Slot[] = [];
   private readonly small: BillowBatch;
   private readonly smallBillows: Billow[] = [];
   private readonly streamers: Streamer[] = [];
-  private readonly material: BlastMaterial;
+  private readonly paint: BlastPaint;
+  /**
+   * Every batch, in the order their meshes were made until `BABYLON_EXIT.md`
+   * X4.4c — the slots, then the small one — which is the order Babylon's
+   * active-mesh list held them in, and so the tie-break of the front-to-back
+   * order and the order of the glow's mask (`Game.blastPull`).
+   */
+  readonly batches: readonly BillowBatch[];
+  /**
+   * The two icospheres a billow is an instance of — the slots' (subdivided
+   * 8) and the small batch's (4) — as `CreateIcoSphere` made each mesh's,
+   * which our renderer uploads once (`render/BlastDraw.ts`).
+   */
+  readonly shapes: readonly [BillowShape, BillowShape];
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  constructor(mats: CelMaterialFactory) {
     const g = CONFIG.grenade;
-    this.material = mats.getBlast();
+    this.paint = mats.getBlast();
     for (let i = 0; i < g.blastSlots; i++) {
       const billows: Billow[] = [];
       for (let j = 0; j < g.blastBillows; j++) billows.push(newBillow());
-      this.slots.push({
-        batch: new BillowBatch(scene, `blast${i}`, this.material, g.blastBillows, 8),
-        billows,
-        t: -1,
-      });
+      this.slots.push({ batch: new BillowBatch(0, g.blastBillows), billows, t: -1 });
     }
-    this.small = new BillowBatch(scene, "blastSmall", this.material, SMALL_CAP, 4);
+    this.small = new BillowBatch(1, SMALL_CAP);
     for (let i = 0; i < SMALL_CAP; i++) this.smallBillows.push(newBillow());
     for (let i = 0; i < STREAMERS; i++) {
       this.streamers.push({
@@ -427,13 +445,12 @@ export class BlastFx {
         size: 1,
       });
     }
-    // The EFFECT compiled now rather than on the first detonation. The
-    // PIPELINE still waits for a real draw on WebGPU, and that draw is
-    // `warm`'s, under the building card — together they keep both off the
-    // frame a player is looking hardest.
-    this.material.forceCompilation(this.slots[0].batch.mesh, undefined, {
-      useInstances: true,
-    });
+    this.batches = [...this.slots.map((s) => s.batch), this.small];
+    const sphere = (subdivisions: number): BillowShape => {
+      const data = createIcoSphere({ radius: 1, subdivisions, flat: false });
+      return { positions: data.positions, indices: data.indices };
+    };
+    this.shapes = [sphere(8), sphere(4)];
   }
 
   /**
@@ -445,11 +462,11 @@ export class BlastFx {
    */
   setEnvironment(env: EnvironmentSpec): void {
     const floor = Color3.FromHexString(env.floorColor);
-    this.material.setDust(Color3.Lerp(floor, PALE_DUST, 0.45));
+    this.paint.setDust(Color3.Lerp(floor, PALE_DUST, 0.45));
   }
 
   /** A frag's blast, or a shell's, at `power` of a frag. */
-  blast(at: Vector3, power: number, ground: BlastSurface): void {
+  blast(at: Vector3Like, power: number, ground: BlastSurface): void {
     const slot = this.claim();
     this.flash(slot, at, power);
     this.fireball(slot, at, power);
@@ -465,7 +482,7 @@ export class BlastFx {
    * column at `smoke`, and the sparks — no surge (petrol going up is a whoosh,
    * not a pressure wave) and no burning fragments (there is no metal).
    */
-  ignite(at: Vector3, fire: number, smoke: number): void {
+  ignite(at: Vector3Like, fire: number, smoke: number): void {
     const slot = this.claim();
     this.flash(slot, at, fire);
     this.fireball(slot, at, fire);
@@ -474,7 +491,7 @@ export class BlastFx {
     this.drawNow(slot);
   }
 
-  /** Ages everything, lays the trails, and poses every billow into its mesh. */
+  /** Ages everything, lays the trails, and poses every billow into its batch. */
   update(dt: number): void {
     for (const slot of this.slots) {
       if (slot.t < 0) continue;
@@ -491,7 +508,7 @@ export class BlastFx {
 
   /**
    * **A new blast is posed on the frame it is raised and not left to the
-   * next**: a slot is reused, so a mesh left as it was holds whatever the
+   * next**: a slot is reused, so a batch left as it was holds whatever the
    * LAST blast in it ended on — one frame of an old cloud where the new
    * fireball should be.
    */
@@ -519,37 +536,6 @@ export class BlastFx {
     if (any) this.small.end();
     else this.small.hide();
   }
-
-  /**
-   * One hot billow in an idle slot's batch and in the small batch, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`),
-   * or both taken back off. `forceCompilation` in the constructor builds the
-   * EFFECT and not the pipeline, which on WebGPU waits for a real draw — the
-   * first blast of a round was that draw, and on a phone it cost 403 ms
-   * (`FINDINGS.md` 16). Hot, so the glow's mask draws it too.
-   */
-  warm(on: boolean): void {
-    const slot = this.slots[this.slots.length - 1];
-    if (!on) {
-      if (this.warmedSlot) slot.batch.hide();
-      if (this.warmedSmall) this.small.hide();
-      this.warmedSlot = false;
-      this.warmedSmall = false;
-      return;
-    }
-    if (slot.t < 0) {
-      warmBillow(slot.batch);
-      this.warmedSlot = true;
-    }
-    let smallBusy = false;
-    for (const b of this.smallBillows) if (b.on) smallBusy = true;
-    if (!smallBusy) {
-      warmBillow(this.small);
-      this.warmedSmall = true;
-    }
-  }
-  private warmedSlot = false;
-  private warmedSmall = false;
 
   /** Takes every blast out of the air — a map is going away under it. */
   reset(): void {
@@ -643,7 +629,7 @@ export class BlastFx {
    * The core: one billow, already large, white to its rim and torn apart
    * inside `flash.life`.
    */
-  private flash(slot: Slot, at: Vector3, power: number): void {
+  private flash(slot: Slot, at: Vector3Like, power: number): void {
     const fl = CONFIG.grenade.flash;
     const b = this.take(slot);
     if (!b) return;
@@ -664,7 +650,7 @@ export class BlastFx {
   }
 
   /** The cluster: out along the golden angle, fire, then its own smoke. */
-  private fireball(slot: Slot, at: Vector3, power: number): void {
+  private fireball(slot: Slot, at: Vector3Like, power: number): void {
     const fb = CONFIG.grenade.fireball;
     const n = fb.billows;
     const spin = Math.random() * Math.PI * 2;
@@ -705,7 +691,7 @@ export class BlastFx {
   }
 
   /** The column: thrown straight up, stacking as the drag catches each one. */
-  private column(slot: Slot, at: Vector3, power: number): void {
+  private column(slot: Slot, at: Vector3Like, power: number): void {
     const c = CONFIG.grenade.column;
     const n = Math.max(1, Math.round(c.billows * power));
     for (let j = 0; j < n; j++) {
@@ -741,8 +727,11 @@ export class BlastFx {
   }
 
   /** The surge: a ring of low dust rolled out flat to the ground. */
-  private surge(slot: Slot, at: Vector3, power: number, normal: Vector3): void {
+  private surge(slot: Slot, at: Vector3Like, power: number, ground: Vector3Like): void {
     const s = CONFIG.grenade.surge;
+    // A copy of the simulation's ground normal, which is not ours to write
+    // through (a crossing into Babylon's vector until `BABYLON_EXIT.md` X6.1e).
+    const normal = _normal.copyFromFloats(ground.x, ground.y, ground.z);
     const n = Math.max(3, Math.round(s.billows * power));
     // Two tangents of the ground, so the ring lies on a slope or a wall as
     // well as on the level.
@@ -791,7 +780,7 @@ export class BlastFx {
   }
 
   /** Hot metal, as strokes on an even-ish spread. */
-  private sparks(at: Vector3, power: number): void {
+  private sparks(at: Vector3Like, power: number): void {
     const sp = CONFIG.grenade.sparks;
     const n = Math.round(sp.count * power);
     for (let j = 0; j < n; j++) {
@@ -820,7 +809,7 @@ export class BlastFx {
   }
 
   /** The burning fragments: thrown out and up, laying their trails in `update`. */
-  private trails(at: Vector3, power: number): void {
+  private trails(at: Vector3Like, power: number): void {
     const tr = CONFIG.grenade.trails;
     const n = Math.round(tr.streamers * power);
     const spin = Math.random() * Math.PI * 2;

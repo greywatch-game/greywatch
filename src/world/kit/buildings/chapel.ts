@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -134,12 +133,11 @@ const LIMEWASH = "#77705f";
  * taller lift, and the layout owns that number.
  */
 export function buildChapel(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "chapel");
+  const b = new Build(mats, "chapel");
   const w = 12;
   const d = 20;
   const h = 7;

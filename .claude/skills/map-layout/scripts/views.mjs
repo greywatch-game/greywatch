@@ -13,6 +13,11 @@
 // With neither --flags nor --viewfile it takes --flags. Writes <dir>/<name>.jpg
 // at 1280x720. Needs a GPU (see VERIFYING.md for this machine). The capture
 // rings stay drawn on purpose: they are where the fight is.
+//
+// The frame — its draws and its readiness — is asked of the ONE frame
+// adapter (scripts/lib/frameAdapter.mjs, BABYLON_EXIT.md X6.1a and
+// its review), which answers with or without a scene; REF_NO_SCENE=1 in the
+// environment makes it the no-scene one.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -48,12 +53,17 @@ const only = opt("only") ? new Set(opt("only").split(",")) : null;
 
 const { launchClient } = await import(pathToFileURL(join(ROOT, "scripts/browser.mjs")).href);
 const { startDevServer } = await import(pathToFileURL(join(ROOT, "scripts/dev-server.mjs")).href);
+// The frame — its draws, its readiness — through the ONE frame adapter
+// (`scripts/lib/frameAdapter.mjs`, `BABYLON_EXIT.md` X6.1a), which answers
+// with or without a scene.
+const { installFrameAdapter } = await import(pathToFileURL(join(ROOT, "scripts/lib/frameAdapter.mjs")).href);
 const vite = await startDevServer(ROOT);
 const browser = await launchClient({ headed: false });
 try {
   const page = await browser.newPage({ viewport: { width: 1280, height: 720 } });
   page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
   await page.addInitScript((m) => window.localStorage.setItem("greywatch.map", m), id);
+  await installFrameAdapter(page);
   await page.goto(vite.url, { waitUntil: "domcontentloaded" });
   await page.addStyleTag({ content: "#hud{display:none!important}#boot{display:none!important}" });
   await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 120_000 });
@@ -65,7 +75,13 @@ try {
       const poll = () => (g.state === "deploy" ? r() : setTimeout(poll, 50));
       poll();
     });
-    if (!bots) for (const b of g.battle.bots) b.rig.root.setEnabled(false);
+    // No bodies unless asked: the session's roster (`g.net.roster`) re-shows
+    // a living one every frame, so it draws none past 0 m instead.
+    const roster = g.net?.roster;
+    if (!bots && roster) {
+      roster.setViewDistance(0);
+      for (const body of roster.soldiers) body.setEnabled(false);
+    }
   }, args.includes("--bots"));
   for (const [name, v] of Object.entries(views)) {
     if (only && !only.has(name)) continue;
@@ -86,18 +102,32 @@ try {
       // Ready first (WebGPU compiles pipelines lazily and presents nothing
       // until they exist), then a few frames for the shadow map and the post
       // chain to settle — capture-map-shots.mjs has the measurement.
-      const until = (done) =>
+      // The frame drawn and the readiness through the frame adapter
+      // (`scripts/lib/frameAdapter.mjs`, BABYLON_EXIT.md X6.1a): OUR frame's
+      // point since X5.4f (the scene was never rendered), and the scene's
+      // readiness while there was one, the game's (`Game.pending`) since
+      // X6.1h.
+      // The deadline is a TIMER as well as a test read from a frame, so a page
+      // that has stopped drawing still gives up rather than hanging the run.
+      const F = window.__refFrame();
+      const until = (done, ms) =>
         new Promise((res) => {
-          const o = g.scene.onAfterRenderObservable.add(() => {
-            if (!done()) return;
-            g.scene.onAfterRenderObservable.remove(o);
+          const giveUp = performance.now() + ms;
+          let off = null;
+          const stalled = setTimeout(() => {
+            off();
+            res();
+          }, ms + 5_000);
+          off = F.onDrawn(() => {
+            if (!done() && performance.now() <= giveUp) return;
+            clearTimeout(stalled);
+            off();
             res();
           });
         });
-      const giveUp = performance.now() + 120_000;
-      await until(() => g.scene.isReady() || performance.now() > giveUp);
+      await until(() => F.ready(), 120_000);
       let n = 0;
-      await until(() => ++n >= 8);
+      await until(() => ++n >= 8, 120_000);
     }, v);
     writeFileSync(join(outDir, `${name}.jpg`), await page.screenshot({ type: "jpeg", quality: 85 }));
     console.log(`  ${name}`);

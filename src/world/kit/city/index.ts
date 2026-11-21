@@ -75,8 +75,9 @@
  * - **Mullions and railings are `strut`s, not walls.** A 0.24 m fin is a shape
  *   `NavGrid` can only get wrong, and it is exactly the fence's problem: it has
  *   to stop a round where it is drawn and be no body at all. `MapBuilder`
- *   merges a placement's struts into one collider mesh, which is what makes a
- *   glazed elevation affordable.
+ *   groups a placement's struts into one `rayGroups` entry (one merged
+ *   collider mesh while a ray was a pick — what made a glazed elevation
+ *   affordable then).
  *
  * ## What an enterable building COSTS, which is the budget for the next one
  *
@@ -162,7 +163,7 @@
  *
  * **A LENS is free and a LIGHT is one of sixteen, and almost everything in this
  * file follows from that.** `Build.glow` is an emissive box: it takes the
- * glow's bloom and `EmissiveFog`'s per-pixel fade for nothing and spends
+ * glow's bloom and the unlit draws' per-pixel fog fade for nothing and spends
  * no shader slot at all. `Build.light` spends one, `LightingSystem` uploads the
  * sixteen nearest, and there is no arbitration beyond distance — so an
  * unbudgeted fixture is not a fixture that costs a little, it is an interior

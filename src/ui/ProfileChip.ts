@@ -2,9 +2,11 @@
  * ProfileChip.ts — the frame profiler's corner of the screen: what it is
  * holding, and the four buttons that get it off the device or into the reader.
  * Owns: `#prof` and the delivery of a report — the hand-off, the clipboard, the
- * download and the fallbacks between them. Owns NO profiling state: what it
- * shows is PUSHED by `Game` like every other HUD gauge, and a report is fetched
- * through `onCapture` rather than by reaching for the instrument.
+ * download and the fallbacks between them — and `#prof-hold`, the prompt a
+ * benchmark on a touch device waits behind (`setHold`). Owns NO profiling
+ * state: what it shows is PUSHED by `Game` like every other HUD gauge, and a
+ * report is fetched through `onCapture` rather than by reaching for the
+ * instrument.
  *
  * **It is a DEVICE on `#hud`, not a screen** — the arrangement `TouchControls`
  * already is. There is no `GameState` for it, it covers nothing, it takes
@@ -116,6 +118,11 @@ export class ProfileChip {
   /** Asked for the ring as Chrome Trace Event JSON. */
   onTrace: (() => string) | null = null;
 
+  /** Told the benchmark's hold prompt was tapped — see `setHold`. */
+  onHoldTap: (() => void) | null = null;
+  /** The hold prompt, made on its first use; null on every page with no bench. */
+  private holdEl: HTMLElement | null = null;
+
   constructor() {
     const hud = document.getElementById("hud")!;
     this.root = document.createElement("div");
@@ -178,6 +185,39 @@ export class ProfileChip {
       this.hitchEl.textContent = String(hitches);
       this.hitchEl.classList.toggle("hot", hitches > 0);
     }
+  }
+
+  /**
+   * The benchmark's HOLD on a touch device (`Game.holdBench`): a prompt over
+   * the whole screen, which the run waits behind until it is tapped and the
+   * screen has settled; null takes it down. A run is a URL, and a page that
+   * was typed or refreshed cannot be fullscreen — taking the screen needs a
+   * gesture — so the run asks for one before it measures anything.
+   *
+   * **The tap is not answered here**: it reaches the document's own
+   * `pointerdown` (`Game.installDomListeners`), which is what calls
+   * `enterFullscreenOnTouch`, so the prompt neither stops it nor makes a
+   * second request. `preventDefault` stops the synthesized mouse event, as on
+   * the buttons. It is not inside `#prof`, which is hidden until the ring is
+   * armed, and the ring is armed only once the hold is over.
+   */
+  setHold(text: string | null): void {
+    if (text === null) {
+      this.holdEl?.classList.add("hidden");
+      return;
+    }
+    if (!this.holdEl) {
+      const el = document.createElement("div");
+      el.id = "prof-hold";
+      el.addEventListener("pointerdown", (e: PointerEvent) => {
+        e.preventDefault();
+        this.onHoldTap?.();
+      });
+      document.getElementById("hud")!.appendChild(el);
+      this.holdEl = el;
+    }
+    this.holdEl.textContent = text;
+    this.holdEl.classList.remove("hidden");
   }
 
   /** The `F3` path and the `KEEP` button's, so the two cannot diverge. */

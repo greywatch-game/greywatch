@@ -7,20 +7,32 @@
  * socket and never to a game system it was not handed. It decides nothing about
  * the round — every outcome here arrived from the authority.
  *
- * It exists so that `Game` gains a field and a branch rather than a protocol.
- * The offline path is untouched: with no session, `updateWorld` runs
- * `ConquestSystem` and `BattleSystem` exactly as it always has, and nothing in
- * this file is constructed at all.
+ * It exists so that `Game` gains a field rather than a protocol — and EVERY
+ * round has one. A match on a server is
+ * reached over a WebSocket; the offline round is a session on a match the
+ * page hosts itself (`LocalMatch`, `matchHost.ts`), reached over a port, and
+ * this class cannot tell the two apart by anything it does: the same
+ * messages, the same prediction, the same validation on the far side. The
+ * one thing it is TOLD is `local` — whether the page OWNS the match — which
+ * is the authority question `Game` asks of it and nothing here reads.
  *
- * **Movement is uploaded, not commanded.** The local `Player` simulates itself
- * exactly as it does offline and this reports where it ended up at `INPUT_HZ`.
+ * A WATCHER is a session too (`Match.watch`, the benchmark's): welcomed at
+ * slot -1, seated, and nobody — every body in the pool is drawn, nothing is
+ * uploaded (`update` reports nothing while not `alive`, and a watcher never
+ * is), and nothing it could send means anything on the far side.
+ *
+ * **Movement is uploaded, not commanded.** The local `Player` PREDICTS
+ * itself — its own sweep, ground and stance, on every round alike, the
+ * page's own match included — and this reports where it ended up at
+ * `INPUT_HZ`.
  * The server validates and, when it refuses, sends a correction — which is the
  * only thing that ever moves the local body from outside. See
  * `docs/multiplayer.md`.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Vector3, type Vector3Like } from "../math";
+import type { PieceKits } from "../entities/pieces";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import { Connection, type ConnectionState, type JoinOptions } from "./Connection";
 import { NetGrenades } from "./NetGrenades";
@@ -40,12 +52,12 @@ const UPLOAD_INTERVAL = 1 / INPUT_HZ;
 /** What the local player looks like this frame, for the upload. */
 export interface LocalState {
   /**
-   * FEET — `Player.position`, never the collider capsule's centre. Every
+   * FEET — `Player.position`, never the sweep body's centre. Every
    * consumer downstream (the validator, the rewind, the other clients' bodies)
    * builds upward from this `y` and takes it as the ground the player stands
    * on. See `Player.position` for what a half-body of error does to all three.
    */
-  position: Vector3;
+  position: Vector3Like;
   yaw: number;
   pitch: number;
   crouching: boolean;
@@ -72,7 +84,7 @@ export interface LocalState {
 export interface LocalHull {
   /** The hardstanding index — the hull's identity on the wire. */
   tank: number;
-  position: Vector3;
+  position: Vector3Like;
   yaw: number;
   turretYaw: number;
   gunPitch: number;
@@ -110,7 +122,10 @@ export class NetSession {
   /** …and the anti-tank kit: rockets in the air, mines on the ground. */
   readonly ordnance: NetOrdnance;
 
-  /** The roster slot this client owns, or -1 before the welcome lands. */
+  /**
+   * The roster slot this client owns, or -1 before the welcome lands — and
+   * after it, for a WATCHER, which owns none (see the header).
+   */
   slot = -1;
   team: Team = 0;
   mapId = "";
@@ -257,12 +272,36 @@ export class NetSession {
 
   private uploadT = 0;
   private seq = 0;
+  /**
+   * A `hullcorrect` has arrived since the last `drive` went out — said ONCE,
+   * on the next one, as `DriveMessage.resync`: the motion that report
+   * describes is the correction's, and the authority's crash test rebases
+   * on it rather than reading the stop as a landing.
+   */
+  private hullResync = false;
   private readonly scratch = new Vector3();
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
-    this.roster = new NetRoster(scene, mats);
-    this.grenades = new NetGrenades(scene, mats);
-    this.ordnance = new NetOrdnance(scene, mats);
+  /**
+   * Whether the page OWNS this match — a match it hosts itself
+   * (`LocalMatch`), as the offline round is — rather than sits in one a
+   * server runs. **The AUTHORITY question, and the only one**:
+   * restarting the round, choosing its map and
+   * its difficulty, and pause and the deploy screen HOLDING the world are the
+   * owner's, so every door that asked whether there was a session at all now
+   * asks this. Nothing about PREDICTION may ask it — offline predicts exactly
+   * as a match client does — and nothing in this class reads it.
+   */
+  readonly local: boolean;
+
+  /**
+   * `perTeam` is the roster the session's rigs are first built to — the map
+   * it is opened for (`NetRoster`'s constructor); `setFielded` moves it.
+   */
+  constructor(kits: PieceKits, local: boolean, perTeam: number) {
+    this.local = local;
+    this.roster = new NetRoster(perTeam);
+    this.grenades = new NetGrenades(kits);
+    this.ordnance = new NetOrdnance(kits);
     this.conn.onStateChange = (s) => this.onStateChange(s);
     this.conn.onMessage = (msg) => this.receive(msg);
   }
@@ -296,7 +335,7 @@ export class NetSession {
     dt: number,
     local: LocalState,
     points: ControlPoint[],
-    cameraPos: Vector3,
+    cameraPos: Vector3Like,
     alive: boolean,
   ): void {
     this.points = points;
@@ -336,7 +375,11 @@ export class NetSession {
         // cone is measured against on the far side.
         aimYaw: local.yaw,
         aimPitch: local.pitch,
+        // Absent (undefined, which the encoder drops) on every drive but the
+        // first after a correction.
+        resync: this.hullResync ? 1 : undefined,
       });
+      this.hullResync = false;
       return;
     }
     // **A gunner reports one BEARING and nothing else**, and it replaces the
@@ -382,7 +425,7 @@ export class NetSession {
    * drawn `interpDelay` in the past, so that is the instant the server has to
    * rewind them to for the shot to have meant anything.
    */
-  sendShot(origin: Vector3, dir: Vector3, weaponSlot: number): void {
+  sendShot(origin: Vector3Like, dir: Vector3Like, weaponSlot: number): void {
     if (!this.seated) return;
     this.conn.send({
       t: "shot",
@@ -555,7 +598,7 @@ export class NetSession {
    * down its own copy of that axis regardless — this is what the cone check
    * bounds, not what the round is resolved along.
    */
-  sendShell(origin: Vector3, dir: Vector3): void {
+  sendShell(origin: Vector3Like, dir: Vector3Like): void {
     if (!this.seated) return;
     this.conn.send({
       t: "shell",
@@ -575,7 +618,7 @@ export class NetSession {
    * `dir` is the machine gun's own axis and not the camera's, which is the
    * same half of the reticle rule the shell's is.
    */
-  sendMg(origin: Vector3, dir: Vector3): void {
+  sendMg(origin: Vector3Like, dir: Vector3Like): void {
     if (!this.seated) return;
     this.conn.send({
       t: "mg",
@@ -604,6 +647,32 @@ export class NetSession {
     });
   }
 
+  /**
+   * The pool to `perTeam` bodies a side (`NetRoster.setFielded`, from
+   * `Game.buildRound`), with the slung launchers the last roster message
+   * named put back on it: a pool REBUILT for a new map or side is new rigs,
+   * every tube off, and the roster that names them may have arrived first.
+   */
+  setFielded(perTeam: number): void {
+    this.roster.setFielded(perTeam);
+    this.drawLaunchers();
+  }
+
+  /**
+   * Every body's slung launcher, as the last roster message says
+   * (`SlotOccupant.launcher`): on for a bot that carries one, off for every
+   * other body — a person, or a slot whose bot does not — since a roster
+   * message or a re-addressed pool (`NetRoster.setBlockWidth`) can move the
+   * tube to a different body. What the core decided (`Bot.launcher`), drawn;
+   * nothing reads it back.
+   */
+  private drawLaunchers(): void {
+    for (const soldier of this.roster.soldiers) soldier.setLauncher(false);
+    for (const s of this.slots) {
+      if (s.occupant.kind === "bot" && s.occupant.launcher) this.roster.at(s.index)?.setLauncher(true);
+    }
+  }
+
   /** Mirrored ticket counts, for the HUD. */
   get tickets(): readonly [number, number] {
     return this.roster.tickets;
@@ -612,6 +681,13 @@ export class NetSession {
   private receive(msg: ServerMessage): void {
     switch (msg.t) {
       case "welcome":
+        // The table's block width FIRST, before anything reads a slot: every
+        // body is re-addressed to the slot this match numbers it by — the
+        // ceiling when a server says nothing. See `NetRoster.setBlockWidth`.
+        this.roster.setBlockWidth(msg.blockWidth ?? CONFIG.bots.maxPerTeam);
+        // …which may have moved a tube to another body: back where the roster
+        // put it, until the roster behind this welcome restates it.
+        this.drawLaunchers();
         this.slot = msg.slot;
         this.team = msg.team;
         this.mapId = msg.mapId;
@@ -663,7 +739,7 @@ export class NetSession {
         this.vehicles.reset();
         this.ordnance.reset();
         // Last round's ASK, over last round's spawn table — and this is the
-        // exact half of a rule the far side already keeps. `NetPlayer.retire`
+        // exact half of a rule the far side already keeps. `SimPlayer.retire`
         // drops the authority's copy across a rotation because the index names
         // a spawn on the OLD map, and this side held its own copy for a
         // different reason (an unanswered request is re-sent on the next
@@ -692,6 +768,7 @@ export class NetSession {
       case "roster":
         this.slots = msg.slots;
         this.roster.applyRoster(msg.slots, this.slot);
+        this.drawLaunchers();
         break;
 
       // The board, whole. Copied INTO the arrays rather than replacing them,
@@ -780,6 +857,7 @@ export class NetSession {
       // not a body, and the only hull this client predicts is the one under its
       // own driver.
       case "hullcorrect":
+        this.hullResync = true;
         this.scratch.set(msg.pos[0], msg.pos[1], msg.pos[2]);
         this.onHullCorrection(msg.tank, this.scratch, msg.reason);
         break;

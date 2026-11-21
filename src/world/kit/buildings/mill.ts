@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -79,8 +78,8 @@ import { LAMPLIT, SHOPLIT, offFace, casement, ROOF_PITCH, WEATHERBOARD } from ".
  * the pier, the pit and the sluice stand within that collider, so the lane the
  * wheel turns over — Hollowmere's creek — gains nothing a body can walk into.
  */
-export function buildMill(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "mill");
+export function buildMill(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "mill");
   const w = 10;
   const d = 9;
   const h = 9;

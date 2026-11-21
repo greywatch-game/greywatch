@@ -16,7 +16,7 @@
  * the size of a valley. It was visible anyway, as low-frequency cloudy
  * mottling with no direction in it, which is what fBm is and is not what
  * water is. The surface is now summed from directional wave trains in the
- * fragment shader, which has no lattice to hide; see `shaders/WaterShader.ts`.
+ * fragment shader, which has no lattice to hide; see `shaders/wgsl/water.ts`.
  * A foam MASK is a different job — it is read through a smoothstep in a band a
  * metre wide — and it stays.
  */

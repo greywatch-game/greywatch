@@ -7,7 +7,6 @@
  * parapet), a ruin's unreachable roof after everything walked. Never imports
  * another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   ALLOY,
@@ -72,11 +71,10 @@ import {
  * - `tint` — a limewashed house among the brick ones. Nothing else reads it.
  */
 export function buildAdobeHouse(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "adobe");
+  const b = new Build(mats, "adobe");
   const w = p.width ?? 10;
   const d = p.depth ?? 9;
   const floors = Math.max(1, Math.min(2, p.floors ?? 1));

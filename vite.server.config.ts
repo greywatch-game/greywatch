@@ -1,23 +1,19 @@
 /**
  * vite.server.config.ts — Builds `server/` into `dist-server/`.
  *
- * Vite rather than `tsc` emitting to disk, because three things in the shared
- * `src/` tree do not survive bare Node resolution and all three are Vite's job:
+ * Vite rather than `tsc` emitting to disk, because the shared `src/` tree does
+ * not survive bare Node resolution: it imports without extensions,
+ * `TerrainField.ts` reads `import.meta.env.DEV` (a Vite substitution that is
+ * `undefined` under Node), and a map's collision bake and floor are lazy
+ * `import()`s that are worth a chunk each.
  *
- *   1. `CelShader.ts` imports
- *      `@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration` with no file
- *      extension. `@babylonjs/core` declares no `exports` map, so Node treats
- *      the specifier as a literal path and cannot find it. Those two imports
- *      are load-bearing (see CLAUDE.md) and are not to be edited for this.
- *   2. `TerrainField.ts` reads `import.meta.env.DEV`, a Vite substitution that
- *      is `undefined` under Node.
- *   3. Babylon is ~7 MB and the server reaches a fraction of it.
- *
- * Note this is the opposite side of CLAUDE.md's rule about never adding deep
- * `@babylonjs/core` subpath imports: that rule is about Vite's DEV dep
- * optimizer rewriting chunks out from under a running page. Nothing here runs
- * in a browser and nothing is optimized, so the server may import
- * `Engines/nullEngine` — which it must, since the engine is not in the barrel.
+ * **The bundle carries no Babylon and loads none** (`BABYLON_EXIT.md` X2.3).
+ * It used to import `@babylonjs/core` and `Engines/nullEngine.js` at runtime —
+ * an SSR build leaves a dependency external — for a scene whose collider
+ * meshes nothing read. Since X6.1i the package is not in the tree at all, and
+ * `scripts/check-babylon-free.mjs` (run by `npm run build`) refuses any import
+ * of it anywhere in the tree, so the `no-babylon` plugin that held the same
+ * rule at the bundler went with it.
  *
  * **There are TWO builds out of this file and the second one is a measuring
  * instrument.** `--mode development` emits to `dist-server-dev/` with
@@ -59,18 +55,21 @@ export default defineConfig(({ mode }) => ({
     // bundled 5 MB server file is otherwise unreadable.
     sourcemap: true,
     rollupOptions: {
-      // Three entries: the server proper, the headless round runner that is the
-      // only way to watch the simulation with nobody connected to it, and the
+      // Four entries: the server proper, the headless round runner that is the
+      // only way to watch the simulation with nobody connected to it, the
       // fingerprint dump that `npm run parity` diffs against a real browser
-      // build.
+      // build, and `npm run corecheck` — the scoring rules asserted off the
+      // core's events, offline and through `Match` (X2.5a C3). Only `index`
+      // is deployed; the other three are instruments.
       input: {
         index: "server/index.ts",
         simulate: "server/simulate.ts",
         parity: "server/parity.ts",
+        corecheck: "server/corecheck.ts",
       },
-      // Runtime dependencies stay external; everything in `src/` and Babylon is
-      // bundled so the three resolution problems above are settled at build
-      // time rather than at import time.
+      // Runtime dependencies stay external; everything in `src/` is bundled so
+      // the resolution problems above are settled at build time rather than at
+      // import time. There is no Babylon to decide about (see the header).
       external: ["ws", /^node:/],
       output: { entryFileNames: "[name].js" },
       /**

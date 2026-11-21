@@ -5,7 +5,34 @@
  * Run with `node plans/webgpu-ref/bank.mjs [map...]`, `--headed` to take the
  * bank in headed mode, `--check` to compare against what is already banked
  * rather than replacing it. Frames land in
- * `plans/webgpu-ref/ref/<map>-<vantage>.png`.
+ * `plans/webgpu-ref/ref/<map>-<vantage>.png`. `--query=<flags>` boots the
+ * game with that URL query — a check of a DEV switch against the bank taken
+ * without it, which is what a switch that must draw the same picture is
+ * proven by (`BABYLON_EXIT.md` X3.3a's `?ourworld`); it refuses to TAKE a
+ * bank under a switch. `--keep=<dir>` makes a check also write every frame it
+ * grabbed to `<dir>`, for a step that moves the picture on purpose and is
+ * judged by eye (`BABYLON_EXIT.md` X3.4). `--rows=<id,id,...>` WRITES (or,
+ * under `--check`, grades) only the named rows and leaves every other banked
+ * frame alone — how a row ADDED to the table is banked without re-taking the
+ * rows beside it, which would give their reference up (see below). A row's
+ * frame depends on the rows shot before it, so the map's whole sequence is
+ * still shot in order, up to its last named row, exactly as a full run or a
+ * `--check` would shoot it; the frames before are grabbed and thrown away. A
+ * map with none of the named rows is skipped, and a run under `--rows` never
+ * rewrites `ref/mode.json`.
+ *
+ * **The bank is BABYLON's picture of the blocks, taken before X3.3c, and no
+ * longer the switch-off picture.** Since X3.3c our renderer draws them in
+ * every build, so a plain `--check` grades it against Babylon's frames: the
+ * residue is X3.3a's equal-depth ties, which Babylon's front-to-back sort
+ * settles pair by pair. **And its old rows are STALE since X3.4**, which
+ * moved the scatter on purpose, and since a GPU driver update: 34 of its 143
+ * rows fail a plain `--check` on an unchanged tree (33 of the 47 banked before
+ * X3.5, and `greyfen-crossing`), so a
+ * step is graded against a BEFORE taken with `--keep` at its parent
+ * (`README.md`) until the user re-takes the bank. Re-taking it gives
+ * Babylon's picture up for good — nothing in the tree draws Babylon's
+ * picture of the blocks any more.
  *
  * **A map is several frames and not one, because a reference set is a defence
  * against a SHADER being wrong in one place.** The menu backdrop's vantage is
@@ -47,7 +74,8 @@
  * **What is deliberately NOT frozen is the post chain itself.** Switching it
  * off would reach the same zero floor and would make the bank useless for the
  * three post fragments, which are exactly the shaders a WGSL port has to
- * prove. The grain is held by replacing `post.update` — the clock stops, the
+ * prove. The grade is held by replacing its `update` (it has no clock since its
+ * paper was pinned to the world; what stops is the damage flash's decay) — the
  * vignette, the aberration, the god rays and the motion blur all stay in the
  * picture.
  *
@@ -75,6 +103,7 @@ import {
   bootMap,
   describeStack,
   freeze,
+  hardLimit,
   installRound,
   launchClient,
   placeVantage,
@@ -90,7 +119,25 @@ import { shotList } from "./vantages.mjs";
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const CHECK = args.includes("--check");
+const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
+// `--keep=<dir>`: a check also writes each frame it grabbed to <dir>, as
+// <map>-<vantage>.png, so a step that MOVES the picture on purpose can be
+// judged by eye beside the bank (`BABYLON_EXIT.md` X3.4).
+const KEEP = args.find((a) => a.startsWith("--keep="))?.slice("--keep=".length) ?? "";
+// `--rows=<id,id,...>`: write (or grade) only these rows — see the header.
+const ROWS = new Set(
+  (args.find((a) => a.startsWith("--rows="))?.slice("--rows=".length) ?? "").split(",").filter(Boolean),
+);
 const maps = args.filter((a) => !a.startsWith("--"));
+if (KEEP && !CHECK) {
+  console.error("--keep keeps a check's frames; it is no use without --check.");
+  process.exit(2);
+}
+if (KEEP) mkdirSync(KEEP, { recursive: true });
+if (QUERY && !CHECK) {
+  console.error("--query checks a switch against the bank; it never takes one (see the header).");
+  process.exit(2);
+}
 const targets = maps.length ? maps : MAP_IDS;
 
 /** Frames to let the camera-derived passes converge, BEFORE the freeze. */
@@ -113,6 +160,8 @@ if (banked && banked.mode !== mode) {
 }
 
 const sha = (b) => createHash("sha256").update(b).digest("hex");
+// The stops are the harness's (its header); a whole bank is minutes here.
+hardLimit(3600);
 const vite = await startDevServer(root);
 const browser = await launchClient({ headed: HEADED });
 const stack = await describeStack(browser, vite.url);
@@ -138,19 +187,39 @@ const decoder = CHECK
   : null;
 const VANTAGES = await vantages(browser, vite.url);
 
-console.log(`bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}\n`);
+console.log(
+  `bank: ${mode} @ ${vite.url}${CHECK ? "  (check only)" : ""}${QUERY ? `  ?${QUERY}` : ""}\n`,
+);
 const problems = [];
+// The named rows some map in the run actually has: a misspelt `--rows` id
+// would otherwise skip every map and pass.
+const rowsFound = new Set();
 for (const id of targets) {
-  const shots = shotList(id, VANTAGES[id]);
+  let shots = shotList(id, VANTAGES[id]);
   if (!shots.length) {
     console.log(`${id.padEnd(12)} no vantage anywhere for this map — skipped, which is not an error`);
     continue;
+  }
+  if (ROWS.size) {
+    // The sequence up to the last named row and no further: the rows before
+    // it are shot for the state they carry, not for their frames.
+    for (const v of shots) if (ROWS.has(v.id)) rowsFound.add(v.id);
+    const last = shots.findLastIndex((v) => ROWS.has(v.id));
+    if (last < 0) {
+      console.log(`${id.padEnd(12)} none of --rows here — skipped`);
+      continue;
+    }
+    shots = shots.slice(0, last + 1);
   }
   // ONE boot per map and every vantage shot out of it. `VERIFYING.md`'s
   // one-vantage-per-process rule is about cycling back through `playing`
   // between vantages, which lets a frame of gameplay run and moves the player;
   // holding the lid up and placing the camera by hand moves nothing at all.
-  const { page, pageErrors } = await bootMap(browser, vite.url, id);
+  const { page, pageErrors, consoleErrors } = await bootMap(
+    browser,
+    QUERY ? `${vite.url}/?${QUERY}` : vite.url,
+    id,
+  );
   await installRound(page);
   // The settings every row is shot at unless it states its own: this
   // machine's defaults, which are DEVICE-derived (`settings.ts`), and which
@@ -162,7 +231,14 @@ for (const id of targets) {
     // Put the real updaters back before placing the next camera: the god rays
     // and the motion blur are pinned by a camera that has been standing still
     // rather than by a constant, so a teleport into a frozen chain photographs
-    // the PREVIOUS vantage's convergence smeared across this one.
+    // the PREVIOUS vantage's convergence smeared across this one. **Every**
+    // updater, including a pass a row's settings REBUILT since the last thaw
+    // (the shafts, on a rung change or off to on): until X5.2a's held finding
+    // F1 the thaw restored only the shafts' first object, so Hollowmere's five
+    // rows after `post-novol` and `post-glowlow` (`ground`, `crossing`,
+    // `sky-moon`, `sky-motes`, `ring-flown`) were shot with the shafts held at
+    // `lanterns`' basis — exactly this smear — and were re-banked when it was
+    // fixed (`harness.mjs`'s `freeze`).
     await thaw(page);
     await placeVantage(page, v);
     // Re-asked per vantage rather than once per boot, because readiness is a
@@ -174,7 +250,12 @@ for (const id of targets) {
     // the freeze pins are unaffected by how long this takes, which is the
     // point of pinning them. See `freeze`.
     await settle(page, CONVERGE_FRAMES);
-    await freeze(page, undefined, { windTime: v.wind ?? 0, turn: v.turn ?? 0 });
+    await freeze(page, undefined, {
+      windTime: v.wind ?? 0,
+      turn: v.turn ?? 0,
+      strike: v.strike ?? null,
+      damage: v.damage ?? false,
+    });
     await settle(page, SETTLE_FRAMES);
 
     const a = await page.screenshot({ type: "png", timeout: 120_000 });
@@ -182,7 +263,9 @@ for (const id of targets) {
     const reproducible = sha(a) === sha(b);
     const out = join(refDir, `${id}-${v.id}.png`);
 
-    if (!reproducible) {
+    if (ROWS.size && !ROWS.has(v.id)) {
+      console.log(`${label} shot for the sequence, not ${CHECK ? "graded" : "written"} (--rows)`);
+    } else if (!reproducible) {
       problems.push(`${id}/${v.id}: frame is not reproducible — two consecutive grabs differ`);
       console.log(`${label} NOT REPRODUCIBLE — nothing written (drawn on frame ${drawnOnFrame})`);
     } else if (CHECK) {
@@ -196,6 +279,7 @@ for (const id of targets) {
         // fail on every run and teach everyone to ignore it.
         const grab = join(refDir, `${id}-${v.id}.check.png`);
         writeFileSync(grab, a);
+        if (KEEP) writeFileSync(join(KEEP, `${id}-${v.id}.png`), a);
         const d = await comparePngs(out, grab, { tiles: true, browser: decoder });
         rmSync(grab, { force: true });
         const bad = d.sizeMismatch || d.meanAbs > CHECK_TOLERANCE;
@@ -225,14 +309,28 @@ for (const id of targets) {
       );
     }
   }
+  // The thaw at the top of the loop is the one that CHECKS the freeze it
+  // undoes (the irradiance volume's hold, `freeze`'s `gi` block, throws there
+  // if it dispatched under the stub), and it runs only before a NEXT row — so
+  // without this one the map's last row would be the one row never checked.
+  await thaw(page);
   if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors`);
+  // The console is part of the verdict: a draw of ours that fails says so
+  // there (an uncaptured WebGPU error, a pipeline that did not build) and
+  // draws nothing, which a frame alone can mistake for a pass.
+  if (consoleErrors.length) {
+    problems.push(`${id}: ${consoleErrors.length} console errors${QUERY ? ` under ?${QUERY}` : ""}`);
+    for (const e of consoleErrors.slice(0, 5)) console.log(`  console: ${e.slice(0, 300)}`);
+  }
   await page.close();
 }
 
+for (const r of ROWS) if (!rowsFound.has(r)) problems.push(`--rows: no map in this run has a row "${r}"`);
+
 // Only a FULL re-take may say what the bank was taken on: a run over some
-// maps leaves the rest of the frames as they were, taken on whatever was
-// recorded before it.
-if (!CHECK && !maps.length) writeFileSync(modePath, JSON.stringify({ mode, ...stack }, null, 2));
+// maps, or some rows, leaves the rest of the frames as they were, taken on
+// whatever was recorded before it.
+if (!CHECK && !maps.length && !ROWS.size) writeFileSync(modePath, JSON.stringify({ mode, ...stack }, null, 2));
 else if (!CHECK && !existsSync(modePath)) {
   writeFileSync(modePath, JSON.stringify({ mode, ...stack, partial: targets }, null, 2));
 }

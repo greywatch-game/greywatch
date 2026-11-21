@@ -5,7 +5,7 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Matrix, Scene } from "@babylonjs/core";
+import { Matrix } from "../../../math";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { caskData } from "../../props/cask";
 import { mulberry32 } from "../../rng";
@@ -28,8 +28,8 @@ import {
 } from "../core";
 
 /** Grain silo: a tall corrugated cylinder. Pure cover, not enterable. */
-export function buildSilo(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "silo");
+export function buildSilo(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "silo");
   const h = 12;
   const dia = 6;
   b.cyl(h, dia, dia * 1.06, 10, 0, h / 2, 0, DARK_STONE);
@@ -61,12 +61,11 @@ export function buildSilo(scene: Scene, mats: CelMaterialFactory): Structure {
  * run gets another post instead.
  */
 export function buildFence(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "fence");
+  const b = new Build(mats, "fence");
   const len = p.length ?? 10;
   const run = groundRun(ctx, len, {
     pitch: 2.5,
@@ -115,12 +114,11 @@ export function buildFence(
  * a hill.
  */
 export function buildStoneWall(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "stonewall");
+  const b = new Build(mats, "stonewall");
   const len = p.length ?? 12;
   const h = p.height ?? 1.5;
   const run = groundRun(ctx, len, { pitch: 5, depth: 0.72, pad: 0.35, between: true });
@@ -166,10 +164,9 @@ export function buildStoneWall(
  * be another square around another cone.
  */
 export function buildHaystack(
-  scene: Scene,
   mats: CelMaterialFactory,
 ): Structure {
-  const b = new Build(scene, mats, "haystack");
+  const b = new Build(mats, "haystack");
   b.cyl(2.2, 2.6, 3.2, 7, 0, 1.1, 0, THATCH);
   b.cyl(1.4, 0.2, 2.6, 7, 0, 2.9, 0, THATCH);
   b.block({ w: 2.8, h: 2.2, d: 2.8, x: 0, y: 1.1, z: 0 });
@@ -178,10 +175,9 @@ export function buildHaystack(
 
 /** Iron lamp post, the village's standard fixture. Carries a light. */
 export function buildLampPost(
-  scene: Scene,
   mats: CelMaterialFactory,
 ): Structure {
-  const b = new Build(scene, mats, "lamp");
+  const b = new Build(mats, "lamp");
   b.cyl(4, 0.14, 0.26, 6, 0, 2, 0, IRON);
   b.box(0.9, 0.1, 0.1, 0.35, 3.75, 0, IRON);
   b.cyl(0.62, 0.42, 0.3, 6, 0.75, 3.45, 0, IRON);
@@ -208,12 +204,11 @@ export function buildLampPost(
  * 4.5 cm high on the ground.
  */
 export function buildCrates(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "crates");
+  const b = new Build(mats, "crates");
   b.box(1.5, 1.2, 1.4, -0.6, 0.6, 0, PLANK);
   b.box(1.3, 1.1, 1.3, 0.8, 0.55, 0.3, TIMBER);
   b.box(1.2, 1.0, 1.1, -0.35, 1.7, -0.15, TIMBER, { y: 0.4 });
@@ -237,8 +232,8 @@ export function buildCrates(
 }
 
 /** Stone water trough and hitching rail. Low cover — cross it, don't hide. */
-export function buildTrough(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "trough");
+export function buildTrough(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "trough");
   b.box(3.0, 0.7, 1.1, 0, 0.35, 0, STONE);
   for (const sx of [-1, 1]) {
     b.box(0.18, 0.34, 1.1, (sx * 3.0) / 2, 0.87, 0, STONE);
@@ -261,8 +256,8 @@ export function buildTrough(scene: Scene, mats: CelMaterialFactory): Structure {
  * Roadside shrine: a stone pillar with a lit niche. Carries a small light, so
  * keep them spread — every one competes for a shader slot with the lamps.
  */
-export function buildShrine(scene: Scene, mats: CelMaterialFactory): Structure {
-  const b = new Build(scene, mats, "shrine");
+export function buildShrine(mats: CelMaterialFactory): Structure {
+  const b = new Build(mats, "shrine");
   b.box(1.5, 0.4, 1.5, 0, 0.2, 0, DARK_STONE);
   b.box(1.0, 1.8, 1.0, 0, 1.3, 0, MOSS_STONE);
   // The niche: a shallow recess read as two jambs and a hood.

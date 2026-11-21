@@ -1,13 +1,13 @@
 /**
  * config/bots.ts — bot AI, and the nav grid it steers on.
  * Owns: squad sizes, skill tiers, perception, cover, the think budget and the
- * LOD/ragdoll gates. Contract: `docs/bots.md`.
- * Gotcha: three numbers here carry the frame budget — `thinkRate`, the rig
- * pool size and `lodDisableDistance`. Loosening any of them costs ~10x draw
- * calls or a permanent hitch.
+ * ragdoll gate. Contract: `docs/bots.md`.
+ * Gotcha: two numbers here carry the frame budget — `thinkRate` and the rig
+ * pool size (with the body draw distance, which is the MAP's —
+ * `bodyDrawDistanceOf`). Loosening any of them costs ~10x draw calls or a
+ * permanent hitch.
  */
 
-import { FOG_WALL } from "./fogWall";
 
 /** Bot roster, AI cadence, and the render LOD that makes 16 of them viable. */
 export const bots = {
@@ -30,16 +30,19 @@ export const bots = {
    * The most a map may field a side, and the only thing this number IS is a
    * bound on `MapLayout.perTeam`.
    *
-   * It exists because a roster is spent in RIGS: a bot is fourteen merged
-   * meshes that Babylon's active-mesh pass walks every frame whether the body
-   * is enabled or not (`WorldCulling` — a disabled mesh is skipped cheaply, not
-   * skipped), so the pool is a per-frame cost on every map that carries it and
-   * a map's roster has to be a number somebody chose rather than one a layout
-   * can run away with. 24 is Sarab's, which is what it was raised to.
+   * It exists because a roster is spent in RIGS: a body is a joint tree
+   * composed every frame it is drawn, an instance of its side's kit in every
+   * draw of the bodies (`render/BodyDraw.ts`, whose instance capacity is this
+   * twice and the death cam's stand-in) and, until `BABYLON_EXIT.md` X4.1d,
+   * fourteen meshes Babylon's active-mesh pass walked whether the body was
+   * enabled or not — so the pool is a per-frame cost on every map that carries
+   * it and a map's roster has to be a number somebody chose rather than one a
+   * layout can run away with. 24 is Sarab's, which is what it was raised to.
    *
    * It is NOT a pool size on a CLIENT and nothing there is built to it: the
    * pool is the map's own roster and is rebuilt when that changes
-   * (`BattleSystem.setRoster`, `NetRoster.setFielded`), which is what keeps a
+   * (`BattleSystem.setRoster` with `NetRoster.setFielded`),
+   * which is what keeps a
    * 240 m village paying for sixteen bodies rather than forty-eight.
    *
    * **The AUTHORITY is the exception and builds exactly this, once.** It draws
@@ -167,21 +170,6 @@ export const bots = {
   detourTime: 1.0,
   /** How far to the side the watchdog looks when choosing a way round. */
   detourProbe: 1.6,
-  /** Distance past which the pose is frozen (still translates). */
-  lodFreezeDistance: 35,
-  /**
-   * Distance past which the rig is not drawn at all — the fog wall, where
-   * there is nothing to see. The bot keeps integrating, so the battle line
-   * still moves out there; only the drawing and posing stop.
-   *
-   * **What runs is the MAP's** (`BattleSystem.viewDistance`, pushed by
-   * `Game.installMap`): its `fogEnd`, or its `EnvironmentSpec.bodyDrawDistance`
-   * where it states one. This value is what the system carries before any map
-   * is installed — and it is also, by arithmetic rather than by wiring, what
-   * the two valleys get, since both state a `fogEnd` of 78.
-   */
-  lodDisableDistance: FOG_WALL,
-
   /**
    * Fire discipline. Everything here is the same for every bot; anything that
    * should separate an ace from a rookie lives in `skill` below.
@@ -580,8 +568,9 @@ export const bots = {
     /**
      * When a body the pool did NOT take is hidden.
      *
-     * That is only ever a death past `maxDistance` — the fog wall, where the
-     * rig has already stopped being drawn — so this is a bookkeeping clock and
+     * That is only ever a death past the body draw distance
+     * (`RagdollSystem.viewDistance`), where the rig has already stopped being
+     * drawn — so this is a bookkeeping clock and
      * not a piece of timing anybody watches. It is still on the wire: netplay
      * sends `deathProgress` as `since / hideTime` and a client hides a body it
      * did not ragdoll when that reaches 1.
@@ -616,42 +605,6 @@ export const bots = {
      * the RATIO to the roster as the trustworthy part.
      */
     maxConcurrent: 8,
-    /**
-     * No ragdoll past this, measured ONCE at the moment of death — a corpse
-     * does not move, and re-testing per frame would switch a tumble off
-     * halfway through because the player backed away.
-     *
-     * **It is the pool's ONE remaining refusal**, and that is why it has to be
-     * exactly where a body stops being drawn rather than merely near it: a
-     * body refused inside the fog would stand where it died until `hideTime`,
-     * with nothing left to pose it.
-     *
-     * It is the FOG WALL, and it is the same number as `lodDisableDistance`
-     * BY CONSTRUCTION rather than by coincidence: that is where the rig stops
-     * being drawn, so one metre further is a solver tumbling something the
-     * player cannot see. Every death inside the fog is eligible, which is
-     * what a marksman rifle needs — its own range is bounded by the same wall.
-     *
-     * The construction now has something to survive: a map may state a
-     * `bodyDrawDistance` shorter than its fog, and when it does the rig LOD and
-     * this move together because `Game.installMap` resolves ONE number
-     * (`bodyDrawDistanceOf`) and pushes it to both. This value is what a map
-     * with no opinion gets.
-     *
-     * It is deliberately NOT `lodFreezeDistance` (35), which is what this was
-     * pinned to and why nothing dying across the square ever fell over. That
-     * LOD only skips `animateSoldier`, and `Bot.update`'s dead branch already
-     * skips it while `ragdolling` — a ragdoll poses through the proxy nodes
-     * its joints are parented to, which the solver writes whatever the LOD
-     * says. Verified: a corpse at 50 m driven through the real
-     * `BattleSystem.update` tumbles from a 0.64 m standing joint spread to
-     * 0.002 m face-down on the floor, rig still enabled.
-     *
-     * This costs nothing per frame on its own — `maxConcurrent` is what
-     * bounds the solver — but it does keep the pool busier, which is the
-     * other half of why that went up with it.
-     */
-    maxDistance: FOG_WALL,
     /** Matches the grenade's exaggerated fall, not the player's. */
     gravity: -18,
     /**
@@ -706,9 +659,9 @@ export const bots = {
        *
        * - **These figures are METRES PER SECOND of the whole body**, not
        *   impulses. `RagdollSystem.applyImpulse` spends `speed * mass` on
-       *   every bone at its own origin, so all ten leave at the same velocity
+       *   every bone at its own origin, so all twelve leave at the same velocity
        *   and nothing is sheared through a joint. The alternative — the same
-       *   throw applied to the 34 kg chest alone — is nine limbs being caught
+       *   throw applied to the 34 kg chest alone — is eleven bones being caught
        *   up by their constraints, which is a body coming apart rather than a
        *   body being thrown.
        * - **`base` is small and `perDamage` carries it**, because the blast

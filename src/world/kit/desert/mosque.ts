@@ -6,7 +6,6 @@
  * not climbable — that is the decision, not an omission. Never imports
  * another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   ALLOY,
@@ -40,11 +39,10 @@ import {
  * tile, which is what a dome is made of anyway.
  */
 export function buildMosque(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "mosque");
+  const b = new Build(mats, "mosque");
   const w = p.width ?? 26;
   const d = p.depth ?? 20;
   const h = p.height ?? 7.4;
@@ -118,11 +116,10 @@ export function buildMosque(
  * have learned the streets. It costs three collider boxes to be that.
  */
 export function buildMinaret(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "minaret");
+  const b = new Build(mats, "minaret");
   const h = p.height ?? 26;
   const base = 4.2;
 

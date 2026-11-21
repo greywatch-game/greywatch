@@ -114,8 +114,8 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
    * Unread now, for the reason above.
    *
    * It was also BAKED into the rim material rather than pushed as a uniform, so
-   * unlike the rest of this palette it needed the map rebuilt and the editor's
-   * work light would not show it.
+   * unlike the rest of this palette it needed the map rebuilt and the
+   * viewer's work light would not show it.
    */
   ridgeScreeColor: "#464c2e",
   accentColor: "#7fe0a0",
@@ -291,7 +291,7 @@ export const HarrowmeadEnvironment: EnvironmentSpec = {
     zenithColor: "#9c7658",
     // Near `fogColor` and above it, so the band reads as the brightest air
     // rather than as more wall. It is also what the lowest clouds haze toward
-    // (`CloudShader`), so a cloud over the rim melts into the same band.
+    // (`shaders/wgsl/cloud.ts`), so a cloud over the rim melts into the same band.
     horizonColor: "#efc07c",
     starColor: "#ffffff",
     starCount: 0,

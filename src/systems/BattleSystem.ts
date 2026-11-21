@@ -1,7 +1,11 @@
 /**
  * BattleSystem.ts — Bot roster: a pool built once PER ROSTER SIZE and never
- * disposed inside a round (death hides a rig, respawn re-poses it — respawning
- * is continuous), AI scheduling, LOS, distance LOD.
+ * rebuilt inside a round (death takes a body out of the world, respawn puts
+ * it back — respawning is continuous), AI scheduling, LOS. The SIMULATION and
+ * nothing else, on `src/math`, importing nothing from Babylon: no scene, no
+ * rig and no camera. What a body LOOKS like — the rig pool, the distance LOD,
+ * the muzzle flashes — is a client's (`NetRoster`, off the wire); the
+ * authority builds none.
  * Invariants: think ticks are staggered round-robin at CONFIG.bots.thinkRate,
  * and a dead bot must not consume a budget slot or the living think slower than
  * advertised. Target acquisition ray-tests candidates nearest-first, stops at
@@ -18,17 +22,18 @@
  * `groundHeight` is `clearObstacles`' sibling, answering off the map's terrain
  * and collider boxes — the same geometry Player.probeGround reads, so a bot's
  * feet and a player's stand on one floor rather than on two descriptions of it.
- * Bot muzzle flashes are NOT pulsed from here — this system only records flash
- * positions and Game spends CONFIG.lighting.muzzleBudgetPerFrame on the nearest
- * few (16 shader light slots are absolute). Runs AFTER ConquestSystem.update each frame.
+ * Bot muzzle flashes are NOT pulsed or even recorded here — a bot's shot goes
+ * out through onBotFired, the client keeps the positions and Game spends
+ * CONFIG.lighting.muzzleBudgetPerFrame on the nearest few (16 shader light
+ * slots are absolute). Runs AFTER ConquestSystem.update each frame.
  * Cross-system effects go out via onBotKill/onBotFired callbacks wired in
- * Game — never import other systems. A bot's grenade leaves the same way
+ * SimCore — never import other systems. A bot's grenade leaves the same way
  * (throwGrenadeFor): the ballistics and the pool are GrenadeSystem's, and this
  * file only forwards the bot's ask and its answer.
  * Non-bot combatants live in `humans` (one offline, up to sixteen on the
  * server) and must be visible to hittablesAgainst and acquire, or bots shoot
  * through people. Bots whose roster slot a human has taken are BENCHED: not
- * respawned, not thought for, not shootable, not drawn — and un-benching drops
+ * respawned, not thought for, not shootable, not shown — and un-benching drops
  * them back into the ordinary respawn queue with skill and squad intact, which
  * is what makes a human joining and leaving symmetrical. Bots inside a TANK
  * are the bench's twin (`crewed`, written by `VehicleCrew` through `setCrewed`):
@@ -39,32 +44,35 @@
  * `setFielded`. Every loop over `bots` must skip all three, and the one test
  * that does it is `aside` — never `benched.has` directly. `Bot` itself knows
  * nothing about any of it.
- * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: `seatPlayer`
- * benches the local player's, which is what makes a single-player round 8v8
- * rather than 8v9.
+ * A HUMAN ALWAYS HOLDS A SLOT, offline as well as on the server: the core
+ * benches the bot in every seated person's slot (`SimCore.startRound`, last,
+ * and the seat's own door), the offline player being a seated person of the
+ * page's own match — which is what makes a single-player round 8v8 rather
+ * than 8v9.
  * HOW BIG THE ROSTER IS is the MAP's on both sides now (`MapLayout.perTeam`,
- * resolved by `perTeamOf`), and the two sides spend it differently. Offline
- * `Game.buildRound` sizes the POOL to it through `setRoster`. On the authority
+ * resolved by `perTeamOf`), and the two hosts of the core spend it
+ * differently (`RoundSpec.pool`/`fielded`). An OWNED match — the page's
+ * local match offline — hands `SimCore.startRound` a POOL of exactly that
+ * size, which reaches `setRoster` (and the page's `NetRoster` follows with
+ * the rigs, `setFielded`). On a rotating match
  * the pool is `CONFIG.bots.maxPerTeam` a side once and for ever — a slot index
  * is a bot index there and team 1's block must start at the same number on
  * every map a match rotates onto — and `setFielded` is what says how many of
  * it this round is fighting. Nothing in this file is written against a
  * particular size, and the two numbers are the same one offline, where
- * `setFielded` is a no-op.
+ * the whole pool is fielded.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
-import { CONFIG, FOG_WALL } from "../config";
+import { CONFIG } from "../config";
 import { Bot, type BattleCtx, type BotZone } from "../entities/Bot";
 import { assignSkills } from "../entities/BotSkill";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
-import { viewerTeam } from "../core/teamView";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import { Vector3, type Vector3Like, type Vector3Ref } from "../math";
 import type { CoverMap } from "../world/CoverMap";
 import type { FlowField, NavGrid } from "../world/NavGrid";
 import type { GameMap } from "../world/MapBuilder";
 import type { ObstacleField } from "../world/ObstacleField";
 import type { TerrainField } from "../world/TerrainField";
-import type { RayWorld } from "../world/RayWorld";
+import type { RayHull, RayWorld } from "../world/RayWorld";
 import type { CombatSystem, Hittable, ShotOptions } from "./CombatSystem";
 import { STREAM, type RoundRandom } from "./RoundRandom";
 import { SquadRadio } from "../entities/SquadRadio";
@@ -93,26 +101,21 @@ function moveSeed(team: number, i: number): number {
 }
 
 /**
- * Owns both teams: a fixed pool of bot rigs, the AI schedule, and the render
- * LOD that makes sixteen of them affordable.
+ * Owns both teams: a fixed pool of bots and the AI schedule.
  *
- * Three decisions carry the frame budget here:
+ * Two decisions carry the frame budget here, and the client's roster
+ * (`NetRoster`) carries the third (the distance LOD):
  *
- * 1. **The pool is built once and never disposed.** `new Bot()` allocates a
- *    dozen Babylon meshes and their GL buffers; in a roguelike that cost landed
- *    twelve times per room load, but Conquest respawns continuously and it
- *    would be a permanent source of frame spikes. Death hides a rig, respawn
- *    re-poses and re-shows it.
+ * 1. **The pool is built once and never disposed.** A bot is one object and
+ *    its RIG — a client's `NetSoldier`, a dozen Babylon meshes and their GPU
+ *    buffers until X4.1d — is built on the same terms: in a roguelike that cost
+ *    landed twelve times per room load, but Conquest respawns continuously and
+ *    it would be a permanent source of frame spikes. Death takes a body out of
+ *    the world (`Bot.shown`), respawn puts it back.
  * 2. **AI is staggered.** Target acquisition and line-of-sight rays run at
  *    `CONFIG.bots.thinkRate` per bot, round-robin across frames — about three
  *    ray picks per frame for the whole roster. Movement still integrates every
  *    frame, so nothing looks choppy.
- * 3. **Distance LOD.** Past the fog the rig is disabled outright; past
- *    `lodFreezeDistance` the pose freezes but the bot keeps walking. There was
- *    a third rung — dropping the OUTLINE past `lodOutlineDistance` (20 m),
- *    which halved the pass's draw calls — and it went with the outline pass
- *    itself: the ink is a screen-space edge now and has no per-mesh state to
- *    switch.
  *
  * Deliberately *not* here: a spatial hash. With 17 combatants the pairwise
  * separation pass is ~256 distance checks a frame, which is far cheaper than
@@ -124,38 +127,9 @@ function moveSeed(team: number, i: number): number {
  */
 export class BattleSystem {
   readonly bots: Bot[] = [];
-  /** Muzzle positions from this frame, for `Game` to spend its light budget on. */
-  readonly muzzleFlashes: Vector3[] = [];
-  /**
-   * Backing store for the above: grown on demand, never shrunk, and handed out
-   * from the start again every frame. `muzzleFlashes` holds references into it,
-   * which is safe only because both are reset together in `update`.
-   */
-  private readonly flashPool: Vector3[] = [];
-  private flashCount = 0;
 
   /**
-   * How far a rig is worth drawing and posing — the map's, pushed by
-   * `Game.installMap`, defaulting to the shipped fog wall.
-   *
-   * It is a FIELD rather than `CONFIG.bots.lodDisableDistance` because the
-   * distance past which there is nothing to see belongs to the weather, and a
-   * map is free to have none: on a clear one this is several hundred metres
-   * and a bot that vanished at 78 would vanish in plain sight. The value the
-   * config still holds is what a fogged map gets, which is both shipped maps.
-   *
-   * **It is the map's `fogEnd` only until the map says otherwise.**
-   * `EnvironmentSpec.bodyDrawDistance` overrides it, resolved once by
-   * `bodyDrawDistanceOf` and pushed to all three gates together, because a
-   * body is nineteen merged meshes and two pixels tall long before the world
-   * around it stops being worth drawing — and on a map that can see past its
-   * own diagonal the fog was never going to gate anything at all. The WALK's
-   * reach (`WorldCulling`) deliberately did not move with it.
-   */
-  private viewDistance = FOG_WALL;
-
-  /**
-   * Wired by Game: a bot's round killed somebody.
+   * Wired by `SimCore`: a bot's round killed somebody.
    *
    * The VICTIM is whatever the ray found and may be anybody a bot is allowed to
    * shoot — another bot, the local player, a person on the server's roster — so
@@ -168,30 +142,30 @@ export class BattleSystem {
    *
    * `by` is the bot that fired, and it is the only thing here that cannot be
    * derived: a victim's death is already counted at the victim's own door
-   * (`registerBotKill` on the client, `onPlayerDamaged` for a person), and the
+   * (`settleKill`'s bot door, `SimPlayer.onDamaged` for a person), and the
    * killer's team is `by.team`. What the scoreboard needs is who to credit,
    * which is why this carries an identity rather than a side.
    */
   onBotKill: (victim: Hittable, by: Bot) => void = () => {};
-  /** Wired by Game: a bot pulled the trigger, at this world position. */
-  onBotFired: (bot: Bot, at: Vector3) => void = () => {};
-  /** Wired by Game: a bot ran its magazine dry and started reloading. */
+  /** Wired by SimCore: a bot pulled the trigger, at this world position. */
+  onBotFired: (bot: Bot, at: Vector3Like) => void = () => {};
+  /** Wired by SimCore: a bot ran its magazine dry and started reloading. */
   onBotReloaded: (bot: Bot) => void = () => {};
-  /** Wired by Game: a bot put a foot down. Short-range sound only. */
+  /** Wired by `SimCore`: a bot put a foot down. Short-range sound only. */
   onBotStepped: (bot: Bot) => void = () => {};
-  /** Wired by Game: where should this bot deploy? */
-  spawnPointFor: (bot: Bot) => { pos: Vector3; yaw: number } | null = () => null;
+  /** Wired by `SimCore`: where should this bot deploy? */
+  spawnPointFor: (bot: Bot) => { pos: Vector3Like; yaw: number } | null = () => null;
   /**
-   * Wired by Game: orders for one team's squads, given each squad's centroid
+   * Wired by `SimCore`: orders for one team's squads, given each squad's centroid
    * and what it is currently doing. Resolved as a group so squads can be spread
    * (or deliberately stacked) relative to each other.
    */
-  planSquads: (team: Team, centroids: Vector3[], previous: string[]) => SquadOrder[] =
+  planSquads: (team: Team, centroids: readonly Vector3Like[], previous: string[]) => SquadOrder[] =
     () => [];
-  /** Wired by Game: what is this bot standing on? */
+  /** Wired by `SimCore`: what is this bot standing on? */
   zoneFor: (bot: Bot) => BotZone = () => "none";
   /**
-   * Wired by Game: lob a grenade from `from`, aimed to land at `at`. False when
+   * Wired by `SimCore`: lob a grenade from `from`, aimed to land at `at`. False when
    * the throw cannot be made, and the bot then spends nothing.
    *
    * A callback for the same reason `spawnPointFor` is one — the grenades are
@@ -202,11 +176,11 @@ export class BattleSystem {
    * has to be told whose it is at the throw because the only other place that
    * knows is seconds and a bounce away.
    */
-  throwGrenadeFor: (bot: Bot, from: Vector3, at: Vector3) => boolean = () =>
+  throwGrenadeFor: (bot: Bot, from: Vector3Like, at: Vector3Like) => boolean = () =>
     false;
 
   /**
-   * Wired by `Game`: a launcher bot's rocket, from `from` toward `at`.
+   * Wired by `SimCore`: a launcher bot's rocket, from `from` toward `at`.
    *
    * The same shape as the grenade's and for the same reasons — the pool and
    * the flight are `AntiTankSystem`'s, this file forwards the ask and its
@@ -219,7 +193,7 @@ export class BattleSystem {
    * ask is never made — but a callback that defaulted to firing into the void
    * would be a thing to find out about later.
    */
-  fireRocketFor: (bot: Bot, from: Vector3, at: Vector3) => boolean = () => false;
+  fireRocketFor: (bot: Bot, from: Vector3Like, at: Vector3Like) => boolean = () => false;
 
   /**
    * One board per team: the contact calls its squads have made and the marks
@@ -267,9 +241,9 @@ export class BattleSystem {
    * the human leaves it is back with the same skill and the same squad, because
    * nothing about it was ever torn down.
    *
-   * Exactly one entry offline — the slot the local player holds, see
-   * `seatPlayer` — so the single-player path pays one `Set.has` per bot per
-   * frame for the same rule the server runs.
+   * Exactly one entry offline — the slot the local player holds in the
+   * page's own match — so the single-player path pays one `Set.has` per bot
+   * per frame for the same rule the server runs.
    */
   private readonly benched = new Set<Bot>();
   /**
@@ -289,7 +263,7 @@ export class BattleSystem {
    * it does NOT do is walk, shoot a rifle, take cover or get shot at — the
    * hull is what is being shot at, exactly as it is for a mounted player.
    *
-   * Written only through `setCrewed`, which `Game` wires to `VehicleCrew`'s two
+   * Written only through `setCrewed`, which `SimCore` wires to `VehicleCrew`'s two
    * announcements. Nothing in this file decides who is driving.
    */
   private readonly crewed = new Set<Bot>();
@@ -312,10 +286,11 @@ export class BattleSystem {
    * — and folding them would let a rotation hand a leaver's slot back to a body
    * this map does not field.
    *
-   * EMPTY OFFLINE, always: `Game.buildRound` sizes the pool to the map through
-   * `setRoster` and never calls `setFielded`, which is the only thing that
-   * writes this. The single-player path pays one more `Set.has` per bot per
-   * frame for a rule only the server spends.
+   * EMPTY OFFLINE, always: the page's own match asks `SimCore.startRound` for
+   * a pool of the map's own size and fields all of it (`RoundSpec.pool` and
+   * `fielded` the same number), so `setFielded` takes nobody out. The
+   * single-player path pays one more `Set.has` per bot per frame for a rule
+   * only the server spends.
    */
   private readonly unfielded = new Set<Bot>();
   /**
@@ -329,12 +304,6 @@ export class BattleSystem {
    * spending on it.
    */
   private inPlay = 0;
-  /**
-   * The roster slot the offline player sits in, or -1 before a round has
-   * seated them. Written only by `seatPlayer`, and read by the scoreboard,
-   * which draws the player's line in place of that slot's bot.
-   */
-  private seated = -1;
   private thinkCursor = 0;
   /**
    * Live orders per team, indexed by squad. Replanned on their own slow timer
@@ -365,9 +334,9 @@ export class BattleSystem {
   private readonly candidateScratch: { c: Combatant; d: number }[] = [];
   /**
    * Where the shooter's own side is told the fight is — `hearGunshot`'s lead,
-   * built once per shot. Scratch rather than a fresh vector for `flashPool`'s
-   * reason: this is on the firing path, at ~90 shots a second, and
-   * `BotMemory.heardShot` copies out of it before the next caller writes it.
+   * built once per shot. Scratch rather than a fresh vector: this is on the
+   * firing path, at ~90 shots a second, and `BotMemory.heardShot` copies out
+   * of it before the next caller writes it.
    */
   private readonly friendCue = new Vector3();
 
@@ -375,33 +344,14 @@ export class BattleSystem {
    * How many bodies a side the pool currently holds — `bots.length / 2`, and
    * the map's own `perTeamOf` from the moment one is installed.
    *
-   * `CONFIG.bots.perTeam` until then, which is what the four maps that state
-   * nothing field and what the AUTHORITY fields on every map: the netplay
-   * roster is sixteen fixed slots and `setRoster` is never called on the
-   * server, so a slot index is still a bot index there. See `setRoster`.
+   * `CONFIG.bots.perTeam` until then, which is what the maps that state
+   * nothing field. Whatever pool the HOST asks for (`RoundSpec.pool`) is what
+   * `setRoster` makes it — the ceiling on a rotating match, the map's own on
+   * an owned one — so a slot index is a bot index on both. See `setRoster`.
    */
   private perTeam: number = CONFIG.bots.perTeam;
-  /**
-   * The SIDE the rigs in the pool were painted for — `teamView`'s viewer at the
-   * moment `buildPool` ran, and the pool's identity every bit as much as its
-   * size is.
-   *
-   * A body is not repainted between rounds: the two kits differ in silhouette
-   * as well as in hue, so a side is chosen when fourteen meshes are merged and
-   * cannot be argued with afterwards. A client that books a round before the
-   * authority has seated it builds this pool for team 0 and then learns it is
-   * on team 1, and without this the round would be fought by bodies wearing
-   * the wrong colours for the rest of the match. See `core/teamView.ts`.
-   */
-  private paintedFor: Team = viewerTeam();
 
   constructor(
-    // Fields, since a map may state a roster of its own and the pool is then
-    // rebuilt to it — see `setRoster`. They were deliberately NOT fields while
-    // the pool was built exactly once, and the last thing that wanted a scene
-    // afterwards was the line-of-sight pick, which is analytic now.
-    private readonly scene: Scene,
-    private readonly mats: CelMaterialFactory,
     private combat: CombatSystem,
     // The simulation's round seed, which the pool takes each bot's SHOT stream
     // from — see `buildPool`.
@@ -525,7 +475,7 @@ export class BattleSystem {
   private buildPool(perTeam: number): void {
     for (let team = 0; team < 2; team++) {
       for (let i = 0; i < perTeam; i++) {
-        const bot = new Bot(this.scene, this.mats, team as Team);
+        const bot = new Bot(team as Team);
         bot.squad = Math.floor(i / CONFIG.bots.squadSize);
         // One launcher per squad, and it is the squad's FIRST body — a fixed
         // slot rather than a roll, so a team fields exactly
@@ -550,9 +500,10 @@ export class BattleSystem {
         // ROUNDS, since `reset` restarts it on the same constant.
         bot.seedRandom(moveSeed(team, i));
         // …and where its rounds go, which is the ROUND's (`RoundRandom`):
-        // keyed by the AUTHORITY's slot, which is this per-team index in a
-        // block `maxPerTeam` wide whatever this pool's size, so a body draws
-        // the same cone on both sides of the wire and on every map.
+        // keyed by the CEILING's slot numbering — this per-team index in a
+        // block `maxPerTeam` wide whatever this pool's or the table's size —
+        // so a body draws the same cone on both sides of the wire and on
+        // every map.
         bot.shotRand = this.random.stream(
           STREAM.botShot,
           team * CONFIG.bots.maxPerTeam + i,
@@ -594,34 +545,34 @@ export class BattleSystem {
    * village whose whole frame is 3.5 ms — because a disabled mesh is skipped
    * CHEAPLY and not skipped (see `WorldCulling`). A map that states nothing
    * therefore pays exactly what it always paid, which is the standard every
-   * other `MapLayout` lever is held to.
+   * other `MapLayout` lever is held to. The meshes are a client's
+   * (`NetRoster.setFielded`); this file only says how many bodies there are.
    *
    * **Called from `buildRound` and never from `installMap`**, unlike the other
-   * map-derived pushes: this is the ROUND's roster, and the editor rebuild —
-   * that method's other caller — has no round, no player and no bots. It runs
+   * map-derived pushes: this is the ROUND's roster, and that method is about
+   * the MAP. It runs
    * after `RagdollSystem.reset` has handed every rig back and after
    * `VehicleCrew.clear` has emptied the seats, because both hold a body this
    * may be about to dispose, and before `setDifficulty`, which draws a skill
    * for every bot in the pool it is handed.
    *
-   * A no-op at the same size AND the same side, which is every round on every
-   * map but the first one after a change of roster or a change of seat — so the
-   * ordinary case is two comparisons. See `paintedFor` for the second one.
+   * A no-op at the same size, which is every round on every map but the first
+   * one after a change of roster. A change of the viewer's SIDE rebuilds the
+   * rigs and not the bots — a side is a picture (`core/teamView.ts`), and
+   * `NetRoster` is what checks it.
    */
   setRoster(perTeam: number): void {
-    if (perTeam === this.perTeam && this.paintedFor === viewerTeam()) return;
+    if (perTeam === this.perTeam) return;
     this.perTeam = perTeam;
-    this.paintedFor = viewerTeam();
-    // Nothing may be holding a body across this. The two sets are the only
-    // things in this file that do, and `seated` is an index into a pool that
-    // is about to be a different length — `Game.buildRound` seats the player
-    // again a few lines later, through `seatPlayer`, which is idempotent.
+    // Nothing may be holding a body across this. The sets are the only
+    // things in this file that do, and the pool is about to be a different
+    // length — `SimCore.startRound` re-benches every seated person over the
+    // new pool at its own end.
     this.benched.clear();
     this.crewed.clear();
     this.unfielded.clear();
-    this.seated = -1;
     this.thinkCursor = 0;
-    this.disposeAll();
+    this.bots.length = 0;
     this.buildPool(perTeam);
   }
 
@@ -630,9 +581,9 @@ export class BattleSystem {
    *
    * **The pool's size and the round's are the same number offline and two
    * numbers on the authority**, which is the whole of why this is a second
-   * method rather than an argument to `setRoster`. Offline nothing calls this
-   * at all: `Game.buildRound` builds exactly what the map asks for, and a call
-   * here would be handed the number the pool already is and add nobody. In a
+   * method rather than an argument to `setRoster`. Offline the call is handed
+   * the number the pool already is and takes nobody out: the page's own match
+   * builds exactly what the map asks for (`RoundSpec.fielded` is its pool). In a
    * match a slot index is a bot index, so team 1's block must begin at the same
    * number on every map a rotation can put up — the pool is therefore
    * `CONFIG.bots.maxPerTeam` a side on all of them, and this is what takes the
@@ -665,7 +616,7 @@ export class BattleSystem {
       bot.alive = false;
       bot.state = "dead";
       bot.respawnT = 0;
-      bot.setEnabled(false);
+      bot.shown = false;
     }
     this.inPlay = this.bots.length - this.unfielded.size;
   }
@@ -679,37 +630,9 @@ export class BattleSystem {
   }
 
   /**
-   * No map at all: `Game.teardownMap`, for the menu. `update` returns on its
-   * first line without a nav graph, and the target scratch lists are emptied
-   * so no body from the last round — a hull above all — is held through them.
+   * Adds a human to the fight — a person (`SimCore.addPlayer`) or a hull.
+   * Idempotent, so a body added twice is in the fight once.
    */
-  clearMap(): void {
-    this.nav = null;
-    this.cover = null;
-    this.obstacles = null;
-    this.terrain = null;
-    this.rays = null;
-    for (const list of this.hittableScratch) list.length = 0;
-  }
-
-  /**
-   * How far bodies are worth drawing on this map. See `viewDistance`; pushed
-   * from `Game.installMap` alongside the environment it comes out of.
-   */
-  setViewDistance(metres: number): void {
-    this.viewDistance = metres;
-  }
-
-  /**
-   * The one non-bot combatant, offline. Replaces whatever was there, so calling
-   * it twice does not put the player in the fight twice.
-   */
-  setPlayer(player: Combatant): void {
-    this.humans.length = 0;
-    this.humans.push(player);
-  }
-
-  /** Adds a human to the fight. The server's path; `setPlayer` is the game's. */
   addHuman(human: Combatant): void {
     if (!this.humans.includes(human)) this.humans.push(human);
   }
@@ -736,7 +659,7 @@ export class BattleSystem {
       bot.alive = false;
       bot.state = "dead";
       bot.respawnT = 0;
-      bot.setEnabled(false);
+      bot.shown = false;
     } else {
       this.benched.delete(bot);
       // Left dead with a zero timer, which is precisely the state the respawn
@@ -757,9 +680,9 @@ export class BattleSystem {
    *
    * It deliberately does NOT touch `alive`, `state` or `respawnT`, all three
    * of which benching writes: a driver is a living body in a different place,
-   * not a slot standing empty. Nor does it hide the rig, which is
-   * `VehicleCrew`'s to do and undo, because that system is also the one that
-   * knows where to put the body back down.
+   * not a slot standing empty. Nor does it take the body out of the world
+   * (`Bot.shown`), which is `VehicleCrew`'s to do and undo, because that system
+   * is also the one that knows where to put the body back down.
    */
   setCrewed(bot: Bot, crewed: boolean): void {
     if (crewed) this.crewed.add(bot);
@@ -783,38 +706,6 @@ export class BattleSystem {
     );
   }
 
-  /** The slot the offline player holds, or -1 if none has been taken. */
-  get playerSlot(): number {
-    return this.seated;
-  }
-
-  /**
-   * Seats the offline player in a roster slot: the lowest-numbered one on
-   * `team`, whose bot is benched for as long as they hold it.
-   *
-   * The player used to be a SEVENTEENTH body standing beside a full sixteen-bot
-   * roster, which made a single-player round 8v9 in their favour — the one
-   * place in the game where the two sides were not the same size, and it read
-   * as an extra friendly rather than as a bug. The answer was already in this
-   * file: a human takes a slot and the bot in it is benched. This is that rule
-   * applied to the one human a local round has, rather than a second mechanism
-   * that counts bodies and could disagree with the first.
-   *
-   * The lowest-numbered slot on the side, because that is what `Roster.claim`
-   * picks on the server — so the callsign a local round takes off the board is
-   * the one a match would have taken.
-   *
-   * Idempotent, and it hands the old bot back if the side ever changes, so
-   * `Game.buildRound` can call it on every round without asking anything.
-   */
-  seatPlayer(team: Team): void {
-    const slot = this.bots.findIndex((bot) => bot.team === team);
-    if (slot === this.seated) return;
-    if (this.seated >= 0) this.setBenched(this.bots[this.seated], false);
-    this.seated = slot;
-    if (slot >= 0) this.setBenched(this.bots[slot], true);
-  }
-
   /**
    * A gun went off at `at`, pointed down `dir`. Every bot near enough hears it.
    *
@@ -835,14 +726,14 @@ export class BattleSystem {
    * at the sky or at the floor) leads nowhere and stays at the muzzle.
    *
    * `dir` need not be a unit vector — the lead normalises what it uses, which
-   * it owes anyway because one caller is `HeadlessGame.resolveShot`, where the
+   * it owes anyway because one caller is `SimCore.resolveShot`, where the
    * direction came off the wire and `server/wire.ts` proves only that it is
    * three finite numbers.
    *
-   * Called internally for bot fire and by `Game`/`HeadlessGame` for a person's,
+   * Called internally for bot fire and by `Game`/`SimCore` for a person's,
    * a launcher's and a hull's two guns.
    */
-  hearGunshot(at: Vector3, shooter: Team, dir: Vector3): void {
+  hearGunshot(at: Vector3Like, shooter: Team, dir: Vector3Like): void {
     const p = CONFIG.bots.perception;
     const range2 = p.hearRange * p.hearRange;
     const near2 = p.friendlyHearMin * p.friendlyHearMin;
@@ -881,7 +772,7 @@ export class BattleSystem {
    * `CombatSystem.onNearMiss`, which rides the target loop every shot already
    * walks — no new rays, no new iteration.
    */
-  suppress(near: Hittable, from: Vector3): void {
+  suppress(near: Hittable, from: Vector3Like): void {
     if (near instanceof Bot && near.alive) near.memory.nearMiss(from);
   }
 
@@ -894,21 +785,29 @@ export class BattleSystem {
    * bot needs and must get the identical answer — a tank that could see
    * through a wall a rifleman cannot would be a different game running in the
    * same window. Budgeted by the caller, as every LOS ray in this file is.
+   *
+   * `skip` is the crew's OWN hull, out of the answer for the length of the
+   * ray (`RayWorld.blocked`): a cupola eye stands five centimetres over its
+   * own collider, so every sightline to anything shorter dives straight back
+   * into it. An argument, never a write to the hull.
    */
-  losBetween(from: Vector3, to: Vector3): boolean {
-    return this.visible(from, to);
+  losBetween(from: Vector3Like, to: Vector3Like, skip: RayHull | null = null): boolean {
+    return !this.rays?.blocked(from, to, skip);
   }
 
   /**
    * Re-draws every bot's skill for the given difficulty tier. Called on round
    * start, so a difficulty picked in the menu applies without rebuilding the
-   * (never-disposed) rig pool.
+   * (never-disposed) pool.
    */
   setDifficulty(tier: number): void {
     assignSkills(this.bots, tier);
   }
 
-  /** Kills everyone and hides every rig, without disposing the pool. */
+  /**
+   * Kills everyone and takes every body out of the world, without disposing
+   * the pool. A client's rigs follow off the wire.
+   */
   reset(): void {
     // A team's memory is a ROUND's memory: where the last round's bodies fell
     // says nothing about this one, and a map change would leave the marks
@@ -927,7 +826,7 @@ export class BattleSystem {
       bot.alive = false;
       bot.state = "dead";
       bot.respawnT = 0;
-      bot.setEnabled(false);
+      bot.shown = false;
     }
   }
 
@@ -950,12 +849,14 @@ export class BattleSystem {
     return out;
   }
 
-  update(dt: number, cameraPos: Vector3): void {
+  /**
+   * One frame of the fight: respawns, squad orders, the staggered think pass
+   * and every body's movement. No camera: nothing here is drawn, and nothing
+   * here may depend on where anybody is looking — the LOD is a client's
+   * (`NetRoster`).
+   */
+  update(dt: number): void {
     if (!this.nav) return;
-    // Both, together: the list holds references into the pool, so releasing one
-    // without the other either leaks slots or hands out live vectors.
-    this.muzzleFlashes.length = 0;
-    this.flashCount = 0;
     const b = CONFIG.bots;
     // Calls go stale and marks fade. Per frame rather than per think, for the
     // reason `BotMemory.decay` runs per frame: a cue that stepped at 5 Hz would
@@ -1010,26 +911,18 @@ export class BattleSystem {
       done++;
     }
 
-    // --- per-frame movement, with LOD ---
-    // The map's fog wall, pushed in rather than written out here: the ragdoll
-    // gate is the same distance for the same reason (nothing to see past it),
-    // and two copies is how that one came to be pinned to `lodFreezeDistance`.
-    const fogEnd = this.viewDistance;
+    // --- per-frame movement ---
+    // Every body in the round, at every distance: the battle line moves
+    // whoever is watching, and the pose is FILLED for all of them (`Bot.update`)
+    // since a muzzle is read off it. What is DRAWN of them, and posed, is the
+    // client's (`NetRoster`). A corpse nobody respawned and that is out of the
+    // world is left alone — `shown` and not the rig's enabled flag, which the
+    // render LOD used to write as well, so this skip no longer depends on where
+    // the camera is.
     for (const bot of this.bots) {
       if (this.aside(bot)) continue;
-      if (bot.state === "dead" && bot.respawnT <= 0 && !bot.rig.root.isEnabled()) {
-        continue;
-      }
-      const d = Vector3.Distance(bot.position, cameraPos);
-      if (d > fogEnd) {
-        // Past the fog the bot is invisible anyway; skip drawing and posing,
-        // but keep integrating so the battle line still moves.
-        bot.setEnabled(false);
-        bot.update(dt, this.ctx, false);
-        continue;
-      }
-      if (bot.alive || bot.state === "dead") bot.setEnabled(true);
-      bot.update(dt, this.ctx, d < b.lodFreezeDistance);
+      if (bot.state === "dead" && bot.respawnT <= 0 && !bot.shown) continue;
+      bot.update(dt, this.ctx);
     }
   }
 
@@ -1071,7 +964,7 @@ export class BattleSystem {
           // Nobody left: plan from the home spawn, which is where they will
           // come back from anyway.
           const spawn = this.spawnPointFor(this.bots.find((b) => b.team === team)!);
-          if (spawn) centroids[i].copyFrom(spawn.pos);
+          if (spawn) centroids[i].copyFromFloats(spawn.pos.x, spawn.pos.y, spawn.pos.z);
         }
       }
       this.squadOrders[team] = this.planSquads(team, centroids, held);
@@ -1182,7 +1075,7 @@ export class BattleSystem {
    * retired enemies never did — they fired straight at the player through
    * walls, which is invisible in an empty arena and absurd in a village.
    */
-  private visible(from: Vector3, to: Vector3): boolean {
+  private visible(from: Vector3Like, to: Vector3Like): boolean {
     return !this.rays?.blocked(from, to);
   }
 
@@ -1195,9 +1088,11 @@ export class BattleSystem {
    * line of sight, for free, off a wall pick `CombatSystem` was already paying
    * for and discarding.
    */
-  private botFire(bot: Bot, aimAt: Vector3, spread: number): boolean {
+  private botFire(bot: Bot, aimAt: Vector3Like, spread: number): boolean {
     const from = bot.eyePos;
-    const dir = aimAt.subtract(from);
+    // `subtract`'s arithmetic, off fields: the aim point could be either
+    // library's until X6.1f.
+    const dir = new Vector3(aimAt.x - from.x, aimAt.y - from.y, aimAt.z - from.z);
     const len = dir.length();
     if (len < 0.01) return false;
     dir.scaleInPlace(1 / len);
@@ -1213,21 +1108,14 @@ export class BattleSystem {
       CONFIG.bots.range,
       BOT_SHOT,
     );
-    // Pooled, not cloned. The clone was needed — `muzzleWorld` hands back a
-    // live node position that walks away with the bot — but it was also the
-    // one allocation left on the bot firing path, in the file whose `BOT_SHOT`
-    // constant exists two hundred lines above precisely to avoid one. The list
-    // is emptied every frame, so a vector per slot is reused for the life of
-    // the round and the high-water mark is the busiest frame's flash count.
-    const at = this.flashPool[this.flashCount++] ??= new Vector3();
-    at.copyFrom(muzzle);
-    this.muzzleFlashes.push(at);
-    this.onBotFired(bot, at);
+    // The muzzle is the bot's own scratch (`muzzleWorld`), live only until its
+    // next shot — a listener that keeps it copies it.
+    this.onBotFired(bot, muzzle);
     // The AIM and not the bot's facing: a bot fires at a lagging aim point and
     // faces where it is walking often enough that the two disagree. This shot's
     // own spread is deliberately not in it — `fire` rolls that internally — and
     // a cone a few degrees wide is nothing at a 20 m lead.
-    this.hearGunshot(at, bot.team, dir);
+    this.hearGunshot(muzzle, bot.team, dir);
     // The victim is whoever the ray actually found, which is often not the bot
     // that was being aimed at — a squadmate walks into the line all the time,
     // and on a server half the roster is people.
@@ -1303,7 +1191,7 @@ export class BattleSystem {
    * decides where the squad is going, and a corridor narrower than the spacing
    * simply wins once `tryMove` slides the push along the wall.
    */
-  private separation(bot: Bot, out: Vector3): void {
+  private separation(bot: Bot, out: Vector3Ref): void {
     out.setAll(0);
     const m = CONFIG.bots.movement;
     const min = CONFIG.bots.separation;
@@ -1325,22 +1213,5 @@ export class BattleSystem {
       out.x += (dx / d) * push;
       out.z += (dz / d) * push;
     }
-  }
-
-  /**
-   * Frees every rig and empties the pool.
-   *
-   * Two callers and they are the same event at two scales: `Game.dispose`,
-   * which is the process going away, and `setRoster`, which is this map's
-   * roster being a different size from the last one's. Neither is ever reached
-   * from inside a round.
-   *
-   * `Bot.dispose` frees the rig and deliberately NOT its materials, which are
-   * the factory's shared caches — see it. The outline registry prunes disposed
-   * meshes on its own, so nothing else owes this a cleanup.
-   */
-  disposeAll(): void {
-    for (const bot of this.bots) bot.dispose();
-    this.bots.length = 0;
   }
 }

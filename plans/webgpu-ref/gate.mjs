@@ -3,7 +3,8 @@
  * real round on each, and fails loudly if any of them is not clean.
  *
  * Run with `node plans/webgpu-ref/gate.mjs [map...]`, `--headed` to watch it,
- * `--uncap` to take the frame limiter off before quoting a frame rate. It
+ * `--uncap` to take the frame limiter off before quoting a frame rate,
+ * `--query=<flags>` to play the rounds under a DEV switch. It
  * exits non-zero when an assertion fails, so it can stand in front of a merge.
  *
  * **What this gate is FOR is the engine and not the picture.** Whether the
@@ -28,6 +29,10 @@
  * reads 132. The uncapped number is the one worth writing down; the capped one
  * is the one that resembles what a player sees, so the flag is a choice the
  * caller makes rather than one this file makes for them.
+ *
+ * **Babylon's active meshes are asked of the frame adapter since X6.1a**
+ * (`harness.mjs`' `counts()`): `null` with no scene, where Babylon holds
+ * nothing; the transpiler tripwire's engine half the same (`transpilers()`).
  */
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -45,6 +50,8 @@ import {
 const args = process.argv.slice(2);
 const HEADED = args.includes("--headed");
 const UNCAP = args.includes("--uncap");
+// A DEV switch to gate the round under (`--query=<flags>` boots `?<flags>`).
+const QUERY = args.find((a) => a.startsWith("--query="))?.slice("--query=".length) ?? "";
 const maps = args.filter((a) => !a.startsWith("--"));
 const targets = maps.length ? maps : MAP_IDS;
 
@@ -84,7 +91,7 @@ const failures = [];
 for (const id of targets) {
   const { page, bootMs, pageErrors, consoleErrors, cdnRequests } = await bootMap(
     browser,
-    vite.url,
+    QUERY ? `${vite.url}/?${QUERY}` : vite.url,
     id,
   );
   const build = await installRound(page);
@@ -93,36 +100,56 @@ for (const id of targets) {
   const perf = await page.evaluate(
     async ([coldMs, warmupMs, warmMs]) => {
       const g = window.__celshock;
+      // The bake, every frame the gate watches: it drained under the card and
+      // must STAY drained — a bake that re-queues itself is a probe being
+      // re-rendered all round long (what `probesRenderOnce` asked of
+      // Babylon's `ReflectionProbe`s until X3.7c deleted them).
+      let bakeFrames = 0;
+      let bakePendingMax = 0;
+      // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
+      const F = window.__refFrame();
+      const bakeWatchOff = F.onDrawn(() => {
+        bakeFrames++;
+        bakePendingMax = Math.max(bakePendingMax, g.reflections.bakePending);
+      });
       g.spawnPlayer();
       const window_ = async (ms) => {
-        const f0 = g.scene.getFrameId();
+        const f0 = F.index();
         const t0 = performance.now();
         await new Promise((res) => setTimeout(res, ms));
-        return +((g.scene.getFrameId() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
+        return +((F.index() - f0) / ((performance.now() - t0) / 1000)).toFixed(1);
       };
       const coldFps = await window_(coldMs);
       await new Promise((res) => setTimeout(res, warmupMs));
       // Per-frame times, so what comes out is milliseconds and not a ratio.
       const times = [];
       let last = performance.now();
-      const o = g.scene.onAfterRenderObservable.add(() => {
+      const timesOff = F.onDrawn(() => {
         const now = performance.now();
         times.push(now - last);
         last = now;
       });
       const warmFps = await window_(warmMs);
-      g.scene.onAfterRenderObservable.remove(o);
+      timesOff();
+      bakeWatchOff();
       times.sort((a, b) => a - b);
       return {
         coldFps,
         warmFps,
+        bakeFrames,
+        bakePendingMax,
         medianMs: +times[Math.floor(times.length / 2)].toFixed(2),
         p95Ms: +times[Math.floor(times.length * 0.95)].toFixed(2),
         state: g.state,
-        bots: g.battle.bots.length,
-        activeMeshes: g.scene.getActiveMeshes().length,
-        isWebGPU: !!g.engine.isWebGPU,
-        engine: g.engine.constructor.name,
+        // Every body the round fields, people and bots, as the wire drew them
+        // (`NetSession.roster`) — offline too, the page being a client of its
+        // own local match (`BABYLON_EXIT.md` X2.5c).
+        bodies: g.net ? g.net.roster.soldiers.length : 0,
+        // Babylon's active meshes, through the frame adapter (X6.1a): null
+        // with no scene, where there is nothing of Babylon's to activate.
+        activeMeshes: F.counts()?.activeMeshes ?? null,
+        isWebGPU: F.host().webgpu,
+        engine: F.host().engine,
       };
     },
     [COLD_MS, WARMUP_MS, WARM_MS],
@@ -142,7 +169,17 @@ for (const id of targets) {
   }
   fails.push(...(await assertNoTranspiler(page)));
   if (perf.state !== "playing") fails.push(`state is ${perf.state}, not playing`);
-  if (!build.probesRenderOnce) fails.push("a reflection probe is re-rendering every frame");
+  // The reflection bake (ours, the only one since X3.7c): drained by deploy,
+  // and never re-queued over the frames watched above.
+  if (build.bakePending !== 0) {
+    fails.push(`the reflection bake had not drained at deploy (${build.bakePending} probes pending)`);
+  }
+  if (perf.bakeFrames === 0) fails.push("no frame was watched for the reflection bake");
+  if (perf.bakePendingMax !== 0) {
+    fails.push(
+      `the reflection bake re-queued during the round (${perf.bakePendingMax} probes pending at most over ${perf.bakeFrames} frames)`,
+    );
+  }
   if (pageErrors.length) fails.push(`${pageErrors.length} page errors`);
   if (consoleErrors.length) fails.push(`${consoleErrors.length} console errors`);
   if (perf.warmFps < 20) fails.push(`warm frame rate ${perf.warmFps} fps`);

@@ -72,9 +72,23 @@ COPY public ./public
 # has typechecked a line. The whole of `docs/` rather than the two files that
 # have rows today: a new CLAIMS row must not be able to break this image, and
 # 1.3 MB is nothing beside the audio above it. **A gate that reads a file
-# outside `src/` owes a COPY here** — that is now three times.
+# outside `src/` owes a COPY here** — that is now three times — **unless the
+# gate is told to do without it, and `check-babylon-free.mjs` is.** Its tree
+# pass also reads `plans/` and `.claude/skills/`, and neither is copied: nothing
+# in them ships (reference harnesses and skill scripts, instruments both), so
+# the gate names the pair as OPTIONAL and skips it with a note when absent,
+# which is only ever here — `ci.yml`'s full checkout still gates both. Its
+# other roots (`src/`, `server/`, `scripts/`, `main.ts`) are copied above and
+# still fail the gate when missing.
 COPY CLAUDE.md ./
 COPY docs ./docs
+
+# Which commit this is, for the stamp `index.html` carries (`vite.config.ts`'s
+# `buildStamp`, printed on the settings screen): the build context has no
+# `.git` (`.dockerignore`), so CI states it (`.github/workflows/docker.yml`).
+# Empty, the stamp says `unknown`. Declared after the copies, so a new commit
+# re-runs only the steps a new commit re-runs anyway.
+ARG BUILD_COMMIT=
 
 # `npm run build` checks the collision bake is current, typechecks BOTH
 # tsconfigs — via `npm run typecheck`, and that indirection is the whole point —
@@ -91,7 +105,7 @@ COPY docs ./docs
 # errored, the root one exited 0, and `build:server` emitted a bundle in 1.43s.
 # So a type error anywhere in `server/` passed both RUN lines and reached
 # production, which matters most for the client/server twins `Game.ts` and
-# `HeadlessGame.ts` deliberately keep in step by hand — a shared type that moved
+# `SimCore.ts` deliberately keep in step by hand — a shared type that moved
 # on one side and not the other is exactly the failure this gate is for, and
 # exactly the one it could not see. Keep this as `npm run typecheck`; a `tsc
 # --noEmit` here is that hole reopening, and it reopens silently.
@@ -105,8 +119,8 @@ FROM node:24-alpine AS server
 
 WORKDIR /app
 
-# `ws` is the only runtime dependency — everything else, Babylon included, is
-# bundled into dist-server by the SSR build.
+# `ws` is the only runtime dependency — everything else is bundled into
+# dist-server by the SSR build.
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 

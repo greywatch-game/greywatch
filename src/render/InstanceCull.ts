@@ -1,0 +1,636 @@
+/**
+ * render/InstanceCull.ts — The scatter's instances culled on the GPU, over
+ * their clusters: each group's surviving (instance, cluster) records written
+ * into the scatter's LIST as entries, and each group's one PLAIN draw over
+ * them at a BOUND the CPU computes (`BABYLON_EXIT.md` X3.4b, X3.5b — the
+ * fold, drawn plain since 2026-10-24; the WGSL is `wgsl/instanceCull.ts`) —
+ * once a frame for the main pass, once a drawn map for each shadow map
+ * (X3.6a) and once a face for a reflection probe's bake (X3.6c), each a VIEW
+ * of one map's tables.
+ * Owns: `InstanceCull` — one view: its four compute passes' bind groups
+ * (their pipelines are the renderer's `PipelineCache`'s), its uniform block,
+ * the scan's buffers, its range table, the list the vertex stage reads
+ * through (`list`, each range's survivors' entries from its first record —
+ * `render/scatterList.ts`), each range's BOUND for the dispatch recorded last
+ * (`bounds`) and the draw at it (`drawRange`, `empty`), the WORK LIST of
+ * surviving records and its length, cleared ahead of each dispatch's pass,
+ * and `expand`'s direct dispatch over it — and, for the view that uploaded
+ * them, the instance, set, cluster and record tables and the 16-bit source
+ * indices (`source`) every view of the map reads, and the instances and each
+ * set's RUNS on the CPU for the bound; `InstanceTables`, what a map's scatter
+ * hands it.
+ * Invariants: ClusterCull's, over instances and then their clusters — every
+ * table is uploaded once, when the map is cut, by its first view; a
+ * dispatch's inputs are numbers only (`CullInputs`), so it never reads a
+ * node; an instance is dropped only when its sphere lies past the reach,
+ * under the size gate, or wholly outside one of the five planes, and a
+ * cluster of a kept instance only when it is not in the view's pass or its
+ * moved box lies wholly outside one of them; the list is sized for every
+ * record surviving, so no frame can overrun a range's run.
+ * A range's BOUND is never fewer than the survivors the GPU writes into it:
+ * `bound` replays the WGSL's `visible` off the very uniform words the GPU
+ * reads, each test widened past float error (`PLANE_SLACK`, `REACH_SLACK`,
+ * `GATE_SLACK`) and a probe's own blocks never left out, and counts every
+ * in-pass record of an instance it keeps, the cluster's box test only ever
+ * dropping more. The list is CLEARED ahead of each dispatch, so its slots
+ * past the GPU's count are zero entries, which draw nothing (`celVertex.ts`);
+ * a range whose bound is 0 is not drawn; `expand` is dispatched DIRECT, a
+ * thread a record. Nothing of the scatter is drawn or dispatched indirect
+ * (`docs/rendering.md`, the Intel rule).
+ * A dispatch is RECORDED into the encoder the host submits ahead of the
+ * frame's draws, once a submit for the main pass's view and once a slot a
+ * submit for another (`CullUniform`), and every caller draws a dispatch's
+ * survivors before it records the view's next, so the bounds a draw reads
+ * are its own dispatch's; until the pipelines are built nothing is
+ * dispatched and the bounds stay zero, so every range draws nothing.
+ * `?cullcheck` reads the INSTANCES' verdicts (`instanceBand`); a cluster's
+ * test is the cluster cull's own box test, over a moved box.
+ * Never: imports Babylon; reads a node; submits; draws or dispatches
+ * indirect; allocates on a frame beyond the compute pass WebGPU makes for
+ * every pass; sets anything after `dispose`.
+ * Contract: `docs/rendering.md`, "Our renderer's frame".
+ */
+import {
+  type CullDiagnostics,
+  type CullInputs,
+  type CullMode,
+  CullUniform,
+  type CullView,
+  NO_DIAGNOSTICS,
+  rangeWords,
+  type ScanRange,
+  writeInputs,
+} from "./ClusterCull";
+import { closeness, CullCheck, type CullCheckSpec } from "./CullCheck";
+import type { PassTiming } from "./PassTimer";
+import type { PipelineCache } from "./PipelineCache";
+import { LIST_WORDS, SCATTER_CORNERS } from "./scatterList";
+import { CLUSTER_WORDS, SCAN_SIZE } from "./wgsl/clusterCull";
+import { INSTANCE_FORMS, INSTANCE_PROBE_WGSL } from "./wgsl/cullProbe";
+import {
+  EXPAND_SIZE,
+  INSTANCE_CULL_UNIFORM_BYTES,
+  instanceCullWgsl,
+  INSTANCE_SLACK,
+  INSTANCE_WORDS,
+  RECORD_WORDS,
+  SET_WORDS,
+} from "./wgsl/instanceCull";
+
+/** What a map's scatter hands the cull — every array in the order it is drawn. */
+export interface InstanceTables {
+  /** `INSTANCE_WORDS` an instance, laid out as the WGSL's `Instance`, sorted by set. */
+  readonly instances: ArrayBuffer;
+  readonly instanceCount: number;
+  /** Each set's instances `[start, end)`, and how far its vertices can sway. */
+  readonly sets: readonly { readonly start: number; readonly end: number; readonly ramp: number; readonly rigged: boolean }[];
+  /**
+   * `CLUSTER_WORDS` a cluster of an instanced part, laid out as the WGSL's
+   * `Cluster` in its set's own frame: its first index into `source` in word
+   * 3, its index count in 7, its range in 8, its part's first vertex in its
+   * group's arrays in 9, its sway in 12 and 13.
+   */
+  readonly clusters: ArrayBuffer;
+  /** `RECORD_WORDS` a record: its instance, then its cluster — every range's contiguous, in range order. */
+  readonly records: Uint32Array;
+  /** Each range's records `[start, end)` and where its run of the list starts: its first record. */
+  readonly ranges: readonly ScanRange[];
+  /** Every instanced part's indices, each local to its part (`SOURCE_VERTICES`); its clusters carry where it starts. */
+  readonly source: Uint16Array;
+  /** The square of each near-first band's end, metres (three). */
+  readonly bands2: readonly number[];
+}
+
+/** The descriptor a frame's pass is begun with, made once. */
+const PASS: GPUComputePassDescriptor = { label: "instance cull" };
+
+/**
+ * The bound's plane slack past the GPU's own (`INSTANCE_SLACK`), metres: an
+ * f32 plane test a few kilometres out is off by a millimetre, never by this.
+ */
+const PLANE_SLACK = 0.1;
+/** The bound's reach slack, metres: an instance is left out only this much past the GPU's reach. */
+const REACH_SLACK = 0.01;
+/** The bound's size gate: an instance is left out only this share further under the gate. */
+const GATE_SLACK = 1e-4;
+/** The bound's size gate is asked only past this, in m²: the GPU's 1, which an f32 `d2` may round across. */
+const GATE_NEAR2 = 1.001;
+
+/** A run: its range, the passes its clusters are drawn in, and how many clusters. */
+const RUN_WORDS = 3;
+
+/**
+ * A map's scatter on the CPU, for the bound: the instances as floats, each
+ * set's instances `[start, end)` and sway, and each set's RUNS — its
+ * clusters counted by range and passes, `RUN_WORDS` a run, from
+ * `runStart[s]` to `runStart[s + 1]` — which every instance of the set
+ * shares, a record being one cluster of every instance wearing it
+ * (`scatterCut.ts`).
+ */
+interface InstanceBoundTables {
+  readonly instances: Float32Array;
+  readonly sets: InstanceTables["sets"];
+  readonly runs: Uint32Array;
+  readonly runStart: Uint32Array;
+}
+
+/** A map's instance tables as uploaded once, which every view of its cull reads. */
+interface InstanceTableBuffers {
+  readonly instances: GPUBuffer;
+  readonly instanceCount: number;
+  readonly sets: GPUBuffer;
+  readonly clusters: GPUBuffer;
+  readonly records: GPUBuffer;
+  readonly recordCount: number;
+  readonly source: GPUBuffer;
+  /** Each range, as `rangeWords` lays it out: every view uploads its own, which its scan writes. */
+  readonly ranges: Uint32Array;
+  readonly rangeCount: number;
+  readonly bands2: readonly number[];
+  readonly buffers: readonly GPUBuffer[];
+  /** Each range's first record: where its run of the list starts. */
+  readonly bases: readonly number[];
+  /** The instances and the sets' runs, on the CPU for the bound. */
+  readonly bound: InstanceBoundTables;
+}
+
+export class InstanceCull {
+  /** The scatter's list: each range's survivors' entries, from its first record. */
+  readonly list: GPUBuffer;
+  /** Every instanced part's 16-bit indices, which the vertex stage reads through the list — the map's, one for every view. */
+  readonly source: GPUBuffer;
+  /**
+   * Each range's bound for the dispatch recorded last, in survivors: never
+   * fewer than the GPU writes into its run of the list (the header). Zeros
+   * until the first.
+   */
+  readonly bounds: Uint32Array;
+  /** Resolves true once the four pipelines are built; false if one failed. */
+  readonly ready: Promise<boolean>;
+  private built = false;
+  private disposed = false;
+
+  /** The map's tables: the view that uploaded them owns them, and every view reads them. */
+  private readonly tables: InstanceTableBuffers;
+  private readonly ownsTables: boolean;
+  /** This view's own buffers. */
+  private readonly buffers: GPUBuffer[] = [];
+  private readonly uniform: CullUniform;
+  private readonly bytes = new ArrayBuffer(INSTANCE_CULL_UNIFORM_BYTES);
+  private readonly f32 = new Float32Array(this.bytes);
+  private readonly u32 = new Uint32Array(this.bytes);
+  private readonly count: number;
+  private readonly instanceWorkgroups: number;
+  private readonly recordWorkgroups: number;
+  /** `expand`'s direct dispatch: a thread a record, folded into a second dimension. */
+  private readonly expandX: number;
+  private readonly expandY: number;
+  /** The corners a survivor's run takes (`listStride`). */
+  private readonly stride: number;
+  /** Each range's first corner in the draw: the scatter bit plus its first record's run. */
+  private readonly firstVertex: readonly number[];
+  /** The work list's length, cleared ahead of each dispatch's pass: `cullRecords` appends, `expand` reads it. */
+  private readonly survivorCount: GPUBuffer;
+  /** The four passes in dispatch order: instances, records, prefix, expand. */
+  private readonly passes: { pipeline: GPUComputePipeline; group: GPUBindGroup }[] = [];
+  /** The view's name, which every buffer it makes is labelled with — the tables the first view's. */
+  private readonly viewLabel: string;
+  /** Which tests run — `CullMode`; "full" but for a diagnostic. */
+  private readonly mode: CullMode;
+  /** `?cullcheck`'s reader, or null. */
+  private readonly check: CullCheck | null;
+
+  /**
+   * The cull of a map's scatter `tables`, which it uploads — or, handed
+   * another `InstanceCull`, a second VIEW of that one's tables, which uploads
+   * none, writes a list and bounds of its own and must be disposed no
+   * later than the cull it reads (`WorldDepth`'s, for the shadow maps). Only
+   * the first view takes `?cullcheck`'s report.
+   */
+  constructor(
+    private readonly device: GPUDevice,
+    pipelines: PipelineCache,
+    tables: InstanceTables | InstanceCull,
+    /** The corners a survivor's run takes in the draw: a cluster's most indices. */
+    stride: number,
+    view: CullView,
+    diagnostics: CullDiagnostics = NO_DIAGNOSTICS,
+  ) {
+    this.mode = diagnostics.mode;
+    this.viewLabel = view.label;
+    const shared = tables instanceof InstanceCull;
+    const report = shared ? null : diagnostics.report;
+    const storage = GPUBufferUsage.STORAGE;
+    // `?cullcheck` copies the uniform block and the verdicts out.
+    const read = report ? GPUBufferUsage.COPY_SRC : 0;
+    this.ownsTables = !shared;
+    this.tables = shared ? tables.tables : this.uploadTables(tables, read);
+    const t = this.tables;
+    const n = t.instanceCount;
+    const records = t.recordCount;
+    this.count = n;
+    this.source = t.source;
+    this.stride = stride;
+    this.bounds = new Uint32Array(t.rangeCount);
+    // `+`, never `|`: a bitwise OR in JS is a signed 32-bit integer, and the
+    // scatter bit is its sign (`listPast` holds the sum under 2^32).
+    this.firstVertex = t.bases.map((base) => SCATTER_CORNERS + base * stride);
+    this.instanceWorkgroups = Math.max(1, Math.ceil(n / SCAN_SIZE));
+    this.recordWorkgroups = Math.max(1, Math.ceil(records / SCAN_SIZE));
+    const expandWorkgroups = Math.max(1, Math.ceil(records / EXPAND_SIZE));
+    this.expandX = Math.min(expandWorkgroups, device.limits.maxComputeWorkgroupsPerDimension);
+    this.expandY = Math.ceil(expandWorkgroups / this.expandX);
+
+    this.uniform = new CullUniform(device, `instance cull: ${view.label}`, INSTANCE_CULL_UNIFORM_BYTES, view.slots, read);
+    const instanceBand = this.make("instance bands", n * 4, storage | read);
+    const local = this.make("local", records * 16, storage);
+    const sums = this.make("sums", (this.recordWorkgroups + 1) * 16, storage);
+    // COPY_DST for the clear ahead of each dispatch's pass.
+    this.survivorCount = this.make("survivor count", 4, storage | GPUBufferUsage.COPY_DST);
+    const survivors = this.make("survivors", records * 16, storage);
+    const ranges = this.upload("ranges", storage, t.ranges);
+    // COPY_DST for the clear ahead of each dispatch.
+    this.list = this.make("list", records * LIST_WORDS * 4, storage | GPUBufferUsage.COPY_DST);
+
+    // The static half of the uniform block.
+    const u = this.u32;
+    const f = this.f32;
+    f[28] = t.bands2[0];
+    f[29] = t.bands2[1];
+    f[30] = t.bands2[2];
+    u[32] = n;
+    u[33] = records;
+    u[34] = this.recordWorkgroups;
+    u[35] = t.rangeCount;
+
+    const uniform = this.uniform.buffer;
+    this.check =
+      report && !shared
+        ? new CullCheck(
+            device,
+            pipelines,
+            {
+              label: "instances",
+              count: n,
+              uniform,
+              uniformBytes: INSTANCE_CULL_UNIFORM_BYTES,
+              bands: instanceBand,
+              probe: INSTANCE_PROBE_WGSL,
+              data: t.instances,
+              dataBytes: new Uint8Array(tables.instances),
+              probeBind: [[0, uniform], [12, uniform], [1, t.instances], [11, t.instances], [5, t.sets], [9, t.sets]],
+              forms: INSTANCE_FORMS,
+              ...instanceReplay(tables),
+            },
+            report,
+          )
+        : null;
+
+    // Each entry point's own bindings: an "auto" layout holds only what its
+    // entry point reads, so each pass binds exactly those.
+    const code = instanceCullWgsl(stride);
+    const entries: { entry: string; bind: readonly (readonly [number, GPUBuffer])[] }[] = [
+      { entry: "cullInstances", bind: [[0, uniform], [1, t.instances], [2, instanceBand], [5, t.sets]] },
+      {
+        entry: "cullRecords",
+        bind: [
+          [0, uniform], [1, t.instances], [2, instanceBand], [3, local], [4, sums], [6, t.clusters], [7, t.records],
+          [13, this.survivorCount], [14, survivors],
+        ],
+      },
+      {
+        entry: "prefix",
+        bind: [[0, uniform], [3, local], [4, sums], [9, ranges]],
+      },
+      {
+        entry: "expand",
+        bind: [
+          [0, uniform], [3, local], [4, sums], [6, t.clusters], [9, ranges], [11, this.list],
+          [14, survivors], [15, this.survivorCount],
+        ],
+      },
+    ];
+    this.ready = Promise.all(
+      entries.map(({ entry, bind }) =>
+        pipelines
+          .compute("instance cull", code, entry)
+          .then((pipeline) => ({
+            pipeline,
+            group: device.createBindGroup({
+              label: `instance cull: ${view.label}: ${entry}`,
+              layout: pipeline.getBindGroupLayout(0),
+              entries: bind.map(([binding, buffer]) => ({ binding, resource: { buffer } })),
+            }),
+          })),
+      ),
+    ).then(
+      (passes) => {
+        if (this.disposed) return false;
+        this.passes.push(...passes);
+        this.built = true;
+        return true;
+      },
+      (err: unknown) => {
+        if (!this.disposed) console.error(`instance cull: a pipeline did not build for ${view.label}`, err);
+        return false;
+      },
+    );
+  }
+
+  /**
+   * Culls the instances and their clusters for `inputs`, recording the work
+   * into `encoder` — the host's, submitted ahead of the frame's draws: as
+   * `ClusterCull.dispatch`, once a frame for the main pass's view and once a
+   * `slot` a submit for another. Its one pass is timed when `timing` is
+   * handed (`gpu.cull`).
+   */
+  dispatch(inputs: CullInputs, encoder: GPUCommandEncoder, timing: PassTiming | null = null, slot = 0): void {
+    if (!this.built || this.count === 0) return;
+    writeInputs(inputs, this.mode, this.f32, this.u32);
+    this.uniform.write(this.bytes, encoder, slot);
+    this.bound();
+    // Every slot past the GPU's count a zero entry, which draws nothing.
+    encoder.clearBuffer(this.list);
+
+    // The work list starts empty: `cullRecords` appends to it.
+    encoder.clearBuffer(this.survivorCount);
+    const pass = encoder.beginComputePass(timing ? timing.pass(PASS) : PASS);
+    const passes = this.passes;
+    pass.setPipeline(passes[0].pipeline);
+    pass.setBindGroup(0, passes[0].group);
+    pass.dispatchWorkgroups(this.instanceWorkgroups);
+    pass.setPipeline(passes[1].pipeline);
+    pass.setBindGroup(0, passes[1].group);
+    pass.dispatchWorkgroups(this.recordWorkgroups);
+    pass.setPipeline(passes[2].pipeline);
+    pass.setBindGroup(0, passes[2].group);
+    pass.dispatchWorkgroups(1);
+    pass.setPipeline(passes[3].pipeline);
+    pass.setBindGroup(0, passes[3].group);
+    pass.dispatchWorkgroups(this.expandX, this.expandY);
+    pass.end();
+    this.check?.record(encoder, this.bytes);
+  }
+
+  /**
+   * Whether range `g` draws nothing off the dispatch recorded last — its
+   * bound is 0 — so a caller binds and draws nothing for it.
+   */
+  empty(g: number): boolean {
+    return this.bounds[g] === 0;
+  }
+
+  /**
+   * Range `g`'s draw into `pass`, its pipeline and groups bound and `empty`
+   * false: one plain draw of `stride` corners a survivor up to its bound,
+   * from its run's first.
+   */
+  drawRange(pass: GPURenderPassEncoder, g: number): void {
+    pass.draw(this.bounds[g] * this.stride, 1, this.firstVertex[g], 0);
+  }
+
+  /**
+   * Each range's BOUND for the uniform block as `dispatch` has just written
+   * it: `wgsl/instanceCull.ts`'s `visible` replayed over every instance, each
+   * test widened so the CPU keeps whatever the GPU might (the header), and a
+   * kept instance's runs in the view's pass added to their ranges — set by
+   * set, a set's instances sharing their runs. `visible` is the source of
+   * truth: a test there that KEEPS more (a new sway term in its `grow`, a
+   * larger slack, a looser gate) owes this loop the same widening, or the
+   * plain draw stops short of a survivor and trees vanish without a word.
+   */
+  private bound(): void {
+    const b = this.bounds;
+    b.fill(0);
+    const { instances: nf, sets, runs, runStart } = this.tables.bound;
+    const f = this.f32;
+    const u = this.u32;
+    const ex = f[20];
+    const ey = f[21];
+    const ez = f[22];
+    const reach2 = f[23];
+    const perRad = f[24];
+    const px2 = f[25] * (1 - GATE_SLACK);
+    const gate = u[26] !== 0;
+    const rampReach = f[27];
+    const rigReach = f[31];
+    const mask = u[36];
+    for (let s = 0; s < sets.length; s++) {
+      const r0 = runStart[s];
+      const r1 = runStart[s + 1];
+      if (r0 === r1) continue;
+      const set = sets[s];
+      const sway = set.ramp * rampReach + (set.rigged ? rigReach : 0) + INSTANCE_SLACK + PLANE_SLACK;
+      let kept = 0;
+      for (let i = set.start; i < set.end; i++) {
+        const o = i * INSTANCE_WORDS;
+        const x = nf[o];
+        const y = nf[o + 1];
+        const z = nf[o + 2];
+        const r = nf[o + 3];
+        const dx = x - ex;
+        const dy = y - ey;
+        const dz = z - ez;
+        const d2 = dx * dx + dy * dy + dz * dz;
+        const gap = Math.sqrt(d2) - r - REACH_SLACK;
+        if (gap > 0 && gap * gap > reach2) continue;
+        if (gate && d2 > GATE_NEAR2) {
+          const w = 2 * r * perRad;
+          if (w * w < px2 * d2) continue;
+        }
+        const out = -(r + sway);
+        if (
+          f[0] * x + f[1] * y + f[2] * z + f[3] < out ||
+          f[4] * x + f[5] * y + f[6] * z + f[7] < out ||
+          f[8] * x + f[9] * y + f[10] * z + f[11] < out ||
+          f[12] * x + f[13] * y + f[14] * z + f[15] < out ||
+          f[16] * x + f[17] * y + f[18] * z + f[19] < out
+        ) {
+          continue;
+        }
+        kept++;
+      }
+      if (kept === 0) continue;
+      for (let k = r0; k < r1; k += RUN_WORDS) {
+        if (mask === 0 || (runs[k + 1] & mask) !== 0) b[runs[k]] += kept * runs[k + 2];
+      }
+    }
+  }
+
+  /** This view's buffers destroyed — and the tables, if this view uploaded them. */
+  dispose(): void {
+    this.check?.dispose();
+    for (const b of this.buffers) b.destroy();
+    this.buffers.length = 0;
+    this.uniform.destroy();
+    if (this.ownsTables) for (const b of this.tables.buffers) b.destroy();
+    this.passes.length = 0;
+    this.built = false;
+    this.disposed = true;
+  }
+
+  /** `tables` uploaded once, for every view of this cull to read. */
+  private uploadTables(tables: InstanceTables, read: number): InstanceTableBuffers {
+    const storage = GPUBufferUsage.STORAGE;
+    const buffers: GPUBuffer[] = [];
+    const up = (label: string, usage: number, data: Uint8Array | Uint16Array | Uint32Array): GPUBuffer => {
+      const b = this.upload(label, usage, data);
+      // Not this view's own: `dispose` destroys the tables apart.
+      this.buffers.pop();
+      buffers.push(b);
+      return b;
+    };
+    return {
+      instances: up("instances", storage | read, new Uint8Array(tables.instances)),
+      instanceCount: tables.instanceCount,
+      sets: up("sets", storage, setWords(tables.sets)),
+      clusters: up("clusters", storage, new Uint8Array(tables.clusters)),
+      records: up("records", storage, tables.records),
+      recordCount: tables.records.length / RECORD_WORDS,
+      source: up("source indices", storage, tables.source),
+      ranges: rangeWords(tables.ranges),
+      rangeCount: tables.ranges.length,
+      bands2: tables.bands2,
+      buffers,
+      bases: tables.ranges.map((r) => r.base),
+      bound: boundTables(tables),
+    };
+  }
+
+  private make(label: string, size: number, usage: number): GPUBuffer {
+    const buffer = this.device.createBuffer({
+      label: `instance cull: ${this.viewLabel}: ${label}`,
+      size: Math.max(16, Math.ceil(size / 4) * 4),
+      usage,
+    });
+    this.buffers.push(buffer);
+    return buffer;
+  }
+
+  private upload(label: string, usage: number, data: Uint8Array | Uint16Array | Uint32Array): GPUBuffer {
+    const buffer = this.device.createBuffer({
+      label: `instance cull: ${this.viewLabel}: ${label}`,
+      size: Math.max(16, Math.ceil(data.byteLength / 4) * 4),
+      usage,
+      mappedAtCreation: true,
+    });
+    new Uint8Array(buffer.getMappedRange()).set(new Uint8Array(data.buffer, data.byteOffset, data.byteLength));
+    buffer.unmap();
+    this.buffers.push(buffer);
+    return buffer;
+  }
+}
+
+/**
+ * `?cullcheck`'s CPU replay of `wgsl/instanceCull.ts`'s `visible` over
+ * `tables`, and its one-line account of an instance.
+ */
+function instanceReplay(
+  tables: InstanceTables,
+): Pick<CullCheckSpec, "positionWords" | "expect" | "planes" | "replay" | "describe"> {
+  const nf = new Float32Array(tables.instances);
+  const nu = new Uint32Array(tables.instances);
+  const grow = (f: Float32Array, o: number): number => {
+    const s = tables.sets[nu[o + 16]];
+    return nf[o + 3] + s.ramp * f[27] + (s.rigged ? f[31] : 0) + INSTANCE_SLACK;
+  };
+  const plane = (f: Float32Array, o: number, k: number): number =>
+    f[k * 4] * nf[o] + f[k * 4 + 1] * nf[o + 1] + f[k * 4 + 2] * nf[o + 2] + f[k * 4 + 3];
+  const dist2 = (f: Float32Array, o: number): number => {
+    const dx = nf[o] - f[20];
+    const dy = nf[o + 1] - f[21];
+    const dz = nf[o + 2] - f[22];
+    return dx * dx + dy * dy + dz * dz;
+  };
+  return {
+    positionWords: 4,
+    expect: (i, out) => {
+      const o = i * INSTANCE_WORDS;
+      for (let a = 0; a < 4; a++) out[a] = nu[o + a];
+    },
+    planes: (f, i, out) => {
+      const o = i * INSTANCE_WORDS;
+      for (let k = 0; k < 5; k++) out[k] = plane(f, o, k);
+      out[5] = grow(f, o);
+    },
+    replay: (f, u, i, near) => {
+      const o = i * INSTANCE_WORDS;
+      const d2 = dist2(f, o);
+      const r = nf[o + 3];
+      const gap = Math.max(0, Math.sqrt(d2) - r);
+      near[0] = closeness(gap * gap, f[23]);
+      if (gap * gap > f[23]) return 1;
+      if (u[26] !== 0 && d2 > 1) {
+        const w = 2 * r * f[24];
+        near[0] = Math.min(near[0], closeness(w * w, f[25] * d2));
+        if (w * w < f[25] * d2) return 2;
+      }
+      const g = grow(f, o);
+      for (let k = 0; k < 5; k++) {
+        const v = plane(f, o, k);
+        near[0] = Math.min(near[0], closeness(v, -g));
+        if (v < -g) return 3 + k;
+      }
+      return 0;
+    },
+    describe: (f, _u, i) => {
+      const o = i * INSTANCE_WORDS;
+      const d = Math.sqrt(dist2(f, o));
+      const planes = [0, 1, 2, 3, 4].map((k) => plane(f, o, k).toFixed(2)).join(" ");
+      return (
+        `set ${nu[o + 16]} at [${[0, 1, 2].map((a) => nf[o + a].toFixed(1))}] r ${nf[o + 3].toFixed(2)} m · ${d.toFixed(1)} m away` +
+        ` · ${((2 * nf[o + 3] * f[24]) / Math.max(d, 1)).toFixed(1)} px · planes ${planes} vs -${grow(f, o).toFixed(2)}`
+      );
+    },
+  };
+}
+
+/**
+ * `tables` on the CPU for the bound: the instances as floats, and each set's
+ * runs — its first instance's records counted by their cluster's range and
+ * passes, which every instance of the set shares.
+ */
+function boundTables(tables: InstanceTables): InstanceBoundTables {
+  const sets = tables.sets;
+  const cu = new Uint32Array(tables.clusters);
+  const records = tables.records;
+  const setOf = new Int32Array(Math.max(1, tables.instanceCount)).fill(-1);
+  sets.forEach((s, k) => {
+    if (s.end > s.start) setOf[s.start] = k;
+  });
+  // Each set's runs, by range and passes, in the order first met.
+  const bySet = sets.map(() => new Map<string, [number, number, number]>());
+  for (let r = 0; r < records.length; r += RECORD_WORDS) {
+    const s = setOf[records[r]];
+    if (s < 0) continue;
+    const c = records[r + 1] * CLUSTER_WORDS;
+    const range = cu[c + 8];
+    const passes = cu[c + 14];
+    const key = `${range}:${passes}`;
+    const run = bySet[s].get(key);
+    if (run) run[2]++;
+    else bySet[s].set(key, [range, passes, 1]);
+  }
+  const runStart = new Uint32Array(sets.length + 1);
+  const flat: number[] = [];
+  bySet.forEach((runs, s) => {
+    runStart[s] = flat.length;
+    for (const run of runs.values()) flat.push(...run);
+  });
+  runStart[sets.length] = flat.length;
+  return { instances: new Float32Array(tables.instances), sets, runs: Uint32Array.from(flat), runStart };
+}
+
+/** The sets as the WGSL's `Set`. */
+function setWords(sets: InstanceTables["sets"]): Uint32Array {
+  const out = new Uint32Array(Math.max(1, sets.length) * SET_WORDS);
+  const f = new Float32Array(out.buffer);
+  sets.forEach((s, i) => {
+    const o = i * SET_WORDS;
+    out[o] = s.start;
+    out[o + 1] = s.end;
+    f[o + 2] = s.ramp;
+    out[o + 3] = s.rigged ? 1 : 0;
+  });
+  return out;
+}

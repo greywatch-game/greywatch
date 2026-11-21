@@ -10,16 +10,19 @@
  * running every map against one standing pool, is what made an overflowing
  * map pop its motes out instead of fading them.
  *
- * The simulation runs ON THE GPU (`GPUParticleSystem`), which is what makes a
- * field of tens of thousands cost what a thousand cost on the CPU. **What runs
- * it is a COMPUTE SHADER, and the class name is the only thing that did not
- * change in the WebGPU port**: this used to be transform feedback, and
- * `GPUParticleSystem` routes itself to `ComputeShaderParticleSystem` on a
- * WebGPU engine (`Particles/gpuParticleSystem.pure.js`) — no import moved and
- * no call here did either, which is why this file came through the port
- * untouched. Confirmed on the real backend rather than read: every particle
- * system in the game reports that platform, and `randomTextureSize` is 4096
- * (8192 for the motes).
+ * The simulation runs ON THE GPU, which is what makes a field of tens of
+ * thousands cost what a thousand cost on the CPU — and since `BABYLON_EXIT.md`
+ * X4.7c it is OUR renderer's (`render/ParticleDraw.ts`): a compute update and an
+ * instanced draw, Babylon 9.28's `GPUParticleSystem` on
+ * `ComputeShaderParticleSystem` ported exactly, its shaders as compiled, its
+ * random textures and seeds, its clock (the animation ratio, `scene.getAnimationRatio()`'s
+ * arithmetic on our frame since X5.4g) and its
+ * emission. This file DECIDES the field — its box, its colours, its rate, its
+ * lives, its blend — and never draws it; the field is a `ParticleField`, whose
+ * names are Babylon's, so the arithmetic below did not move. Its mote TEXTURE is
+ * ours too since X5.4d: a canvas painted here as the `DynamicTexture` it was
+ * painted on, made our texture as Babylon made that one
+ * (`TextureMaker.picture`).
  *
  * There is no CPU fallback and there is deliberately no capability check: the
  * game is WebGPU or nothing — `main.ts` gates the boot on `navigator.gpu` AND
@@ -28,14 +31,11 @@
  * execute on any browser that can run this game is a branch nothing will ever
  * exercise, so it would rot.
  */
-import {
-  Color4,
-  DynamicTexture,
-  GPUParticleSystem,
-  Scene,
-  Vector3,
-} from "@babylonjs/core";
+import { Color4, type Vector3Like } from "../math";
 import { CONFIG } from "../config";
+import type { ParticleDraw } from "../render/ParticleDraw";
+import type { ParticleField } from "../render/ParticleField";
+import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { ParticleSpec } from "../world/environment";
 
 /**
@@ -61,7 +61,7 @@ const MAX_LIFE = 14;
  * every room build and the emitter box is resized to the new arena.
  */
 export class Atmosphere {
-  private system: GPUParticleSystem | null = null;
+  private system: ParticleField | null = null;
   /**
    * The standing system's capacity. Zero until the first spec arrives, which
    * is also what makes "no system yet" and "wrong size" one branch in `fit`.
@@ -76,26 +76,26 @@ export class Atmosphere {
    * field test and no spec lookup at all.
    */
   private follow: number | null = null;
-  private texture: DynamicTexture;
+  private texture: MadeTexture;
 
-  constructor(private scene: Scene) {
+  constructor(
+    /** Our renderer's particle fields, which step and draw the one built here. */
+    private readonly draw: ParticleDraw,
+    /** Our renderer's maker of the textures the game paints: the mote's. */
+    private readonly textures: TextureMaker,
+  ) {
     // Soft round mote, generated so the game still ships no image files.
     const size = 64;
-    this.texture = new DynamicTexture(
-      "mote",
-      { width: size, height: size },
-      scene,
-      false,
-    );
-    const ctx = this.texture.getContext();
+    const canvas = newCanvas(size, size);
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     const gradient = ctx.createRadialGradient(32, 32, 0, 32, 32, 32);
     gradient.addColorStop(0, "rgba(255,255,255,1)");
     gradient.addColorStop(0.4, "rgba(255,255,255,0.55)");
     gradient.addColorStop(1, "rgba(255,255,255,0)");
     ctx.fillStyle = gradient;
     ctx.fillRect(0, 0, size, size);
-    this.texture.update();
-    this.texture.hasAlpha = true;
+    // Flipped, no mips, sampled flat: `DynamicTexture.update()`'s defaults.
+    this.texture = textures.picture({ label: "mote", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
   }
 
   /**
@@ -112,15 +112,9 @@ export class Atmosphere {
    * keep working: with emit-rate control the field goes empty and stays
    * empty, exactly as it did on the CPU path.
    */
-  private build(capacity: number): GPUParticleSystem {
-    const ps = new GPUParticleSystem(
-      "motes",
-      { capacity, emitRateControl: true },
-      this.scene,
-    );
-    ps.particleTexture = this.texture;
-    ps.emitter = Vector3.Zero();
-    return ps;
+  private build(capacity: number): ParticleField {
+    // Its emitter is the origin until `apply` moves it, as `Vector3.Zero()` was.
+    return this.draw.create("motes", { capacity }, this.texture);
   }
 
   /**
@@ -131,7 +125,7 @@ export class Atmosphere {
    * one that matches — and it is affordable because it is **stable under an
    * unchanged spec by construction, not by care**: a map's `ParticleSpec` is a
    * module constant, so `wanted` comes out the same integer on every
-   * `installMap`, which the editor runs on each keystroke. Only a genuine
+   * `installMap`. Only a genuine
    * change of map or of the ceiling reaches the rebuild, where the world is
    * being rebuilt around it anyway and a field that refills over `MAX_LIFE`
    * seconds costs nothing anybody is looking at. (`applySky`'s identity check
@@ -142,15 +136,15 @@ export class Atmosphere {
    * sparser second map would emit at its own low rate while going on stepping
    * and drawing the dense map's slots for the rest of the session.
    */
-  private fit(emitRate: number): GPUParticleSystem {
+  private fit(emitRate: number): ParticleField {
     const wanted = Math.min(
       Math.ceil(emitRate * MAX_LIFE),
       CONFIG.graphics.particlePoolCeiling,
     );
     if (this.system && this.capacity === wanted) return this.system;
-    // `false`, or the default takes the mote texture with the buffers — it is
-    // this class's, generated once and shared by every system it builds.
-    this.system?.dispose(false);
+    // The texture is this class's, generated once and shared by every field it
+    // builds: the field's disposal releases its own buffers and nothing else.
+    if (this.system) this.draw.dispose(this.system);
     this.capacity = wanted;
     this.system = this.build(wanted);
     return this.system;
@@ -191,18 +185,18 @@ export class Atmosphere {
     this.follow = span > 0 ? span / 2 : null;
     const hx = this.follow ?? width / 2 - 1;
     const hz = this.follow ?? depth / 2 - 1;
-    ps.minEmitBox = new Vector3(-hx, 0.2, -hz);
-    ps.maxEmitBox = new Vector3(hx, 11, hz);
+    ps.minEmitBox.set(-hx, 0.2, -hz);
+    ps.maxEmitBox.set(hx, 11, hz);
     // A field that is NOT following goes back to the origin, or a map with no
     // volume inherits wherever the last map's eye left the emitter — the
     // system is reused across installs and only rebuilt when the buffer size
     // moves.
-    if (this.follow === null) (ps.emitter as Vector3).setAll(0);
+    if (this.follow === null) ps.emitter.set(0, 0, 0);
 
     const c = Color4.FromHexString(spec.color.padEnd(9, "f"));
-    ps.color1 = new Color4(c.r, c.g, c.b, spec.emissive ? 0.85 : 0.5);
-    ps.color2 = new Color4(c.r * 0.7, c.g * 0.7, c.b * 0.7, 0.3);
-    ps.colorDead = new Color4(c.r, c.g, c.b, 0);
+    putColor(ps.color1, c.r, c.g, c.b, spec.emissive ? 0.85 : 0.5);
+    putColor(ps.color2, c.r * 0.7, c.g * 0.7, c.b * 0.7, 0.3);
+    putColor(ps.colorDead, c.r, c.g, c.b, 0);
 
     ps.minSize = spec.size * 0.6;
     ps.maxSize = spec.size * 1.8;
@@ -218,13 +212,9 @@ export class Atmosphere {
     ps.minLifeTime = MIN_LIFE * (maxLife / MAX_LIFE);
     ps.maxLifeTime = maxLife;
     warnIfCeilingClamped(emitRate, maxLife);
-    // Embers add into the dark; ash and dust just occlude. The constants are
-    // BaseParticleSystem's, so they are read off the GPU class rather than
-    // off `ParticleSystem` — naming the CPU class for two integers is what
-    // would drag the whole CPU particle system back into the bundle.
-    ps.blendMode = spec.emissive
-      ? GPUParticleSystem.BLENDMODE_ADD
-      : GPUParticleSystem.BLENDMODE_STANDARD;
+    // Embers add into the dark; ash and dust just occlude — Babylon's
+    // `BLENDMODE_ADD` and `BLENDMODE_STANDARD`, the two a field of ours takes.
+    ps.blendMode = spec.emissive ? "add" : "standard";
 
     // Slow lateral drift plus the theme's vertical motion.
     //
@@ -237,9 +227,9 @@ export class Atmosphere {
     // what stops a wind from also making the dust uniform.
     const rise = spec.riseSpeed;
     const [dx, dz] = spec.drift ?? [0, 0];
-    ps.direction1 = new Vector3(dx - 0.35, rise * 0.6, dz - 0.35);
-    ps.direction2 = new Vector3(dx + 0.35, rise * 1.4, dz + 0.35);
-    ps.gravity = new Vector3(0, rise * 0.15, 0);
+    ps.direction1.set(dx - 0.35, rise * 0.6, dz - 0.35);
+    ps.direction2.set(dx + 0.35, rise * 1.4, dz + 0.35);
+    ps.gravity.set(0, rise * 0.15, 0);
     ps.minEmitPower = 0.2;
     ps.maxEmitPower = 0.6;
     ps.updateSpeed = 0.012;
@@ -260,20 +250,28 @@ export class Atmosphere {
    * Only X and Z. The height band is the ground's, not the eye's — see
    * `apply`.
    */
-  update(eye: Vector3): void {
+  update(eye: Vector3Like): void {
     if (this.follow === null || !this.system) return;
-    const at = this.system.emitter as Vector3;
+    const at = this.system.emitter;
     at.x = eye.x;
     at.z = eye.z;
   }
 
   dispose(): void {
-    this.system?.dispose(false);
+    if (this.system) this.draw.dispose(this.system);
     this.system = null;
     this.capacity = 0;
     this.follow = null;
-    this.texture.dispose();
+    this.textures.release(this.texture);
   }
+}
+
+/** A colour's four numbers into a field's `Color4`-shaped array, as the `Color4` Babylon's held. */
+function putColor(out: number[], r: number, g: number, b: number, a: number): void {
+  out[0] = r;
+  out[1] = g;
+  out[2] = b;
+  out[3] = a;
 }
 
 /**

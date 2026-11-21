@@ -151,7 +151,7 @@ export const ColdharbourEnvironment: EnvironmentSpec = {
    *
    * Note it is BAKED into the rim material rather than pushed as a uniform, so
    * unlike everything else in this block it needs the map rebuilt and the
-   * editor's work light will not show it.
+   * viewer's work light will not show it.
    */
   ridgeScreeColor: "#5e5b4e",
   /**

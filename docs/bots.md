@@ -61,7 +61,8 @@ not — measured occupancy is **1.58 surfaces per cell on Coldharbour, 1.02 on
 Harrowmead and 1.47 on the proving ground** — so the graph, the seven flow
 fields and the cover bake were all paying 2.3x to 2.6x over for padding that
 every read already walked `counts` to skip. Nothing outside `NavGrid`,
-`CoverMap` and the editor has ever held a surface id, and all three must index
+`CoverMap` and the viewer (the map editor before it) has ever held a surface id,
+and all three must index
 through `cellBase`: `CoverMap` borrows the graph's own array rather than
 re-deriving the arithmetic, because a second copy of it can drift and address
 the wrong spots with nothing to see.
@@ -72,8 +73,8 @@ to pad the slots no surface takes. It is thrown away in the constructor, and the
 -1 is **not** a "below ground" sentinel: every read walks `counts[cell]`, which
 is what lets sunken terrain hold ordinary negative heights. Any new consumer must
 bound on `counts` rather than testing `y < 0` — and the one place that was
-testing it, the editor's island finder, was reading the padding rather than the
-ground and is now bounded properly.
+testing it, the editor's island finder (`viewer/validate.ts` now), was reading
+the padding rather than the ground and is now bounded properly.
 
 Reachability is a flood fill from the map's outer ring. That is what keeps bots off
 rooftops: a roof is a perfectly good standable surface, but nothing beside it is
@@ -142,9 +143,10 @@ the top of the type and stands for ground the goal cannot reach, so it loses
 every `<` a steer makes exactly as `Infinity` used to. Seven of them over a
 1500 m map is the reason the width is a rule rather than a detail
 (`ENGINE_UPGRADE.md` S4); anything that wants a real cost or a real distance per
-surface belongs in an array beside this one. **Bots do not use `moveWithCollisions`** — a cell being
+surface belongs in an array beside this one. **Bots do not sweep** (`CollisionField`) — a cell being
 walkable *is* the collision test, and it already accounts for headroom and step
-height; 16 agents walking the collidable mesh list every frame is not affordable.
+height; 16 agents sweeping every frame is not affordable (it was 16 agents
+walking the collidable mesh list when the sweep was still Babylon's).
 
 **The grid is too coarse to be the whole collision test, though.** One column per
 cell *centre* means a collider narrower than 1.5 m — every scattered tree (1.1 m),
@@ -205,20 +207,37 @@ Three things carry the frame budget; undoing any costs ~10× draw calls or a
 permanent hitch:
 
 - **The rig pool is built once per ROSTER SIZE and never disposed inside a
-  round.** Death hides a rig, respawn re-poses it. `new Bot()` allocates a dozen
-  meshes and their GL buffers, and Conquest respawns continuously.
-- **Bot rigs are fourteen merged meshes and two materials** (`SoldierModel`) —
-  forty-odd boxes and faceted lofts merged one mesh per SEGMENT, which is one
-  per joint. **What a rig costs is therefore JOINTS, and no longer colours or
-  boxes**: `KIT_PALETTE` moved the albedo into `uv2.x` and every matte part of
-  a segment wears one material, so a pouch, a kneepad, an antenna and the
-  helmet band are all free. It was twenty-one meshes and six materials while a
-  segment still split once per colour in it, and the guidance that a fifth
-  colour on the torso cost ~32 draws across a roster **has inverted** — the
-  only paint that still costs a mesh is a colour missing from `KIT_PALETTE`,
-  or an EMISSIVE, which cannot join a palette any more than gloss can join
-  `MapBuilder`'s. The two forearms are the one split left that paint cannot
-  fix, paid for by the ELBOW, which is what puts both hands on the rifle.
+  round.** Death takes a body out of the world — `Bot.shown` in the core, and
+  on the wire the `dead` progress a client's `NetSoldier` hides its rig at —
+  and respawn puts it back; a rig the ragdoll pool held is handed back in its
+  rest pose (`RagdollSystem.release`, `resetSoldierPose`). A rig is a joint
+  tree and a slot in the frame's instances (its DRAWING is its side's kit,
+  built once, `BABYLON_EXIT.md` X4.1d), and Conquest respawns continuously.
+  **The pool
+  is two halves since BABYLON_EXIT.md X2.2 C7**: `BattleSystem` holds the
+  `Bot`s — simulation on `src/math`, no rig, no scene, no camera — and a
+  client's `NetRoster` holds one `NetSoldier` per slot the round fields, drawn
+  off the snapshots and writing nothing back. **Since X2.5c C4 that is the
+  only rig a bot has, offline included**, the page being a client of its own
+  match; until then the offline page held a `BattleView` of `BotRig`s that
+  followed the core's bots directly. The authority builds no rig at all (its
+  peak RSS on Sarab fell from 471 MB to 426).
+- **Every body of a side is an INSTANCE of one kit** (`SoldierModel.soldierKits`,
+  drawn by `render/BodyDraw.ts` since `BABYLON_EXIT.md` X4.1d) — forty-odd
+  boxes and faceted lofts merged one SEGMENT per joint, fifteen with the
+  visor, built ONCE a side and never a Babylon mesh. **What a body costs is
+  therefore VERTICES and a joint compose, and no longer draws**: a frame draws
+  the whole roster a RANK at a time (each body's `r`th segment nearest the
+  eye, the order Babylon's queue drew a rig's meshes in), at most twice the
+  segments a body has however many bodies, where a rig was fourteen meshes
+  and fourteen draws apiece (672 on Sarab's 48). `KIT_PALETTE` moved the
+  albedo into `uv2.x` and every matte part wears one material, so a pouch, a
+  kneepad, an antenna and the helmet band are all free; a matte colour
+  missing from `KIT_PALETTE` is REFUSED at the build, and an EMISSIVE cannot
+  join the palette any more than gloss can join `MapBuilder`'s — the visor is
+  a segment of its own, drawn by the emissive palette's program. The two
+  forearms are the one split paint cannot fix, paid for by the ELBOW, which
+  is what puts both hands on the rifle.
 - **AI is staggered at `CONFIG.bots.thinkRate`**, round-robin across frames.
   `acquire()` gathers candidates by distance and ray-tests them in ascending order,
   returning the first visible one — testing all of them fires up to 30 picks per think.
@@ -230,10 +249,26 @@ permanent hitch:
 **How big the roster IS is the map's, on both sides**, and on a CLIENT the pool
 is exactly that roster rather than a ceiling every map pays for.
 `MapLayout.perTeam` defaults to `CONFIG.bots.perTeam` (8) and is bounded by
-`CONFIG.bots.maxPerTeam` (24); Sarab is the only map that states one, and
-`perTeamOf` is where the default and the bound live. `Game.buildRound` pushes it
-through `BattleSystem.setRoster`, which is a no-op at the same size and
-otherwise disposes the pool and builds a new one — so a map that says nothing
+`CONFIG.bots.maxPerTeam` (24); Sarab and Cinderhaven are the two maps that
+state one (24 each), and `perTeamOf` is where the default and the bound live.
+The page's own match asks the core for exactly that pool (`RoundSpec.pool`,
+`SimCore.startRound`), which reaches `BattleSystem.setRoster` — a no-op at the
+same size and otherwise a new pool — and `Game.buildRound` hands the same
+number to `NetRoster.setFielded` (through `NetSession.setFielded`), which
+rebuilds the rigs when the count or the viewer's side moved since the
+session's own pool was built. **That is two different lifetimes on the two
+kinds of match.** A server's session outlives every rotation, so its pool is
+rebuilt only when the count or the side moves. The page's own match is a FRESH
+session every round — `Game.openLocalRound` calls `leaveMatch`, which disposes
+the last `NetSession` and its `NetRoster`, and builds a new one whose
+constructor builds a pool of the map's own `perTeam` a side (the session is
+handed it, `perTeamOf(mapDef.layout)`) — so every offline round, a same-map
+restart included, builds its rigs anew, ONCE, and `buildRound`'s `setFielded`
+finds nothing to do unless the viewer's side moved. (Until the constructor was
+handed the roster it built the shipped eight, and the two 24-a-side maps
+built their rigs twice a round.) That is a known cost, paid under the loading
+card; "built once and never disposed" still holds INSIDE a round, which is the
+frame budget's claim — so a map that says nothing
 gets the same sixteen bodies with the same squads, the same launchers, the same
 molotov carriers (each squad's LAST body, the launcher's rule from the other end
 — `docs/grenades.md`) and the same movement seeds it always had, bit for bit.
@@ -244,12 +279,16 @@ pool built to `maxPerTeam` would leave thirty-two bodies nobody is fighting in
 the frame's own active-mesh walk on every 8v8 map — `WorldCulling`'s whole
 argument is that a DISABLED mesh is skipped cheaply and not skipped, six hundred
 meshes at ~0.67 µs on a village whose entire frame is under 2 ms. So the bend is
-placed where a map change already disposes the world, rebuilds it and holds a
-loading card over the wait, and `setRoster` is called from `buildRound` and
-never from `installMap` — the editor is that method's other caller and has no
-round, no player and no bots. It runs after `RagdollSystem.reset` and
-`VehicleCrew.clear`, the two things that hold a body, and before
-`setDifficulty`, which draws a skill for every bot in the pool it is handed.
+placed where a round's build already holds a loading card over the wait — on a
+server's session only when the map changes what it fields, on the page's own
+match at every round, the session being new (above). Both halves sit at a
+ROUND's start and neither
+in `installMap`, which is about the MAP (the map editor, its other caller until
+X5.3c, had no round, no player and no bots). On the page `NetRoster.setFielded` is called from
+`buildRound` after `RagdollSystem.reset`, the ragdolls being what holds a RIG;
+in the core `setRoster` is `startRound`'s first line, before `setDifficulty`,
+which draws a skill for every bot in the pool it is handed, and `setRoster`
+clears what holds a BOT (the bench, the crews, the unfielded) itself.
 
 **Nothing else in this layer knows a size.** The squads come out of
 `squadSize` (24 a side is six squads rather than two, and `planSquads` has never
@@ -262,11 +301,12 @@ the ~64-body roster that note names as the point to revisit it.
 
 **On the AUTHORITY `setRoster` is called exactly once and the pool IS the
 ceiling**, which is the mirror image of everything above and is the right trade
-there for the opposite reason: that process draws nothing and walks no meshes,
+there for the opposite reason: that process draws nothing, builds no rig and
+walks no meshes,
 and it needs team 1's block to begin at the same slot index on every map a match
 rotates onto, because a slot index IS a bot index and a table that grew and
 shrank under the humans sitting in it would take `ScoreBook`'s rows, the wire's
-identities and the bench with it. `HeadlessGame`'s constructor sizes the pool to
+identities and the bench with it. `SimCore`'s constructor sizes the pool to
 `CONFIG.bots.maxPerTeam` and `startRound` calls **`BattleSystem.setFielded`**
 with the map's own `perTeamOf` — so a match on Sarab or Cinderhaven is 24v24
 and a match anywhere else is 8v8 out of the same pool.
@@ -275,9 +315,9 @@ and a match anywhere else is 8v8 out of the same pool.
 aside exactly as a benched one is: dead, off the field, no ticket, no target, no
 squad, nothing torn down. It is a separate set from `benched` because the two
 are cleared by different things — a human leaving un-benches one slot, a
-rotation re-decides all of them — and because `Match` re-benches its humans over
-the top of whatever a rotation just decided. It is EMPTY offline, where the pool
-is already the map's. The one thing that had to follow it is the think budget:
+rotation re-decides all of them — and because `SimCore.startRound` re-benches its
+seated humans over the top of whatever a rotation just decided. It is EMPTY offline, where the pool
+is already the map's and the page's own match fields all of it. The one thing that had to follow it is the think budget:
 the pass skips an aside bot without spending on it, so a budget taken from a
 pool three times the size of the fight would have given the bodies that ARE
 fighting three times their advertised reaction speed.
@@ -309,8 +349,25 @@ budget is the one thing here that does not scale.
   ground in them) and starts `burnT` instead — a run straight away from the fire
   that overrides whatever the state wanted. See `docs/grenades.md`.
 - **Hearing** is a squared-distance sweep inside `BattleSystem.botFire`, with a
-  jittered position so bots converge on the *sound*, not the shooter. `Game` calls
-  `hearGunshot` for the player's own fire.
+  jittered position so bots converge on the *sound*, not the shooter. The core
+  calls `hearGunshot` for a person's own fire (`SimCore`, at the shot and the
+  hull's gun alike).
+- **A bot's MUZZLE is an outcome, so it is ARITHMETIC and never a rig read.**
+  It is where a bot's shot is heard from and where its rocket leaves, and
+  `Bot.muzzleWorld` replays it (`soldierPose.ts`'s `soldierMuzzleToRef`) off
+  the root `syncTransform` last stood (`Bot.rx`..`ryaw`) and the pose last
+  solved — the same float32 node chain Babylon's forced
+  `computeWorldMatrix(true)` walked, bit for bit (BABYLON_EXIT.md X2.2 C5
+  proved it against the rig at every read over whole rounds on all seven
+  maps). **The pose is FILLED every frame for every live bot and SOLVED only
+  when something reads it** (`Bot.solved` — the same numbers whenever, since
+  `SoldierMotion.fill` is the stateful half), because the muzzle used to be
+  the frozen rig's: the authority, whose "camera" is the origin, answered with
+  a live pose only for bots within 35 m of the map's centre, and offline the
+  camera decided (X2.2 C6, a named fight-hash change). No rig reads a `Bot`
+  any more — X2.5c C5 deleted the offline `BotRig` with its pose-freeze LOD
+  (`lodFreezeDistance`), and a client poses its `NetSoldier` off the wire. The
+  round's own ray is `eyePos` and does not move with it.
 - **A shot is heard differently by the two sides, and the difference is WHERE
   the cue lands.** To the side being shot at, the noise IS the shooter: the cue
   is the muzzle, which is the thing worth looking at. To the shooter's own side
@@ -326,7 +383,7 @@ budget is the one thing here that does not scale.
   x/z and a lead spent on a steep shot would put it in the air or under the
   floor; a shot with no ground bearing at all leads nowhere and stays at the
   muzzle. And it is normalised where it is spent rather than trusted, because
-  one caller is `HeadlessGame.resolveShot`, where the direction came off the
+  one caller is `SimCore.resolveShot`, where the direction came off the
   wire and `server/wire.ts` proves only that it is three finite numbers.
 - **A friendly shot inside `friendlyHearMin` (12 m) is not a cue at all.** A bot
   standing next to the man firing learns nothing from the noise — it can see him
@@ -587,7 +644,7 @@ rounds:
 | Greyfen | 0.251 | 0.082 |
 | Coldharbour | 0.334 | 0.150 |
 
-Three 240 s rounds a side per map at `Regular`, through `HeadlessGame` — the
+Three 240 s rounds a side per map at `Regular`, through `SimCore` — the
 harness `npm run simulate` drives. Read it beside the engage fractions above
 rather than on its own: the point is a squad that spreads without fighting less.
 

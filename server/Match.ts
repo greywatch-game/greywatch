@@ -3,22 +3,61 @@
  * the snapshots that go out from it.
  * Owns: the fixed-step clock, the peer set, and the bridge between a roster slot
  * changing hands and the bot in that slot being benched or released. It owns no
- * game rules — those are `HeadlessGame`'s — and no transport details beyond
- * `send`/`broadcast`, which are the one place a dead socket is handled.
+ * game rules — those are `SimCore`'s — and no transport: a peer is reached
+ * through a `PeerTransport` (a WebSocket on the server, `server/index.ts`; a
+ * port on a match the page hosts, `server/localMatch.ts`), and
+ * `send`/`broadcast` are the one place a dead connection is handled. It
+ * imports nothing of Node's, for that second host: it runs in a browser.
+ * It is the core's HOST: it hears the simulation only through the core's
+ * event ring, DRAINED after every call it makes on the core — each step, each
+ * accepted message — and `relay` turns what it drained into wire events. It
+ * installs no callback on the core and reads nothing back off a live object
+ * to finish an event (`src/sim/events.ts`).
+ * **It VALIDATES and the core DECIDES**: each
+ * message handler runs this side's claim gates — the shape (`server/wire.ts`),
+ * the sequence and the clock (a peer's stamps BOUNDED against when its
+ * messages arrive, `onStamp` — the state is this class's `Peer`, never the
+ * core's object), the rate buckets, the cones and origin slips,
+ * `validateMove`/`validateDrive` and the corrections they answer with — and
+ * then hands what it accepted to `SimCore.submit` as one `SimCommand`
+ * (`src/sim/commands.ts`). Everything that is a rule — the pouch counts, the
+ * seat policy, the rewound round, when a person comes back in — is the core's,
+ * the one copy every host steps: this class (a server's match, or the page's
+ * own local match offline), `simulate` and `corecheck`. What it still reads
+ * off the core is in-process state its validators and snapshot need
+ * (`players`, `hullOf`, `reportedHull`, the fleet, the board).
+ * `server/corecheck.ts` drives a real instance through a fake transport and
+ * steps it by hand — it reaches `step`, `relay`, `timer`, `peers`,
+ * `arrivalClock`, `rotateTimer`, `idleTimer`, `retired`, `queue`, `queueTo`
+ * and `flushEvents` by name — so renaming one of those owes that file a look.
+ * **Its CLOCK is a choice.** A match the server
+ * hosts FREE-RUNS: an interval polls the wall clock into the accumulator
+ * (`accrue`), which steps it `1 / TICK_HZ` at a time. A match built `owned`
+ * is DRIVEN by its owner — the page, for the offline round — which feeds the
+ * same accumulator through `advance(dt)`, begins each round itself with its
+ * own seed and difficulty (`begin`) and ends the match (`close`). An owned
+ * match stays on the one map it was built for, fields that map's own roster
+ * as its pool (`server/Roster.ts`), opens no vote, never rotates and is never
+ * retired for being empty: whatever ends it is the owner's. Its owner also
+ * holds the RESPAWN clock (`game`), hands over the time it HELD as well as
+ * the time it stepped (`hold`), and may let a WATCHER in — a peer with no
+ * seat, which hears the round and is nobody in it (`watch`).
  * Invariants: a peer's slot is assigned here and nowhere else, and a peer never
- * names its own slot. The loop is fixed-step and drift-corrected: a `dt` taken
- * from wall clock would make the simulation run at the speed of the server's
- * load, and every recoil, bleed and reload timer in `CONFIG` is written against
- * real seconds.
+ * names its own slot. **A peer is a seat**: everything in `peers` holds one,
+ * and a watcher is never in it — the slot-indexed tables (`pings`, the vote,
+ * `queueTo`) never meet one. The loop is fixed-step and drift-corrected
+ * whoever drives it: a `dt` taken from wall clock would make the simulation
+ * run at the speed of the server's load, and every recoil, bleed and reload
+ * timer in `CONFIG` is written against real seconds.
  */
-import { Vector3 } from "@babylonjs/core";
-import type { WebSocket } from "ws";
+import { Vector3 } from "../src/math";
 import {
   encode,
   MAX_NAME_LENGTH,
   PROTOCOL_VERSION,
   SNAPSHOT_HZ,
   INPUT_HZ,
+  MAX_FRAME_DT,
   TICK_HZ,
   type ClientMessage,
   type EntityState,
@@ -26,6 +65,7 @@ import {
   type MatchSummary,
   type PointState,
   type MineState,
+  type RosterMessage,
   type RocketState,
   type ServerEvent,
   type ServerMessage,
@@ -54,13 +94,18 @@ import {
   throwableCarried,
   type ThrowableId,
 } from "../src/entities/throwables";
-import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/Vehicle";
-import { MAPS } from "../src/world/maps";
-import { HeadlessGame } from "./HeadlessGame";
+import { DRIVER, GUNNER, type CrewSeat } from "../src/entities/hullSeats";
+import { MAPS, type MapDef } from "../src/world/maps";
+import { perTeamOf } from "../src/world/layout";
+import { freshSeed } from "../src/systems/RoundRandom";
+import { HULL_EARLY } from "../src/systems/hullRules";
+import { SimCore } from "../src/sim/SimCore";
+import { EV, EventCursor, decode, type EventKind, type RefusedItem } from "../src/sim/events";
 import { MapVote } from "./MapVote";
-import { HUMANS_PER_TEAM, Roster, SLOT_COUNT } from "./Roster";
+import { Roster } from "./Roster";
 import { validateDrive, validateMove } from "./validate";
 import { readClientMessage } from "./wire";
+import { loadSimWorld } from "./world";
 import {
   claimedDir,
   lookDir,
@@ -169,15 +214,135 @@ function freshSlot(): SlotRecord {
   };
 }
 
+/**
+ * The one connection a peer is reached over, as this class needs it: a
+ * WebSocket on the server (`server/index.ts`'s
+ * `wsTransport`), a port on a match the page hosts (`server/localMatch.ts`'s
+ * `portPeer`), and a fake one in `server/corecheck.ts`. Everything about
+ * what is CARRIED — the JSON both ways, the claim gates, the rate bucket — is
+ * this class's and stays above it, so whatever carries a peer is told nothing
+ * a WebSocket was not.
+ */
+export interface PeerTransport {
+  /**
+   * Whether `send` and `ping` still reach the far end. False once a close has
+   * begun from either side, and `send`/`broadcast` test it, so they are still
+   * the one place a dead connection is handled.
+   */
+  readonly open: boolean;
+  /** One encoded `ServerMessage`. */
+  send(text: string): void;
+  /**
+   * Ends the connection. `closed` may follow a turn later (a WebSocket's
+   * closing handshake) or not at all, so a caller that needs the peer gone
+   * NOW drops it by hand, as `abandon` and `spendMessage` do.
+   */
+  close(): void;
+  /**
+   * Starts one round trip, answered by `pong` (`pingPeer`). **A transport
+   * shared with another pinger owns telling the answers apart**, so `pong`
+   * means THIS ping and nothing else — the WebSocket's is shared with the
+   * process's liveness sweep, and `wsTransport` tokens its pings for it.
+   */
+  ping(): void;
+  /** Hands this class its handlers. Called once, inside `admit`. */
+  listen(handlers: PeerHandlers): void;
+}
+
+/** What a transport raises into `Match`, one handler per thing it can say. */
+export interface PeerHandlers {
+  /** One inbound frame, as text: still a CLAIM until `server/wire.ts` reads it. */
+  message(text: string): void;
+  /** The connection ended or failed — either way the peer is gone. */
+  closed(): void;
+  /** The far end answered the outstanding `ping`. */
+  pong(): void;
+}
+
+/**
+ * How a match is built: by `server/index.ts` for a join that found no match
+ * to sit in, or by the OWNER of a match the page hosts itself.
+ */
+export interface MatchOptions {
+  /**
+   * The map id asked for — the creating peer's, or the owner's. Resolved in
+   * the constructor, which says why that is the one door.
+   */
+  map?: string;
+  /** Whether the match fields bots — `Join.bots`. True when absent. */
+  bots?: boolean;
+  /**
+   * The match has an OWNER that drives its clock, begins its rounds and ends
+   * it — see the header for everything that
+   * changes with it. False when absent: the server's free-running match.
+   */
+  owned?: boolean;
+  /**
+   * The clock the core times its steps with, for an owner that files them
+   * (`SimCoreOptions.timing`, the profiler's `sim` root). The server passes
+   * none: nothing on it reads a step's cost.
+   */
+  timing?: () => number;
+  /**
+   * Hears everything the core says, one drain at a time, as this match drains
+   * it and before it is relayed — the owner's ear on the round, for what no wire event carries
+   * (a bot's award, which the benchmark's fight hash folds). In-process only,
+   * read inside the call: the cursor is reused by the next drain. A peer
+   * hears the wire and never this.
+   */
+  hear?: (said: EventCursor) => void;
+  /**
+   * Called after every step the match takes, straight after `SimCore.step`
+   * — the owner's look at what that one step cost (`SimCore.timing`, which
+   * the next step overwrites), so an `advance` that stepped several times
+   * can report all of them. In-process only, and it MEASURES: nothing it
+   * does may reach the round. The server passes none.
+   */
+  stepped?: () => void;
+}
+
+/**
+ * What a round is played FROM besides its map: the seed every outcome stream
+ * is keyed off (`RoundSpec.seed`) and the bots' difficulty. An owner chooses
+ * both (`begin`); the server draws a fresh seed and plays `MATCH_DIFFICULTY`.
+ */
+export interface RoundChoice {
+  seed: number;
+  difficulty: number;
+}
+
 /** One connected human. */
 interface Peer {
   id: string;
   name: string;
-  socket: WebSocket;
+  transport: PeerTransport;
   /** The roster slot this peer holds, which is also its entity id on the wire. */
   slot: number;
-  /** Last input sequence accepted from this peer. */
+  /**
+   * Last input sequence accepted from this peer — the one a correction names,
+   * and the floor below which a `move`, `drive` or `gunner` is stale. The
+   * VALIDATOR's state, so it is this class's and never the core's object's.
+   */
   seq: number;
+  /**
+   * The peer's clock as `onStamp` keeps it: the last `move`/`drive` stamp it
+   * read (client ms, NaN before the first), when that one ARRIVED (this
+   * process's `arrivalClock`), how far the stamps have run ahead of their
+   * arrivals since the first (`lead`, ms, held within `STAMP_SLACK`), and how
+   * far the BOUNDED clock has fallen behind the raw one (`behind`, ms) — so
+   * the bounded clock is `stamp - behind`, and an honest peer's is its own
+   * stamp to the bit.
+   */
+  stamp: number;
+  arrived: number;
+  lead: number;
+  behind: number;
+  /**
+   * A `hullcorrect` that moved this peer's hull vertically has gone out and
+   * no `drive` has yet answered it with `resync` — the one window in which
+   * that flag is honoured (`onDrive`, `reportedLanding.ts` "A broken series").
+   */
+  resyncOwed: boolean;
   /**
    * Inbound messages this peer may still send, and when that was last topped
    * up. A bucket rather than a counter per window — see `spendMessage`.
@@ -191,16 +356,6 @@ interface Peer {
   ping: number;
   /** When the outstanding ping went out, or 0 when there is not one. */
   pingAt: number;
-  /**
-   * What that ping carried, so a pong is matched to the ping it answers.
-   *
-   * The process-wide liveness sweep in `server/index.ts` pings the very same
-   * sockets, and its pongs arrive here too — without a token this class would
-   * time its own ping against somebody else's answer. The payload of a pong is
-   * the payload of the ping that caused it (RFC 6455), so the token is the
-   * whole of the test.
-   */
-  pingToken: number;
 }
 
 /**
@@ -222,7 +377,39 @@ interface PendingEvent {
 /** `PendingEvent.to` for an event every client gets. */
 const ALL_PEERS = -1;
 
+/**
+ * The core's event kinds `relay` puts on the wire. Everything else — a
+ * footstep, a tracer, a death's audit, a hull's kick — is drained and
+ * dropped without being decoded.
+ */
+const RELAYED: ReadonlySet<EventKind> = new Set<EventKind>([
+  EV.botDown,
+  EV.botFired,
+  EV.botReload,
+  EV.nearMiss,
+  EV.captured,
+  EV.neutralised,
+  EV.award,
+  EV.damaged,
+  EV.blast,
+  EV.ignited,
+  EV.cannon,
+  EV.mg,
+  EV.seat,
+  EV.glass,
+  EV.spawned,
+  EV.hit,
+  EV.ordnanceRefused,
+  EV.roundOver,
+]);
+
 const STEP_MS = 1000 / TICK_HZ;
+
+/**
+ * The most clock the accumulator holds, in ms — anything beyond it is DROPPED
+ * rather than stepped through. See `accrue`.
+ */
+const MAX_CARRIED_MS = 250;
 
 /**
  * How often the loop LOOKS to see whether a step is due, in ms.
@@ -235,7 +422,7 @@ const STEP_MS = 1000 / TICK_HZ;
  * Polled at `STEP_MS` a wake-up is late as often as not, so the tick a snapshot
  * rides on runs anywhere in a 16 ms window and the twenty sends a second land
  * 31 to 80 ms apart. That spread is not rendered as speed any more (the stamps
- * are the simulation's own clock — `HeadlessGame.now`), but it is still spent:
+ * are the simulation's own clock — `SimCore.now`), but it is still spent:
  * a client draws bodies `CONFIG.net.interpDelay` behind the newest sample it
  * holds, and a send that is early shortens that buffer by exactly its
  * earliness. Half the spread came off the budget meant for the NETWORK's
@@ -255,6 +442,69 @@ const POLL_MS = 4;
  * the rest of the gap is simply lost.
  */
 const MAX_MOVE_GAP = 0.5;
+
+/**
+ * What a peer's FIRST stamped sample is assumed to cover, in seconds — it has
+ * no earlier stamp to be measured against (`onStamp`).
+ *
+ * One input interval and one frame, because that is what a client's first
+ * sample can honestly span: it sends on the first frame its upload clock has
+ * reached one interval (`NetSession.update`), so the sample covers that
+ * interval plus whatever of the last frame overshot it — and a frame is
+ * capped at `MAX_FRAME_DT` (`protocol.ts`; 50 ms, which is one interval at
+ * today's `INPUT_HZ`, so the sum is two). One interval,
+ * which this was, refused an honest walk whenever the frames right after a
+ * spawn were long: Sarab's first `move` came back `speed`-corrected by a third
+ * of a metre. A step of two intervals' worth from the
+ * spawn is still a step, and every later sample is priced by its own stamps.
+ */
+const FIRST_STAMP_GAP = 1 / INPUT_HZ + MAX_FRAME_DT;
+
+/**
+ * How far, in ms, a peer's stamps may run ahead of — or fall behind — the
+ * clock their messages ARRIVE on, before the excess is not believed.
+ *
+ * **The stamp is the client's word for how long a step took, and every bound
+ * downstream is priced in it**: `validateMove`'s and `validateDrive`'s
+ * allowance is a speed times this interval, and the crash test's rate is a
+ * height over it (`reportedLanding.ts`). Clamped per sample alone
+ * (`MAX_MOVE_GAP`), a client adding half a second to every stamp at
+ * `INPUT_HZ` bought ten times the legal ground forever, and one adding a
+ * second measured every descent over a second and landed free. So the sum is
+ * bounded too: each interval is held to what ARRIVED in the same time plus
+ * whatever of this slack the stamps have not already used, and a stamp
+ * running ahead of its arrivals spends the slack once and then advances at
+ * the arrival rate. Symmetric, so a client cannot bank slow stamps to spend
+ * on one long interval later.
+ *
+ * **An honest client never touches it.** Its stamps and its arrivals are one
+ * wall clock read at the two ends of a socket, so the lead moves only by the
+ * network's jitter — a packet held back, then the bunch behind it — and it
+ * comes back. Latency swinging by up to twice this, peak to peak, passes
+ * every stamp through to the bit; past that the lead re-centres and gives the
+ * excess away rather than holding it against the client. What it costs a
+ * client whose clock steps forward mid-match (an NTP jump) is that one step,
+ * and a few intervals clipped by however far its latency then dips below the
+ * level it stepped at — which is the price of not believing a clock that
+ * jumped.
+ */
+const STAMP_SLACK = 250;
+
+/**
+ * The shortest interval two of a person's `drive` reports may be apart and
+ * still be a RATE for the crash test — `SimCoreOptions.reportGap`, seconds.
+ * Half an upload interval: `NetSession` never sends closer than
+ * `1 / INPUT_HZ`, so only a crowded stamp is skipped, and a skipped sample is
+ * measured into the next one rather than lost.
+ */
+const REPORT_GAP = 0.5 / INPUT_HZ;
+
+/**
+ * A correction that moved the hull by more than this vertically, in metres,
+ * stopped the client's vertical motion (`Vehicle.correctTo`'s own threshold)
+ * — so its first report after it is a rebase (`Peer.resyncOwed`).
+ */
+const RESYNC_RISE = 1e-3;
 
 /**
  * How far off their own reported aim a claimed shot may leave, as a cosine.
@@ -372,17 +622,19 @@ type RoundMessage = Extract<
 >;
 
 /**
- * How far ahead of a HULL's own reload a person's round may arrive, in
- * seconds — `Vehicle.fireGun`'s `early`.
- *
- * The bucket is what bounds a person's rate; the hull's clock is asked as well
- * because it is the HULL's, and a seat changes hands. It is `SHOT_SLACK`
- * because that is the jitter the bucket was already sized to forgive, and it
- * is longer than the cupola gun's whole interval — so on that gun the clock
- * never refuses a round the bucket passed, and on the main gun it refuses only
- * a shell fired through somebody else's reload.
+ * `HULL_EARLY` — how far ahead of a HULL's own reload a person's round may
+ * arrive, in seconds (`Vehicle.fireGun`'s `early`) — is stated once, in
+ * `src/systems/hullRules.ts` beside the guns whose clock it loosens, and
+ * passed by this class alone, for every person in a hull — a server's peers
+ * and the page's own player offline alike. Here it is `SHOT_SLACK`: the bucket is what
+ * bounds a person's rate, the hull's clock is asked as well because it is the
+ * HULL's and a seat changes hands, and the jitter the bucket was sized to
+ * forgive is the jitter the clock must forgive too. So the two may not drift
+ * apart, and this module refuses to load if they have.
  */
-const HULL_EARLY = SHOT_SLACK / 1000;
+if (HULL_EARLY * 1000 !== SHOT_SLACK) {
+  throw new Error(`[match] HULL_EARLY (${HULL_EARLY} s) is not SHOT_SLACK (${SHOT_SLACK} ms)`);
+}
 
 /**
  * Inbound messages one peer may send per second, sustained.
@@ -431,6 +683,13 @@ const IDLE_DISPOSE_MS = 60_000;
 
 /** How long the round-over card stays up before the next map is built. */
 const ROUND_OVER_MS = 8_000;
+
+/**
+ * The bots' difficulty on a match the server hosts. Nobody there may choose
+ * one — a match is shared, and its difficulty is no one person's to pick — so
+ * it is the default, and only an owned match plays another (`RoundChoice`).
+ */
+const MATCH_DIFFICULTY = 1;
 
 /** Scratch for shot resolution; reused so a firefight allocates nothing. */
 const SHOT_ORIGIN = new Vector3();
@@ -508,18 +767,73 @@ function cleanName(raw: unknown): string {
 let nextPeerId = 1;
 
 export class Match {
-  readonly roster = new Roster();
-  readonly game = new HeadlessGame();
+  /**
+   * Who sits in each slot. Its block width is the bot POOL (`startRound`
+   * hands it to the core as `RoundSpec.pool`): the ceiling on a match that
+   * rotates, the map's own roster on an owned one — the constructor decides.
+   */
+  readonly roster: Roster;
+  /**
+   * The simulation, built with `rewind` — the one option that is the
+   * authority's: every person here is a remote shooter whose round meets the
+   * world they saw a round trip ago.
+   *
+   * **Whose respawn clock it is follows from who owns the CLOCK.** On the
+   * server's match it is the core's own (`hostHoldsRespawn` off): a `deploy`
+   * is a request the reinforcement pass spends once that clock runs out,
+   * because nobody else is counting and the world never stops. On an OWNED
+   * match it is the OWNER's (`hostHoldsRespawn` on): the page holds the
+   * world under its deploy screen and runs the countdown there, so a
+   * reinforcement clock that only steps when the owner advances would hold
+   * the deploy hostage to a world the page is deliberately not moving. The
+   * deploy is honoured at submit, through the same door (`deployPerson`) and
+   * the same spawn stream. The benchmark seats nobody, so its fight cannot
+   * move with this.
+   */
+  readonly game: SimCore;
+  /**
+   * When a message ARRIVED, in ms — what `onStamp` holds each peer's stamps
+   * against. Monotonic and never compared with a client stamp directly: only
+   * its INTERVALS are read. A harness that steps the match by hand replaces
+   * it with its own (`server/corecheck.ts`, the simulation's time).
+   */
+  private arrivalClock: () => number = () => performance.now();
 
   private readonly peers = new Map<string, Peer>();
+  /**
+   * The connections WATCHING this match (`watch`): welcomed, sent every
+   * broadcast and every shared event, and nobody in the round. Kept apart
+   * from `peers` so that "a peer is a seat" stays a fact about that map rather
+   * than a test every loop over it owes — a watcher has no slot to index the
+   * ping table, the ballot or an addressed event with, and the core never
+   * hears of one. Only ever filled on an owned match.
+   */
+  private readonly watchers = new Set<PeerTransport>();
+  /** The server's free-running loop while it is armed (`start`); never set on an owned match. */
   private timer: ReturnType<typeof setInterval> | null = null;
+  /**
+   * Whether an OWNER drives this match — `MatchOptions.owned`, fixed for its
+   * life. See the header.
+   */
+  private readonly owned: boolean;
+  /**
+   * Clock fed in and not yet stepped through, in ms — `accrue`'s accumulator,
+   * whichever clock feeds it. Always under one step between two feeds.
+   */
+  private carried = 0;
+  /**
+   * The world has been disposed (`retire`) and this match is finished: the
+   * server's registry has forgotten it, or its owner has closed it. Final.
+   */
+  private retired = false;
   /**
    * The map this match is on. The AUTHORITY's, from the moment it is built:
    * every client that joins is told it in the welcome and builds that world
    * locally, whatever its own menu had selected.
    *
-   * Assigned in the constructor from what the creating peer asked for, and
-   * `rotate` is the only thing that moves it afterwards.
+   * Assigned in the constructor from what the creating peer — or the owner —
+   * asked for, and `rotate` is the only thing that moves it afterwards. An
+   * owned match never rotates, so its map is the one it was built for.
    */
   private mapId: string;
   /**
@@ -547,12 +861,23 @@ export class Match {
    *
    * The audience is carried on the queue rather than kept in a second list so
    * that ORDER survives it. Events are a single stream to a client — the hit
-   * credits `Game.claimPredictedHit` pairs off are FIFO with no shot id on the
+   * credits `HitCredits.claim` pairs off are FIFO with no shot id on the
    * wire — and two lists flushed one after the other would put a tick's shared
    * events either wholly before or wholly after that client's own, whichever
    * way round the flush happened to be written.
    */
   private readonly pending: PendingEvent[] = [];
+
+  /**
+   * What the core said on its last call, drained into here by `relay`. Held
+   * for the life of the match: a drain swaps arrays with it rather than
+   * allocating.
+   */
+  private readonly drained = new EventCursor();
+  /** `MatchOptions.hear`, or null. */
+  private readonly hear: ((said: EventCursor) => void) | null;
+  /** `MatchOptions.stepped`, or null. */
+  private readonly stepped: (() => void) | null;
 
   /** Reused so a snapshot allocates nothing per tick beyond its own arrays. */
   private readonly entityScratch: EntityState[] = [];
@@ -571,7 +896,7 @@ export class Match {
    * type. Replaced whole when a slot changes hands, never cleared field by
    * field.
    */
-  private readonly slots: SlotRecord[] = Array.from({ length: SLOT_COUNT }, freshSlot);
+  private readonly slots: SlotRecord[];
 
   /**
    * The `AntiTankSystem.version` the clients have been told about, or -1 for
@@ -594,8 +919,9 @@ export class Match {
    * ear is three rounds and has to sound like three.
    *
    * Drained in `broadcastSnapshot`, which is also the only place `pending` is
-   * flushed, so a fire raised on any tick of the interval leaves on the same
-   * message as everything else that happened in it.
+   * flushed on a step (an owned match's deploy flushes too, between steps —
+   * see `onDeploy`), so a fire raised on any tick of the interval leaves on
+   * the same message as everything else that happened in it.
    */
   private readonly firedRounds = new Map<number, number>();
 
@@ -625,7 +951,8 @@ export class Match {
 
   /**
    * The ballot for the next map, open only between a round ending and the next
-   * one being built — which is exactly the span `rotating` is true for.
+   * one being built — which on the server is exactly the span `roundOver` is
+   * true for. An owned match opens none.
    *
    * Null the rest of the time, and that is the test every path here asks
    * rather than a second flag: a vote that arrives outside the window has no
@@ -636,9 +963,9 @@ export class Match {
   private mapVote: MapVote | null = null;
   /**
    * When the window shuts, on the WALL clock — the one place on this server
-   * that is right rather than a lapse from `HeadlessGame.now`.
+   * that is right rather than a lapse from `SimCore.now`.
    *
-   * The simulation is not stepped while `rotating`, so its clock is frozen for
+   * The simulation is not stepped while `roundOver`, so its clock is frozen for
    * the whole of the window and a countdown measured against it would read the
    * same eight seconds forever. The wall clock is also what the rotation
    * itself is on (`setTimeout`), so this and the moment the vote actually
@@ -662,7 +989,8 @@ export class Match {
   private voteDirty = false;
 
   /**
-   * `wantedMap` is the map id the peer whose join created this match asked for.
+   * `options.map` is the map id the peer whose join created this match asked
+   * for, or the owner's.
    *
    * RESOLVED against the real table rather than taken as sent, exactly as the
    * weapon id is in `admit`: an id this build has never heard of — an older
@@ -670,177 +998,27 @@ export class Match {
    * map instead of standing up a match naming a world that does not exist here.
    * Nothing downstream re-checks it, which is why this is the one door.
    */
-  constructor(readonly id: string, wantedMap?: string, bots = true) {
-    this.mapId = MAPS.find((m) => m.id === wantedMap)?.id ?? MAPS[0].id;
-    this.withBots = bots;
-    // A bot went down, however it was done. The bearing, the size and the KIND
-    // of the killing blow ride along because a client throws its corpse with
-    // them — `Bot.takeDamage` captured all three before this fired, which is
-    // the same triple the offline game hands `RagdollSystem` and the reason it
-    // does not need a second copy of any of it.
-    this.game.onKillEvent = (bot, killer, headshot) => {
-      this.queue({
-        e: "kill",
-        killer,
-        victim: this.game.battle.bots.indexOf(bot),
-        headshot,
-        from: [bot.deathFrom.x, bot.deathFrom.y, bot.deathFrom.z],
-        amount: bot.deathDamage,
-        kind: bot.deathKind,
-      });
-    };
-    // A bot pulled its trigger. Taken HERE rather than in `HeadlessGame.wire`
-    // because nothing in the simulation wants it — it is news for a screen, and
-    // the queue that carries news to a screen is this class's. It is also the
-    // only way the fact can reach one: a client runs none of the AI, so a bot's
-    // shot is otherwise silent and invisible on every machine but this one.
-    this.game.battle.onBotFired = (bot) =>
-      this.noteFire(this.game.battle.bots.indexOf(bot));
-    // A bot working its magazine, taken here for exactly the reason its trigger
-    // is: the fact belongs to the authority (no client runs the AI) and what it
-    // is FOR belongs to a screen — or in this case an ear, since a reload is
-    // the cue to push whoever has just gone dry.
-    this.game.battle.onBotReloaded = (bot) =>
-      this.noteReload(this.game.battle.bots.indexOf(bot));
-    // A round that went past somebody. Addressed to the one person it happened
-    // to, and the copy is not optional: `at` is `CombatSystem`'s module scratch
-    // and the next round in the firefight overwrites it.
-    this.game.onNearMiss = (player, at) =>
-      this.queueTo(player.slot, { e: "nearmiss", at: [at.x, at.y, at.z] });
-    // Through the simulation rather than off `ConquestSystem` directly: a flag
-    // changing hands pays everybody standing on it, which is a rule, so
-    // `HeadlessGame` takes the conquest callbacks and hands the news back out
-    // — the same shape `onKillEvent` has, and for the same reason.
-    this.game.onCapturedEvent = (point, by) =>
-      this.queue({ e: "captured", point: point.def.id, by });
-    this.game.onNeutralisedEvent = (point) =>
-      this.queue({ e: "neutralised", point: point.def.id });
-    // Somebody was paid. Addressed to the one slot that earned it, and only
-    // when a PERSON is sitting in it: bots earn all round and there is nobody
-    // behind them to show a feed to, so queueing theirs would push every tick
-    // with a bot kill on it onto `flushEvents`'s per-peer path for an event no
-    // client would be sent.
-    this.game.scores.onAward = (slot, kind, points) => {
-      if (this.game.players.has(slot)) {
-        this.queueTo(slot, { e: "score", kind, points });
-      }
-    };
-    this.game.onPlayerDamaged = (player, amount, from, killed, kind) => {
-      // Addressed to the victim, and the sharpest case for it: this is the ONE
-      // message in the protocol carrying a health, so broadcasting it published
-      // every player's exact pool to everybody, live, along with the bearing
-      // they were shot from. That is the read a wallhack wants — who is hurt
-      // and which way they are facing it — handed over for free.
-      //
-      // The `kill` below stays public, and the pair is the line: that somebody
-      // DIED is everyone's business, because the killfeed and the corpse are on
-      // every screen. How close they were to dying is nobody's but theirs.
-      this.queueTo(player.slot, {
-        e: "damage",
-        victim: player.slot,
-        amount,
-        from: from ? [from.x, from.y, from.z] : [0, 0, 0],
-        health: player.health,
-        // The victim's own corpse is thrown from this rather than from the
-        // `kill` below: a client reads its OWN death off the `damage`/`died`
-        // pair, and only somebody else's off the kill.
-        kind,
-      });
-      if (killed) {
-        // The other half of "one kill event per death". A person goes down
-        // through this callback whoever pulled the trigger — a bot's rifle, a
-        // blast, another client's round — so it is the only place that sees
-        // every one of them, exactly as `onKillEvent` is for a bot.
-        //
-        // The killer's team is DERIVED and not carried: friendly fire is
-        // excluded by construction everywhere in this game (`fire` takes the
-        // shooter's own target list), so the side that killed a person is
-        // always the other one, and plumbing a killer down through
-        // `CombatSystem.takeDamage` to be told what is already known would be
-        // the kind of wire field that can disagree with the world.
-        //
-        // `headshot` is false rather than unknown: the flag is the SHOOTER's
-        // feedback and reaches them on their own `hit` event, which is
-        // resolved where the head zone was actually tested. Nothing renders it
-        // for a victim.
-        this.queue({
-          e: "kill",
-          // …and the one death that has no killer to derive. The leash passes
-          // no origin because nothing shot this player, and -1 is what stops
-          // the feed on sixteen screens announcing that the other side did.
-          killer: from ? 1 - player.team : -1,
-          victim: player.slot,
-          headshot: false,
-          from: from ? [from.x, from.y, from.z] : [0, 0, 0],
-          amount,
-          kind,
-        });
-        this.queue({
-          e: "died",
-          slot: player.slot,
-          by: -1,
-          respawnIn: player.respawnT,
-        });
-      }
-    };
-    // How big it LOOKS goes with it now that more than one thing explodes: a
-    // grenade is 1 by definition, a tank shell 1.85, the AT kit its own. Left
-    // off at 1 for the reason `fire`'s `n` is left off at one round — that is
-    // what the field's absence has always meant and what every grenade in the
-    // game still is.
-    this.game.onExplosion = (at, power) =>
-      this.queue(
-        power === 1
-          ? { e: "explode", at: [at.x, at.y, at.z] }
-          : { e: "explode", at: [at.x, at.y, at.z], power },
-      );
-    // A molotov caught. Public for `explode`'s reason — every client draws the
-    // fire, the thrower included, because their own bottle lit nothing on
-    // their screen (`GrenadeSystem.predicted`). The burn is this side's and
-    // leaves as `damage`, like any other hit.
-    this.game.onBlaze = (at) => this.queue({ e: "blaze", at: [at.x, at.y, at.z] });
-    // A tank gun. Public, and `fire`'s counterpart for the one weapon nobody
-    // is carrying — it reaches a client no other way, because no client runs
-    // the crew that pulled the trigger or resolves the round it fired.
-    this.game.onCannon = (tank) => {
-      const i = this.game.vehicles.hulls.indexOf(tank);
-      if (i >= 0) this.queue({ e: "cannon", tank: i });
-    };
-    // …and its cupola gun, counted rather than queued — see `firedMg`.
-    this.game.onMg = (tank) => {
-      const i = this.game.vehicles.hulls.indexOf(tank);
-      if (i >= 0) this.firedMg.set(i, (this.firedMg.get(i) ?? 0) + 1);
-    };
-    // The answer to a mount or a dismount, addressed to the one person who
-    // asked — see the `seat` event. It is raised for the hull BURNING as well,
-    // which is the one seat change nobody asked for and the one a client can
-    // least afford to miss: without it the driver's own screen keeps the chase
-    // camera on a wreck for the rest of the round.
-    this.game.onSeatChanged = (player, tank, at, yaw) =>
-      this.queueTo(
-        player.slot,
-        tank >= 0
-          ? { e: "seat", slot: player.slot, tank, seat: player.crewSeat }
-          : { e: "seat", slot: player.slot, tank, pos: [at.x, at.y, at.z], yaw },
-      );
-    // Glass. One event for however many panes the round crossed, carrying the
-    // FIRST crossing and the round's direction — see the `glass` event for why
-    // the shards of the panes behind it are thrown from a point a few metres
-    // off rather than paying a message each.
-    this.game.onGlassBroken = (panes, at, dir) =>
-      this.queue({
-        e: "glass",
-        panes,
-        at: [at.x, at.y, at.z],
-        dir: [dir.x, dir.y, dir.z],
-      });
-    this.game.onPlayerSpawned = (player, at, yaw) =>
-      this.queue({
-        e: "spawn",
-        slot: player.slot,
-        pos: [at.x, at.y, at.z],
-        yaw,
-      });
+  constructor(readonly id: string, options: MatchOptions = {}) {
+    const def = MAPS.find((m) => m.id === options.map) ?? MAPS[0];
+    this.mapId = def.id;
+    this.withBots = options.bots ?? true;
+    this.owned = options.owned ?? false;
+    this.game = new SimCore({
+      rewind: true,
+      reportGap: REPORT_GAP,
+      timing: options.timing,
+      // The owner holds the respawn clock — see `game`.
+      hostHoldsRespawn: this.owned,
+    });
+    this.hear = options.hear ?? null;
+    this.stepped = options.stepped ?? null;
+    // The table, and with it the pool: the ceiling under a match that rotates
+    // maps, the map's own roster under one that never leaves it — see
+    // `server/Roster.ts` for why each.
+    this.roster = new Roster(this.owned ? perTeamOf(def.layout) : CONFIG.bots.maxPerTeam);
+    this.slots = Array.from({ length: this.roster.slots.length }, freshSlot);
+    // Nothing is wired onto the core: everything it has to say arrives on its
+    // event ring and leaves through `relay`.
   }
 
   hasBotSlot(): boolean {
@@ -851,9 +1029,10 @@ export class Match {
    * This match as the lobby lists it.
    *
    * `state` is read off what is actually running rather than tracked as a
-   * field, so it cannot disagree with the loop: the timer exists only while
-   * there are peers (`stop` clears it when the last one leaves) and `rotating`
-   * spans the gap between a round ending and the next map being built.
+   * field, so it cannot disagree with the loop: the server's timer exists only
+   * while there are peers (`stop` clears it when the last one leaves) and
+   * `roundOver` spans the gap between a round ending and the next map being
+   * built.
    */
   summary(): MatchSummary {
     return {
@@ -866,12 +1045,14 @@ export class Match {
       // anybody. See `Roster.capacity`.
       slots: this.roster.capacity,
       bots: this.withBots,
-      state: this.rotating ? "rotating" : this.timer ? "live" : "empty",
+      // An owned match's held round reads as "rotating" too; nothing lists
+      // one, since it is never in the server's registry.
+      state: this.roundOver ? "rotating" : this.running ? "live" : "empty",
     };
   }
 
   /**
-   * Seats a connected socket.
+   * Seats a connected peer.
    *
    * A refused join is a full match, which the registry should have prevented by
    * routing elsewhere — but the check is kept here anyway, because the caller
@@ -879,12 +1060,23 @@ export class Match {
    * moments and a race between them is exactly how a seventeenth player gets in.
    */
   async admit(
-    socket: WebSocket,
+    transport: PeerTransport,
     rawName: string,
     weapon?: string,
     equipment?: string,
     throwable?: string,
   ): Promise<void> {
+    // An owned match seats nobody before its owner has begun a round, or once
+    // it has closed the match — refused HERE, ahead of `claim`, because the
+    // await below comes after the seat is taken and a refusal there would
+    // leave a person in the roster over a bot nobody benched.
+    if (this.owned && (this.retired || (!this.running && !this.starting))) {
+      transport.send(
+        encode({ t: "rejected", reason: this.retired ? "match closed" : "no round begun" }),
+      );
+      transport.close();
+      return;
+    }
     const id = `p${nextPeerId++}`;
     // Cleaned HERE, at the one door into the roster, rather than at the
     // handshake — the same placement as the weapon lookup below, and for the
@@ -892,22 +1084,26 @@ export class Match {
     const name = cleanName(rawName);
     const slot = this.roster.claim(id, name);
     if (!slot) {
-      socket.send(encode({ t: "rejected", reason: "match full" }));
-      socket.close();
+      transport.send(encode({ t: "rejected", reason: "match full" }));
+      transport.close();
       return;
     }
 
     const peer: Peer = {
       id,
       name,
-      socket,
+      transport,
       slot: slot.index,
       seq: 0,
+      stamp: NaN,
+      arrived: 0,
+      lead: 0,
+      behind: 0,
+      resyncOwed: false,
       budget: MESSAGE_BURST,
       budgetAt: Date.now(),
       ping: -1,
       pingAt: 0,
-      pingToken: 0,
     };
     this.peers.set(id, peer);
     // Somebody came back before the world was thrown away.
@@ -916,34 +1112,35 @@ export class Match {
       this.idleTimer = null;
     }
 
-    socket.on("message", (raw) => {
-      // Gone: dropped by `spendMessage` below, or by a `close` whose remaining
-      // buffered messages are still being delivered. Either way this peer has
-      // no slot to act on any more, and the test is what stops a flooder being
-      // logged and refused once per message all the way through the close.
-      if (!this.peers.has(id)) return;
-      // Before the decode, because the parse is what a flood is spending.
-      if (!this.spendMessage(peer)) return;
-      // `readClientMessage` and never `decode`: the shape gate is what makes
-      // the `ClientMessage` type below a fact rather than a claim about a
-      // well-behaved client, and every handler past this line reads fields off
-      // it without checking them again. See `server/wire.ts` — a `move` with no
-      // `pos` on it used to throw out of this listener and take the process.
-      const msg = readClientMessage(String(raw));
-      if (msg) this.onMessage(peer, msg);
-    });
-    socket.on("close", () => this.drop(peer));
-    socket.on("error", () => this.drop(peer));
-    // The far end answered a ping, and the gap is what the scoreboard shows.
-    // A pong with any other payload is the liveness sweep's in `index.ts`,
-    // which pings the same socket on its own clock and would otherwise be
-    // timed against a ping this class sent at a different moment.
-    socket.on("pong", (data) => {
-      if (peer.pingAt === 0 || data.toString() !== String(peer.pingToken)) return;
-      const sample = Date.now() - peer.pingAt;
-      peer.pingAt = 0;
-      peer.ping =
-        peer.ping < 0 ? sample : peer.ping + (sample - peer.ping) * PING_SMOOTHING;
+    transport.listen({
+      message: (text) => {
+        // Gone: dropped by `spendMessage` below, or by a `close` whose
+        // remaining buffered messages are still being delivered. Either way
+        // this peer has no slot to act on any more, and the test is what stops
+        // a flooder being logged and refused once per message all the way
+        // through the close.
+        if (!this.peers.has(id)) return;
+        // Before the decode, because the parse is what a flood is spending.
+        if (!this.spendMessage(peer)) return;
+        // `readClientMessage` and never `decode`: the shape gate is what makes
+        // the `ClientMessage` type below a fact rather than a claim about a
+        // well-behaved client, and every handler past this line reads fields
+        // off it without checking them again. See `server/wire.ts` — a `move`
+        // with no `pos` on it used to throw out of this listener and take the
+        // process.
+        const msg = readClientMessage(text);
+        if (msg) this.onMessage(peer, msg);
+      },
+      closed: () => this.drop(peer),
+      // The far end answered this class's ping, and the gap is what the
+      // scoreboard shows.
+      pong: () => {
+        if (peer.pingAt === 0) return;
+        const sample = Date.now() - peer.pingAt;
+        peer.pingAt = 0;
+        peer.ping =
+          peer.ping < 0 ? sample : peer.ping + (sample - peer.ping) * PING_SMOOTHING;
+      },
     });
 
     // The round is built on the first arrival, not at construction: building a
@@ -951,11 +1148,11 @@ export class Match {
     // has nothing to simulate.
     await this.ensureRunning();
 
-    // That await is long enough for the socket to have gone — a tab closed, a
-    // connection that never really came up — and `close` was wired above it, so
+    // That await is long enough for the peer to have gone — a tab closed, a
+    // connection that never really came up — and `closed` was wired above it, so
     // `drop` has ALREADY run: it released the roster slot and put the bot back.
     // Seating the player now would bench that bot for the life of the match and
-    // leave a body in `HeadlessGame.players` that no peer owns and nothing ever
+    // leave a body in `SimCore.players` that no peer owns and nothing ever
     // removes, because the only thing that removes one is the drop that has
     // been and gone. The team plays a body short and the ghost is tracked for
     // rewind forever.
@@ -970,6 +1167,7 @@ export class Match {
     // it is called from the deploy door too, where there is no fresh one to
     // hold.
     this.game.addPlayer(slot.index, slot.team);
+    this.relay();
     // A slot changing hands inherits nothing from whoever last sat in it — the
     // travel least of all: the walk cycle is derived from how far a body moved
     // between snapshots, so a stale entry makes the new arrival's first frame
@@ -980,7 +1178,7 @@ export class Match {
     // once in a match, and the second is `onDeploy`.
     this.setKit(slot.index, weapon, equipment, throwable);
     // Not spawned here: a fresh player is dead with a zero timer, which is
-    // exactly the state the reinforcement pass in `HeadlessGame.step` picks up.
+    // exactly the state the reinforcement pass in `SimCore.step` picks up.
     // Joining and redeploying are the same act and go through the same door.
 
     this.send(peer, {
@@ -990,6 +1188,10 @@ export class Match {
       slot: slot.index,
       team: slot.team,
       mapId: this.mapId,
+      // The table's block width, so the client numbers its bodies as this
+      // table does: the ceiling here, the map's own roster on an owned match
+      // (`Welcome.blockWidth`).
+      blockWidth: this.roster.perTeam,
       // The same clock the snapshots carry, and that is the load-bearing part:
       // a client samples the offset from EVERY stamped message and keeps the
       // maximum, so one message on a clock that runs even slightly ahead of the
@@ -1035,6 +1237,89 @@ export class Match {
   }
 
   /**
+   * Lets a connection WATCH an owned match: welcomed, and then sent everything
+   * a seated peer is sent about the round — every snapshot, the roster, the
+   * board, the mines, the ping table, every SHARED event — and nothing that is
+   * one person's (`flushEvents`). **It holds no seat**, because a peer is a
+   * seat:
+   * no `Roster.claim`, no `addPlayer`, no `relay` — the core never hears of
+   * it, so nothing about the fight can move with it, which is the whole of why
+   * it exists. The benchmark draws the round it measures off the wire, and
+   * `admit` would bench a bot to seat it and play a different fight.
+   *
+   * Its welcome says so in the one field the wire already has for it:
+   * `slot: -1`, which the client reads as "no body of my own" — nothing to
+   * draw as a viewmodel, nothing to upload — and `team: 0`, a side to paint
+   * from that decides nothing.
+   *
+   * **The OWNER's door and never a peer's.** Reached only through the owner
+   * channel's `connect` (`server/localMatch.ts`), never through a
+   * `ClientMessage`: a public spectator on a match server would be a client
+   * that is sent every body on the map and is nobody, which is exactly the
+   * read a wallhack wants, and on the page's own match the only one watching
+   * is the page. What it SAYS is ignored rather than refused — a `Connection`
+   * sends its join and nothing a watcher has a seat to mean.
+   *
+   * Gated as `admit` is on an owned match: refused before the owner's first
+   * `begin` and after `close`, and an arrival inside a build waits on it.
+   */
+  async watch(transport: PeerTransport): Promise<void> {
+    if (!this.owned) throw new Error(`[${this.id}] watch: only an owned match is watched, by its owner`);
+    if (this.retired || (!this.running && !this.starting)) {
+      transport.send(
+        encode({ t: "rejected", reason: this.retired ? "match closed" : "no round begun" }),
+      );
+      transport.close();
+      return;
+    }
+    // Wired before the await, as `admit` wires a peer, so a connection that
+    // goes inside the build is known to have gone; joined to `watchers` only
+    // after it, so nothing broadcast reaches it ahead of its welcome.
+    let gone = false;
+    transport.listen({
+      message: () => {},
+      closed: () => {
+        gone = true;
+        this.watchers.delete(transport);
+      },
+      // Never pinged: the ping table is a table of seats.
+      pong: () => {},
+    });
+    await this.ensureRunning();
+    if (gone) return;
+    // Closed by its owner while the build was finishing.
+    if (this.retired) {
+      transport.send(encode({ t: "rejected", reason: "match closed" }));
+      transport.close();
+      return;
+    }
+    this.watchers.add(transport);
+    // `admit`'s welcome minus the seat — the same clock, the same table width
+    // and the same glass, which are facts about the round and not about a body.
+    const say = (msg: ServerMessage): void => {
+      if (transport.open) transport.send(encode(msg));
+    };
+    say({
+      t: "welcome",
+      version: PROTOCOL_VERSION,
+      matchId: this.id,
+      slot: -1,
+      team: 0,
+      mapId: this.mapId,
+      blockWidth: this.roster.perTeam,
+      now: this.game.now,
+      ...(this.game.glass.brokenPanes.length > 0
+        ? { brokenPanes: this.game.glass.brokenPanes }
+        : {}),
+    });
+    // The roster and the board as they stand, to this connection alone: the
+    // seat table did not change, so there is nothing to broadcast.
+    say(this.rosterMessage());
+    say(this.scores());
+    console.log(`[${this.id}] a watcher joined`);
+  }
+
+  /**
    * Resolves what a person is carrying, out of THIS side's tables.
    *
    * The one place the two kit maps are written, and it exists because a kit is
@@ -1061,11 +1346,11 @@ export class Match {
    * **Both callers reach this with the player DEAD** — the handshake seats a
    * body that is dead with a zero timer, and the kit screen is reachable from
    * the deploy screen and nowhere else — which is what lets the pouch be
-   * written straight: `NetPlayer.spawn` refills `ordnance` from
-   * `ordnanceCarried`, so the body that comes back is the first one that
-   * carries this. It is also what keeps `fire`'s `w` and `onReload`'s gate
-   * honest, both of which read the loadout of a player who is shooting and
-   * rest on it not changing under them.
+   * handed over straight (the core's `kit` refuses a living body):
+   * `SimPlayer.spawn` refills `ordnance` from `ordnanceCarried`, so the body
+   * that comes back is the first one that carries this. It is also what keeps
+   * `fire`'s `w` and `onReload`'s gate honest, both of which read the loadout
+   * of a player who is shooting and rest on it not changing under them.
    */
   private setKit(
     slot: number,
@@ -1081,15 +1366,13 @@ export class Match {
     held.equipment = kit;
     const pouch = isThrowableId(throwable) ? throwable : DEFAULT_THROWABLE;
     held.throwable = pouch;
-    const player = this.game.players.get(slot);
-    if (player) {
-      player.ordnanceCarried = equipmentSetup(kit).magSize;
-      player.ordnance = player.ordnanceCarried;
-      // The pouch on the ordnance's terms exactly: the count is this side's,
-      // the body is dead (see above), and `spawn` refills from this.
-      player.grenadesCarried = throwableCarried(pouch);
-      player.grenades = player.grenadesCarried;
-    }
+    // What a full pouch IS for this kit, handed to the core, whose count it
+    // is (`kit`): the body is dead (see above), and `spawn` refills from it.
+    this.game.submit(slot, {
+      t: "kit",
+      grenades: throwableCarried(pouch),
+      ordnance: equipmentSetup(kit).magSize,
+    });
   }
 
   /**
@@ -1107,6 +1390,9 @@ export class Match {
     // next cadence instead of one per departure.
     if (this.mapVote?.clear(peer.slot)) this.voteDirty = true;
     this.game.removePlayer(peer.slot);
+    this.relay();
+    // …and nothing still queued for them may reach whoever sits here next.
+    this.unqueueTo(peer.slot);
     // Everything this match held about the person, in one assignment — the
     // slot goes back to a bot carrying nothing of theirs.
     this.slots[peer.slot] = freshSlot();
@@ -1120,7 +1406,11 @@ export class Match {
     // rather than reloading it — but not forever. An idle match holds a scene,
     // sixteen rigs and a nav graph, and on a public server the matches nobody
     // came back to would accumulate for the life of the process.
-    if (this.peers.size === 0) {
+    //
+    // Not an OWNED match: it has no loop to stop, and an owner may drive one
+    // with nobody in it at all (the benchmark) — it ends when the owner
+    // closes it.
+    if (this.peers.size === 0 && !this.owned) {
       this.stop();
       this.idleTimer = setTimeout(() => this.retire(), IDLE_DISPOSE_MS);
     }
@@ -1134,9 +1424,10 @@ export class Match {
   private retire(): void {
     if (this.peers.size > 0) return;
     this.idleTimer = null;
+    this.retired = true;
     this.game.dispose();
     this.onRetired();
-    console.log(`[${this.id}] idle; world disposed`);
+    console.log(`[${this.id}] ${this.owned ? "closed" : "idle"}; world disposed`);
   }
 
   /**
@@ -1144,18 +1435,18 @@ export class Match {
    * through. Two callers: a rotation that threw, and a simulation step that
    * threw (`start`'s loop).
    *
-   * Closing the sockets is the honest answer rather than the harsh one: every
+   * Closing the connections is the honest answer rather than the harsh one: every
    * client reconnects on its own (`net/Connection.retry`) and lands in a fresh
    * match a second later, whereas a match left standing with a stopped loop is
    * a round that renders, never advances and never ends — and nothing on a
    * client can tell that from a server that has merely gone quiet.
    *
-   * The peer map is emptied here rather than left to each socket's `close`,
-   * which arrives a turn later: `retire` refuses to run while anybody is still
+   * The peer map is emptied here rather than left to each transport's
+   * `closed`, which arrives a turn later: `retire` refuses to run while anybody is still
    * seated, and the point of this method is that nobody is.
    */
   private abandon(reason: string): void {
-    this.rotating = false;
+    this.roundOver = false;
     this.mapVote = null;
     if (this.rotateTimer !== null) {
       clearTimeout(this.rotateTimer);
@@ -1168,9 +1459,10 @@ export class Match {
     }
     for (const peer of this.peers.values()) {
       this.send(peer, { t: "rejected", reason });
-      peer.socket.close();
+      peer.transport.close();
     }
     this.peers.clear();
+    this.dismissWatchers(reason);
     this.retire();
   }
 
@@ -1186,7 +1478,7 @@ export class Match {
    * What that leaves is not a slow match, it is a broken process: the second
    * assignment to `timer` orphans the first interval, so `stop` can never clear
    * it, the match steps twice per tick for the rest of its life, and the orphan
-   * goes on calling `step` after `retire` has disposed the scene — which throws
+   * goes on calling `step` after `retire` has disposed the world — which throws
    * inside a timer callback and takes down every other match in the process
    * with it.
    *
@@ -1205,8 +1497,16 @@ export class Match {
    * a fresh one over a fresh build.
    */
   private ensureRunning(): Promise<void> {
-    if (this.timer) return Promise.resolve();
+    if (this.running) return Promise.resolve();
     if (!this.starting) {
+      // An owned match's round is its owner's to begin, with a seed and a
+      // difficulty only the owner has — an arrival inside that build waits on
+      // it below. With no build at all there is nothing to wait on and
+      // nothing this side may build: `admit` refuses that arrival before it
+      // claims a seat, and this is the backstop that it never reaches `start`.
+      if (this.owned) {
+        return Promise.reject(new Error(`[${this.id}] no round: the owner has not begun one`));
+      }
       this.starting = this.start().finally(() => {
         this.starting = null;
       });
@@ -1215,11 +1515,19 @@ export class Match {
   }
 
   /**
+   * Whether there is a round to step and to seat people in: the server's loop
+   * is armed, or an owner has begun a round and not closed the match.
+   */
+  private get running(): boolean {
+    return this.owned ? this.game.map !== null && !this.retired : this.timer !== null;
+  }
+
+  /**
    * How many slots a side this round puts on the WIRE — which is not how many
    * bots it fields, and in a botless match is not the same number.
    *
    * The two questions have always been distinct and only ever had one answer
-   * before this: "how many bots are in the fight" (`HeadlessGame.perTeam`,
+   * before this: "how many bots are in the fight" (`SimCore.perTeam`,
    * spent on `BattleSystem.setFielded`) and "how many slots hold a body a
    * client must pool, draw and be shot by" (`Roster.setFielded`). On an
    * ordinary match every fielded slot is a bot until a person takes it, so the
@@ -1229,7 +1537,7 @@ export class Match {
    * A botless match separates them, and the separation is the honest one: the
    * simulation fields no bots, and the wire still carries the SEATS, because a
    * seat is where a person goes and a person is a body whatever the round
-   * fields. `HUMANS_PER_TEAM` and not `perTeam` for two reasons that agree — it
+   * fields. `Roster.seats` and not `perTeam` for two reasons that agree — it
    * is exactly the set of slots a botless round can ever hold a body in
    * (`Roster.claim` seats nobody outside it), and it is the smallest roster any
    * map fields, so it is inside the pool every client built off its own map and
@@ -1242,16 +1550,15 @@ export class Match {
    * would stand in the street for the rest of the round.
    */
   private fieldedSlots(): number {
-    return this.withBots ? this.game.perTeam : HUMANS_PER_TEAM;
+    return this.withBots ? this.game.perTeam : this.roster.seats;
   }
 
   private async start(): Promise<void> {
     if (!this.game.map) {
-      const def = MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
-      await this.game.startRound(def, 1, this.withBots);
+      await this.startRound(this.def(), { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     }
     // What this map fields, onto the table. The simulation has already been
-    // told (`HeadlessGame.startRound`); this is the same decision reaching the
+    // told (`SimCore.startRound`); this is the same decision reaching the
     // one thing that decides what goes out on the wire, derived from the
     // simulation rather than resolved a second time so the two cannot drift.
     this.roster.setFielded(this.fieldedSlots());
@@ -1260,7 +1567,7 @@ export class Match {
     // whenever the timer happened to run would speed up and slow down with the
     // host's load. Everything in `CONFIG` — reload times, bleed intervals,
     // recoil decay — is written against real seconds.
-    let carried = 0;
+    this.carried = 0;
     let last = Date.now();
     this.timer = setInterval(() => {
       // **A step that THROWS ends the match**, and it is caught here rather
@@ -1270,34 +1577,228 @@ export class Match {
       // `step` after the throw (the lag record, the snapshot) never ran: a
       // world clients stay connected to that no longer advances coherently.
       // The way out is the one a failed rotation already takes, and the catch
-      // is OUTSIDE the `while` on purpose: `abandon` has cleared this interval
-      // and disposed the world, and the loop must not take another step of it.
+      // is OUTSIDE `accrue`'s loop on purpose: `abandon` has cleared this
+      // interval and disposed the world, and the loop must not take another
+      // step of it.
       try {
         const now = Date.now();
-        carried += now - last;
+        const elapsed = now - last;
         last = now;
-        // Bounded so a long stall (a GC pause, a suspended container) is
-        // dropped rather than replayed as a burst of catch-up ticks that would
-        // teleport every body on every client at once.
-        //
-        // What is dropped is real time the world will never be stepped
-        // through, and the simulation's own clock is told so — that clock is
-        // what every snapshot is stamped with, and one left quietly behind the
-        // wall is one no client can follow. See `HeadlessGame.drop`.
-        if (carried > 250) {
-          this.game.drop(carried - 250);
-          carried = 250;
-        }
-        while (carried >= STEP_MS) {
-          carried -= STEP_MS;
-          this.step();
-        }
+        this.accrue(elapsed);
       } catch (err: unknown) {
         console.error(`[${this.id}] step failed; abandoning match:`, err);
         this.abandon("the match server hit an error and ended the match");
       }
     }, POLL_MS);
     console.log(`[${this.id}] round started on ${this.mapId}, seed ${this.game.random.seed}`);
+  }
+
+  /**
+   * `ms` of clock into the accumulator, and as many fixed steps as it now
+   * holds — the ONE accumulator, whichever clock feeds it: the server's
+   * interval with the wall time since its last poll, an owner's `advance`
+   * with its `dt`. Steps are always `STEP_MS`, so how the clock arrives (one
+   * frame of exactly a tick, or a 4 ms poll that is late as often as not)
+   * decides only WHEN a step runs, never what it does.
+   */
+  private accrue(ms: number): void {
+    this.carried += ms;
+    // Bounded so a long stall (a GC pause, a suspended container) is dropped
+    // rather than replayed as a burst of catch-up ticks that would teleport
+    // every body on every client at once.
+    //
+    // What is dropped is real time the world will never be stepped through,
+    // and the simulation's own clock is told so — that clock is what every
+    // snapshot is stamped with, and one left quietly behind the wall is one no
+    // client can follow. See `SimCore.drop`.
+    if (this.carried > MAX_CARRIED_MS) {
+      this.game.drop(this.carried - MAX_CARRIED_MS);
+      this.carried = MAX_CARRIED_MS;
+    }
+    while (this.carried >= STEP_MS) {
+      this.carried -= STEP_MS;
+      this.step();
+    }
+  }
+
+  /**
+   * A round on `def`, as this host owes it to the core: the bake and the floor
+   * LOADED (the one await), the seed — drawn by the server, chosen by an
+   * owner — HANDED OVER, and the clock ANCHORED: the three things `SimCore`
+   * does not do for itself, because it reads no clock and no entropy.
+   * The anchor is taken the moment the build
+   * returns, which is where `SimCore.anchor` says it must be.
+   */
+  private async startRound(def: MapDef, round: RoundChoice): Promise<void> {
+    const { collision, floor } = await loadSimWorld(def);
+    this.game.startRound({
+      def,
+      collision,
+      floor,
+      difficulty: round.difficulty,
+      // The table's block width, because a slot index is a bot index: the
+      // CEILING on a match that rotates maps under one slot table, the map's
+      // own roster on an owned one (`Roster`'s constructor). The map's own
+      // roster is fielded out of it, or none in a match created without bots.
+      // See `RoundSpec`.
+      pool: this.roster.perTeam,
+      fielded: this.withBots ? perTeamOf(def.layout) : 0,
+      seed: round.seed,
+    });
+    this.game.anchor(Date.now());
+    this.relay();
+  }
+
+  /**
+   * A round after the first, on `def`: built, fielded and ANNOUNCED — the
+   * tail a rotation and an owner's `begin` share, because both put the same
+   * people into a fresh round without re-seating anybody.
+   */
+  private async nextRound(def: MapDef, round: RoundChoice): Promise<void> {
+    await this.startRound(def, round);
+    // The new map's roster, onto the table — see `start`. FIRST, because
+    // everything below it sends a list this filters.
+    this.roster.setFielded(this.fieldedSlots());
+    // Nobody is retired or re-benched here: `SimCore.startRound` puts every
+    // seated person back dead with a zero timer and benches the bot in their
+    // slot itself, last of the round's build.
+    this.ticks = 0;
+    this.roundOver = false;
+    // `startRound` cleared the board; this is what makes sure the cleared one
+    // is sent. The version moved, so the test in `broadcastSnapshot` would
+    // catch it anyway — resetting here is what covers the case where it has not
+    // moved, which is a round nobody scored in.
+    this.sentScoreVersion = -1;
+    // …and the mines, for the same reason with a sharper edge: `startRound`
+    // cleared the field, and a round that left the last one's list standing
+    // would draw sixteen mines over a street that is not there.
+    this.sentMineVersion = -1;
+    // `game.now` and not the wall clock, for `welcome`'s reason: one stamp on a
+    // different clock poisons the offset window every body is drawn against.
+    this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
+    this.broadcastRoster();
+  }
+
+  /**
+   * The OWNER begins a round, on the map this match was built for, from its
+   * own seed and difficulty — the first, or the next one: after the last
+   * ended (an owned match holds the round that ended until this, where the
+   * server would open a ballot and rotate), or over one still in play (a
+   * restart). Everybody seated keeps their slot and is put back dead with a
+   * zero timer, exactly as a rotation does it.
+   *
+   * The owner awaits it before it advances, and before it admits its first
+   * peer: an arrival inside the first build waits on this same promise
+   * (`ensureRunning`), and one before any build is refused. A build that
+   * fails rejects it and leaves the round it was to replace HELD, as a
+   * restart holds it while building: the owner begins again or closes.
+   */
+  begin(round: RoundChoice): Promise<void> {
+    if (!this.owned) throw new Error(`[${this.id}] begin: only an owned match is begun by its owner`);
+    if (this.retired) throw new Error(`[${this.id}] begin: the match is closed`);
+    if (this.starting) throw new Error(`[${this.id}] begin: a round is already being built`);
+    this.starting = this.beginRound(round).finally(() => {
+      this.starting = null;
+    });
+    return this.starting;
+  }
+
+  private async beginRound(round: RoundChoice): Promise<void> {
+    const def = this.def();
+    if (this.game.map) {
+      // The round standing is over from here, as it is through a rotation's
+      // build: nothing steps it and no round message is spent on it.
+      this.roundOver = true;
+      await this.nextRound(def, round);
+    } else {
+      // The first — `start`'s shape without its loop. Nobody has been
+      // welcomed yet, so nothing is announced.
+      await this.startRound(def, round);
+      this.roster.setFielded(this.fieldedSlots());
+    }
+    // A round starts on a whole tick, with nothing carried over from the last.
+    this.carried = 0;
+    console.log(`[${this.id}] round begun on ${this.mapId}, seed ${round.seed}`);
+  }
+
+  /**
+   * The OWNER's clock: `dt` seconds into the accumulator the server's
+   * interval feeds (`accrue`), stepped `1 / TICK_HZ` at a time. A `dt` of
+   * exactly one tick — the benchmark's, `CONFIG.profiling.bench.dt` — is
+   * exactly one step; any other is the whole steps it holds, the rest
+   * carried. Nothing steps between calls, which is what holding the world
+   * is: time the owner does not hand over is time this match never sees.
+   *
+   * Synchronous, and a step that throws reaches the caller rather than
+   * ending the match as the server's loop does (`abandon`): the owner is the
+   * one with somewhere to report it, and it ends the match with `close`.
+   */
+  advance(dt: number): void {
+    if (!this.owned) throw new Error(`[${this.id}] advance: the server's match runs its own clock`);
+    if (this.starting) throw new Error(`[${this.id}] advance: a round is being built — await begin`);
+    if (!this.running) throw new Error(`[${this.id}] advance: no round standing`);
+    // NaN would poison the accumulator and freeze the match without a word,
+    // and a negative `dt` is a clock running backwards.
+    if (!(dt >= 0 && dt < Infinity)) throw new Error(`[${this.id}] advance: dt ${dt}`);
+    this.accrue(dt * 1000);
+  }
+
+  /**
+   * The OWNER held the world for `dt` seconds: the CLOCK passes and nothing
+   * steps — `advance`'s other half, and the time a hold is made of. The
+   * owner hands it over for every part of its real elapsed time it did not
+   * step: a pause, the deploy screen, what the client's frame clamp
+   * (`MAX_FRAME_DT`, `Game.tick`) cut off a long frame, a benchmark vantage.
+   *
+   * **Handed over rather than left out, for the client's clock offset.**
+   * `Connection` estimates the server's clock as the MAXIMUM of a window of
+   * samples, and a clock that STOPPED for a hold of P seconds would make
+   * every sample after it P lower, so the stale maximum would keep render time
+   * P ahead of every snapshot for the length of the window — bodies parked at
+   * their newest sample, a shot stamped in the future. Passed into the
+   * simulation's clock (`SimCore.drop`, the same honest jump a dropped backlog
+   * is), the stamps stay continuous with the wall the client samples against,
+   * so nothing on the client knows a hold happened and NOTHING THERE TAKES A
+   * SPECIAL PATH FOR ONE — which is the rule, because a remote client never
+   * may. It is not an outcome: `SimCore.now` stamps and rewinds and decides
+   * nothing, and no step runs.
+   *
+   * `advance`'s refusals, for its reasons. The accumulator is left alone: what
+   * it carries is a part of a step the owner already handed over.
+   */
+  hold(dt: number): void {
+    if (!this.owned) throw new Error(`[${this.id}] hold: the server's match runs its own clock`);
+    if (this.starting) throw new Error(`[${this.id}] hold: a round is being built — await begin`);
+    if (!this.running) throw new Error(`[${this.id}] hold: no round standing`);
+    if (!(dt >= 0 && dt < Infinity)) throw new Error(`[${this.id}] hold: dt ${dt}`);
+    this.game.drop(dt * 1000);
+  }
+
+  /**
+   * The OWNER is done with this match: every peer let go and the world
+   * disposed — what an empty server match's idle timer comes to, which an
+   * owned match never arms. Final. Not inside a `begin`: the build would go
+   * on to start a round on the world this disposed, so the owner awaits it
+   * first (a `begin` that failed has already let go of it).
+   */
+  close(): void {
+    if (!this.owned) throw new Error(`[${this.id}] close: only an owned match is closed by its owner`);
+    if (this.starting) throw new Error(`[${this.id}] close: a round is being built — await begin`);
+    if (this.retired) return;
+    // Told why, as `abandon` tells them: a connection that simply ends reads
+    // as a network drop, which a client answers by reconnecting.
+    for (const peer of this.peers.values()) {
+      this.send(peer, { t: "rejected", reason: "match closed" });
+      peer.transport.close();
+    }
+    this.peers.clear();
+    this.dismissWatchers("match closed");
+    this.retire();
+  }
+
+  /** The `MapDef` this match is standing on — `mapId`, resolved in the constructor. */
+  private def(): MapDef {
+    return MAPS.find((m) => m.id === this.mapId) ?? MAPS[0];
   }
 
   private stop(): void {
@@ -1312,20 +1813,20 @@ export class Match {
     // A rotation owns the world until it hands it back, and the loop keeps
     // firing across the whole of it — the round-over pause and then the rebuild
     // — because nothing here stops the interval. For the length of `rotate`'s
-    // await, `HeadlessGame.map` still points at the map `startRound` has
-    // already DISPOSED, so a step taken there walks a scene whose meshes are
-    // gone.
+    // await, `SimCore.map` still points at the map of the round that ended —
+    // the next one is still LOADING (`loadSimWorld`) — so a step taken there
+    // would play on a world the round is over in.
     //
     // It does not currently crash, and that is an accident worth naming rather
     // than relying on: `conquest.winner` is still set from the round that
-    // ended, so `HeadlessGame.step` returns before it reaches `battle`, and it
+    // ended, so `SimCore.step` returns before it reaches `battle`, and it
     // stops being true the moment anything resets that earlier. This flag is
     // the fact itself, so the safety no longer rests on a second one agreeing
     // with it.
     //
-    // The tick the round ends on is not affected: `rotating` is set BELOW,
+    // The tick the round ends on is not affected: `roundOver` is set BELOW,
     // after that tick has already run and broadcast its `roundover`.
-    if (this.rotating) {
+    if (this.roundOver) {
       // …but the window the round-over card is up for is this one, and the
       // ballot on it is live. This is the only thing that happens between a
       // round ending and the next map being built, and it is deliberately not
@@ -1339,29 +1840,40 @@ export class Match {
     }
 
     const live = this.game.step(1 / TICK_HZ);
+    this.stepped?.();
+    this.relay();
     this.ticks++;
 
-    // No `!this.rotating` here any more: the guard at the top of this method is
+    // No `!this.roundOver` here any more: the guard at the top of this method is
     // that test, made once for the whole step rather than for this branch
     // alone.
     if (!live && this.game.conquest.winner !== null) {
-      this.queue({ e: "roundover", winner: this.game.conquest.winner });
+      // The `roundover` event is already queued: the core wrote `EV.roundOver`
+      // last of this tick's events and `relay` put it on the queue above.
       // The round is over but the match is not. Everyone stays seated, the
       // card goes up on every client, and the next map is built after a pause
       // — a server that stopped here would leave sixteen people looking at a
       // frozen world with no way out but reconnecting.
-      this.rotating = true;
+      this.roundOver = true;
       // The ballot goes out BEFORE the result does. The `roundover` event is
       // still in the queue that `broadcastSnapshot` flushes below, so opening
       // here means a client holds the candidates by the time the card it draws
       // them on is raised — rather than putting up a wait line and replacing it
       // a beat later with a vote.
+      //
+      // An OWNED match has neither: it holds the round that ended, the
+      // `roundover` event going out on this snapshot as on any other, until
+      // its owner begins the next (`begin`).
+      if (this.owned) {
+        this.broadcastSnapshot();
+        return;
+      }
       this.openVote();
       this.broadcastSnapshot();
       this.rotateTimer = setTimeout(() => {
         this.rotateTimer = null;
         // A rotation is the one place a failure would now be permanent. It is
-        // what clears `rotating`, and `rotating` is what lets the loop step, so
+        // what clears `roundOver`, and `roundOver` is what lets the loop step, so
         // a build that threw would leave sixteen people in a match that renders
         // and never advances — and an uncaught rejection out of a timer takes
         // the process, and every other match on it, down instead. Neither is
@@ -1377,7 +1889,13 @@ export class Match {
     if (this.ticks % TICKS_PER_SNAPSHOT === 0) this.broadcastSnapshot();
   }
 
-  private rotating = false;
+  /**
+   * The round has ended and the next is not built yet: a rotation's round-over
+   * pause and build on the server, an owned match's wait for its owner's
+   * `begin` (and that build). The world under it is the round that ended, so
+   * nothing steps it and no round message is spent on it.
+   */
+  private roundOver = false;
 
   /**
    * The round-over pause's timer, held so `abandon` can cancel it: a step that
@@ -1393,7 +1911,7 @@ export class Match {
    * MATCH, not about the round, so a rotation rebuilds the world and restarts
    * the fight without anybody being re-seated or having to rejoin. Every seated
    * player is dead with a zero timer afterwards, which is exactly the state
-   * `HeadlessGame.step` deploys them from.
+   * `SimCore.step` deploys them from.
    *
    * What the new map DOES bring is how many bodies a side it fields
    * (`setFielded`), and the whole reason that is safe to change here is that it
@@ -1416,40 +1934,9 @@ export class Match {
     // toward a ballot whose result has already been spent.
     this.mapVote = null;
     this.mapId = next;
-    const def = MAPS.find((m) => m.id === next) ?? MAPS[0];
+    const def = this.def();
 
-    await this.game.startRound(def, 1, this.withBots);
-    // The new map's roster, onto the table — see `start`. FIRST, because
-    // everything below it either re-benches over the top of what
-    // `setFielded` decided or sends a list this filters.
-    this.roster.setFielded(this.fieldedSlots());
-    for (const player of this.game.players.values()) {
-      player.retire();
-      player.respawnT = 0;
-    }
-    // Re-bench, because `startRound` reset the whole bot roster and the bots in
-    // occupied slots would otherwise walk back into a fight somebody is
-    // already standing in.
-    for (const slot of this.roster.slots) {
-      if (slot.occupant.kind === "human") {
-        this.game.battle.setBenched(this.game.battle.bots[slot.index], true);
-      }
-    }
-    this.ticks = 0;
-    this.rotating = false;
-    // `startRound` cleared the board; this is what makes sure the cleared one
-    // is sent. The version moved, so the test in `broadcastSnapshot` would
-    // catch it anyway — resetting here is what covers the case where it has not
-    // moved, which is a rotation nobody scored in.
-    this.sentScoreVersion = -1;
-    // …and the mines, for the same reason with a sharper edge: `startRound`
-    // cleared the field, and a rotation that left the last map's list standing
-    // would draw sixteen mines over a street that is not there.
-    this.sentMineVersion = -1;
-    // `game.now` and not the wall clock, for `welcome`'s reason: one stamp on a
-    // different clock poisons the offset window every body is drawn against.
-    this.broadcast({ t: "roundstart", mapId: this.mapId, now: this.game.now });
-    this.broadcastRoster();
+    await this.nextRound(def, { seed: freshSeed(), difficulty: MATCH_DIFFICULTY });
     console.log(`[${this.id}] rotated to ${this.mapId}, seed ${this.game.random.seed}`);
   }
 
@@ -1498,7 +1985,7 @@ export class Match {
           crouch: player.crouchBlend,
           alive: player.alive,
           // The same tween a bot's body plays, off the same field — see
-          // `NetPlayer.deathProgress` for why this is not a bare 1.
+          // `SimPlayer.deathProgress` for why this is not a bare 1.
           dead: player.deathProgress,
         });
         continue;
@@ -1593,7 +2080,7 @@ export class Match {
     // by the second of them and by nothing else.
     this.vehicleScratch.length = 0;
     for (const [i, tank] of this.game.vehicles.hulls.entries()) {
-      if (!tank.body.isEnabled()) continue;
+      if (!tank.present) continue;
       this.vehicleScratch.push({
         i,
         p: [tank.position.x, tank.position.y, tank.position.z],
@@ -1635,7 +2122,7 @@ export class Match {
       // for a `SNAPSHOT_HZ` that does not divide `TICK_HZ`, reached through the
       // timer instead of the ratio, and it is worst on the fastest thing in the
       // game: a gunship moves a metre and a half a snapshot, so ±60% of it is
-      // the picture shaking for the man on its gun. See `HeadlessGame.now`.
+      // the picture shaking for the man on its gun. See `SimCore.now`.
       now: this.game.now,
       entities: this.entityScratch,
       points,
@@ -1713,6 +2200,272 @@ export class Match {
   }
 
   /**
+   * Drains the core and turns what it said into wire events, in the order it
+   * said it — the bodies of the callbacks this class used to install on the
+   * core, reading the EVENT's numbers where they read the live objects.
+   *
+   * Called after every call this class makes on the core (`step`, each
+   * message, `startRound`, a seat changing hands), so nothing of this class's
+   * own can land between two of one call's events. Most kinds are not the
+   * wire's — a footstep, a tracer, a hull's kick are the page's, and a death's
+   * audit is `simulate`'s — so the kind is tested before anything is decoded.
+   */
+  private relay(): void {
+    const c = this.drained;
+    this.game.drain(c);
+    this.hear?.(c);
+    for (let i = 0; i < c.count; i++) {
+      if (!RELAYED.has(c.kind(i))) continue;
+      const ev = decode(c, i);
+      switch (ev.type) {
+        // A bot went down, however it was done. The bearing, the size and the
+        // KIND of the killing blow ride along because a client throws its
+        // corpse with them — captured off `Bot.takeDamage` at the death, the
+        // same triple the offline game hands `RagdollSystem`.
+        case "botDown":
+          this.queue({
+            e: "kill",
+            killer: ev.killer,
+            victim: ev.slot,
+            headshot: ev.head,
+            from: ev.from,
+            amount: ev.damage,
+            kind: ev.kind,
+          });
+          break;
+        // A bot pulled its trigger. News for a screen, and the only way the
+        // fact reaches one: a client runs none of the AI, so a bot's shot is
+        // otherwise silent and invisible on every machine but this one.
+        case "botFired":
+          this.noteFire(ev.slot);
+          break;
+        // A bot working its magazine, for exactly the reason its trigger is:
+        // the fact is the authority's and what it is FOR is an ear — a reload
+        // is the cue to push whoever has just gone dry.
+        case "botReload":
+          this.noteReload(ev.slot);
+          break;
+        // A round that went past somebody. Addressed to the one person it
+        // happened to — a broadcast is the read a wallhack wants.
+        case "nearMiss":
+          this.queueTo(ev.slot, { e: "nearmiss", at: ev.at });
+          break;
+        // The flag's news, after the awards the core paid for it.
+        case "captured":
+          this.queue({ e: "captured", point: this.pointId(ev.point), by: ev.by });
+          break;
+        case "neutralised":
+          this.queue({ e: "neutralised", point: this.pointId(ev.point) });
+          break;
+        // Somebody was paid. Addressed to the one slot that earned it, and
+        // only when a PERSON was sitting in it: bots earn all round and there
+        // is nobody behind them to show a feed to, so queueing theirs would
+        // push every tick with a bot kill on it onto `flushEvents`'s per-peer
+        // path for an event no client would be sent.
+        case "award":
+          if (ev.person) this.queueTo(ev.slot, { e: "score", kind: ev.kind, points: ev.points });
+          break;
+        case "damaged":
+          // Addressed to the victim, and the sharpest case for it: this is the
+          // ONE message in the protocol carrying a health, so broadcasting it
+          // published every player's exact pool to everybody, live, along with
+          // the bearing they were shot from. That is the read a wallhack wants
+          // — who is hurt and which way they are facing it — handed over free.
+          //
+          // The `kill` below stays public, and the pair is the line: that
+          // somebody DIED is everyone's business, because the killfeed and the
+          // corpse are on every screen. How close they were to dying is
+          // nobody's but theirs.
+          this.queueTo(ev.slot, {
+            e: "damage",
+            victim: ev.slot,
+            amount: ev.amount,
+            from: ev.from ?? [0, 0, 0],
+            health: ev.health,
+            // The victim's own corpse is thrown from this rather than from the
+            // `kill` below: a client reads its OWN death off the `damage`/
+            // `died` pair, and only somebody else's off the kill.
+            kind: ev.kind,
+            // …and the leash's blow has no bearing to throw it from, which
+            // the placeholder above cannot say on its own.
+            ...(ev.from ? {} : { dealt: false as const }),
+          });
+          if (ev.killed) {
+            // The other half of "one kill event per death". A person goes down
+            // through this event whoever pulled the trigger — a bot's rifle, a
+            // blast, another client's round — so it is the only place that
+            // sees every one of them, exactly as `botDown` is for a bot.
+            //
+            // The killer's team is DERIVED and not carried: friendly fire is
+            // excluded by construction everywhere in this game (`fire` takes
+            // the shooter's own target list), so the side that killed a person
+            // is always the other one.
+            //
+            // `headshot` is false rather than unknown: the flag is the
+            // SHOOTER's feedback and reaches them on their own `hit` event,
+            // which is resolved where the head zone was actually tested.
+            this.queue({
+              e: "kill",
+              // …and the one death that has no killer to derive. The leash
+              // passes no origin because nothing shot this player, and -1 is
+              // what stops the feed on sixteen screens announcing that the
+              // other side did.
+              killer: ev.from ? 1 - ev.team : -1,
+              victim: ev.slot,
+              headshot: false,
+              from: ev.from ?? [0, 0, 0],
+              amount: ev.amount,
+              kind: ev.kind,
+            });
+            // The respawn clock the blow armed, as it stood at the blow.
+            this.queue({ e: "died", slot: ev.slot, by: -1, respawnIn: ev.respawnIn });
+          }
+          break;
+        // How big it LOOKS goes with it now that more than one thing explodes:
+        // a grenade is 1 by definition, a tank shell 1.85, the AT kit its own.
+        // Left off at 1, which is what the field's absence has always meant.
+        case "blast":
+          this.queue(
+            ev.power === 1
+              ? { e: "explode", at: ev.at }
+              : { e: "explode", at: ev.at, power: ev.power },
+          );
+          break;
+        // A molotov caught. Public for `explode`'s reason — every client draws
+        // the fire, the thrower included, because their own bottle lit nothing
+        // on their screen (`GrenadeSystem.predicted`). The burn is this side's
+        // and leaves as `damage`, like any other hit.
+        case "ignited":
+          this.queue({ e: "blaze", at: ev.at });
+          break;
+        // A tank gun. Public, and `fire`'s counterpart for the one weapon
+        // nobody is carrying — no client runs the crew that pulled the trigger
+        // or resolves the round it fired.
+        case "cannon":
+          if (ev.tank >= 0) this.queue({ e: "cannon", tank: ev.tank });
+          break;
+        // …and its cupola gun, counted rather than queued — see `firedMg`.
+        case "mg":
+          if (ev.tank >= 0) this.firedMg.set(ev.tank, (this.firedMg.get(ev.tank) ?? 0) + 1);
+          break;
+        // The answer to a mount or a dismount, addressed to the one person who
+        // asked — see the `seat` event. Written for the hull BURNING as well,
+        // the one seat change nobody asked for and the one a client can least
+        // afford to miss: without it the driver's own screen keeps the chase
+        // camera on a wreck for the rest of the round.
+        case "seat":
+          this.queueTo(
+            ev.slot,
+            ev.tank >= 0
+              ? { e: "seat", slot: ev.slot, tank: ev.tank, seat: ev.seat as CrewSeat }
+              : { e: "seat", slot: ev.slot, tank: ev.tank, pos: ev.at, yaw: ev.yaw },
+          );
+          break;
+        // Glass. One event for however many panes the round crossed, carrying
+        // the FIRST crossing and the round's direction — see the `glass` event
+        // for why the shards of the panes behind it are thrown from a point a
+        // few metres off rather than paying a message each.
+        case "glass":
+          this.queue({ e: "glass", panes: ev.panes, at: ev.at, dir: ev.dir });
+          break;
+        case "spawned":
+          this.queue({ e: "spawn", slot: ev.slot, pos: ev.pos, yaw: ev.yaw });
+          break;
+        // A PERSON's round, resolved: addressed to the shooter, because it is
+        // feedback about their own trigger and nobody else's screen has
+        // anything to do with it. Broadcast, it told fifteen other clients who
+        // is hitting whom and — through `killed` — that a body across the map
+        // is going down, a tick before the snapshot that would honestly show
+        // either. A hull victim is -1 on the wire, which names slots.
+        //
+        // The other causes go too, each only where the shooter's screen owes
+        // it a mark (`ServerEvent`'s `hit`): a blast on a BODY, a burn or a
+        // hull gun's round that KILLED one, and the tracks — what nothing on
+        // the shooter's page resolves, so without it a grenade into a squad
+        // marks nothing (the page's own match is no better a
+        // transport than this, so the fix is this wire's).
+        case "hit": {
+          // A blow nobody is named for (`slotOf` of no body) is nobody's
+          // feedback — and -1 is `ALL_PEERS` to `queueTo`. A BOT's is
+          // nobody's either: queued, every tick a bot landed something would
+          // take `flushEvents`' per-peer path for an event no client is sent.
+          if (ev.shooter < 0 || !this.game.players.has(ev.shooter)) break;
+          const body = ev.victimKind !== "hull";
+          const victim = body ? ev.victim : -1;
+          if (ev.cause === "round") {
+            this.queueTo(ev.shooter, {
+              e: "hit",
+              shooter: ev.shooter,
+              victim,
+              killed: ev.killed,
+              headshot: ev.head,
+            });
+            break;
+          }
+          // Off the shot path, only a BODY is a mark: a blast or the tracks
+          // whenever they land, a burn or a hull gun's round only when it
+          // killed (the page predicts the hull guns' hits itself, and a burn
+          // ticks too often to mark). Anything else is nobody's feedback.
+          const cause = ev.cause;
+          if (
+            body &&
+            (cause === "blast" ||
+              cause === "tracks" ||
+              ((cause === "fire" || cause === "shell" || cause === "mg") && ev.killed))
+          ) {
+            this.queueTo(ev.shooter, {
+              e: "hit",
+              shooter: ev.shooter,
+              victim,
+              killed: ev.killed,
+              headshot: false,
+              cause,
+            });
+          }
+          break;
+        }
+        // A person's throw, rocket or mine the CORE refused (the pool full,
+        // in practice: every other refusal is answered by this class's own
+        // gates before the core is asked) — given back, see `refuse`.
+        case "ordnanceRefused":
+          this.refuse(ev.slot, ev.item);
+          break;
+        case "roundOver":
+          this.queue({ e: "roundover", winner: ev.winner });
+          break;
+        default:
+          break;
+      }
+    }
+  }
+
+  /**
+   * Tells a person the throw, rocket or mine they asked for was refused, so
+   * the one their client booked is given back (`ServerEvent`'s `refused`):
+   * a client PREDICTS its pouch, spending the item as it asks, and a refusal
+   * it never heard of would drift its count from the core's until the body
+   * died. ONE path for every refusal — the core's (`relay`) and this class's
+   * own claim gates (`onGrenade`, `onOrdnance`) — addressed to the one who
+   * asked, and only while that body is ALIVE: a dead one's pouch is refilled
+   * by its next kit — and only to THAT person: a refusal still queued when
+   * they leave goes with them (`queueTo`), never to the slot's next
+   * occupant. Never for an empty pouch, which those gates return on
+   * silently: the two counts move together, so empty means empty on both
+   * sides. A refusal answered to a lying client is harmless — the give-back
+   * is capped at the kit's count on the far side, and it only returns what
+   * that client predicted and this side never spent.
+   */
+  private refuse(slot: number, item: RefusedItem): void {
+    if (!this.game.players.get(slot)?.alive) return;
+    this.queueTo(slot, { e: "refused", item });
+  }
+
+  /** A control point's id, from the index a `captured`/`neutralised` names. */
+  private pointId(index: number): string {
+    return this.game.conquest.points[index]?.def.id ?? "";
+  }
+
+  /**
    * A weapon went off in this slot, whoever was holding it.
    *
    * The one entry point for both kinds of shooter — `BattleSystem.onBotFired`
@@ -1749,9 +2502,31 @@ export class Match {
     this.pending.push({ to: ALL_PEERS, ev });
   }
 
-  /** Queues an event for one roster slot, and for nobody else. */
+  /**
+   * Queues an event for one roster slot, and for nobody else.
+   *
+   * **For the PERSON in it now, and never for the next one.** The queue is
+   * flushed at the tick's snapshot (`flushEvents`), which addresses it to
+   * whoever holds the slot THEN — and a person can leave and another be
+   * seated in that slot in between. So the person leaving takes what was
+   * queued for them with them (`unqueueTo`, from `drop`): a `refused` that
+   * reached the next occupant would hand them back an item their client
+   * never spent, and a `hit` a mark for a blow they never struck. The
+   * core's own half of that rule is `SimCore.markerSlot` — a blast's author
+   * who left is nobody's marker — and this is the wire's.
+   */
   private queueTo(slot: number, ev: ServerEvent): void {
     this.pending.push({ to: slot, ev });
+  }
+
+  /** Takes every event still queued for `slot` back out — see `queueTo`. */
+  private unqueueTo(slot: number): void {
+    let kept = 0;
+    for (let i = 0; i < this.pending.length; i++) {
+      const p = this.pending[i];
+      if (p.to !== slot) this.pending[kept++] = p;
+    }
+    this.pending.length = kept;
   }
 
   /**
@@ -1776,6 +2551,12 @@ export class Match {
           .filter((p) => p.to === ALL_PEERS || p.to === peer.slot)
           .map((p) => p.ev);
         if (events.length > 0) this.send(peer, { t: "events", events });
+      }
+      // A watcher holds no slot, so no addressed event is ever its business:
+      // it gets the shared ones, in their order, and nothing else.
+      if (this.watchers.size > 0 && shared.length > 0) {
+        const payload = encode({ t: "events", events: shared.map((p) => p.ev) });
+        for (const watcher of this.watchers) if (watcher.open) watcher.send(payload);
       }
     }
     this.pending.length = 0;
@@ -1814,11 +2595,11 @@ export class Match {
     if (peer.budget <= -MESSAGE_DEBT) {
       console.warn(`[${this.id}] ${peer.name} (${peer.id}) flooded; dropped`);
       // Sent before the close, which `send` tests for, and dropped by hand
-      // rather than left to the socket's own `close` — that arrives a turn
-      // later, and until it does every buffered message would come back
+      // rather than left to the transport's own `closed` — that arrives a
+      // turn later, and until it does every buffered message would come back
       // through here.
       this.send(peer, { t: "rejected", reason: "too many messages" });
-      peer.socket.close();
+      peer.transport.close();
       this.drop(peer);
     }
     return false;
@@ -1842,8 +2623,8 @@ export class Match {
       case "ordnance":
         // The ones that belong to a round in progress, gated on the same fact
         // `step` is: between a round ending and the next one being built there
-        // is a window in which `game.map` is the map `startRound` has already
-        // disposed, and a message is the one thing that can arrive inside it —
+        // is a window in which `game.map` is the map of the round that ended,
+        // and a message is the one thing that can arrive inside it —
         // a client whose own round is over still has a socket, and its last
         // shots are in flight. Dropping them is right on its own terms as well:
         // a round fired into a fight that has finished has nothing left to hit,
@@ -1853,12 +2634,12 @@ export class Match {
         // `deploy` below is deliberately NOT here. It touches no geometry — it
         // writes an integer a later tick spends — and refusing it would drop a
         // request the client has no reason to send twice.
-        if (!this.rotating) this.onRoundMessage(peer, msg);
+        if (!this.roundOver) this.onRoundMessage(peer, msg);
         break;
       case "deploy":
         this.onDeploy(peer, msg);
         break;
-      // The one message that is only meaningful while `rotating`, which is why
+      // The one message that is only meaningful while `roundOver`, which is why
       // it is not in the block above and why `onVote` tests for a ballot
       // instead: everything there belongs to a round in progress and this
       // belongs to the gap between two.
@@ -1866,7 +2647,7 @@ export class Match {
         this.onVote(peer, msg);
         break;
       // Every member of the union has an arm above, so a new one fails to
-      // compile here until somebody has decided which side of the `rotating`
+      // compile here until somebody has decided which side of the `roundOver`
       // gate it belongs on — the `if`/`else` chain this replaced ran a type it
       // had not heard of as a RELOAD.
       default: {
@@ -1874,6 +2655,13 @@ export class Match {
         void unhandled;
       }
     }
+    // Whatever the core said while answering this message, onto the queue
+    // NOW — before the next message or the next step can add to it. A
+    // handler makes its core calls one after another with nothing of this
+    // class's own queued between them, so one drain at its end is the drain
+    // after each of them, and the queue's order is the order the immediate
+    // callbacks this replaced produced.
+    this.relay();
   }
 
   /**
@@ -1998,10 +2786,30 @@ export class Match {
   /**
    * A player asking to come back in, where, and CARRYING WHAT.
    *
-   * All this does about the spawn is RECORD the ask. The simulation spends it
-   * — see the reinforcement pass in `HeadlessGame.step` — because when a
+   * All this does about the spawn is SUBMIT the ask (`deploy`). The simulation
+   * spends it — see the reinforcement pass in `SimCore.step` — because when a
    * person may deploy is the reinforcement clock's answer and where they land
    * is conquest's, and neither of those questions is a transport's business.
+   * (On an OWNED match the clock is the owner's, so the core honours it at
+   * submit — see `game`.)
+   *
+   * **On an owned match the answer leaves NOW, not on the next snapshot.**
+   * Relayed events leave only with a snapshot (`flushEvents`, from
+   * `broadcastSnapshot`), and a snapshot is a STEP — but the owner asks for a
+   * deploy while it is HOLDING the world (the deploy screen), so the `spawn`
+   * answering it would wait for a step that is waiting for it. So an owned
+   * match flushes the queue here, after the submit, and the `spawn` goes out
+   * on the person's own port while the clock stands still. It is an
+   * EXCEPTION the hold forces, not a feature of the transport, and it is kept
+   * narrow — the deploy, the one ask made while held — because of this step's
+   * rule that the page's own match is no better a transport than a server's:
+   * every other answer still rides its snapshot. What the flush costs is
+   * order, and only against the snapshot: whatever the ticks since the last
+   * one queued (at most `TICKS_PER_SNAPSHOT - 1` of them) leaves ahead of the
+   * snapshot that shows it, in its own order and with its audience intact,
+   * addressed events to their one peer and shared ones to everybody — and the
+   * `fire` counts still coalescing (`firedRounds`) ride that snapshot, a
+   * message after any kill they caused rather than beside it.
    *
    * The KIT is different, and is resolved here and now: it is this side's own
    * lookup rather than a rule the simulation owns, and it must be in place
@@ -2022,6 +2830,15 @@ export class Match {
     const player = this.game.players.get(peer.slot);
     if (!player || player.alive) return;
     if (!Number.isInteger(msg.spawn)) return;
+    // **An OWNED match's ended round deploys nobody.** On a server's the ask
+    // just waits — `step` returns early while `roundOver`, and the rotation
+    // retires every player — but an owned match spawns at submit (its owner
+    // holds the respawn clock) and flushes the answer at once, so a deploy
+    // crossing the advance that ended the round would put a body into a
+    // finished fight and take the owner's round-over card down with its
+    // `spawn`. An owned match never rotates; its next round is the owner's
+    // next `begin`.
+    if (this.owned && this.roundOver) return;
     // The kit the player confirmed this spawn with — the SECOND of the two
     // doors, and the one that catches every pick after the handshake. The kit
     // screen is reachable from the deploy screen, so a player who switches to
@@ -2035,7 +2852,7 @@ export class Match {
     // fallback to what this slot already carries rather than a second call to
     // the tables. It is spent here, on a player who is by definition dead
     // (checked above), rather than at the spawn: `setKit` writes the pouch and
-    // `NetPlayer.spawn` is what fills it.
+    // `SimPlayer.spawn` is what fills it.
     const held = this.slots[peer.slot];
     this.setKit(
       peer.slot,
@@ -2043,7 +2860,13 @@ export class Match {
       msg.equipment ?? held.equipment ?? undefined,
       msg.throwable ?? held.throwable ?? undefined,
     );
-    player.deployRequest = msg.spawn;
+    this.game.submit(peer.slot, { t: "deploy", spawn: msg.spawn });
+    // The answer, out while the owner holds the clock — see above. Drained
+    // first, since `onMessage` would only do it after this returns.
+    if (this.owned) {
+      this.relay();
+      this.flushEvents();
+    }
   }
 
   /**
@@ -2054,36 +2877,72 @@ export class Match {
    * `server/validate.ts` for what is and is not caught, and why the tolerance
    * leans toward letting a laggy honest player through.
    */
+  /**
+   * A `move` or `drive` stamp, read: the interval since this peer's last one
+   * that the validators may price a step at, in seconds — BOUNDED twice. Per
+   * sample to [1 / `TICK_HZ`, `MAX_MOVE_GAP`], as it always was; and in sum
+   * by the clock the messages ARRIVE on, so the stamps may lead or trail
+   * their arrivals by `STAMP_SLACK` and no further (see it). Keeps the
+   * BOUNDED clock too, as `Peer.behind`, which the crash test reads off the
+   * same interval.
+   *
+   * Exact for an honest peer: the raw interval comes back to the bit, and the
+   * bounded clock IS its stamp. The first stamp has nothing to measure
+   * against, so it is assumed to cover `FIRST_STAMP_GAP` — what a client's
+   * first sample can honestly span. Assuming a single TICK instead (which this
+   * did at first) gave the very first packet a 16 ms budget it had no way of
+   * knowing about, and one INPUT interval (which it did next) was short by the
+   * frame that overshoots it.
+   */
+  private onStamp(peer: Peer, stamp: number): number {
+    const now = this.arrivalClock();
+    if (Number.isNaN(peer.stamp)) {
+      peer.stamp = stamp;
+      peer.arrived = now;
+      return FIRST_STAMP_GAP;
+    }
+    const raw = stamp - peer.stamp;
+    const arrived = now - peer.arrived;
+    // The interval the lead allows: what arrived meanwhile, plus whatever is
+    // left of the slack either way. Returns `raw` ITSELF whenever it is in
+    // range, which is what keeps an honest peer's numbers bit for bit.
+    const d = Math.min(
+      Math.max(raw, arrived - STAMP_SLACK - peer.lead),
+      arrived + STAMP_SLACK - peer.lead,
+    );
+    peer.lead += d - arrived;
+    // The bounded clock never runs backwards and never takes more than one
+    // sample's worth at once — the crash test's interval is the validators'.
+    peer.behind += raw - Math.min(Math.max(d, 0), MAX_MOVE_GAP * 1000);
+    peer.stamp = stamp;
+    peer.arrived = now;
+    return Math.min(Math.max(d / 1000, 1 / TICK_HZ), MAX_MOVE_GAP);
+  }
+
   private onMove(peer: Peer, msg: Extract<ClientMessage, { t: "move" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !this.game.map) return;
 
     // Stale or replayed. Sequence numbers are the client's own counter, so an
     // out-of-order arrival is dropped rather than applied backwards.
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
 
-    // Elapsed CLIENT time since the last sample, clamped. Unclamped, a client
-    // that claims a huge gap buys itself a proportionally huge legal step,
-    // which is the obvious way to dress a teleport as a lag spike.
+    // Elapsed CLIENT time since the last sample, BOUNDED (`onStamp`): by the
+    // clock the messages arrive on, and per sample to `MAX_MOVE_GAP`.
+    // Unbounded, a client that claims a huge gap buys itself a
+    // proportionally huge legal step, which is the obvious way to dress a
+    // teleport as a lag spike.
     //
-    // The first sample has nothing to measure against, so it is assumed to
-    // cover one INPUT interval — the cadence a client actually sends at.
-    // Assuming a single TICK instead (which this did at first) gives the very
-    // first packet a 16 ms budget it has no way of knowing about.
-    const raw =
-      player.lastTime > 0 ? (msg.time - player.lastTime) / 1000 : 1 / INPUT_HZ;
-    const dt = Math.min(Math.max(raw, 1 / TICK_HZ), MAX_MOVE_GAP);
-
     // The CLOCK advances whether or not the POSITION is accepted, and this is
     // load-bearing. Updating it only on success means one rejected move leaves
-    // `lastTime` behind forever: every later sample is then measured against
-    // the whole elapsed gap — or, on the very first move, against the
-    // first-sample assumption above — and a player whose opening packet was a
+    // the last stamp behind forever: every later sample is then measured
+    // against the whole elapsed gap — or, on the very first move, against the
+    // first-sample assumption — and a player whose opening packet was a
     // fraction too long is judged against a 16 ms budget for the rest of the
     // match and can never move again. It presents as movement simply not
     // working, with corrections streaming, and it cost a debugging session.
-    // Advancing it here is safe because the gap is clamped anyway.
-    player.lastTime = msg.time;
+    // Advancing it here is safe because the gap is bounded anyway.
+    const dt = this.onStamp(peer, msg.time);
 
     // A dead player reports nothing worth keeping. Their body is wherever they
     // fell and the server owns it until they redeploy.
@@ -2106,24 +2965,24 @@ export class Match {
       this.send(peer, {
         t: "correct",
         pos: [player.position.x, player.position.y, player.position.z],
-        seq: player.seq,
+        seq: peer.seq,
         reason: verdict.reason!,
       });
       return;
     }
 
-    player.seq = msg.seq;
     peer.seq = msg.seq;
-    player.apply(
+    this.game.submit(peer.slot, {
+      t: "move",
       dt,
       x,
       y,
       z,
-      msg.yaw,
-      msg.pitch,
-      msg.crouching,
-      msg.sprinting,
-    );
+      yaw: msg.yaw,
+      pitch: msg.pitch,
+      crouch: msg.crouching,
+      sprint: msg.sprinting,
+    });
   }
 
   /**
@@ -2253,34 +3112,22 @@ export class Match {
     this.noteFire(peer.slot);
 
     SHOT_ORIGIN.fromArray(msg.origin);
-    const result = this.game.resolveShot(
-      player,
-      SHOT_ORIGIN,
-      SHOT_DIR,
-      msg.time,
+    // The verdict comes back as the core's `hit` event, written LAST of the
+    // round's events and relayed to the shooter alone — see `relay`. Rewound
+    // to the client's render clock, which is what `msg.time` is.
+    this.game.submit(peer.slot, {
+      t: "shot",
+      origin: SHOT_ORIGIN,
+      dir: SHOT_DIR,
       weapon,
-    );
-    if (!result?.target) return;
-
-    const victimSlot = this.slotOf(result.target);
-    // Addressed to the shooter, because it is feedback about their own trigger
-    // and nobody else's screen has anything to do with it. Broadcast, it told
-    // fifteen other clients who is hitting whom and — through `killed` — that a
-    // body across the map is going down, a tick before the snapshot that would
-    // honestly show either.
-    this.queueTo(peer.slot, {
-      e: "hit",
-      shooter: peer.slot,
-      victim: victimSlot,
-      killed: result.killed,
-      headshot: result.headshot,
+      renderTime: msg.time,
     });
 
-    // The `hit` above and NOTHING ELSE. Everything a death owes — the ticket,
+    // The `hit` and NOTHING ELSE. Everything a death owes — the ticket,
     // the `kill` line, the `died` clock — is raised by whichever of the two
-    // authority callbacks saw the body go down: `onPlayerDamaged` for a person,
-    // `onKillEvent` for a bot, and each of those fires for every death of its
-    // kind however it was dealt. Pushing a second `kill` from here would put
+    // core events saw the body go down: `damaged` for a person, `botDown` for
+    // a bot, and each of those is written for every death of its kind however
+    // it was dealt. Pushing a second `kill` from here would put
     // two lines in the killfeed for one body, and the one this method could
     // build would be the poorer of the two — it does not know where a bot's
     // killing blow came from, which is what the corpse is thrown with.
@@ -2295,34 +3142,36 @@ export class Match {
    * client's: a client that tracked its own would throw as many as it liked.
    */
   private onGrenade(peer: Peer, msg: Extract<ClientMessage, { t: "grenade" }>): void {
-    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly.
-    if ((this.game.players.get(peer.slot)?.seat ?? -1) >= 0) return;
+    // A dead or empty-handed peer is refused SILENTLY: a dead body's pouch is
+    // refilled by its next kit, and an empty one is empty on both sides.
+    // Every refusal after these two is answered (`refuse`), because the
+    // client spent the grenade as it asked.
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
     if (player.grenades <= 0) return;
+    // Nothing is thrown from inside a hull, for `onShot`'s reason exactly —
+    // and the core refuses it too; asked here first so a seated peer costs
+    // no cone arithmetic.
+    if (player.seat >= 0) return this.refuse(peer.slot, "grenade");
 
-    if (!claimedDir(msg.dir, SHOT_DIR)) return;
+    if (!claimedDir(msg.dir, SHOT_DIR)) return this.refuse(peer.slot, "grenade");
     lookDir(player.yaw, player.pitch, CLAIM_LOOK);
     // A grenade leaves along a lifted version of the aim, so the cone has to be
     // wider than a bullet's — `throwLift` tilts it up before it is thrown.
-    if (!withinCone(CLAIM_LOOK, SHOT_DIR, GRENADE_CONE_COS)) return;
-    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return;
+    if (!withinCone(CLAIM_LOOK, SHOT_DIR, GRENADE_CONE_COS)) return this.refuse(peer.slot, "grenade");
+    if (!withinSlip(msg.origin, player.eyePos, MAX_ORIGIN_SLIP)) return this.refuse(peer.slot, "grenade");
 
     SHOT_ORIGIN.fromArray(msg.origin);
-    // Spent only if the arm accepts it — the pool refuses rather than stealing
-    // a live slot, and a refused throw must cost nothing. WHAT is thrown is
-    // this side's record of the kit, never anything on the message.
-    if (
-      this.game.grenades.throwAlong(
-        SHOT_ORIGIN,
-        SHOT_DIR,
-        player.team,
-        player,
-        this.slots[peer.slot].throwable ?? DEFAULT_THROWABLE,
-      )
-    ) {
-      player.grenades--;
-    }
+    // Spent by the core only if the arm accepts it — the pool refuses rather
+    // than stealing a live slot, and a refused throw costs nothing and is
+    // answered through `relay` (the core's `ordnanceRefused`). WHAT is
+    // thrown is this side's record of the kit, never anything on the message.
+    this.game.submit(peer.slot, {
+      t: "grenade",
+      origin: SHOT_ORIGIN,
+      dir: SHOT_DIR,
+      kind: this.slots[peer.slot].throwable ?? DEFAULT_THROWABLE,
+    });
   }
 
   /**
@@ -2377,14 +3226,12 @@ export class Match {
   private onDrive(peer: Peer, msg: Extract<ClientMessage, { t: "drive" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !this.game.map) return;
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
     // The clock advances whether or not the step is accepted, for the reason
-    // `onMove` spells out at length: a rejection that left `lastTime` behind
-    // measures every later sample against the whole elapsed gap.
-    const raw =
-      player.lastTime > 0 ? (msg.time - player.lastTime) / 1000 : 1 / INPUT_HZ;
-    const dt = Math.min(Math.max(raw, 1 / TICK_HZ), MAX_MOVE_GAP);
-    player.lastTime = msg.time;
+    // `onMove` spells out at length: a rejection that left the stamp behind
+    // measures every later sample against the whole elapsed gap. Bounded the
+    // same way, and the same bounded clock is what the crash test reads below.
+    const dt = this.onStamp(peer, msg.time);
     if (!player.alive || player.seat !== msg.tank) return;
 
     const tank = this.game.hullOf(player);
@@ -2407,7 +3254,7 @@ export class Match {
     // 16.7, so anything that puts two arrivals into one turn of the event
     // loop does it: network jitter, a GC pause on the host, or the world
     // build a rotation spends 250 ms inside — and the round-over pause does
-    // it wholesale, because `step` returns early while `rotating` and the
+    // it wholesale, because `step` returns early while `roundOver` and the
     // hull is not carried anywhere for the length of it.
     //
     // Every refusal costs the driver a `hullcorrect`, which ARRESTS the hull
@@ -2446,32 +3293,45 @@ export class Match {
         t: "hullcorrect",
         tank: msg.tank,
         pos: [tank.position.x, tank.position.y, tank.position.z],
-        seq: player.seq,
+        seq: peer.seq,
         reason: verdict.reason!,
       });
+      if (Math.abs(tank.position.y - y) > RESYNC_RISE) peer.resyncOwed = true;
       return;
     }
 
-    player.seq = msg.seq;
     peer.seq = msg.seq;
-    // The LOOK, kept on the body it belongs to. It is the chase camera's aim
-    // rather than the gun's, and it is what the shell's cone is measured
-    // against — see `DriveMessage.aimYaw`. Nothing draws it: the snapshot
-    // sends the hull's angles, and a driver's own body is not on screen.
-    player.yaw = msg.aimYaw;
-    player.pitch = msg.aimPitch;
+    // **A `resync` is the authority's to grant**: honoured — the crash test
+    // rebases here (`reportedLanding.ts`, "A broken series") — only while a
+    // correction that stopped this hull vertically is unanswered, and spent
+    // by the first accepted drive that answers it. A client cannot rebase at
+    // will, and the rebase it is granted still pays a touchdown.
+    const resync = peer.resyncOwed && msg.resync === 1;
+    if (resync) peer.resyncOwed = false;
     // The VERDICT's position and never the message's: a lid is accepted at the
     // boundary rather than where the client asked to be, and applying the claim
     // here would make the clamp a fiction the correction below then contradicts.
-    this.game.applyDrive(
-      player,
-      verdict.x,
-      verdict.y,
-      verdict.z,
-      msg.yaw,
-      msg.tyaw,
-      msg.gun,
-    );
+    // The LOOK rides with it onto the body — the chase camera's aim rather
+    // than the gun's, and what the shell's cone is measured against (see
+    // `DriveMessage.aimYaw`).
+    this.game.submit(peer.slot, {
+      t: "drive",
+      x: verdict.x,
+      y: verdict.y,
+      z: verdict.z,
+      yaw: msg.yaw,
+      turretYaw: msg.tyaw,
+      gunPitch: msg.gun,
+      aimYaw: msg.aimYaw,
+      aimPitch: msg.aimPitch,
+      // The peer's BOUNDED clock (`onStamp`), which is what the crash test
+      // measures a descent over (`src/sim/reportedLanding.ts`, "The clock") —
+      // the interval between ACCEPTED samples, so a refused one between them
+      // is simply a longer interval rather than a doubled rate. An honest
+      // client's is its own stamp to the bit.
+      time: (msg.time - peer.behind) / 1000,
+      resync,
+    });
     // Accepted, but not where they said. The step counts — `seq` has already
     // advanced — and the client is told where it actually ended up, which is
     // what makes a lid a wall the pilot can feel instead of a divergence that
@@ -2484,12 +3344,17 @@ export class Match {
         seq: msg.seq,
         reason: verdict.reason!,
       });
+      // A ceiling lid stops the climb; the map's edge moves nothing vertical
+      // and breaks nothing — a pilot landing against it is measured as usual.
+      if (Math.abs(verdict.y - y) > RESYNC_RISE) peer.resyncOwed = true;
     }
   }
 
   /**
-   * "Put me in that hull." The authority re-derives every term of the offer
-   * against its own copy and answers with a `seat` either way.
+   * "Put me in that hull." The core re-derives every term of the offer
+   * against its own copy and answers with a `seat` either way — the policy
+   * (the swap, the offer, the named hull) is `SimCore`'s `mount`, one copy
+   * for every host. This resolves the message's SHAPE and nothing else.
    *
    * Answered even on a refusal, and that is the point of it being addressed:
    * the client mounted nothing locally and is waiting to be told what it is
@@ -2504,67 +3369,17 @@ export class Match {
     // that is not the gunner's is the driver's, so a nonsense index is a
     // request for the ordinary thing rather than a refusal.
     const want: CrewSeat = msg.seat === GUNNER ? GUNNER : DRIVER;
-    // **A peer already in this hull asking for its other chair is a SWAP**,
-    // and it is granted here rather than through the offer below because
-    // `seatOffered` refuses a player who is already seated — which is right
-    // for the question it answers (may this body climb aboard) and wrong for
-    // this one. `HeadlessGame.seat` is still the one door: it releases the old
-    // chair, turns a BOT out of the new one, and leaves everything about the
-    // BODY standing, because none of that was ever about which seat.
-    //
-    // **The gate is a PERSON in the other chair, never the chair being
-    // taken** — `chooseSeat` with `only` set, inside `seat`, which is the call
-    // `Game.canSwapSeat` offers the key with. Gated on `seats[want]` it
-    // refused every crossing against a bot, so TAKE OVER GUN / TAKE OVER TANK
-    // did nothing in a match.
-    if (player.seat === msg.tank && player.seat >= 0) {
-      const hull = this.game.hullOf(player);
-      if (hull && want !== player.crewSeat) this.game.seat(player, hull, want);
-      this.game.onSeatChanged(player, player.seat, player.position, player.yaw);
-      return;
-    }
-    const offered = this.game.seatOffered(player);
-    // Named hull and offered hull must be the SAME hull. The client picked one
-    // and this is the authority's own answer to the same question; granting
-    // whatever is nearest instead would seat somebody in a tank they did not
-    // choose on the day a map states two.
-    const tank =
-      offered && this.game.vehicles.hulls.indexOf(offered) === msg.tank
-        ? offered
-        : null;
-    const taken = tank ? this.game.seat(player, tank, want) : null;
-    this.game.onSeatChanged(
-      player,
-      taken ? msg.tank : -1,
-      player.position,
-      player.yaw,
-    );
+    this.game.submit(peer.slot, { t: "mount", tank: msg.tank, seat: want });
   }
 
-  /** "Let me out." Where the body lands is the authority's — see the `seat` event. */
+  /**
+   * "Let me out." Where the body lands is the core's, and so is the refusal
+   * of a dismount the hull cannot set a body down from — see `SimCore`'s
+   * `dismount` and the `seat` event.
+   */
   private onDismount(peer: Peer): void {
-    const player = this.game.players.get(peer.slot);
-    const tank = player ? this.game.hullOf(player) : null;
-    if (!player || !tank) return;
-    // Refused in SILENCE, which is the honest answer to a claim made in bad
-    // faith: a client whose own prompt reads LAND TO GET OUT never asks. What
-    // it is holding back is the whole of the hole — there is no fall damage
-    // anywhere in this game, so a dismount at altitude is a free ride to any
-    // roof on the map. The policy is here rather than in HeadlessGame.seat
-    // because that method is the MECHANISM and this file is where policy goes.
-    if (!this.game.vehicles.dismountable(tank)) return;
-    // Read BEFORE the seat is given up: `exitSpot` measures from the hull, and
-    // `seat` is what stops this player being on it.
-    const spot = this.game.vehicles.exitSpot(tank);
-    const x = spot.x;
-    const y = spot.y;
-    const z = spot.z;
-    this.game.seat(player, null);
-    // The body is placed by the authority, exactly as a spawn is, and with
-    // `dt` of 0 so the stance blend is written rather than eased from
-    // whatever the drive left it at.
-    player.apply(0, x, y, z, player.yaw, 0, false, false);
-    this.game.onSeatChanged(player, -1, player.position, player.yaw);
+    if (!this.game.players.has(peer.slot)) return;
+    this.game.submit(peer.slot, { t: "dismount" });
   }
 
   /**
@@ -2585,16 +3400,13 @@ export class Match {
   private onGunner(peer: Peer, msg: Extract<ClientMessage, { t: "gunner" }>): void {
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive) return;
-    if (msg.seq <= player.seq) return;
+    if (msg.seq <= peer.seq) return;
     if (player.seat !== msg.tank || player.crewSeat !== GUNNER) return;
-    player.seq = msg.seq;
     peer.seq = msg.seq;
-    // The LOOK, kept on the body it belongs to — the chase camera's aim, and
-    // what the machine gun's own cone is measured against, exactly as
-    // `onDrive` keeps a driver's for the shell's.
-    player.yaw = msg.myaw;
-    player.pitch = msg.mpitch;
-    this.game.applyGun(player, msg.myaw, msg.mpitch);
+    // The bearing, which is also the LOOK kept on the body — the chase
+    // camera's aim, and what the machine gun's own cone is measured against,
+    // exactly as `onDrive` keeps a driver's for the shell's.
+    this.game.submit(peer.slot, { t: "gun", yaw: msg.myaw, pitch: msg.mpitch });
   }
 
   /**
@@ -2644,8 +3456,9 @@ export class Match {
     // …and then nothing of the claim is used. The round goes down the
     // authority's own gun, from the authority's own muzzle, at the authority's
     // own reload — which is the whole security property, and the reason the
-    // checks above bound a LIE rather than measure an aim.
-    if (this.game.resolveShell(tank, player, HULL_EARLY)) gate.spend(interval);
+    // checks above bound a LIE rather than measure an aim. The bucket spends
+    // only on a shell that LEFT, which is what `submit`'s answer says.
+    if (this.game.submit(peer.slot, { t: "shell", early: HULL_EARLY })) gate.spend(interval);
   }
 
   /**
@@ -2679,16 +3492,17 @@ export class Match {
     // …and then nothing of the claim is used, which is `onShell`'s whole
     // security property one calibre down: the round goes down the authority's
     // own gun, from its own muzzle, at its own rate.
-    if (this.game.resolveMg(tank, player, HULL_EARLY)) gate.spend(interval);
+    if (this.game.submit(peer.slot, { t: "mg", early: HULL_EARLY })) gate.spend(interval);
   }
 
   /**
    * A rocket out of the tube, or a mine on the ground.
    *
-   * The pouch is the SERVER's, exactly as the grenade pouch is, and it is
-   * debited only on an item that actually reached the world — the refusal
-   * contract `AntiTankSystem` states and `Game` obeys, unchanged by arriving
-   * over a socket.
+   * The pouch is the SIMULATION's, exactly as the grenade pouch is, and the
+   * core debits it only on an item that actually reached the world — the
+   * refusal contract `AntiTankSystem` states, unchanged by arriving over a
+   * socket. This side spends its rate bucket on the same condition, which is
+   * what `submit`'s answer says.
    *
    * A mine ignores the direction and lands where the ORIGIN says, bounded to
    * arm's length of where the authority holds this player: a client that could
@@ -2698,38 +3512,49 @@ export class Match {
     peer: Peer,
     msg: Extract<ClientMessage, { t: "ordnance" }>,
   ): void {
+    // Dead or empty: refused SILENTLY, `onGrenade`'s rule — every refusal
+    // after these is answered (`refuse`), the client having spent the item
+    // as it asked.
     const player = this.game.players.get(peer.slot);
     if (!player || !player.alive || player.ordnance <= 0) return;
+    const held = this.slots[peer.slot];
+    const kind = held.equipment;
+    // No kit is no count either — `setKit` writes the item and the core's
+    // `ordnance` together — so this is unreachable past the gate above, and
+    // there would be no item to name.
+    if (!kind) return;
+    const item: RefusedItem = kind === "mine" ? "mine" : "rocket";
     // Not from inside a tank. The third slot is carried by a body, and
     // `Player.tryShot` cannot even reach the trigger while driving — this is
     // the authority saying the same thing rather than trusting it.
-    if (player.seat >= 0) return;
-    const held = this.slots[peer.slot];
-    const kind = held.equipment;
-    if (!kind) return;
+    if (player.seat >= 0) return this.refuse(peer.slot, item);
 
     const now = Date.now();
     const interval = equipmentSetup(kind).shotInterval * 1000;
     const gate = held.ordnanceGate;
-    if (!gate.ready(now, interval)) return;
+    if (!gate.ready(now, interval)) return this.refuse(peer.slot, item);
 
-    if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return;
+    if (!withinSlip(msg.origin, player.eyePos, ORDNANCE_ORIGIN_SLACK)) return this.refuse(peer.slot, item);
 
-    let placed = false;
     ORDNANCE_AT.fromArray(msg.origin);
-    if (kind === "mine") {
-      placed = this.game.layMine(ORDNANCE_AT, player);
-    } else {
+    if (kind !== "mine") {
       // The same cone a rifle round is bounded by, and for the same reason —
       // it stops a claimed rocket leaving backwards or through the shooter's
       // own feet, and it stops nothing else.
-      if (!claimedDir(msg.dir, ORDNANCE_DIR)) return;
+      if (!claimedDir(msg.dir, ORDNANCE_DIR)) return this.refuse(peer.slot, item);
       lookDir(player.yaw, player.pitch, CLAIM_LOOK);
-      if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return;
-      placed = this.game.launchRocket(ORDNANCE_AT, ORDNANCE_DIR, player);
+      if (!withinCone(CLAIM_LOOK, ORDNANCE_DIR, SHOT_CONE_COS)) return this.refuse(peer.slot, item);
     }
+    // A mine ignores the direction and lands where the origin says.
+    const placed = this.game.submit(peer.slot, {
+      t: "ordnance",
+      kind,
+      origin: ORDNANCE_AT,
+      dir: ORDNANCE_DIR,
+    });
+    // A refusal the CORE made (the pool) raised `ordnanceRefused`, which
+    // `relay` answers — so nothing more is owed here, and nothing is spent.
     if (!placed) return;
-    player.ordnance -= 1;
     gate.spend(interval);
     // Heard as a shot is, so the fifteen other clients get the report and the
     // minimap reveal a launcher earns. A mine is silent on the wire for the
@@ -2762,7 +3587,7 @@ export class Match {
    *
    * Derived at the snapshot rather than tracked, and that is deliberate: the
    * two things that can be in a tank keep the fact in two different places
-   * (`NetPlayer.seat` for a person, `VehicleCrew`'s pairing for a bot), and a
+   * (`SimPlayer.seat` for a person, `VehicleCrew`'s pairing for a bot), and a
    * third copy kept in step with both is the copy that would be wrong. It is
    * sixteen comparisons twenty times a second on a map with armour, twice
    * over now that a hull holds two.
@@ -2808,7 +3633,27 @@ export class Match {
    * for a slot nobody is in costs three zeros a few times a minute.
    */
   private broadcastRoster(): void {
-    this.broadcast({ t: "roster", slots: this.roster.fielded() });
+    this.broadcast(this.rosterMessage());
+  }
+
+  /**
+   * The roster message — `broadcastRoster`'s slots, with what the CORE says
+   * of each bot that the table does not: whether it carries the launcher
+   * (`Bot.launcher`, `SlotOccupant`), so a client draws the tube on its
+   * back. A fact about the pool slot, so it is read off the pool here rather
+   * than kept in `Roster`, which owns no simulation; and a bot's row is
+   * COPIED to say it, so the table's own occupant is never written.
+   */
+  private rosterMessage(): RosterMessage {
+    const bots = this.game.battle.bots;
+    const slots = this.roster.fielded();
+    for (let i = 0; i < slots.length; i++) {
+      const s = slots[i];
+      if (s.occupant.kind === "bot" && bots[s.index]?.launcher) {
+        slots[i] = { index: s.index, team: s.team, occupant: { kind: "bot", launcher: true } };
+      }
+    }
+    return { t: "roster", slots };
   }
 
   /**
@@ -2842,7 +3687,8 @@ export class Match {
   }
 
   /**
-   * Starts one round trip to a peer, on the WebSocket's own ping frame.
+   * Starts one round trip to a peer, on its transport's own ping — the
+   * WebSocket's ping frame, on the server.
    *
    * A transport ping rather than a message pair of our own, which is the whole
    * reason this costs no protocol surface: a browser answers one from its
@@ -2859,10 +3705,10 @@ export class Match {
    * `server/index.ts`, which is the one thing here that terminates a socket.
    */
   private pingPeer(peer: Peer): void {
-    if (peer.socket.readyState !== peer.socket.OPEN) return;
+    if (!peer.transport.open) return;
     if (peer.pingAt > 0) return;
     peer.pingAt = Date.now();
-    peer.socket.ping(String(++peer.pingToken));
+    peer.transport.ping();
   }
 
   /**
@@ -2884,15 +3730,30 @@ export class Match {
   }
 
   private send(peer: Peer, msg: ServerMessage): void {
-    if (peer.socket.readyState === peer.socket.OPEN) {
-      peer.socket.send(encode(msg));
-    }
+    if (peer.transport.open) peer.transport.send(encode(msg));
   }
 
+  /** To every seated peer and every watcher — what the round looks like is everybody's. */
   private broadcast(msg: ServerMessage): void {
     const payload = encode(msg);
     for (const peer of this.peers.values()) {
-      if (peer.socket.readyState === peer.socket.OPEN) peer.socket.send(payload);
+      if (peer.transport.open) peer.transport.send(payload);
     }
+    for (const watcher of this.watchers) {
+      if (watcher.open) watcher.send(payload);
+    }
+  }
+
+  /**
+   * Turns every watcher away with `reason` and forgets them — `close`'s and
+   * `abandon`'s, which tell the seated the same thing.
+   */
+  private dismissWatchers(reason: string): void {
+    const payload = encode({ t: "rejected", reason });
+    for (const watcher of this.watchers) {
+      if (watcher.open) watcher.send(payload);
+      watcher.close();
+    }
+    this.watchers.clear();
   }
 }

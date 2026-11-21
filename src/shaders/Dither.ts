@@ -2,17 +2,18 @@
  * Dither.ts — One LSB of triangular noise, added to a colour immediately
  * before it is written out.
  * Owns: the ARGUMENT for the whole of it, and the source it argues about.
- * `wgsl/includes.ts` registers what is exported below as `celDither`; the
- * registration lives there because that is the one table, and the text lives
+ * `wgsl/chunks.ts` files what is exported below as `celDither`; the entry
+ * lives there because that is the one table, and the text lives
  * here because the argument is sixty lines and the function is six, and a
  * reader arriving at either wants the other. Owns no state, no uniforms and
  * no plugin — there is nothing here to configure.
  * Invariant: it must run on the value being QUANTISED, which means last, and it
  * must not be animated. Contract: `docs/rendering.md`.
  *
- * WHY THIS EXISTS. The whole chain is 8-bit: `DefaultRenderingPipeline` is built
- * with `hdr = false`, so the scene is quantised the instant it lands in FXAA's
- * input render target. Over that sit the two widest, shallowest gradients the
+ * WHY THIS EXISTS. The whole chain is 8-bit: every target of the post chain is
+ * `rgba8unorm` (as `DefaultRenderingPipeline`, built with `hdr = false`, made
+ * them until X5.2c2 deleted it), so the scene is quantised the instant it lands
+ * in the frame's render target. Over that sit the two widest, shallowest gradients the
  * cel shader draws — the `t*t` distance fog across a 22→78 m band, and the
  * exponential ground mist under it. A gradient that shallow crosses a
  * quantisation step every few degrees of screen, and every crossing is a
@@ -57,7 +58,7 @@
  * why the row is here rather than the change: its dome ramp is painted over with
  * stars, the galactic band and the halo's additive bloom, and the cloud decks
  * sit in front of it, so it arrives at 1.55 px runs already and a dither moves
- * nothing. `Sky.apply` carries the same note beside the material that does not
+ * nothing. `Sky.apply` carries the same note beside the dome, which does not
  * get one. Anything that ever flattens that dome — a starless overcast, a map
  * with no halo — puts the question back.
  *
@@ -81,7 +82,7 @@
  */
 
 /**
- * The body, registered as the `celDither` include by `wgsl/includes.ts`. A
+ * The body, the `celDither` chunk in `wgsl/chunks.ts`. A
  * surface shader writes `#include<celDither>` and calls `dither(col)` on the
  * last value before `fragmentOutputs.color`.
  *

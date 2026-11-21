@@ -180,9 +180,11 @@ scale 0.75 the GPU frame is ~28 ms, and draw calls don't predict it** (finding
 frame budget rather than a footnote to it.
 
 **Re-counted on WebGPU and the shape is unchanged**: the post chain is all still
-there, and the ash field is a `ComputeShaderParticleSystem` (WebGPU
-routes `GPUParticleSystem` to compute rather than transform feedback — no import
-and no code changed) with `randomTextureSize` 8192. Its capacity on Hollowmere
+there, and the ash field is a compute update and an instanced draw — since
+`BABYLON_EXIT.md` X4.7c OUR renderer's (`render/ParticleDraw.ts`), Babylon's
+`GPUParticleSystem` on `ComputeShaderParticleSystem` ported exactly, so the same
+field at the same cost — with `randomTextureSize` 8192 (the device's
+`maxTextureDimension2D`). Its capacity on Hollowmere
 is `Atmosphere.fit`'s `ceil(count / 3 × MAX_LIFE)` = ceil(4000 / 3 × 14) =
 **18,667** (`hollowmere/environment.ts`, `Atmosphere.ts`), under the 32,000
 `particlePoolCeiling` — the 14,934 this entry once recorded does not follow
@@ -196,7 +198,11 @@ as a share**, since that frame was ~21 ms and Coldharbour now runs at 122 fps
 the desktop, and on a phone at 0.5 and 0.75 (below). **At 0.5** the passes
 were priced on a phone and are not the lever — finding 13: on Greyfen, taking
 motion blur and the grain off moved `gpu.frame` by nothing measurable, and the
-dropped frames there do not follow the GPU. **At 0.75 they have not been
+dropped frames there do not follow the GPU. FXAA is priced there now too:
+FXAA on with shadows `medium` read level with both off on the look parts of
+Greyfen, Harrowmead and Sarab, `gpu.frame` within 2% (2026-10-30 against
+10-31, one build, one run a side across two sessions — `BABYLON_EXIT.md`
+X3.7c's FOLLOW-UP reading). **At 0.75 they have not been
 priced**, and there the GPU is the wall (below).
 
 - **Five full-screen passes at the render resolution at defaults**, in the order
@@ -206,7 +212,10 @@ priced**, and there the GPU is the wall (below).
   its own until it was folded into the ink for a phone's sake, with no change
   to the picture. Four of them are detachable by a setting (`core/settings.ts`,
   `fxaa`, `motionBlur`, `paperGrain`, `volumetrics`). The grain is no longer a
-  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080. The god-ray detach took the chain
+  trivial pass: its world-pinned paper measured ~0.25 ms of GPU at 1920x1080 (our
+  renderer's draw since `BABYLON_EXIT.md` X5.2c1, the same pass ported as compiled,
+  so the same cost; so are the other four since X5.2c2 and X5.2d, the ink last, and
+  no Babylon `PostProcess` is left). The god-ray detach took the chain
   down by one for most of a round while the shafts were `GodRays`; **that saving is
   gone**, because `Volumetrics` replaced it and is ON by default — only `off`
   detaches it. Measured at ~0.75 ms of GPU (`docs/rendering.md` has the per-rung
@@ -236,7 +245,8 @@ priced**, and there the GPU is the wall (below).
   pointer, `high` — the bloom as it was — everywhere else). Its kernel is
   stated in CSS pixels, so it widens in texels with pixel density: on the 0.75
   phone above (dpr 2.8125, level 0.474) `high` asks for 59 texels, which
-  Babylon rounds to a 57-wide kernel of 29 taps a pass over a half- and a
+  Babylon's rule rounds (`_nearestBestKernel`, our renderer's port of it since
+  `BABYLON_EXIT.md` X5.2b) to a 57-wide kernel of 29 taps a pass over a half- and a
   quarter-resolution pair — ~18 fetches per backing-store pixel. `low` blurs
   from a quarter-resolution box downsample at half the kernel (29 wide, 15
   taps), ~2.6 fetches per pixel counting the downsample and a quarter of the
@@ -245,15 +255,15 @@ priced**, and there the GPU is the wall (below).
   reads 0.079 mean/255 against a 0.068 control and 0.152 for the bloom off.
   **Not yet priced on the phone**: the same spot, `?profile&gpu`, `low`
   against `high`, several runs a side.
-- **The ash field is 18,667 alpha-blended GPU particles** (`getCapacity`, at
-  steady state). Simulation is on the GPU and cheap; the overdraw is not.
+- **The ash field is 18,667 alpha-blended GPU particles** (`ParticleField.capacity`,
+  at steady state). Simulation is on the GPU and cheap; the overdraw is not.
 - **The glass FRAGMENT's reflection has no distance fade.** The
   parallax-corrected cube fetch in `reflectBoxDir` is its most
   expensive term, and past ~100 m the reflection is motion and colour rather
   than a picture. Fading the cube's weight to zero over a band and branching the
   fetch out below a threshold is the shape. `reflectBoxDir` is WGSL now
-  (`src/shaders/wgsl/includes.ts` ~882), sampled with `textureSample`, still
-  unconditionally (`CelShader.ts` ~1589-1592), and the fade is not built. **It
+  (`src/shaders/wgsl/chunks.ts`), sampled with `textureSample`, still
+  unconditionally (`wgsl/celSurface.ts`'s glazing block), and the fade is not built. **It
   is a PHONE lever only** — the desktop frame is not fill-bound.
 
 Neither the resolution nor the ash field should be cut by default. If a graphics-quality preset
@@ -308,8 +318,9 @@ Two things bound it either way, and they are what still hold:
   20, velocity under `sleepSpeed` by frame 30, frozen by ~frame 65), and from
   then to the sink at 6 s it costs ~0 (re-measured: 0.0004 ms/frame with eight
   settled corpses — `update` does not touch the engine). The window is the fall.
-- **It is capped and gated.** Eight at once, and none past `death.maxDistance`,
-  which `bodyDrawDistanceOf` resolves to at most the map's `fogEnd`. The cap
+- **It is capped and gated.** Eight at once, and none past
+  `RagdollSystem.viewDistance`, which `bodyDrawDistanceOf` resolves to at most
+  the map's `fogEnd`. The cap
   is what makes the cost bounded rather than a function of how many people are
   dying — and it still is, now that a ninth body EVICTS the oldest corpse rather
   than being refused: the eviction changes which bodies are falling, never how
@@ -346,6 +357,16 @@ not to be it.
 ---
 
 ## 10. The reflection bake is draw-call bound, and a distance cull halves the list
+
+**Since X3.6c this is the old path's entry, and since X3.7c the path is
+gone.** Our renderer bakes the cubes (`render/ProbeBake.ts`), a face being a
+cull and a pass over its survivors rather than a draw a mesh, so no term below
+prices it: Coldharbour's 39 probes drain in 5 frames of 5-6 ms, ~41 ms of wall
+clock, at `probesPerFrame` 8 on the Windows box. Everything below — the
+per-draw cost, the worst frame, `drawsPerFrame` — is Babylon's
+`ReflectionProbe` bake, which no round took after X3.7b and X3.7c deleted
+(the tag `exit-babylonworld` has the last build of it). The PICTURE questions at the end (the 800 m hole, `perCell`, a wider
+block) bear on ours, which keeps the radius and the enclosure.
 
 **Measured, headless (SwiftShader, Coldharbour); superseded on real hardware —
 see the end of this entry.** `ReflectionSystem` bakes 37
@@ -426,9 +447,9 @@ the bake off the device was neither**: spending it over frames at 50,000 draws
 each. A descriptor heap is recycled per SUBMISSION, so the largest single frame
 is what the ceiling is against and the total is not — which is the sentence
 `ENGINE_UPGRADE.md`'s wall 5 had backwards. Coldharbour's forty probes were
-41,934 draws and landed on one frame — **before its re-lay (6e848a1)**, and if
-the re-laid map's draws now pass 50,000 the bake spans two frames. Re-count it.
-Hollowmere's probe count is likewise pre-re-lay (5806a24).
+41,934 draws and landed on one frame — **before its re-lay (6e848a1)**; the
+re-count this asked for is moot since X3.7c deleted that bake (ours drains the
+re-laid map's 39 probes in five frames of eight).
 
 **The bake also waits for the irradiance volume now** (659b58f): releasing is
 held until `GiVolume.converged`, so no cube freezes the volume's first pass —
@@ -436,25 +457,12 @@ held until `GiVolume.converged`, so no cube freezes the volume's first pass —
 
 ### Also open, carried from the bake's closed entries
 
-**A bake draw is ~18.6 us and nobody knows why.** The figure was taken just
-before per-face culling (edc9ccf), and that commit's own figures still work out
-to ~18.7 us per ISSUED draw, so the per-draw cost survives — but "50,000 draws
-at ~928 ms" is a pre-cull number (after it, a frame offering 50,000 issues about
-a fifth of them, at 181-197 ms median). It is three times the ~6.3 us
-`VERIFYING.md` measures for a mesh draw carrying a material switch, and eight
-times the ~2.3 us for an outline shell reusing a bound material. A first bake
-creates a draw wrapper per (mesh, render pass id) and six of those per probe,
-so bind-group creation is the obvious suspect — and on Babylon 9.28 (96fcd19)
-every draw context owns a bind group until it is disposed, which is why
-a1eed52 added `ReflectionSystem.forgetPasses`. **The 18.6 us was taken on 9.19
-and needs re-taking on 9.28 before it is argued from.**
+Two threads that were carried here are CLOSED by X3.7c, which deleted the
+bake they were about: why a draw of Babylon's bake cost ~18.6 us (taken on
+9.19, owed a re-take on 9.28), and its 1,217 ms worst first batch at 1500 m
+(`releaseBatch` letting one fat probe through an empty frame). Ours issues no
+draw a mesh and has no such queue — a frame is `probesPerFrame` probes.
 
-- **The worst frame is still 1,217 ms at 1500 m**, against a 197 ms median. It
-  is the first batch and it is a queue-shaping question rather than a
-  draw-count one: `releaseBatch` lets one probe through however fat it is on an
-  otherwise empty frame, by design, or a queue with a fat head could never
-  drain. A budget that could be spent as "one probe's worth of FACES" rather
-  than one probe would smooth it; nothing has tried.
 - **`perCell` is 2 on the 1500/0 proving ground, the only live grouping in the
   tree** — every shipped map is `perCell` 1 (`ReflectionSystem.ts` ~340) — and
   means a probe there drops 96 m of city out of the middle of its own cube (the
@@ -472,7 +480,7 @@ and needs re-taking on 9.28 before it is argued from.**
   it. On a map with long sightlines and heavy per-pixel work it might not. Four
   shipped maps now state a wider `blockSize` — Sarab 96, Cinderhaven 120,
   Kurenai 120 and Harrowmead 200 — and a probe drops every block it serves from
-  its own bake (`ReflectionSystem`'s `encloses`), so a wider block is also more
+  its own bake (`ReflectionSystem`'s `exclusionOf`), so a wider block is also more
   of the city missing from its own cube. None of that has been judged on
   screen. (`terrainBlock` does not bear on either: it is the floor patch, and
   the terrain carries no `block` metadata.)
@@ -481,90 +489,6 @@ and needs re-taking on 9.28 before it is argued from.**
   exists now (Cinderhaven; S11 has landed too), so the comparison is a count
   away. The SHAPE is not a worst case — the bake is priced on glazing and
   `docs/rendering.md` says glazing has no natural bound.
-
----
-
-## 11. The editor's tier-3 rebuild is ~2.3 s on Coldharbour, and it is `MapBuilder`
-
-**Status:** measured (CPU), cause located, not acted on — **and every figure
-below NEEDS RE-MEASUREMENT.** They are from 3ed9fec (2026-08-24, before the
-WebGPU boot, headless), and `MapBuilder.ts` has had ~50 commits since;
-Coldharbour itself was re-laid (6e848a1) and its buildings reworked. The newest
-figure is `docs/editor.md`'s: a tier-3 rebuild is **~0.5 s on Hollowmere and
-~2.5 s on Cinderhaven** (the path-road section). Re-measuring is cheap —
-`window.__buildProfile` (`src/world/buildProfile.ts`, DEV only) gives the
-per-phase split of a `MapBuilder.build` without a CPU profile — and the open
-threads below (Coldharbour on hardware, the skip-AO/cover probe, an incremental
-rebuild) stay open until it is done.
-
-This is the other half of the editor's Coldharbour problem. The first half —
-one frame of ~300,000 draw calls from the reflection bake after every rebuild —
-is fixed: `ReflectionSystem.build` now parks its probes on an editor build (see
-[`docs/rendering.md`](docs/rendering.md)). What is left is the JS.
-
-### What was measured
-
-Headless, `buildEditorMap()` timed around each of `installMap`'s calls, and
-then a CDP CPU profile of the same call. The wall-clock figures below are from
-this machine under SwiftShader, but they are **JS and driver time, not
-rasterisation** — the profile is of the build, which renders nothing.
-
-| | Coldharbour | Hollowmere |
-| --- | --- | --- |
-| placements in the layout | 133 | 195 |
-| `installMap` total | **2300 ms** | 784 ms |
-| of which `MapBuilder.build` | **2131 ms** | 707 ms |
-| `editor.rebuildProxies` after it | 79 ms | 230 ms |
-| everything else in `installMap` | ≤4 ms each | ≤28 ms each |
-
-`reflections.build` is 4 ms of that on Coldharbour and 0 on Hollowmere: the
-bake's cost was never in the queueing, it was the frame afterwards.
-
-Rolled up by function inside the build (total, so these nest):
-
-| ms | what |
-| --- | --- |
-| 525 | `kit/city/tower.ts` `buildTower` — 44 of them |
-| 450 / 401 / 362 | `glaze` / `pane` / `cut` — the 6,139 sheets |
-| 389 | `mergeByMaterial` |
-| 383 | `MapBuilder.paneGroup` |
-| 265 + 236 + 160 | `NavGrid`, `link`, `severLinks` |
-| 199 | `bakeVertexShading` |
-| 184 | disposing the standing map |
-
-(`glaze` and `cut` no longer exist as functions — the glazing is
-`Build.pane` now — so these rows will not come back under those names. And
-one cost this table cannot list has been added since: `GiVolume.setMap` runs in
-`installMap` on an editor build as on any other.)
-
-### What it means, and what is still a hypothesis
-
-**Coldharbour is expensive to BUILD, not expensive to edit** — the same
-`installMap` costs ~1.8–2.3 s starting a round, where it is paid once behind
-the building card. The editor's problem is the frequency: tier 3 fires on every
-param edit, add, delete, brush stroke release and road drag release, and
-[`docs/editor.md`](docs/editor.md)'s ~570 ms is a Hollowmere number.
-
-The glazing is over half of it and it is drawn twice over — `glaze`/`pane`/`cut`
-build 6,139 sheets, then `paneGroup` and `mergeByMaterial` merge them, and on an
-editor build the merge is keyed per PLACEMENT so it is 82 merges rather than 40.
-**Derived, not measured:** the tier-3 rebuild exists because a param change
-shifts every later index in `colliderBoxes`, and that argument is about the
-edited placement's own geometry — nothing says the other 132 have to be built
-again. An incremental rebuild that re-ran one builder and re-indexed from there
-is the shape, and the reason it has not been tried is that the index is what
-every editor structure hangs off.
-
-Part of this is not JS at all: `_createVertexBuffer` is 133 ms of SELF time in
-the profile, which is buffer upload and will be faster on a real driver.
-
-### How to settle it
-
-Time `buildEditorMap()` on real hardware on both maps first — if Coldharbour
-lands under ~600 ms there, this is a headless artefact and the entry should be
-deleted. If it stays several times Hollowmere's, the cheap probe before any
-incremental work is to skip the AO bake and the cover bake on editor builds the
-way the reflections and the physics world already are, and measure what is left.
 
 ---
 
@@ -820,13 +744,15 @@ this map to Coldharbour.)
 **Status: measured once on the desktop GPU (64559ce / 2da8d33); open on
 Coldharbour, on a phone, and as a lever nobody can reach from the settings.**
 
-**A blast is lit, opaque, thin-instanced BILLOWS now** (`src/systems/BlastFx.ts`,
-`BlastShader.ts`), and no blast particle system remains. What it holds, all
-built once: `CONFIG.grenade.blastSlots` (4) slots of one thin-instanced batch
-of `blastBillows` (64) at icosphere subdivision 8, a shared small batch
-(`SMALL_CAP` 320 at subdivision 4) and 32 streamers. What did not change: the
-Havok chunks are 3 bursts of 10 (`debris`), the scorch is `marks: 8`, and the
-chunk burst is refused past `debris.distance` (80 m) scaled by power.
+**A blast is lit, opaque, instanced BILLOWS now** (`src/systems/BlastFx.ts`,
+drawn by our renderer since `BABYLON_EXIT.md` X4.4c: `render/BlastDraw.ts`,
+one instanced draw and one glow-mask draw a batch), and no blast particle
+system remains. What it holds, all built once: `CONFIG.grenade.blastSlots`
+(4) slots of one batch of `blastBillows` (64) at icosphere subdivision 8, a
+shared small batch (`SMALL_CAP` 320 at subdivision 4) and 32 streamers. What
+did not change: the Havok chunks are 3 bursts of 10 (`debris`), the scorch is
+`marks: 8`, and the chunk burst is refused past `debris.distance` (80 m)
+scaled by power.
 
 **What it costs, measured**: on the Windows box, Hollowmere, uncapped, a
 1.85-power blast every 0.6 s so all four slots stay live, run order controlled
@@ -860,15 +786,33 @@ the next one by the economy — two grenades a life, a 3.6 s tank reload.
 ## 16. The round's pipelines are compiled under the building card now — what the warm-up does not reach, and the phone
 
 **Status:** the warm-up LANDED (`core/PipelineWarmup.ts`, `docs/states.md`,
-"a SECOND phase"); what is open is the phone, and four things it does not
-reach.
+"a SECOND phase"). Since `BABYLON_EXIT.md` X5.4c the card draws NOTHING for a
+pipeline's sake: every pipeline in a round is our renderer's, so the warm-up
+is a wait for the declared list and the map's own, its vantages retired on
+`pipelines.mjs`' log reading nothing created at any vantage by either cache on
+all seven maps. What is open is the phone.
+
+Four things are settled. The irradiance volume's compute pipelines, which the
+warm-up did not reach, are our renderer's and on the declared list since X5.1b,
+its note holding the numbers. A lamp's PROXY variant compiled in play on
+Kurenai, a body drawn into a lamp's tile only when a casting lamp stood near
+it; since X3.6b the atlas is our renderer's, its one proxies' pipeline asked
+at `LampAtlas`'s construction and on the round's declared list, and an offline
+Kurenai round with proxies drawn on 3,730 frames created nothing in play, ours
+or Babylon's (2026-11-01). A weapon or optic the card never drew, whose glass
+compiled on its first draw, was settled by X4.3d: every pipeline of the
+weapon, its glass and the kit card among them, is our renderer's and asked at
+construction, and a first ADS through either glass creates nothing. And the
+pool poses described below were Babylon's alone from X4.4e, when every pool of
+ours joined the round's declared list, its pipelines asked at construction and
+none posed; the sparks, the dust discs and the scorch kept theirs until X4.6.
 
 WebGPU builds a render pipeline on the first draw that needs one, and that
 draw's frame pays — Dawn compiles behind the create call, so the stall lands on
 first USE and never in the call (`docs/profiling.md`, "Compiles"). The loading
-card now draws the whole map from each home spawn and flag until a frame
-compiles nothing, and every idle pool a round draws from shows one member, posed
-as in flight, for those frames. Measured on the Windows box headless, a scripted
+card then drew (until `BABYLON_EXIT.md` X5.4c) the whole map from each home spawn
+and flag until a frame compiled nothing, and every idle pool a round draws from
+showed one member, posed as in flight, for those frames. Measured on the Windows box headless, a scripted
 opening — deploy, spawn, a turn, a burst, the sight up, a blast, a molotov's
 fire — counting creations per phase (2026-10-07):
 
@@ -878,9 +822,9 @@ fire — counting creations per phase (2026-10-07):
 | Hollowmere | 15 (spawn 7; first blast 189 ms) | 0 (blast 6.5) | 16 in 220-824 ms |
 | Greyfen | 16 (spawn 7; first blast 147 ms) | 0 (blast 9.4) | 18 in 1,432 ms |
 | Harrowmead | — | 0 | 17 in 1,328 ms |
-| Sarab | — | 1 (the rotor wash, below) | 21 in 990 ms |
-| Cinderhaven | — | 1 (the rotor wash, below) | 19 in 916 ms |
-| Kurenai | — | 1 (a lamp's proxy, below) | 18 in 701 ms |
+| Sarab | — | 1 (the rotor wash: since `BABYLON_EXIT.md` X4.7d ours, asked at construction — 0) | 21 in 990 ms |
+| Cinderhaven | — | 1 (the rotor wash: since X4.7d ours — 0) | 19 in 916 ms |
+| Kurenai | — | 1 (a lamp's proxy: since X3.6b ours, asked at construction — 0) | 18 in 701 ms |
 
 Render pipelines only; the "before" column is the same script on the tree
 before this landed. A second round on the same page warms in ~360 ms, the pipelines being cached.
@@ -896,16 +840,6 @@ keyed on the pose, not on the mesh.
   was 1,268 ms with 34 creations near it and its first blast 403 ms (finding
   13's session, Greyfen, 2026-10-05); a capture there owes `createdNear` on the
   spawn and first-blast frames, and the card's extra time on that device.
-- **The lamps' atlas PROXY variant** still compiles in play on Kurenai: a body
-  is only drawn into a lamp's tile when a SHADOW-CASTING lamp stands near it,
-  and no vantage there has one. Standing the stand-in body under a casting lamp
-  would reach it.
-- **The rotor wash** on Sarab and Cinderhaven is a GPU particle system, not a
-  mesh, and compiles on the first frame a helicopter raises dust.
-- **Only the weapon and optic WORN are warmed.** Changing kit on the deploy
-  screen and spawning with a weapon the card never drew compiles its glass and
-  any material only it wears — the kit screen's turntable draws it first, so
-  the cost lands there rather than in the round, but it is not measured.
 
 **And a separate stall the counting found, which is NOT a compile**: the deploy
 screen's first second runs 974 and 613 ms frames on Hollowmere and 480 on
@@ -939,9 +873,9 @@ that with most of these pipelines uncreated.
 **What would settle it** is whether the stall can be moved under the deploy
 screen, where there is already a lid and the player is already waiting. The
 shape is a warm-up pass after `installMap` that draws each material variant
-once off-screen, which is what `scene.isReady()` already tracks per material —
-the same signal `plans/webgpu-ref/harness.mjs` waits on, and it flips on
-exactly the frame a map first draws. Whether that is a few lines or a fight
+once off-screen, which is what `scene.isReady()` tracked per material —
+the same signal `plans/webgpu-ref/harness.mjs` waited on, and it flipped on
+exactly the frame a map first drew. Whether that is a few lines or a fight
 with the variant matrix has not been looked at. Finding 1's first-use pipeline
 hypothesis — pipelines first used in PLAY stalling the frame they are first
 drawn on — is a second reason a warm-up pass would pay.
@@ -957,9 +891,9 @@ the next eight seconds of standing still. What compiled there was the cel
 world (`CEL_PALETTE`), a shadow-map variant (`INSTANCES`/`THIN_INSTANCES`),
 the flame's `GLOW_MASK` twin, and Babylon's own `StandardMaterial` in
 `ALPHABLEND` variants, against an `rgba8unorm` target — the list a warm-up
-would have to draw. Babylon 9.28 also brings the tool for it:
+would have to draw. Babylon 9.28 also brought the tool for it:
 `engine.createRenderPipelineAsync` (backed by
-`WebGPUCacheRenderPipeline.preWarmPipeline`) compiles a variant without
+`WebGPUCacheRenderPipeline.preWarmPipeline`) compiled a variant without
 drawing it, and its creations would show up in the same log, before the round.
 
 **On a phone it is bigger, and it reaches past the spawn** (finding 13's
@@ -1017,14 +951,26 @@ colour weighted by part size again. Every map builds 16-28% faster than at
 684a88c; the table is `PERF_PLAN.md` A1. **The first sub-thread is worth far
 less than when this was written**: with most builders on `StoneBatch`, a
 `Mesh` per part is ~300 ms of Coldharbour's 4.4 s, so the merge-only
-accumulator was not built. **What remains open from this entry**: the collider
-half (unchanged), the GC share (not re-measured), and the final upload's
-plain-array conversion, which only a change that rounds vertices differently
-would remove. If nothing here is taken up, delete the entry.
+accumulator was not built. **The collider half is CLOSED**
+(`BABYLON_EXIT.md` X5.3e: no collider is a mesh; the numbers are under "What is
+open"). **What remains open from this entry**: the GC share (not re-measured).
+The final upload's plain-array conversion is GONE: no surface reached it once
+our renderer drew the whole world (`BABYLON_EXIT.md` X3.7b, X4.6e), and X6.1g
+deleted it with the mesh it fed (`vertexDataOf`); what is left of it is the
+floor's arrays for `PhysicsWorld` (`plainGeometryOf`). If nothing here is
+taken up, delete the entry.
 
 `StoneBatch` and `Mesher` (`kit/core.ts`) take the first sub-thread below
-locally, for the stone and tile runs that opt in; the general path in
-`parts.ts` still builds a `Mesh` per part.
+locally, for the stone and tile runs that opt in. Since BABYLON_EXIT.md X1.2 a
+builder's part is plain data (`Part`, a `GeometryBuffer` built by
+`src/geometry/`, whose `createBox` shares one unit tessellation), and since
+X1.4 the merge and the vertex bake run on those buffers and no part is ever a
+mesh: the world becomes meshes once, at the end of the build (`worldMeshes`,
+until `BABYLON_EXIT.md` X6.1g made it records alone, `worldRecords`), and the
+part mesh and its helpers are deleted. That is this entry's first
+sub-thread, taken; the round trip described below no longer exists, and what
+is left open is the paragraph above (the GC share, the final upload's plain-array
+conversion; the colliders closed at X5.3e).
 
 ### The instrument
 
@@ -1122,9 +1068,8 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   change rather than a local one.
 - **`parts.ts` exists because some parts must stay real meshes**, and that is
   the constraint any fix has to respect: `uploadPart` puts a part back on the
-  normal path on the three ways out of a merge that KEEP their source, and an
-  editor build keeps every placement unmerged. A merge-only path has to be a
-  second path, not a replacement.
+  normal path on the three ways out of a merge that KEEP their source. A
+  merge-only path has to be a second path, not a replacement.
 - **The oracle already exists and this change must not move a vertex.** A
   nav-graph fingerprint cannot see it — this is VISUAL geometry, and
   `npm run parity` is blind to it by design. What was compared instead, per map,
@@ -1145,11 +1090,32 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
   to be rebuilt.
   `plans/physics-ref/drop.mjs` covers anything that changes what a body stands
   on.
-- **The collider half is BLOCKED and this does not unblock it.** `boxMesh`
-  aggregates to 669 ms at 1500/0 (~430 at 900/300 before the flatten), but
-  `moveWithCollisions` walks `mesh.subMeshes` and a part has none — see
-  `parts.ts`'s header. A collider is not a merge candidate, so the mechanism
-  above does not reach it.
+- **The collider half is CLOSED by `BABYLON_EXIT.md` X5.3e**, which stopped
+  making the collider meshes (`boxMesh` was 669 ms at 1500/0 when this was
+  written; nothing had read the meshes since the map editor's pick went at
+  X5.3c). The groups (`boxGroups`, `rayGroups`) and the floor's arrays
+  (`terrainGeometry`) are byte-identical as data, the collision bake did not
+  move, and every bank row is byte-equal. **Measured** on the Windows box, a
+  dev build (`buildProfile`), medians of three alternating runs a tree, a fresh
+  page a map; the heap is `Runtime.getHeapUsage` after two forced GCs, at
+  deploy minus at the menu:
+
+  | map | `scene.meshes` | `build:total` ms | install ms (`startRound` to `deploy`) | heap the map holds, MB |
+  | --- | --- | --- | --- | --- |
+  | Hollowmere | 882 → 0 | 1,511 → 1,387 | 2,534 → 2,422 | 29.8 → 16.4 |
+  | Greyfen | 872 → 0 | 3,282 → 3,133 | 4,556 → 4,332 | 35.9 → 21.7 |
+  | Coldharbour | 1,782 → 0 | 1,913 → 1,736 | 3,137 → 2,887 | 42.7 → 18.6 |
+  | Harrowmead | 1,215 → 0 | 2,358 → 2,214 | 4,519 → 4,390 | 48.9 → 25.4 |
+  | Sarab | 3,617 → 0 | 1,573 → 1,314 | 2,980 → 2,730 | 79.3 → 30.5 |
+  | Cinderhaven | 4,064 → 0 | 3,455 → 3,223 | 5,444 → 5,240 | 101.7 → 47.8 |
+  | Kurenai | 770 → 0 | 2,096 → 2,058 | 3,123 → 3,110 | 25.3 → 12.9 |
+
+  The build is 2-16% faster (the placement loop alone 7-33%: Sarab 524 → 357
+  ms, Coldharbour 641 → 540; `scatterClusters` 3-84 ms → under 1), and the
+  heap a map holds roughly halves: 12-54 MB a map, the meshes' geometry,
+  vertex buffers' CPU copies and per-mesh state. The run-to-run spread is ~2%
+  of `build:total` and ~1 MB of heap. No GPU number moves: nothing drew the
+  meshes.
 - **The AO bake is now the second-largest named cost** — `occlusionAt` is
   1,738 ms subtree and 1,399 self, 9.3% — and it is not in the placement loop at
   all. It has never been questioned; `segmentHitsBox` under it is another
@@ -1160,26 +1126,6 @@ part is not a real mesh; what it does not yet do is let one avoid BEING one.
 - **The garbage collector is 2,121 ms, 11.3% of the install**, which is the
   allocation pressure of everything above rather than a site of its own. It
   should fall with the round trip; if it does not, it is its own finding.
-
----
-
-## 30. A body past `bodyDrawDistance` POPS, and no fade has been built
-
-**Status:** the gate landed (`ENGINE_UPGRADE.md` S8, `EnvironmentSpec.bodyDrawDistance`,
-stated by Sarab and Cinderhaven). What is open is how it ends.
-
-- **A fade was not built.** The gate is a hard on/off, as `lodDisableDistance`
-  always was, and it was invisible only because it sat where everything was
-  already `fogColor`. If a stated `bodyDrawDistance` reads badly, a short fade
-  band is the obvious next thing and nothing here has costed one.
-- **There is a SECOND hard pop, and on a phone it is the nearer one.**
-  `WorldCulling.offer`'s size gate (`CONFIG.graphics.culling.minPixels`, 3 px)
-  drops a whole body off its rig root by projected size, and its own comment
-  measures where that lands on Coldharbour: **810 m on a 1080-tall viewport
-  but 290 m on a 384-tall one** — past the map's 480 m on a desktop, and well
-  inside it on a phone, where a body pops out in clear air rather than in fog.
-  A fade built for `bodyDrawDistance` alone would not reach it; finding 39
-  argues the gate.
 
 ---
 
@@ -1196,6 +1142,7 @@ the largest single thing in the authority's install**, which is S3/S4/S5's
 inheritance arriving exactly where they said it would — and a 1.25 s build is a
 rotation cost nobody is watching, not a tick cost. (Measured 2026-08-28, on the
 proving ground, before 82242d9 put a `CollisionField` in the server's build
+(since `BABYLON_EXIT.md` X2.1 one that builds nothing of its own)
 and d1dcd90 changed `NavGrid`: the absolute figures are history, while the
 attribution's SHAPE — the cover bake largest — is likely still current.
 Cinderhaven is the shipped 1500 m map to re-measure it on.)
@@ -1221,7 +1168,8 @@ entry has it at 52.6 warm fps and a 19.3 ms median; the same map, same
 resolution, same instrument class, profiler armed (which costs ~1.5%), now reads
 94-99 fps and a 10.1-10.6 ms median. 1.9x is well past the ~1/3
 cross-session drift this entry warns about, so most of it is real and is
-presumably `narrowedMove` and the rig culling landing after it. **This entry's
+presumably `narrowedMove` (since replaced by X2.1's own sweep) and the rig
+culling landing after it. **This entry's
 table is stale enough to mislead anyone sizing a lever against it.**
 
 ### What was measured
@@ -1263,8 +1211,8 @@ fields.
 
 **The table's `probes` and the prose's "7 probes" below disagree (17 against
 7), and one of them must be re-counted.** The code cannot settle it after the
-fact: the column is `scene.customRenderTargets.length` (`harness.mjs`), which
-is every released cube on the list — glazing and water alike, and anything
+fact: the column was `scene.customRenderTargets.length` (`harness.mjs`), which
+was every released cube on the list — glazing and water alike, and anything
 else pushed there — rather than glazing probes alone, and the map has gained
 water and changed builders since. A re-count should report the two apart.
 
@@ -1313,11 +1261,13 @@ lever 1, and it is the whole of what was needed.
 
 ### What is open
 
-- **Nobody has watched a body POP at 300 m.** `bodyDrawDistance` is stated for
-  the first time here and finding 30's open thread — what the drop LOOKS
-  like on a map that states one — is still open, because the measurement above
-  is a frame rate and not a pair of eyes. The 300 was chosen so that the pop
-  happens in haze rather than in clear air; that is a hypothesis.
+- **A body no longer POPS at 300 m; it fades** (`BABYLON_EXIT.md` X4.1e: a
+  screen door over the last 30 m, and at the size gate too — photographed on
+  this map's highway, whole at 269 m and gone by 298). What is still open is
+  whether 300 is the right distance to look at, which is now a look call
+  rather than a pop: the 300 was chosen so that the drop happens in haze
+  rather than in clear air, and that is still a hypothesis nobody has judged
+  by eye in a round.
 - **The sand's bump reads as scales at a grazing angle.** Visible down the
   wadi's bank in the shots this map was tuned against — `floorSurface: "sand"`
   is 0.015 of relief over a 5 m tile, and at a few degrees off the surface the
@@ -1437,32 +1387,6 @@ moved across, so the workaround above still stands.
 
 ---
 
-## 38. `WorldCulling.offer`: who the disabled candidates are, and its own per-frame cost
-
-**Status:** the drop landed (`docs/rendering.md`, the size gate). Two things
-about it are open.
-
-- **Who the disabled candidates ARE has still not been counted — and how many
-  there are has to be re-counted first.** The "~420" this entry carried was
-  counted on Cinderhaven when the drop landed (f7f515e, 2026-09-07), and three
-  things have moved it since: 00105a4 filed the death cam's rig, cada131 cut a
-  rig from 22 meshes to 14, and 42d831d drops a body whole off its root.
-  `setPools` already keeps an idle rig out of the list by its root, so a
-  disabled mesh still being offered is either a pool never filed or a part
-  disabled under an enabled root.
-- **`offer` is `O(eligible)` every frame, and it does more per candidate than
-  it did.** `isEnabled()` walks ancestors; the size gate adds a bounding-sphere
-  read per candidate; and every body pays a forced `computeWorldMatrix` on its
-  rig root (`WorldCulling.ts`, the "root's matrix is FORCED" comment) — up to
-  48 a frame on the densest map. At 2 px the gate does not repay its own read
-  on any map measured; it is only worth having because 3 px does on the biggest
-  one, and a `sqrt` per candidate measured as a LOSS, so it compares squared.
-  A pool that told `WorldCulling` when it went live would cost nothing per
-  frame, but it cannot use `setPools`' transition-marks-dirty route, because
-  `rebuildList` is a full scene walk and effect pools toggle many times a frame.
-
----
-
 ## 39. Cinderhaven does not fit in a 144 Hz frame, and the only geometry with no LOD at all is a vehicle's — **the size gate is LANDED; the big levers are look decisions and are not**
 
 **Status:** the gate is in (`WorldCulling.offer`, `CONFIG.graphics.culling.minPixels`).
@@ -1541,16 +1465,18 @@ past its own geometry and this is a night map full of lit windows; the test is
 exact rather than a name guess — a non-black `emissiveColor` on the material.
 (This entry once said `getEmissive` was the only `StandardMaterial` in the
 tree; it is not — `FlameMaterial` and `BlastShader` declare an
-`emissiveColor`, and the optics, the kit screen's backdrop, the sky and the
-editor all make `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
-test as it is.)
+`emissiveColor`, and the optics, the kit screen's backdrop and the sky all
+made `StandardMaterial`s. `glows` in `WorldCulling.ts` states the
+test as it is. Since `BABYLON_EXIT.md` X6.1c no material is Babylon's: every
+one is a `MaterialKey`, whose `emissiveColor` is null on everything that is not
+a light source.)
 
 ### The bug this had, which the pixel bank could not catch
 
 **The first version deleted the weapon out of the player's hands**, and the bank
-passed anyway. `offer` runs in `Game.tick`, BEFORE `scene.render()` bakes world
-matrices, and the viewmodel hangs off the camera — so its world bounding info is
-still sitting at the ORIGIN when this reads it. Asked for its size, the rifle
+passed anyway. `offer` ran in `Game.tick`, BEFORE `scene.render()` baked world
+matrices, and the viewmodel hung off the camera — so its world bounding info was
+still sitting at the ORIGIN when this read it. Asked for its size, the rifle
 answered **"1.8 px at 726 m"**, which is the distance from the world origin to
 the player, and the gate dropped all fourteen of its meshes.
 
@@ -1582,18 +1508,24 @@ Both are larger than what landed, and both change what a player sees:
 - **A vehicle draw distance at 420 m: +15.4% fps.** Hulls would vanish where
   bodies do. By SIZE that is the wrong number — a hull is ~4x a body, which
   puts it past `fogEnd` — so a hull's distance is its own question and nobody
-  has answered it.
+  has answered it. **Built since** as `BABYLON_EXIT.md` X4.2d, a map field
+  (`EnvironmentSpec.hullDrawDistance`) with a fade, FLOORED at a hull's gun
+  reach (~419.4 m), and set by no shipped map: under our renderer 420 m on
+  Cinderhaven bought nothing measurable on this desktop (X4.2d's note), the
+  +15.4% having been Babylon's per-mesh cost. Whether a map states one is the
+  look call left open.
 
 ### What is open
 
-- **A vehicle DETAIL tier**, keeping the silhouette and dropping the running
-  gear, measured at +6.5% / -0.55 ms at 300 m. Not taken because the detail set
-  is an art judgement: the naive set included `tank-link` (3.26 m; today's
-  model names it `tank-link-lo`/`-hi`) and
-  `tank-wheel` (3.02 m), and `TankModel`'s own comment says the road wheels
-  filling the track hole ARE the silhouette — an argument the Leopard's tapered
-  armoured skirts (3105f22) weaken, since they now cover most of those wheels.
-- **The gate's own per-frame cost** is finding 38's.
+- ~~A vehicle DETAIL tier~~ — **landed** as `BABYLON_EXIT.md` X4.2c (the
+  user's set, swapped at 32 projected px of a whole-hull measure in our
+  renderer; what it bought against this entry's +6.5% / -0.55 ms at 300 m is
+  in that step's note). ~~The draw distance~~ — **landed** as X4.2d (above).
+- ~~The gate's own per-frame cost~~ — finding 38's, deleted at `BABYLON_EXIT.md`
+  X6.1j's review: what it priced (`isEnabled()` walking ancestors, a sphere
+  read per candidate, `rebuildList` walking the scene) was the candidate list,
+  retired at X5.4f; what `offer` does a frame now is one root compose a live
+  body (`PooledBody.measure`), which the fade needs.
 
 ---
 
@@ -1667,7 +1599,7 @@ priced on the phone: the A/B above, Off against On.
 
 ---
 
-## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws); its frame cost on a phone is not measured**
+## 43. The bloom is a SECOND GEOMETRY PASS over every lit window in view — **the EMISSIVE palette is LANDED (Coldharbour's worst view 114 -> 48 mask draws), and since `BABYLON_EXIT.md` X3.6d its mask, and since X3.6e its main pass, are OUR renderer's at one or two draws a frame each; its frame cost on a phone is not measured**
 
 **Status:** decomposed and measured on the Windows box under a CPU throttle at
 the phone's viewport. Two levers **LANDED**: the frozen mask material, and the
@@ -1773,6 +1705,33 @@ throttled per-draw figures says roughly 0.4 ms at Coldharbour's mean view and
 1.5-2 ms at its worst, and next to nothing on Greyfen, where the phone captures
 were taken (three draws). That is arithmetic, not a measurement: read `glow` and
 `drawWorld` on the phone at a Coldharbour street view before quoting it.
+
+**Since X3.6d the palette's share of the mask is our renderer's**
+(`render/WorldGlow.ts`): one draw a palette BIAS — two on Coldharbour, one on
+every other shipped map — culled through the main pass's own view, where
+Babylon's mask list held one draw a palette mesh in view. Over the bank's 61
+rows the mean of Babylon's mask draws a row fell from 19.67 to 0.44 on
+Coldharbour, 14.50 to 3.00 on Cinderhaven, 11.85 to 2.69 on Hollowmere, 6.13 to
+2.47 on Harrowmead, 4.00 to 0.83 on Greyfen, 2.33 to 0.33 on Kurenai and 1.73
+to 0.36 on Sarab (what is left is the fires and the other emissives), the mask
+read back texel for texel the same. On the desktop X0.3 it moved no frame
+(`BABYLON_EXIT.md` X3.6d); the phone reading this entry is waiting for is
+still owed, and now measures the cluster-culled draw rather than the per-mesh
+one.
+
+**Since X3.6e the palette's MAIN-pass draw is ours too**, on the same
+decision (`BlockHandover`): the bake's pipeline, one draw a bias, FIRST in our
+`"beforeAlphaTest"` draw, so Babylon's main pass drew no palette mesh while
+ours held the palette. Over the bank's 61 rows Babylon's main-pass draws fell
+by every palette mesh it had in view — 173 over Coldharbour's nine rows (about
+19 a row), 119 over Hollowmere's 13, 46 over Cinderhaven's four, 55 over
+Harrowmead's 15, 19 over Greyfen's six, 15 over Sarab's 11, 6 over Kurenai's
+three — and ours rose by one draw a row (two on Coldharbour), the bank 59 of
+61 byte-identical (`BABYLON_EXIT.md` X3.6e). So the per-mesh cost this entry
+opened on is gone from BOTH passes on our path, and the phone reading owed
+above now reads two cluster-culled draws a bias where, just before X3.6e, it
+read one per palette mesh in the main pass and one a bias in the mask (ours
+since X3.6d).
 
 The two cheaper levers this entry named beside the palette are both LOOK
 decisions: a bloom quality rung, and a distance cap on the mask, which the
@@ -1952,10 +1911,20 @@ padded query per 8 m patch and then per texel took it down.
   frame down (`docs/rendering.md`'s third rule). It was tested by shrinking the
   starting capacity to four patches and walking Harrowmead through three rung
   switches: buffers grew to 32x, no GPU validation error, every frame drawn.
-  Re-run that if anything about how the patch meshes are made changes — and it
-  is not covered by `npm run parity` or the reference bank. **That re-run is
-  OWED now**: its own condition was met by 3ff0456, which stitched the turf's
-  patches edge to edge instead of skirting them, and the test was not repeated.
+  Re-run that if anything about how the patches' buffers are made changes — and
+  it is not covered by `npm run parity` or the reference bank. Its condition was
+  met by 3ff0456, which stitched the turf's patches edge to edge instead of
+  skirting them, with no re-run, and again by `BABYLON_EXIT.md` X4.6c, which
+  replaced the meshes and their buffers outright (`GrassDraw.growPatches`).
+  **What X4.6c forced, and what that settles**: in a live offline Greyfen round,
+  a run's array cut to one patch and a kind's buffer to `capacity` 1, grown back
+  to 128 patches with group 2 remade, the field whole, no console error. That
+  is the path as it now is, and the one thing that mattered about 3ff0456 is
+  gone with the meshes it stitched. **What it does not settle**: it was one forced
+  growth on one map and desktop, not the original test's walk through three rung
+  switches under a tiny starting capacity on Harrowmead, and a phone has never run
+  either. So the re-run is no longer owed for 3ff0456 and is still owed by any
+  later change to `growPatches`.
 
 ---
 
@@ -2094,13 +2063,29 @@ result decides where `PERF_PLAN.md` Part B stands.
 
 ---
 
-## 51. A reflection probe never draws a FIRE, and nothing says it should not
+## 51. A reflection probe barely draws a FIRE, and nothing says it should not
 
-**Status:** open, cause not found. Seen while checking that the fire fogs a
+**Status:** open, cause not found — **and narrowed by X3.6c**. Babylon's bake
+DID draw a fire, but only far off and only as single dark-red texels: taking
+the `-flame-` merges out of Babylon's lists alone moved **6 texels** in
+X3.6c's cube readback (3 on Sarab, 3 on Cinderhaven) and nothing else.
+**Our renderer's bake leaves every fire out by construction**
+(`BlockHandover`: a `FlameMaterial` merge is in no pass of the bake's — since
+`BABYLON_EXIT.md` X4.4d taken for the fire draw alone, `takeFire`) — and since X3.7c ours is
+the only bake, so Babylon's half of this entry can no longer be read but at
+the tag `exit-babylonworld`; our renderer has drawn every fire of a round
+since `BABYLON_EXIT.md` X4.4d (`render/FlameDraw.ts`), in the main pass and
+the glow's mask and in NO bake, as the brief kept it — so on our path no
+probe draws a fire at all, and the picture moved by those 6 texels against
+Babylon's. What is
+still unexplained is the near case below: a fire stood AROUND a probe draws
+nothing.
+
+Seen while checking that the fire fogs a
 bake against the probe's eye rather than the player's (`FlameMaterial.setEye`).
 A probe's list is `map.visuals`, which holds every block's merged
 `block<x>,<y>-flame-…` mesh, and the fire's fragment writes `opaqueAlpha` for
-exactly this pass — so it is meant to be in the glass. It is not.
+exactly this pass — so it is meant to be in the glass, and up close it is not.
 
 Measured on Coldharbour by cutting one probe's list to a single fire mesh,
 standing it 6 m off the probe at three times its size (bounding radius 15 m,
@@ -2118,4 +2103,1138 @@ light source the glass should show most, and today it shows the lamps beside
 the fire and not the fire. Start where the fire differs from the two that
 draw: its `normal` and `uv` attributes, the vertex stage's displacement, and
 how a frozen `FlameMaterial` builds its effect for a render pass it has not
-drawn in before.
+drawn in before — and now that a far fire does reach a cube, what differs up
+close: the probe inside the fire's sphere, and the tongues built inside out
+(`docs/rendering.md`, the fire). On our renderer the fire has had a program
+of its own since X4.4d (`render/flameProgram.ts`), so a fire could now
+enter our bake — the bake drawing it is that picture change, owed this
+answer, and no step has taken it.
+
+## 52. The exit's "before": Greyfen and Sarab, the desktop at max and the phone at minimum — **the phone's fight on Sarab is CPU in the render, and its look frames on Greyfen are not**
+
+**Status:** `BABYLON_EXIT.md` X0.4's measurements, taken 2026-10-09. Every
+later step of the exit quotes its numbers against this entry. **Greyfen's GPU
+half is MEASURED** (2026-10-14, "The GPU half, measured" below): the phone
+is GPU-bound there once warm. **Sarab's is still inferred.** The GPU-side work
+is deferred until the exit is complete, by the user's call on 2026-10-14
+(`BABYLON_EXIT.md`, "What this plan does not do"); these figures are its
+baseline.
+
+### What was measured
+
+Both devices fought the one fight per map from seed 777: Greyfen
+`7ee089c174427e3d`, Sarab `1cab861b4ea23f7f`, on every run on both. Times in
+ms. "Tick" is the CPU's frame (`frame` span) and "render" the CPU recording
+the draw inside it, both means.
+
+**Desktop, MAX settings** (`bench.mjs --max --runs 3`): the Windows box,
+headless, uncapped, 3440x1440, render scale 1, every ladder at `high`, ground
+relief, FXAA, blur and grain on. Medians of three runs in one session; spread
+is the spread of the mean across them.
+
+| map | part | mean | p95 | 1% low | tick | render | draws | spread |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| greyfen | vantages | 5.72 | 11.7 | 14.7 | 5.09 | 4.65 | 131 | 2.3% |
+| greyfen | path | 5.49 | 11.1 | 16.3 | 4.96 | 4.34 | 184 | 0.5% |
+| greyfen | fight | 7.47 | 15.4 | 23.6 | 7.05 | 5.83 | 350 | 1.1% |
+| sarab | vantages | 3.56 | 7.4 | 11.8 | 3.33 | 2.84 | 181 | 2.1% |
+| sarab | path | 4.16 | 8.2 | 12.5 | 3.82 | 3.16 | 175 | 0.2% |
+| sarab | fight | 11.09 | 13.5 | 17.2 | 10.73 | 8.94 | 614 | 2.0% |
+
+Only one segment was over 8%: Sarab's `heli` vantage, at 9.1%.
+
+**Phone, MINIMAL settings**: the 50 / 13 phone (Android 10 UA, dpr 2.8125,
+832x384, 8 cores, 8 GB), `?bench=<map>` on the deployed build, SAVE captures
+(report v13), render scale 0.5 (backing store 1170x540), cap 60, shadows /
+grass / Trees / volumetrics / glow `low`, GI off, ground relief and FXAA off,
+blur and grain on. **Warm**: the runs back to back, 23:42-00:06 UTC, in the
+order Greyfen, Sarab, Sarab, Greyfen. Each pair of figures is the two runs.
+
+| map | part | mean | p95 | 1% low | tick | render | draws |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| greyfen | vantages | 24.6 / 25.6 | 68 / 73 | 96 / 98 | 8.8 / 9.2 | 6.5 / 6.9 | 125 |
+| greyfen | path | 26.9 / 28.4 | 76 / 85 | 98 / 110 | 8.7 / 9.1 | 6.4 / 6.7 | 133 |
+| greyfen | fight | 28.3 / 31.6 | 69 / 69 | 97 / 94 | 16.2 / 19.4 | 12.2 / 14.9 | 300 |
+| sarab | vantages | 19.2 / 19.3 | 36 / 39 | 64 / 64 | 10.7 / 10.7 | 8.3 / 8.2 | 158 |
+| sarab | path | 20.4 / 20.1 | 46 / 45 | 79 / 77 | 10.8 / 10.8 | 8.1 / 8.1 | 144 |
+| sarab | fight | 31.9 / 30.5 | 37 / 36 | 93 / 57 | 29.2 / 27.8 | 24.1 / 22.8 | 530 |
+
+Sarab's two runs agree within 1.3% on the vantages and the path and 4.5% on
+the fight. Greyfen's agree within 4% and 5%, and 11.6% on the fight's mean
+(the later run followed both Sarab runs), while its fight p95 agrees exactly.
+
+**A COLD run is not the before.** The first Greyfen run, 23:36 UTC from a
+phone that had been idle, measured 16.8 / 19.4 / 22.6 ms (vantages / path /
+fight), and the warm runs took 33-49% longer a frame. It also slowed through its own
+164 s, from 17 ms a frame in its first 30 s to 24 ms in its last, and the
+warm runs began at ~22 ms and never came back. Its capture also states a
+different backing store (1170x618), so its screen state differed too. A
+player plays for longer than a cold run lasts, so the warm figures are the
+before, and every later phone run takes one warm-up run first and throws it
+away.
+
+### What it means
+
+- **The desktop is CPU-bound everywhere, and the render's recording is most
+  of it.** Tick is 89-97% of the frame on every part of both maps, and
+  `render` is 83-91% of the tick. That is the cost the exit exists to move.
+  Its p95 runs at about twice its mean, the bursts X0.3 found in an uncapped
+  GPU-bound stream; read the desktop on its mean and 1% low.
+- **The phone's SARAB FIGHT is the same shape**: tick 28-29 ms of a 30-32 ms
+  frame, render 23-24 ms of it, 530 draws. The exit can move it.
+- **The phone's GREYFEN look frames are not.** Tick is ~9 ms of a ~25 ms
+  frame; most frames land on the 16.7 ms vsync and the rest wait 70-85 ms,
+  four or five refreshes. That is the GPU wall 50 describes, and on this
+  phone it gets worse as it warms. A CPU saving moves the mean little until
+  the GPU half moves, and the shaders port unchanged.
+- **Sarab's look frames sit between the two**: tick ~11 ms of ~19 ms.
+
+### The GPU half, measured (2026-10-14, Greyfen)
+
+Three `?bench=greyfen&gpu` runs on the same phone, back to back at
+03:25, 03:32 and 03:40 UTC, from the `babylon-exit` deployment at
+`3e41c95`. That is after X3.2, whose renderer draws nothing, so the frame is
+X0.4's frame. The settings are the same as above (render scale 0.5, blur
+and grain on). Each capture has `gpu.frameMeasurable: true` and 3,000-4,000
+`gpu.frame` samples, so the unsafe-WebGPU flag took. The fight hash is
+`83e8e74ef36916ba` on all three. It differs from the `7ee089c174427e3d`
+above because the fight changed at X2.2 C6, which landed after X0.4.
+
+The first run is the warm-up and is shown for contrast. "Tick" and "render"
+are as above; "GPU" is `gpu.frame`, the whole command encoder, as a mean
+over its samples.
+
+| part | run | mean | p95 | 1% low | tick | render | GPU | draws |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| vantages | cold | 16.8 | 18 | 33 | 5.9 | 4.8 | 12.4 | 125 |
+| vantages | warm | 28.6 / 26.7 | 78 / 67 | 97 / 86 | 9.5 / 9.2 | 7.3 / 7.1 | 24.0 / 22.0 | 125 |
+| path | cold | 17.6 | 31 | 44 | 6.6 | 5.1 | 14.4 | 133 |
+| path | warm | 32.2 / 29.3 | 86 / 77 | 106 / 102 | 9.4 / 9.2 | 7.1 / 7.0 | 27.4 / 24.6 | 133 |
+| fight | cold | 23.7 | 57 | 106 | 13.5 | 10.5 | 17.6 | 326 |
+| fight | warm | 34.6 / 37.1 | 85 / 93 | 110 / 116 | 17.0 / 17.5 | 13.3 / 13.7 | 27.3 / 29.3 | 333 |
+
+What the figures show:
+
+- **Warm, the GPU is the frame on every part.** `gpu.frame` is 22-29 ms
+  against a tick of 9-17.5 ms. The look frames are GPU at 2.5-3x the CPU.
+  Even the fight, the CPU's worst part, is GPU at 1.6-1.7x.
+- **Warming is THROTTLING, not more work.** The same frames (the same draws,
+  the same vantages) cost about 1.9x the GPU and 1.5x the tick from the
+  cold run to the warm ones.
+- **The stalls are the GPU queue backing up.** In the fight, 1,804 of 2,699
+  frames finished under 20 ms cold and 783 warm, and 403 took over 70 ms.
+  The p50 stays at 17-24 ms because frames arrive in bursts, then the CPU
+  waits on the queue. That is this entry's "70-85 ms waits", now measured
+  as GPU.
+- **`gpu.mainPass` reads 6.1 ms cold and 10.2 ms warm.** That pass draws
+  only the final full-screen quad, which measured 27 µs on the desktop (the
+  grade's, our renderer's draw since `BABYLON_EXIT.md` X5.2c1, in the same pass:
+  the counter keeps its meaning; every pass of the post chain is ours since
+  X5.2d, the ink last, under shape (A) in passes Babylon opened then, so `gpu.frame`
+  and `gpu.mainPass` still read what they read). A
+  tiling GPU's pass timestamps may not bracket what they say, so this is a
+  lead and not a cost: it points at the post chain.
+
+What it means for the exit:
+
+- **The phone's Greyfen frame cannot move until the GPU half does.** The
+  exit's draw-call savings move the tick, and the tick is not what the
+  phone waits on.
+- **So the exit's phone figures are read as two numbers**: the tick, which
+  the exit owns, and `gpu.frame`, which it records. They are never read as
+  the frame (`BABYLON_EXIT.md`, the gate after X3.3c).
+
+### What would settle the rest
+
+- **Sarab's half:** two warm `?bench=sarab&gpu` runs after one warm-up.
+- **Where the phone's GPU time goes:** for when the GPU-side work starts.
+  Short phone captures (one vantage segment is enough), each changing one
+  thing from the settings above: blur off, grain off, render scale lower,
+  shadows off. Each split is read on `gpu.frame`, warm.
+
+## 53. A body's friction is configured at 0.8 and is 0.5 against the whole world
+
+**Status:** open, and a gameplay call rather than a bug fix. Found while
+explaining why Greyfen's physics bank needs 2400 steps (`drop.mjs`'s header).
+
+**Derived from the code:** `PhysicsWorld.buildWorld` gives the static world's
+shapes (every collider box and terrain patch) no material, so they carry the
+default friction of 0.5. Every body's material combines friction by MINIMUM —
+`havok.ts`'s `setMaterial`, which is Babylon's Havok plugin's call for call
+(`BABYLON_EXIT.md` X2.4 kept it, so the physics oracles stayed bit-for-bit). So
+`CONFIG.bots.death.friction` (0.8), which `RagdollSystem`, `DebrisSystem`
+(glass shards) and `BlastDebrisSystem` (rubble) all set, never applies against
+anything static: every body slides on 0.5, which holds on a grade up to about
+27 degrees rather than about 39. Restitution is not affected, because it combines
+by MAXIMUM and the world's is 0.
+
+**Measured** on Greyfen's drop (64 boxes, `CONFIG.bots.death`'s step, damping
+and gravity): with the world at its default, the one body that rocks down the
+east bank sleeps at step ~1536 and ends 1.4 m from where it landed; with every
+world shape given friction 0.8, it sleeps at ~864, about 40 cm higher up the
+bank. Neither run settled by 480. So friction does not cause the rocking, but
+it does decide how far a body slides.
+
+**What would settle it:** decide whether 0.8 is what a body should feel. If
+so, give the world's shapes a material in `PhysicsWorld.buildWorld` (or have
+`havok.ts`'s `setMaterial` combine friction by something other than MINIMUM),
+then watch a few deaths and some rubble on a
+slope, and re-take every `plans/physics-ref/` bank in the same commit, saying
+why. If 0.5 is the feel that shipped, the fix is to set the config to 0.5 and
+say so, so the number stops being wrong.
+
+---
+
+## 54. A netplay drive sample is refused for "speed" after a long frame, and the hull never went that fast
+
+**Status:** open. Found while verifying `BABYLON_EXIT.md` X2.1 and
+pre-existing: none of the code below changed in that step. Not re-run on the
+step's parent.
+
+**Measured** in a netplay round, driving with the main thread stalled 60 ms
+every 1.5 s: **3 refusals for speed (`hullcorrect`) in ~25 s**,
+against none in 391 drive samples of X2.1's unstalled, botless netplay
+round (its C2 commit). After a long frame two drive uploads go out ~7 ms
+apart by `Date.now()`; the server clamps the interval to 1/60 s, so the next
+sample covers 0.84 m in 33 ms, 1.72x the limit. The hull itself never exceeded
+11 m/s.
+
+**Derived from the code:** two things put the error into the sample rather
+than the drive. The timestamp is the SEND time (`time: Date.now()`,
+`src/net/NetSession.ts` ~326), so a stall moves it and not the position. And
+the position it carries is a frame old: `Game.updateNetWorld` calls
+`updateNet` (~8136, which uploads) before `vehicles.update` (~8158, which
+moves the hull), while the timestamp is taken now.
+
+**What would settle it:** stamp a drive sample with the simulation time of
+the frame that produced the position, or upload after `vehicles.update`, and
+re-run the same stalled drive: zero refusals is the fix. Check `move` (the
+body on foot) for the same ordering while there.
+
+---
+
+## 55. Offline, where the player's grenade and rocket LEAVE FROM is read off the viewmodel's joints
+
+**Status:** BOUNDARY SETTLED at `BABYLON_EXIT.md` X2.5a C4a; the analytic
+start point is still open. Offline the round is the simulation core's now, and
+the core reads no node: the throw's and the rocket's start points (and the
+mine's `standableAt` point) are command INPUTS (`GrenadeCommand.origin`,
+`OrdnanceCommand.origin`) the page computes exactly as before — bit-identical
+offline, and the same field a match already gates as a claim. What is left
+below is whether to state them analytically instead, which is now a change to
+what the page submits and nothing else. Found during X2.2, which took every
+other node read out of the simulation. **Since X4.3b the viewmodel is JOINTS**
+(`ViewModel.tree`), and the two points are read out of `RenderCache`
+(`rigJoints.ts`), Babylon's render-id cache reproduced, so what the page
+submits did not move (X4.3b's oracle: the readers' answers and both origins
+bit-identical to the node build over a recorded round) — the owner's decision
+that they stay Babylon's answers until this finding settles them.
+
+**A third drawing deciding an outcome was found beside it, and C4a fixed it
+(D8):** offline, bots HEARD the player's rifle at the viewmodel's MUZZLE
+(`battle.hearGunshot(muzzle, …)`), where the authority hears it at the eye. The
+offline round now hears it where the core resolves it — the command's eye
+origin — and the muzzle reaches nothing but the tracer (`ShotCommand.muzzle`).
+
+**Derived from the code:** `Game.releaseGrenade` starts a throw at
+`playerView.model.throwHandWorld()` and `Game.launchRocket` starts a rocket at
+`playerView.model.muzzleWorld()` — world positions of `ViewModel` joints,
+i.e. a DRAWING (the hand's pose, the weapon's sway and kick) deciding an
+OUTCOME, since the start point is where the flight's first
+collision ray begins. `handAhead` and `launchAhead` floor the point along the
+aim, so a wall at the shoulder is covered, but everything above the floor is
+the picture's. The rifle's `muzzleWorld()` rides the `shot` command too, and
+is harmless: it is the tracer's origin (`ShotCommand.muzzle`) and nothing else.
+The page submits each point as the command's `origin`; in a match the client
+sends it as `origin` and the authority accepts it within a slip of the eye
+(`MAX_ORIGIN_SLIP` for a grenade, `ORDNANCE_ORIGIN_SLACK` for a rocket), so
+online it is a claim, gated, and offline it is trusted.
+
+**What would settle it:** the core already takes the points as INPUT (C4a),
+which was the half X2.5 needed — it cannot call into a view. What remains is
+whether the PAGE should state them ANALYTICALLY off the eye and the aim (a
+fixed offset in the camera's frame, chosen to match today's rest pose) rather
+than off the hand and the muzzle. Measure the change in where a throw lands
+from rest and mid-sway before choosing: a few centimetres at the hand can
+decide which side of a sill a grenade bounces off.
+
+---
+
+## 56. A long sprint in a netplay round collects `speed` corrections, and the body never went that fast
+
+**Status:** open; cause not identified. Found while verifying
+`BABYLON_EXIT.md` X2.2 and pre-existing — the same counts come back on
+f6a9d56-era builds. Related to finding 54 (the drive's twin), which names the
+send-time stamp as one suspect; this one is on foot, with no imposed stall.
+
+**Measured** with the scratch netplay smoke (two headless clients and an
+observer) on Sarab, a client sprinting for a long time at 6–7 m/s: `speed`
+body corrections of 0–0.42 m, one every 0.4–5 s, 0–24 a minute, varying from
+run to run. Botless Coldharbour shows about one, right after the spawn.
+
+**Derived from the code:** `server/validate.ts` allows
+`moveSpeed * sprintMult * SPEED_TOLERANCE * dt` = 4.6 × 1.5 × 1.35 × dt
+horizontally, where `dt` (`Match.onMove`) is the gap between the client's
+`time: Date.now()` stamps (`src/net/NetSession.ts`), clamped to
+[1/`TICK_HZ`, `MAX_MOVE_GAP`]. A sprint at 6.9 m/s has 35% headroom, so a
+correction needs a sample whose distance and stamp gap disagree by more than
+that: a send-time stamp moved by a late frame (finding 54's mechanism), a
+position a frame older than its stamp, or two samples bunched by the timer.
+None is confirmed.
+
+**Narrowed at the X2.5a review** (which bounded a peer's stamps against when
+they ARRIVE, `Match.onStamp`): logging every stamp's lead over its arrival on
+the authority, through a botless Coldharbour, a Sarab `--bots` and a Sarab
+`--heli` smoke (~7,000 samples), the lead never moved by more than **1.6 ms**
+and the bound clipped nothing — while those same runs drew their usual 0–4
+`speed` corrections, as many as the unbounded build did on the same three
+smokes run twice beside it. So it is **not** two samples bunched by a timer,
+nor a stamp drifting from its arrival: the stamps and the arrivals agree. What
+is left of the three suspects is a stamp read at a different moment of the
+frame from the POSITION it is sent with — finding 54's mechanism.
+
+**What would settle it:** log, per refused sample, the client's stamp gap, its
+frame `dt`, and the distance it reported, and see which of the three it is.
+Stamping with the simulation time of the frame that produced the position (54's
+fix) should then be tried against both findings at once.
+
+---
+
+## 57. A corpse's killing impulse is applied while its body is still parked 1 km under the map, so the throw starts at Havok's 100 rad/s spin cap
+
+**Status:** open. Found while building `plans/physics-ref/clients.mjs` for
+`BABYLON_EXIT.md` X2.4 C0, and pre-existing; deliberately NOT fixed there,
+because X2.4 is graded on reproducing the plugin bit for bit and a fix moves
+every corpse. It is a separate commit, with a re-take of `clients.mjs`'s
+bank that says why.
+
+**Derived from the code:** `RagdollSystem.spawn` writes each bone's POSE
+(`WorldBody.pose`; its proxy with it until `BABYLON_EXIT.md` X4.1b) to the joint's world pose and turns
+the body's `teleport` on, which `HP_Body_SetQTransform`s the body onto that
+pose at the next substep's pre-step — and then calls `applyImpulse`
+immediately, in the same call. (Under Babylon's plugin the same thing was
+spelled `disablePreStep = false` on the proxy; the raw port reproduces it bit
+for bit.) Havok still holds the body where it was parked (`park`:
+`(0, PARKED_Y, 0)`), so `HP_Body_ApplyImpulse(id, point, J)` — `point` being
+the chest's drawn world position (the pose rounded to float32) plus `lift` for a round, or each bone's pose
+for a blast — takes its lever arm from 1 km below the map's origin. The LINEAR velocity is
+right (an impulse's `J / m` does not depend on the point); the ANGULAR one is
+`r x J` with `|r|` of a kilometre. The teleport that follows changes the
+position and keeps the velocity.
+
+**Measured** on Coldharbour (the scratch probe behind `clients.mjs`'s
+`probe`, one stand-in rig at the first flag, read through
+`HP_Body_GetAngularVelocity` the instant the corpse is offered, and again
+after one substep), against the same offer with every bone teleported onto
+its proxy BEFORE the impulse:
+
+| death | chest spin at the offer | after one substep |
+| --- | --- | --- |
+| rifle round, 34 damage, as shipped | 99.35 rad/s | 22.8 rad/s |
+| the same, teleported first | 1.01 rad/s | 1.33 rad/s |
+| frag, 70 damage, as shipped | 100.00 rad/s | 11.1 rad/s |
+| the same, teleported first | 19.6 rad/s | 4.0 rad/s |
+
+`HP_World_GetSpeedLimit` reads 200 m/s and **100 rad/s** — Havok's defaults,
+since nothing sets a limit — so the blast's figure is the cap and the round's
+is just under it. The linear velocities agree to every digit. The constraints
+and damping take most of it out in the first substep, which is presumably why
+nobody has seen a corpse spin: the first frame of every death carries a spin
+seeded from the map position rather than from `impulse.spin` and `lift`, and
+`lift`'s "the fold falls out of the geometry" is not what is folding the body.
+
+**What would settle it:** apply the impulse after the bodies are where it
+assumes — teleport each bone onto its pose before `applyImpulse` (an immediate
+`HP_Body_SetQTransform`, which is what `PhysicsWorld.park` already does for a
+parked body; the probe above did it through the plugin), or defer the impulse
+to `afterFirstStep` — then watch rounds and blasts kill bodies on open ground and
+check the fold still reads; `impulse.spin`, `lift` and `blast.spin` were tuned
+against the bug and may want re-tuning. Re-take `clients.mjs`'s bank in the
+same commit.
+
+---
+
+## 59. A glass shard and a rubble chunk do not sink: the sink lowers a pose the next substep writes back over
+
+**Status:** open, pre-existing and small. Found while porting the two pools'
+poses into arrays at `BABYLON_EXIT.md` X2.4 C5, which kept the behaviour bit for
+bit (the sink used to be written on the mesh, which the solver's sync overwrote
+just the same).
+
+**Derived from the code:** `DebrisSystem.update` and `BlastDebrisSystem.update`
+sink an expiring burst by `y -= drop * dt * 8` each frame, `drop` ramping to 0.5
+over `shardSink` / `debris.sink` (1.2 s) — written as an accumulation, which
+would take a piece about 2.4 m down through the floor before it is released.
+But a sinking piece's body is still DYNAMIC and its pool still answers
+`physicsActive()`, so the engine is stepped and the substep's sync writes
+Havok's resting height back into the pose before the subtraction can build up.
+What is drawn is the drop accumulated SINCE THE LAST SUBSTEP below where the
+piece lies, and never more. The step is a fixed 1/60 with the remainder
+carried (`PhysicsWorld.update`), so how much that is depends on the frame rate:
+- **at 60 Hz and below** every frame takes at least one substep, so it is one
+  frame's subtraction, `drop * 8 * dt` — at the full `drop` of 0.5 that is
+  `4 * dt`: **0.0667 m at 60 fps, 0.133 m at 30, 0.2 m at the 0.05 s clamp**;
+- **above 60 Hz** some frames take no substep and their subtractions pile up
+  until the next one, so it is `4 *` the frame time since the last substep —
+  about a substep's worth, bounded by `4 * (1/60 + dt)`, and 0.083 m
+  (three frames' worth) at a steady 144 Hz.
+
+**Measured** (Coldharbour, the pools stepped by hand at exactly 1/60, a glass
+burst and a rubble burst on earth): the drawn height sits at most **0.0667 m**
+under Havok's — `0.5 * 8 / 60`, on the last frame before each release — for a
+shard and a chunk alike, which is the 60 Hz case above. Then the piece vanishes
+from where it was lying.
+
+**What would settle it:** make the sink accumulate — take the bodies out of the
+simulation when the sink starts (static, as a frozen corpse is) and lower the
+pose from there, or keep an offset beside the pose that the view adds — and
+watch a burst expire, which is the first time anybody will have seen the sink
+(rubble is drawn in a round only since the commit after `BABYLON_EXIT.md`
+X4.4c, which took its size gate's latch out).
+
+## 60. A helicopter a PERSON flies takes no crash damage — in a match always, and offline since the hull was predicted
+
+**Status:** FIXED at `BABYLON_EXIT.md` X2.5a C4b FIX (the commit after
+`22bc7ec`), before C4b landed — offline and in a match by one rule. Was:
+pre-existing in netplay and newly true offline, made visible at X2.5a C4b,
+which moved the offline player's hull onto the page's prediction exactly as a
+match's client has it. Bots were never affected.
+
+**The fix** (`src/sim/reportedLanding.ts`, `docs/vehicles.md` "A person's
+landing is charged off their REPORTS"): the core asks of every ACCEPTED `drive`
+report the jolt `Vehicle.update` asks of a stepped hull — the plank under the
+reported position banded off the previous sample's tracks (`Vehicle.restAt`,
+`standOnGround`'s own `plankUnder` factored out), the plank's rate if the
+reported centre stands on it and the report's own vertical rate otherwise, the
+change across the sample clamped to `joltLimit`, charged by `crashCost` and
+spent after the hulls move through the same `Vehicle.crash` (a `shell`, so the
+burn, the crew and the person in the seat follow as from any blow). The
+interval is the reporter's clock: `DriveCommand.time`, which `Match` fills from
+the client's `DriveMessage.time` (the `Date.now()` stamp `NetSession` puts on
+every `drive`) on the peer's bounded clock, `(time - behind) / 1000` — offline
+as in a match since `BABYLON_EXIT.md` X2.5c C4, when the page's own `hullClock`
+went with its trusted core; `corecheck`'s bare core states its own. Bots, `simulate` (all seven `--events` md5s)
+and the seven bench hashes are unmoved.
+
+**Measured after** (`npm run corecheck`, `sarab/crash`, botless Sarab; hull
+points lost of 340; bot = `Vehicle.update`'s own charge, rep60 = reported every
+step, rep20 = the same flight uploaded at `INPUT_HZ` on 8 wires of whole-ms
+stamps read up to 1.5 ms late, exact = those uploads on an exact clock, match =
+wire 1 through `Match` with a fake peer):
+
+| flight | bot | rep60 | rep20 | exact | match |
+| --- | --- | --- | --- | --- | --- |
+| hard: full down from 15 m | 129.1 | 129.1 | 108.5..128.9 | 128.9 | 128.9 |
+| firm: 95% down | 77.3 | 77.3 | 77.2..97.4 | 77.2 | 77.2 |
+| 80% down (under the threshold) | 0 | 0 | 0 | 0 | 0 |
+| gentle: 30% down | 0 | 0 | 0 | 0 | 0 |
+| late flare: full up at 0.6 m | 70.3 | 70.3 | 102.0..143.3 | 122.3 | 122.3 |
+| moving: full down at speed | 129.1 | 129.1 | 108.6..128.9 | 128.9 | 128.9 |
+| low cruise 1.5 m over 8 m of uneven ground, a climb, a descent, a gentle landing | 0 | 0 | 0 | 0 | 0 |
+
+rep60 is the bot's charge to 6e-11. Offline in the browser (Sarab, the
+player's own helicopter, `scratchpad/c4bfix/heli.mjs` — `c4b/drive.mjs`'s
+script): the hard landing costs **155.92**, which is exactly what the page's
+own predicted hull's crash check computes on the same flight (155.92, to
+1e-10) — not C4a-2's 129, because the C4b trajectory lands ~14 m further on
+and higher (y -2.31 against the pad's -2.60), off the C4a-2 track from about
+frame 880; the gentle landing and a long low level run cost 0. In a live match
+(`netplay.mjs --map sarab --heli`, botless, real keys): the hard landing cost
+118.33 on the authority and B's client showed 118.33; the climbs, the level
+runs, a descent in the air and two gentle landings cost 0; no `hullcorrect`.
+
+**What is left, measured:** at `INPUT_HZ` the charge is moved by the CLIENT's
+clock — `NetSession` stamps a whole-ms `Date.now()`, and a stamp read a
+millisecond late moves a 50 ms interval's rate a few percent (±21 points at
+8 m/s; the "exact" column is what a physics-clock stamp would give) — and a
+descent whose rate changes inside its last upload interval is charged off the
+rate before the change, so a late flare is charged HIGH (122 against 70; it
+cannot err low, a descent cannot steepen past `descentRate`). A stamp off the
+predicted hull's own step clock (sum of the frame `dt`s) would take the first
+away; the second is the sampling's.
+
+**And three holes the X2.5a review found in the fix, closed there:** the
+interval was the client's RAW stamp, so a client adding a second to every
+stamp landed free (0 of 129) and one crowding a stamp a millisecond onto the
+last pinned the next jolt at `joltLimit` and burned the hull (340 of 340) — the
+stamps are now bounded against when they arrive (`Match.onStamp`) and a gap
+under half an upload interval is no rate (`SimCoreOptions.reportGap`); and a
+refused sample in a full-rate descent was charged as a landing in mid-air (70
+in `corecheck`'s case, up to ~130) — a correction that stops the hull is now a
+rebase (`DriveMessage.resync`), and a touchdown right after one still pays.
+`npm run corecheck`'s `sarab/clock` and `sarab/break`; what stays trusted is in
+`docs/multiplayer.md`, "What is NOT defended against".
+
+**Derived from the code:** the crash is one check inside `Vehicle.update`'s
+flight branch — `jolt - flight.crashJolt`, spent as a `shell` through
+`takeDamage`. A person's hull runs `update` only as a PREDICTION, whose
+`takeDamage` refuses every blow (`Vehicle.predicted`), and the simulation's
+copy of it is POSED from the reports (`updateRemote`), which has no crash check
+at all. So the landing is computed on the one copy that may not be hurt and
+never on the one that may. A bot-flown helicopter is `update`d by the
+simulation itself and crashes as designed.
+
+**Measured** (Sarab, the player's own helicopter, a fixed 1/60 step, the same
+scripted inputs on both builds — `scratchpad/c4b/drive.mjs`): climbed to 15 m,
+flown, then full collective-down to the ground. At C4a-2 (`159cec3`, the core
+stepping the hull from raw input) the landing cost **129** of its 340 (to
+211.01); at C4b, **0**.
+
+**Why not simply put the check in `updateRemote`:** the authority poses a hull
+at 60 Hz off reports arriving at ~18 Hz, and the airborne branch of
+`standOnGround` extrapolates a step past the reported height, so the vertical
+rate it measures swings frame to frame (the posed copy's `speed` visibly
+alternates sign in the same trace) — a `jolt` off that would crash helicopters
+in level flight. Offline the reports arrive every step and would be clean, but
+one rule must hold on both sides.
+
+**What was proposed, and is what landed:** a crash test the authority can make off the REPORTED
+motion — e.g. the descent rate over the last accepted samples at the moment the
+reported height meets the plank (`validateDrive` already holds the previous
+accepted sample) — asserted against the bot's `update` figure on the same
+landing, then the same rule offline for free.
+
+---
+
+## 61. What is left of the desktop's GPU rise since our renderer took the blocks (X3.3c) and the landform (X3.5)
+
+**Status:** open, narrowed twice. Its first suspect, the draw ORDER, is
+settled and fixed (2026-10-19, below); its second, the CULL's compute
+passes, is priced and acquitted (2026-10-20, below). What remains is
+measured and not explained; the next suspect is the zero-area remainder
+every block and landform draw hands the GPU.
+Found by the whole-step review of `BABYLON_EXIT.md` X3.3 (2026-10-14). It is
+GPU-side work, so it waits with the rest of that until the exit is complete
+(`BABYLON_EXIT.md`, "What this plan does not do"; finding 52).
+
+### What was measured
+
+At X3.3c, on the desktop at `--max` (`BABYLON_EXIT.md` X3.3c, "Measured"),
+Greyfen's camera PATH got slower while its tick got faster: the frame mean
+rose 9% while the tick fell 14%. `?gpu` (`--max --gpu --runs 2`, before and
+after) put it on the GPU: `gpu.frame` 5.31 to 5.77 ms on the path, against
+5.60 to 5.55 on the vantages and 5.95 to 5.99 in the fight. The after
+includes the cluster cull, which no before had, and no timer separates the
+cull from the draws.
+
+**And again at X3.5, on Cinderhaven** (`BABYLON_EXIT.md` X3.5, a paired,
+alternating A/B with `?gpu`): taking the landform raised `gpu.frame` 4.38 to
+5.55 ms on the vantages and 5.19 to 6.27 on the path while the fight's tick
+fell 12.40 to 10.30. Drawing the roads before the floor (0dd2d09) took back
+part of it; 0.8-0.9 ms of `gpu.frame` remained.
+
+### The order, settled
+
+Until 2026-10-19 the blocks were drawn at the END of group 0's opaque and
+alpha-tested lists and the landform ahead of the alpha-tested list, so the
+floor behind every building was shaded and then painted over: `Game`'s
+front-to-back sort no longer reached either. X3.3a had refused the group's
+START because the sky dome writes no depth and draws first; but
+`"beforeAlphaTest"` is already after the dome, so the blocks and the scatter
+now draw there, AHEAD of the landform (`render/WorldBlocks.ts`). A paired,
+alternating A/B against afa0327 (`bench.mjs --max --gpu --runs 2`, two
+invocations a side, ABAB on one dev server, 3440x1440; medians of four runs,
+the range beside) took `gpu.frame` down on every path and fight:
+
+| map | part | `gpu.frame` before | after | mean frame before | after |
+| --- | --- | --- | --- | --- | --- |
+| Greyfen | path | 6.05 (5.99-6.11) | 5.70 (5.54-5.83) | 6.38 | 6.08 |
+| Greyfen | vantages | 5.69 | 5.47 | 6.00 | 5.79 |
+| Greyfen | fight | 6.86 | 6.48 | 7.50 | 7.07 |
+| Sarab | path | 4.22 (4.17-4.26) | 3.95 (3.84-3.95) | 4.70 | 4.35 |
+| Sarab | vantages | 3.84 | 3.66 | 4.16 | 3.97 |
+| Sarab | fight | 4.32 | 4.05 | 9.04 | 9.15 |
+| Cinderhaven | path | 5.98 (5.89-6.03) | 5.74 (5.73-5.76) | 6.44 | 6.10 |
+| Cinderhaven | vantages | 5.38 | 5.32 | 5.80 | 5.69 |
+| Cinderhaven | fight | 5.69 | 5.57 | 7.60 | 7.70 |
+
+The largest single holds were Greyfen's `crossing` (6.13 to 5.52) and Sarab's
+`alley` (4.02 to 3.47); Cinderhaven's `ground` and Greyfen's `canopy` and
+`ground` rose 1-2%, inside their ranges. The draws are identical and so are
+the fight hashes. The two fights on the CPU-bound maps (Sarab, Cinderhaven)
+moved +1.3%, inside the runs' spread.
+
+### The cull, priced (2026-10-20)
+
+`gpu.cull` (report version 18, `render/PassTimer.ts`) stamps the cluster
+cull's and the instance cull's compute passes at their own start and end
+under `?gpu` and sums them. `bench.mjs --max --gpu --runs 2`, 3440x1440 on
+the desktop, medians of the two runs' means (their own samples beside, in
+the same order as the frame's):
+
+| map | part | `gpu.cull` µs | samples | `gpu.frame` ms | samples | share |
+| --- | --- | --- | --- | --- | --- | --- |
+| Greyfen | vantages | 27 | 21 | 5.41 | 21 | 0.5% |
+| Greyfen | path | 27 | 17 | 5.68 | 17 | 0.5% |
+| Greyfen | fight | 34 | 144 | 6.41 | 144 | 0.5% |
+| Sarab | vantages | 29 | 43 | 3.68 | 44 | 0.8% |
+| Sarab | path | 28 | 23 | 3.93 | 23 | 0.7% |
+| Sarab | fight | 32 | 1335 | 4.05 | 900 | 0.8% |
+| Cinderhaven | vantages | 49 | 13 | 5.36 | 15 | 0.9% |
+| Cinderhaven | path | 46 | 23 | 5.72 | 23 | 0.8% |
+| Cinderhaven | fight | 66 | 947 | 5.56 | 898 | 1.2% |
+
+**The cull is not it.** The WHOLE cull is a quarter of the 0.11 ms left on
+Greyfen's path and under a tenth of the ~0.6 ms left on Cinderhaven's —
+and it ran before X3.5 too, so only the landform's clusters are X3.5's. It
+scales with the clusters (Cinderhaven cuts 18,928, Greyfen 5,612) as it
+should. `gpu.frame` read within 0.03 ms
+of 39d84ea's medians on every path, so the timer moved nothing it measures.
+X3.5b makes the cull bigger (the instances expanded into their clusters);
+this is its BEFORE. Its AFTER (`BABYLON_EXIT.md` X3.5b): Greyfen 0.027 to
+0.095 ms on the vantages, 1.7% of the frame, Harrowmead 0.029 to 0.085,
+Sarab 0.029 to 0.041 — still not it; since the survivors' list (e07ae7c)
+0.049-0.057 ms on all three.
+
+### What is left
+
+- **Greyfen's path** got back 0.35 ms against X3.3c's 0.46 ms rise, the
+  sessions apart; the cull is 0.03 ms of the rest.
+- **Cinderhaven** got back 0.24 ms on the path and 0.27 at the `crossing`,
+  of the 0.8-0.9 X3.5 left; the cull is 0.05 ms of it.
+- **The next suspect is the REMAINDER of each plain draw.** The blocks and
+  the landform are drawn over their group's WHOLE index range every frame,
+  the survivors at the front and index 0 three times over after them, never
+  indirect (the Intel laptop dropped indirect draws, `docs/rendering.md`) —
+  so every frame the GPU walks every triangle of the map, culled or not, as
+  zero-area triangles, where Babylon drew only the meshes it kept. Measured
+  2026-10-20 at max settings, what the draws cover a frame: Cinderhaven
+  5,771,289 block indices and 1,270,212 landform (2.35M triangles), Greyfen
+  1,788,246 and 332,640 (0.71M); X3.3c's rise came with Greyfen's blocks
+  and X3.5's with Cinderhaven's landform. **How to settle it**: on the
+  desktop, whose NVIDIA driver draws indirect faithfully, a URL diagnostic
+  that draws the blocks and the landform INDIRECT at their survivors'
+  count, A/B against the plain draw with `gpu.frame`. X3.5b's fold kept
+  the blocks and the landform on that plain draw, and since 2026-10-24
+  NOTHING of the world is drawn or dispatched indirect — the scatter is a
+  plain draw to a bound the CPU computes, its tail of zero entries clipped
+  before a read, and its `expand` direct (`docs/rendering.md`) — so the
+  answer is still owed and still theirs.
+- **On that Intel laptop `?babylonworld` read a bit FASTER than our path**
+  (the user, 2026-10-24, by eye: unmeasured). A capture is owed before it
+  is a finding of its own — `?bench=<map>&gpu` against
+  `?bench=<map>&gpu&babylonworld`, alternated, on Greyfen, Kurenai and
+  Cinderhaven, Chrome started with `--enable-unsafe-webgpu` so
+  `gpu.frameMeasurable` is true. **Since X3.7b the switch is gone with
+  Babylon's world meshes**: the Babylon side of that A/B is a deploy of the
+  tag `exit-babylonworld` (X3.7b's parent), measured against the current
+  build in the same session. The walk above is one suspect there; the
+  scatter's non-indexed pulled draw, the culls repeated in every view, and
+  the indirect path's validation (which the scatter's plain draw removed: a
+  capture of a build before e172f88 prices it) are the others.
+- **The phone's `gpu.frame`** on Greyfen and Cinderhaven (finding 52) is the
+  number this matters for; the desktop only says where to look.
+
+## 62. Sections of grass flicker on an Intel Xe-LPG laptop, and have since before the Babylon exit
+
+**Status:** open; one observation, nothing measured. Reported 2026-10-18 by
+the user on the laptop whose buildings flickered from dropped INDIRECT draws
+(`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
+INDIRECT"). It was parked then as minor.
+
+### What was observed
+
+"Sections of grass" blink out on that laptop (Intel Xe-LPG, Chrome), and the
+user dates it from before the exit work began. The buildings' flicker is
+fixed, and so is its trees' (every tree at once, 2026-10-24): that laptop's
+A/B named the scatter's indirect DRAWS, now drawn plain (`docs/rendering.md`,
+the same section). So a section of GRASS still going on a build after
+071a95e is this finding's alone.
+
+### What is derived from the code
+
+It is NOT the same cause, or not by the same door: the grass draws nothing
+indirect. **It stopped being Babylon's thin instances at `BABYLON_EXIT.md`
+X4.6c (4a16b5f)**, which the report predates: it is our renderer's now
+(`render/GrassDraw.ts`), a run of one index buffer per former patch mesh,
+`drawIndexed` with a patch an instance, the patches chosen per frame around the
+eye by `systems/GrassSystem.ts` and written end to end into one storage buffer
+per kind (`queue.writeBuffer`, ahead of the frame's draws), a run with no
+patches simply not drawn. A SECTION going is the shape of a patch, so the one
+suspect left of the two this entry first named is the per-frame choice of which
+run draws a patch; the other, Babylon's thin-instance buffer being rewritten
+while that device reads it, no longer exists. That is still a guess from the
+shape, not a reading. **So a build's date now says something**: a flicker gone
+on a build after 4a16b5f was Babylon's path and closes this; one still there is
+in what the two paths share, the choice of patches or that device's vertex
+stage over them, or in the new upload.
+
+### How to settle it
+
+- **Ask what a section is**: a square patch of the field, standing still or
+  only while moving, near or far.
+- **A diagnostic switch that holds the patch choice fixed** (the runs and
+  their patches' buffer written once, as `?cullonce` did for the blocks):
+  if the flicker stops, it is the rewrite; if not, it is the draw.
+
+## 64. The desktop's D3D12 device hangs under the uncapped 3440x1440 benchmark, before X3.6a as after it
+
+**Status:** open; measured 2026-10-23 and 2026-11-04 on the desktop (the RTX box,
+Chrome's Dawn on D3D12), cause unknown. **The newest reading says the tree is not
+what provokes it** ("The paired test"), and **since `BABYLON_EXIT.md` X5.4i the
+game answers it with a reload to the menu** ("What a player gets").
+
+### What was measured
+
+A watchdog over the benchmark's own workload (`?bench=<map>&gpu`, a fresh
+page a run, `bench.mjs`'s `--max` settings, uncapped, 3440x1440, nine runs
+back to back in one headless browser: Greyfen, Harrowmead, Sarab three times
+over) caught runs that stop drawing for good: Dawn reports
+`ID3D12Device::GetDeviceRemovedReason ... DXGI_ERROR_DEVICE_HUNG`, Babylon
+"WebGPU context lost ... successfully restored", every later `mapAsync`
+fails on the lost device, and no frame is drawn again. At the parent of
+X3.6a (a78a4eb) 6 of 9 runs hung, on all three maps; at 4fd2e85 (X3.6a) 4 of
+9, on Greyfen and Harrowmead. A run hangs anywhere from frame 137 to 7,374.
+The same session's ordinary instruments mostly pass (`bench.mjs --runs 3`
+completed nine of nine more than once), which is why it reads as a flake
+there: `bench.mjs` waits 40 minutes before it says so, and `gate.mjs` dies
+on an empty frame list.
+
+### What is derived
+
+A device HUNG is the GPU running one piece of work past the driver's timeout
+(TDR), not a validation error. That it happens without X3.6a's shadow passes
+puts it in work both builds do; the forest maps' scatter list and the
+3440x1440 max-settings frame are the first suspects, the machine's state that
+day (a long session of uncapped runs) the third.
+
+**At 1920x1080 it still hangs** (the same loop at 4fd2e85, 2026-10-23): 4
+of 9 runs, Greyfen, Harrowmead and Sarab each — so it is not the 3440x1440
+canvas's fill. Sarab hanging there, a map whose scatter list is a sixth of
+the forest maps', weighs against the list as well.
+
+**Capped it still hangs** (the same loop at 4fd2e85 through `launchClient`'s
+browser, the frame held to 60, 3440x1440): 4 of 9 runs, all three maps, one
+of them 27 s in. So it is not sustained load either. Every reading taken —
+before and after X3.6a, full size and 1080p, uncapped and capped — hangs
+about half the runs, which points at the machine's state rather than at
+anything a run draws.
+
+**And it hangs with OUR RENDERER OUT of the frame** (`?babylonworld`, the
+same loop at 4fd2e85: nothing taken, Babylon drawing every block, the floor
+and the world's shadow maps through its generators — `ours: false` in every
+dump): 5 of 9 runs, all three maps. So the hang is not in anything the
+Babylon exit has drawn, X3.6a or earlier; it was in what Babylon still drew
+then, or in the machine. (`?babylonworld` went at X3.7b; that control is a build
+at the tag `exit-babylonworld` now. X3.7b's and X3.7c's own X0.3,
+3440x1440 uncapped, are in `BABYLON_EXIT.md`: X3.7c's eighteen runs, three a
+side on Greyfen, Coldharbour and Cinderhaven, completed with none hung.)
+
+### The paired test (2026-11-04, X4.6b's review)
+
+X4.6b's reviewer lost the device in 12 of 16 short runs on the AFTER tree against 2
+of 4 on the BEFORE (a269bfb): 12:45 to 13:03 that day, unpaired, the same script
+retried with no gap until one came back clean, and an earlier run's idle Chromium
+tree still alive. That could have meant the step harms a machine, so it was paired:
+a fresh process each run, **alternating** BEFORE then AFTER at 7097196, the same
+rows in the same order on Coldharbour (`ring-stones`, `ring-flown-far`,
+`ring-behind-field`), a hard limit on each, no other Chromium or Node, the device-lost
+line counted:
+
+| arm | BEFORE lost | AFTER lost |
+| --- | --- | --- |
+| the reviewer's own script, the named rows alone, 8 s between runs | 0 of 10 | 0 of 10 |
+| the bank's loop and nothing else, the same rows | 0 of 10 | 0 of 10 |
+| the bank's loop over Coldharbour's whole order up to the last of them, 42 rows | 0 of 5 | 0 of 5 |
+| the reviewer's script, no gap between runs, as it first ran | 0 of 5 | 0 of 5 |
+| the same beside an idle tree on purpose: a Coldharbour round, render loop stopped, its device alive | 0 of 5 | 0 of 5 |
+| the whole bank, 133 rows (132 at the BEFORE), through the harness's own stops at the AFTER | 0 of 2 | 0 of 2 |
+
+**So device loss is not more frequent on the AFTER: 0 of 37 against 0 of 37.** A short
+named-row sequence does not provoke it either (0 of 30 a side), and neither does the
+bank's order. What the review saw belonged to that hour rather than to a tree: its last
+loss is at 13:03, and its five `pipelines.mjs` runs from 13:06 on were clean, on the
+same tree. An idle tree with a LIVE device did not bring it back; one left by a real
+hang was not tried, there being no way to make one without a hang. All 0 of 37 can say
+about a rate is that it is under about 8% on these runs (95%, one-sided) against
+the review's 14 of 20, so a small difference between the trees is not excluded. The box
+had been up 288 hours, driver 610.88, and **the fresh boot below has still not been
+tried**.
+
+### What a player gets
+
+**Since `BABYLON_EXIT.md` X5.4i, a reload to the menu.** Until then it was nothing:
+the frame stopped for good with no message (Dawn's `DXGI_ERROR_DEVICE_HUNG` and
+Babylon's "WebGPU context lost" warnings on the console, Babylon's "successfully
+restored", then "A fatal error occurred during WebGPU creation" and "Device failed at
+creation", and the frame counter never moving again — held at 397 in `deploy` over
+120 s of polling, the page visible and focused, `evaluate` answering), and only a
+reload got out. Now the device is the game's (X5.4h), and its `lost` is answered by
+the page (`Game.deviceLost`, `docs/game.md`, "A lost device"): the loop stopped, our
+renderer torn down, and the page reloaded to the menu with a one-line notice — a
+second loss inside a minute shows the boot's "No graphics device" plate instead. What
+is still open here is the HANG itself, which no answer to it touches, and whether a
+player's own TDR is common enough to earn more than a reload: survived in place, the
+round kept, is `FINDINGS.md` 74. The bank's tools stop on it (`harness.mjs`,
+`VERIFYING.md`), the game's own console line among the ones they hear since X5.4i.
+
+### How to settle it
+- A fresh boot of the machine, then the loop again (the scratch watchdog,
+  or plainly `bench.mjs greyfen harrowmead sarab --max --runs 3` twice): the
+  benchmark completed run after run on this box until 2026-10-23. If it
+  hangs after a boot, the driver (`ref/mode.json` names the one the bank was
+  taken on) is the next thing to move.
+- Only if a fresh box hangs: the same loop at X3.5b's parent, before the
+  scatter list.
+
+
+## 65. The building card gives up on the reflection bake when the irradiance volume is slow to converge
+
+**Open, measured 2026-10-24 during `BABYLON_EXIT.md` X3.6c, and older than
+it.** `Game.updateBakeWait` counts every frame `bakePending` does not fall
+toward `CONFIG.graphics.reflection.drainStallFrames` (120) — including the
+frames the bake's GATE holds it (`setBakeGate`: `gi.converged` and the
+shadows' `ready`), when nothing has been released and nothing can fall. So a
+first install whose volume takes more than 120 frames to converge gives up
+on the whole bake ("[reflection] giving up on the bake with 1 of 1 probe(s)
+outstanding — no progress for 120 frames") and the probes bake in the round,
+which is the frame the wait exists to keep out of it.
+
+### What was measured
+A per-frame timeline of Greyfen's install (`?bench=greyfen`, max settings,
+3440x1440), both trees in one browser, three runs a side: on every run the
+queue waited on `gi.converged` alone once it was queued — the shadows and,
+on X3.6c's side, `ProbeBake.ready` were open on the frame it was queued. The
+give-up fired once, on the PARENT tree (aef7328), on a cold first run; X3.6c's
+own first run reached 101 stalled frames before the volume converged and the
+probe baked.
+
+### How to settle it
+Count toward the stall only the frames on which the gate is OPEN, leaving
+`drainCapMs` (90 s) as the backstop for a gate that never opens; then the
+same timeline on a cold first install of each map with water or glazing.
+
+---
+
+## 66. On the phone the forest maps read heavier at the end of Phase 3 and Sarab does not
+
+**Open, measured 2026-10-30 and 2026-10-31** — `BABYLON_EXIT.md` X3.7c's
+FOLLOW-UP reading has the tables, the settings and the sessions. On the
+deployed X3.7c build (c4d3021), one `?bench=<map>&gpu` run a map, Harrowmead
+reads heavier on both the CPU and the GPU than at either earlier protocol
+reading on the same phone, Greyfen likewise, and Sarab level with both. Tick
+/ `gpu.frame` in ms, the segment groups' means:
+
+| map | part | 2026-10-21 (3b9be6c) | 2026-10-23 (d763327, list) | 2026-10-31 (c4d3021) |
+| --- | --- | --- | --- | --- |
+| Harrowmead | vantages | 5.61 / 14.6 | 4.46 / 12.0 | 6.78 / 17.3 |
+| Harrowmead | path | 6.47 / 18.0 | 4.39 / 11.9 | 7.02 / 19.6 |
+| Harrowmead | fight | 11.13 / 20.4 | 9.88 / 15.0 | 12.30 / 20.1 |
+| Sarab | vantages | 6.28 / 11.3 | 5.79 / 10.8 | 6.01 / 11.1 |
+| Sarab | path | 6.22 / 11.1 | 5.06 / 11.2 | 5.89 / 11.5 |
+| Sarab | fight | 18.34 / 15.6 | 16.80 / 11.1 | 18.36 / 13.1 |
+
+Greyfen's vantages: 4.71 / 13.2, 4.04 / 12.0, then 5.46 / 14.7 on 2026-10-30
+(the 10-31 run's canvas was stale; the 10-30 run's settings, shadows `medium`
+and FXAA on, read level with the protocol's on every look part).
+
+### What is measured, and what is not
+
+- **The size is not priced.** The phone moved 11-25% under unchanged code
+  between 2026-10-21 and 10-22 (`BABYLON_EXIT.md`, the work list's note), so
+  Harrowmead's +8-21% against 10-21 could be the phone alone, and its
+  +24-65% against 10-23 measures from the session that ran lowest.
+- **The PATTERN is the reading.** Sarab ran last in all three sessions and
+  reads level in all three, while both forest maps read heavier — a device
+  state moves every map. Two sessions (10-30 and 10-31) agree on
+  Harrowmead's vantages to 2%.
+- **The forest maps are the ones with the scatter**: 83,846 records on
+  Greyfen, 59,995 on Harrowmead, 9,638 on Sarab (X3.5b's note). Most of the
+  changes between the readings touch it — the list's landing (e07ae7c), the world's
+  cascades and the foliage's map ours (X3.6a), the lamps' atlas (X3.6b), the
+  scatter drawn plain with a CPU-computed bound per dispatch (e172f88: 25-35
+  us of desktop CPU a dispatch, and each draw spending its whole bound,
+  1.004-1.20 of the survivors, where the indirect draw spent the count), and
+  X3.7's cut. **Derived, not measured**: none of these was read on the phone
+  alone, and the desktop read e172f88 level (`gpu.frame` 0.984-1.035).
+- **Also between the readings**: Chrome 155 to 156.
+
+### How to settle it
+
+One session, alternated, two runs a side, Harrowmead and Sarab: the X3.7c
+build against d763327 (or e07ae7c, the list as it shipped). If Harrowmead
+moves and Sarab does not, it is code; then halve — X3.6a (4fd2e85), and
+071a95e, which still carries `?scatterindirect` (the scatter indirect
+exactly as before e172f88) for an A/B inside one build. If e172f88 is it, the
+fix is per device, since the Intel Xe-LPG laptop needs the plain draw
+(`docs/rendering.md`, "NOTHING OF THE STATIC WORLD IS DRAWN OR DISPATCHED
+INDIRECT").
+
+## 69. `depth.mjs glass` throws: the `GLASS_DEPTH_UNITS` sweep owes a port to our glazing
+
+**Open since `BABYLON_EXIT.md` X4.6e** (recorded by its review). The mode
+reads Babylon's glazing MESHES (`PaneGroup.mesh`, a field gone since X5.3e, `computeWorldMatrix`, its
+bounding box) and hides the world by them; a round's glazing is our renderer's
+since X4.6e (`GlassDraw`, no mesh made of it), so the mode throws "owes a
+port" rather than measure nothing. The other mode, `zoffset`, is RETIRED
+(`BABYLON_EXIT.md` X6.1c's review): its subject, the offsets Babylon's
+`OutlineRenderer` drew the ink hull at, is no pass of this game since the scene
+stopped rendering (X5.4f), and its rig cloned a cel material, a `MaterialKey`
+since X6.1c, so it throws before it starts, naming why. It is not owed a port.
+`plans/webgpu-ref/README.md`, `VERIFYING.md` and `docs/rendering.md` still
+quote the sweep's table, which stands as measured but cannot be re-taken.
+
+### What is derived from the code
+
+- The panes' bias is now a pipeline state of ours (`GlassDraw`'s `depthBias`,
+  from the same constant), so the number the sweep re-derives still decides
+  the picture; only the instrument is gone.
+
+### How to settle it
+
+Port the mode to `GlassDraw`: the group's record (`PaneGroup.record`, its
+sphere and box), the tint through its recipe, and the hide through the cull's
+own switches rather than a mesh's; then re-run it once against the table.
+
+## 70. `ShadowSystem.blobs` keeps every body it ever placed, a roster a round for the page's life
+
+**Open since `BABYLON_EXIT.md` X4.6** (found in code by X4.6e's review, measured
+by X4.6's whole-step verification). `ShadowSystem.blobFor` makes a body's blob
+the first time `updateBlobs` places it and files it in `blobs`, a
+`Map<Combatant, Fade>`, and in `blobFades`; nothing ever takes one out, and
+`hideBlobs` (the teardown's) only switches them off. The page's own match is a
+fresh session every round, so every round brings a fresh `NetSoldier` per slot
+(`NetSession` builds a new `NetRoster`), and the map keeps the last round's as
+KEYS. It predates X4.6e: at a269bfb the same map held a Babylon `Mesh` per body
+(`Map<Combatant, Mesh>`), each a `blobShadow` in the scene.
+
+### What is measured
+
+Coldharbour offline, five rounds in one page (`startRound` from `playing`, a
+spawn and 240 frames each), a forced GC (CDP `HeapProfiler.collectGarbage`
+three times) before each reading, the bodies held by `WeakRef`:
+
+| | round 1 | 2 | 3 | 4 | 5 |
+| --- | --- | --- | --- | --- | --- |
+| HEAD (4623a7f): `blobs.size`, `blobFades.length` | 17 | 33 | 49 | 65 | 81 |
+| HEAD: heap after GC, KB | 95,378 | 95,389 | 96,285 | 96,751 | 97,150 |
+| a269bfb: `blobs.size`, `blobShadow` meshes in the scene | 17 | 33 | 49 | 65 | 81 |
+| a269bfb: `scene.meshes.length` | 2,047 | 2,063 | 2,079 | 2,095 | 2,111 |
+| a269bfb: heap after GC, KB | 107,454 | 108,036 | 109,218 | 110,086 | 110,710 |
+
+Sixteen a round, one per roster slot, and the player's one (the `Player` is the
+same object every round). **Every earlier round's sixteen bodies are still alive
+after the GC at round 5, on both trees, and the blob map is what holds them**:
+with its keys cleared by a probe (`blobs.clear()`, nothing else written) and
+collected again, rounds 1 to 4 are gone and only round 5's sixteen live, the
+heap falling 769 KB at HEAD and 493 KB at a269bfb. A second HEAD run read the
+same counts (heap 93,920 to 95,493 KB). The heap's per-round growth is noisy
+across runs and is not quoted as a rate.
+
+### What is derived from the code
+
+- `blobFades` grows with the map, and two loops walk it every frame in every
+  state (`Game.drawBlended`'s visibility scan and
+  `farthestPull`'s filing), so the dead entries are a per-frame walk that
+  lengthens a roster a round. Not timed: at 81 entries it is noise.
+- A bigger map grows faster: 48 a round on Sarab and Cinderhaven (24 a side).
+- A server's match keeps its roster across a rotation (`NetRoster.setFielded`
+  rebuilds only when the count or the viewer's side moves), so it grows only
+  then; not measured.
+
+### How to settle it
+
+Forget a blob when its body goes: at the teardown (`Game.teardownMap`, beside
+`hideBlobs`) or when a roster is replaced, dropping the map's entries and the
+fades with them (`Game.blobsBeforeGlass` counts the fades standing at a round's
+glazing install, so a change here owes that count a look, and the run's tie
+order after a first round with it). Then the probe above: `blobs.size` 17 every
+round and no earlier round's body alive after a GC.
+
+## 71. The F4 mixer is hidden under the kit and settings screens, which `docs/audio.md` says it can be used over
+
+**Open since the mixer landed (0214dfa)**, found by `BABYLON_EXIT.md` X5.3b's
+review. `docs/audio.md` ("F4: setting them") says the panel sits at
+`z-index: 40` over the whole `src/ui/` ladder, "so the menu's ambience and the
+kit screen's weapon can both be mixed with their own screen up". The z-index is
+true and the conclusion is not: `#mixer-panel` is a child of `#hud`, and the
+kit screen's blanket rule (`#hud.kitting > *:not(#loadout):not(#hud-fps)`,
+`loadout.css`) and the settings screen's (`#hud.setting > *:not(#settings)…`,
+`settings.css`) take every child of `#hud` off the glass by `visibility` but the
+ones they name, which the mixer is not. The `.editing` rule (the viewer's)
+carves it out since X5.3b's review.
+
+### What is derived from the code
+
+- With the kit screen up, F4 builds and toggles a panel nobody can see; the
+  audio it changes still plays, so the weapon on the turntable cannot be mixed
+  by eye. Not seen in a browser.
+- The menu's half of the claim is not affected: no menu rule hides it.
+
+### How to settle it
+
+Either carve `#mixer-panel` out of `.kitting` and `.setting` by name (as
+`#hud-fps` is), or correct the sentence in `docs/audio.md`; then F4 over the kit
+screen in a dev build.
+
+## 72. The canopy-closure probe owes a port: a round has no visual mesh to pick and a crown is no collider
+
+**Open since `BABYLON_EXIT.md` X5.3e** (recorded by its review). `VERIFYING.md`'s
+canopy recipe made the visual meshes pickable and cast straight up from a grid
+of ground points, the hit fraction being the closure. A round's world has been
+our renderer's since X3.7 and X4.6e, so `scene.meshes` read 0 in `playing` and a
+pick met nothing (X6.1h took the scene); X5.3e took the colliders out of the scene as well, and they
+were never the answer, since a crown is no collider and `map.rays` cannot see
+it. The figures it took stand as measured (Greyfen's canopy tree ~60-100 m2 of
+effective crown) but cannot be re-taken.
+
+### How to settle it
+
+Port the cast to the scatter as our renderer is handed it
+(`BuildOptions.onScatter`, `world/scatterVariants.ts`): each `ScatterSet`'s
+parts in the variant's own frame, through each placement's world matrix
+(`matrices`), a vertical ray tested against those triangles (a crown's bounds
+first). Then re-take Greyfen's canopy tree once against the figure above.
+
+---
+
+## 73. The deploy screen never finishes a lamp's shadow: the atlas is chosen and baked once at the card's end, and not again until play
+
+**Open since `BABYLON_EXIT.md` X5.4c**, which found it: its picture change (the
+vantages retired) moved the lamp-lit bank rows because the vantages had been
+leaving the atlas part-baked for the deploy screen, and this is what was under
+them. In the page's own match nothing in `loading` or `deploy` runs the camera
+tail (`Game.updateSceneForCamera`), so `LocalShadows` chooses its lamps and
+bakes their static faces exactly ONCE before the deploy screen —
+`finishBakeWait`'s one call, at `dt` 0, around the deploy camera — and one call
+bakes `staticFacesPerFrame` (3) faces. A lamp's static layer is published only
+at all of its faces (`LocalShadows`' invariant), so every other lamp holding
+tiles shades by the irradiance volume's visibility instead of its shadow for as
+long as the deploy screen is up, and its tiles fill only once a life starts and
+the tail runs every frame.
+
+**Measured** (2026-11-10, the Windows box, offline: `LocalShadows.entries` at
+deploy straight after the install and 60 frames later, a scratch probe of X5.4c's
+session): at X5.4c, on Harrowmead, Greyfen and Hollowmere alike, six lamps hold
+tiles, ONE has 3 of its 6 faces baked and the other five 0 — and 60 frames later
+every count is the same. At its parent (4cf59ad, the vantages in) Hollowmere read
+the same, and the other two read whatever the last vantages left: Greyfen four
+lamps at 6/6 and two at 3/6, Harrowmead one at 6/6, one at 3/6, four at 0/6 and
+one DIFFERENT lamp holding tiles (68, 2.69, -27.6 against -68, 2.7, -27.6 after:
+`keepMargin`'s preference for a light already holding them). **Derived from the
+code**: a server's round is the same, its deploy screen running no tail either;
+the pause and the round-over card hold whatever the last live frame left, which
+is a finished atlas around the player.
+
+### What a fix has to answer
+
+- **Whether a HELD world may run the atlas's half of the tail.** The deploy
+  screen simulates nothing and must not; choosing lamps and baking their tiles
+  is a picture pass like the irradiance volume, which already runs in every
+  state with a map. Six lamps at three faces a frame is twelve frames to finish.
+  `docs/game.md`'s table of what `tick` pushes in every state is where it would
+  be written.
+- **The tail or only `LocalShadows.update`**: the tail also places the shadow
+  window, the bodies' map and the lights' slots, which `finishBakeWait` already
+  places once and nothing moves while the deploy camera stands still.
+- **What it moves**: every bank row lit by a lamp the bank's sequence leaves
+  part-baked — a `Picture change:` with the bank's numbers, and the owner's call.
+
+## 74. A lost device costs the round: surviving one IN PLACE is a feature for after the exit
+
+**Recorded by `BABYLON_EXIT.md` X5.4i** (row "X5.4, a lost device", the owner's
+decision of 2026-11-10: (A) for the exit, this as (B) after X6.2, "no new features
+inside a step"). Not measured: a design that is not built.
+
+**What a loss does since X5.4i** (`Game.deviceLost`, `docs/game.md`, "A lost
+device"): the page reloads to the menu with a one-line notice, the settings kept;
+offline the round is lost, and in a server's match the player has left it and rejoins
+from the lobby as a new peer (`docs/multiplayer.md`, "Reconnect into your own slot",
+is not built either). A second loss inside `CONFIG.graphics.deviceLossWindow` shows
+the boot's plate.
+
+**What (B) would be**: a new device asked for exactly as the boot asks (`main.ts`,
+the same descriptor, or a shader moves — the glow blur's text reads a device limit),
+the canvas's context configured on it, and EVERY GPU resource of the session and of
+the standing map rebuilt on it — the renderer's caches and pipelines (the declared
+list `PipelineWarmup` waits on), the body, hull and weapon kits, the world's blocks,
+the scatter's instances, the shadow maps and the lamps' atlas, the irradiance
+volume and its traces, the reflection probes, every texture `TextureMaker` made
+(the pictures' canvases are kept as their keys, so they can be uploaded again), the
+effect pools, the particle fields — while the round goes on: the page's own match
+lives in its Worker and never touched the device, so it survives as it is, and a
+server's match never knew. It reaches every owner of a GPU resource in the tree,
+which is why it is not a step's.
+
+**What it would owe that a reload does not** (X5.4h's review): the canvas's
+listeners (`CanvasSurface.adoptInput`), the boot's `uncapturederror` listener and
+the context's `unconfigure`, each kept or re-hung on the new device; the frame's
+order against the cap on the frame it resumes (`FrameLoop`'s header: the cap asked
+ahead of a hold, as Babylon's `_renderLoop` had it, so the first frame steps one
+refresh and not the whole loss), and the clock sample Babylon's restore took
+(`_restoreEngineAfterContextLost`, `initAsync`, `_initializeMainAttachments`,
+`beginFrame`). **Every `dispose` the reload's teardown calls is the first half of
+it** (`Renderer`, `ChainPasses`, `FrameSubmit`, `LampAtlas`), and none of the rest
+has a dispose path that has ever been called.
+
+### How to settle it
+
+- Measure first: how often a player's device is lost at all (a counter beside the
+  profiler's, or a line in a capture), on the phones and laptops it would be for.
+  A reload costs the round and seconds; if losses are rare, (A) is the answer.
+- If it is built: `lost.mjs --twice` grades it as it grades (A), with the verdict
+  turned round — no reload, the round still standing, frames drawn on a NEW device —
+  and every bank row taken after a restore against one taken without.
+
+## 75. The gate's SIMULATIONS list says nothing a whole-tree ban does not: re-aim it at the picture
+
+**Recorded by `BABYLON_EXIT.md` X6.1i** (row "X6.1, the gate's simulations", the
+owner's decision of 2026-11-12: (C) for the exit, the list kept walking for
+`@babylonjs/core` unchanged, and this — (B) — for after it). Not measured: a gate
+that is not built.
+
+**What the list does since X6.1i**: `scripts/check-babylon-free.mjs` refuses any
+import of the package anywhere in the tree, so walking each SIMULATION module's
+value graph for it can no longer find anything the tree pass has not refused
+already. The rule the list stood for — **a simulation never reaches its picture**
+(`CLAUDE.md`, "Ownership and wiring") — was held by "never reaches Babylon" while
+every picture was Babylon's. Pictures are our renderer's and our views' now, and
+nothing mechanical holds a simulation away from them.
+
+**What (B) would be**: the same list, walked for a different ban — no value path
+from a simulation (or from `server/`) to `src/render/`, `src/ui/` or a view module
+(`CombatFx`, `GrenadeFx`, `VehicleView`, `PlayerView`, …). A new contract, so its
+exceptions have to be found first: modules both halves legitimately share (the
+bone table, the hull frames, `proxyBoxes.ts`, whatever `SIMULATIONS` already holds
+"for the same reason") and any view a simulation reaches today.
+
+### How to settle it
+
+- Run the walk with the new ban as a diagnostic (paths on the command line) and
+  list what it reaches; each hit is either an exception to name or a leak to fix.
+- Land it as the gate's ban for `SIMULATIONS` and `server/`, the exceptions named
+  in the gate as `NOT_ROOTS` is, never as a silent skip.
+
+## 76. `CLAUDE.md`'s rendering section is over its cap, and the file over its total: split it after the exit
+
+**Recorded by `BABYLON_EXIT.md` X6.1j's review** (the owner's decision of
+2026-11-16: book it, and do not trim it inside the exit). Measured; nothing
+built.
+
+### What is measured
+
+At 591863b7, counting each `###` section from its heading to the line before
+the next: "The scene has no Babylon lights" is **196 lines** (195 without its
+heading, the figure X6.1j's review gave) against the ~135 that `CLAUDE.md`'s
+preamble allows a section carrying a contract two subsystems both read (~85 for
+any other companion-backed one), and `CLAUDE.md` is **1,665 lines** against its
+~1,500. **It was over before X6.1**: 189 lines in a 1,650-line file at X5.4i
+(a4ca4466, the last commit before X6.1 touched the file), and continuously over
+135 since X4.5c (a3773c9a, 136); X6.1 added seven (X6.1h) and X6.1j none.
+
+The split alone does not bring the file under its total: the section at 135
+gives back ~61 of the ~165 lines over. The rest is spread: the four sections
+the preamble lets stay long ("Ownership and wiring" 125, "Visual meshes and
+collider proxies" 102, "Mesh metadata" 70, "Conventions" 113) are 410 lines
+against the ~340 it states for them, and of the others only "The map is data"
+(112, a reference table) and "Multiplayer" (111) pass ~85.
+
+### How to settle it
+
+`CLAUDE.md`'s own mechanical rule, a separate step after the exit and no part
+of it: move the section's prose **verbatim** into `docs/rendering.md`, the
+companion it already points to, demote its headings one level, and leave
+behind a summary carrying only what a reader who is NOT editing rendering must
+not violate, plus the pointer — the TRIM the move owes, every measurement,
+worked number and piece of history going to the companion or here. Then
+re-measure the file, and book what is still over it.

@@ -6,9 +6,9 @@
  * onto its drive is `crewPilot.ts`'s, called from `stepCrew`.
  * Owns NO hull and no body: `VehicleSystem` builds the armour and
  * `BattleSystem` holds the roster. This asks both of them questions through a
- * `CrewCtx` `Game` builds once, exactly as `BattleSystem` asks the world
+ * `CrewCtx` `SimCore` builds once, exactly as `BattleSystem` asks the world
  * through a `BattleCtx` — nothing in here reaches for another system, and
- * everything it announces goes out as a callback `Game` wires.
+ * everything it announces goes out as a callback `SimCore` wires.
  *
  * ## Two seats, two bots, one shape
  *
@@ -115,20 +115,13 @@
  *   pilot that put its skids down would be one more thing to decide when to
  *   take off again.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Bot } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import { angleDelta } from "../core/math";
-import {
-  DRIVER,
-  GUNNER,
-  SEATS,
-  type CrewSeat,
-  type DriveInput,
-  type GunInput,
-  type Vehicle,
-} from "../entities/Vehicle";
+import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
+import { DRIVER, GUNNER, SEATS, type CrewSeat } from "../entities/hullSeats";
+import { Vector3, type Vector3Like } from "../math";
 import type { GameMap } from "../world/MapBuilder";
 import type { NavGrid } from "../world/NavGrid";
 import { fly, route } from "./crewPilot";
@@ -173,10 +166,12 @@ export interface CrewCtx {
    * tank could see nothing at all in front of it. Measured on Coldharbour: no
    * line of sight to a body standing in the open at 20, 25, 30, 40 or 50 m
    * dead ahead. The fix is `docs/vehicles.md`'s own — take the hull out of the
-   * pick for the length of the call — and it is the caller's to make, because
-   * `world/solid.ts` forbids minting a predicate that closes over one.
+   * answer for the length of the call, as the query's `skip`
+   * (`BattleSystem.losBetween` → `RayWorld.blocked`) — and it is the caller's
+   * to make, because the caller holds the hull and no query takes a
+   * predicate that closes over one (`RayWorld.castBody`'s `skip`).
    */
-  visibleFrom(tank: Vehicle, to: Vector3): boolean;
+  visibleFrom: (tank: Vehicle, to: Vector3Like) => boolean;
   /**
    * Fires this hull's gun, resolved by `Game` exactly as the player's shell
    * is — same damage, same blast, same one implementation. `by` is who the
@@ -323,7 +318,7 @@ export class VehicleCrew {
   private boardT = 0;
 
   /**
-   * Wired by `Game`: this bot is now inside a hull, or is no longer. Both are
+   * Wired by `SimCore`: this bot is now inside a hull, or is no longer. Both are
    * one-way announcements — what being crewed COSTS a bot (its place in every
    * target list, every think tick and every movement pass) is
    * `BattleSystem`'s to apply, exactly as `Game.mount` applies it to the
@@ -332,7 +327,7 @@ export class VehicleCrew {
   onBoarded: (bot: Bot, tank: Vehicle) => void = () => {};
   onLeft: (bot: Bot, tank: Vehicle) => void = () => {};
   /**
-   * Wired by `Game`: this crewman's hull burned and he is dead in it. Raised
+   * Wired by `SimCore`: this crewman's hull burned and he is dead in it. Raised
    * with the body already put down beside the wreck and already back in the
    * fight, so the handler has nothing to do but kill it through the ordinary
    * door — the same shape `VehicleSystem.onDestroyed` hands the player's own
@@ -357,7 +352,7 @@ export class VehicleCrew {
 
   /**
    * The map's nav graph, for the bearing half of the drive. Null on a map with
-   * no armour and in the editor, where this system is asked nothing.
+   * no armour, where this system is asked nothing.
    */
   setMap(map: GameMap | null): void {
     this.nav = map?.nav ?? null;
@@ -419,14 +414,14 @@ export class VehicleCrew {
     if (!crew) return null;
     const bot = crew.bot;
     this.remove(crew);
-    // Beside the hull and back on its feet, in that order: the rig has been
-    // disabled for the whole drive and a body re-enabled at the middle of a
-    // tank is standing inside a live collider.
+    // Beside the hull and back on its feet, in that order: the body has been
+    // out of the world for the whole drive and one put back at the middle of
+    // a tank is standing inside a live collider.
     bot.nudgeTo(this.ctx.exitSpot(tank));
     // `alive` rather than `true`: the defensive sweep in `update` reaches here
-    // with a body that is already dead, and a re-enabled corpse is a soldier
-    // standing to attention beside the wreck he burned in.
-    bot.setEnabled(bot.alive);
+    // with a body that is already dead, and a corpse put back in the world is
+    // a soldier standing to attention beside the wreck he burned in.
+    bot.shown = bot.alive;
     return bot;
   }
 
@@ -459,7 +454,7 @@ export class VehicleCrew {
     for (let i = this.crews.length - 1; i >= 0; i--) {
       const crew = this.crews[i];
       this.remove(crew);
-      crew.bot.setEnabled(crew.bot.alive);
+      crew.bot.shown = crew.bot.alive;
     }
     // The sweep's copy too: it is only rewritten by the next `update`, and
     // until then it holds every crew — and through them every hull — it last
@@ -595,10 +590,11 @@ export class VehicleCrew {
       left: false,
     });
     this.ctx.setOccupied(tank, seat, true);
-    // The rig goes away for the same reason the player's viewmodel does: there
-    // is no crewman modelled on this hull, and a soldier standing at the
-    // middle of a moving tank is a body being dragged through the street.
-    bot.setEnabled(false);
+    // The body leaves the world for the same reason the player's viewmodel
+    // goes away: there is no crewman modelled on this hull, and a soldier
+    // standing at the middle of a moving tank is a body being dragged through
+    // the street. A client's rig follows, off the wire.
+    bot.shown = false;
     bot.target = null;
     this.onBoarded(bot, tank);
   }
@@ -809,7 +805,9 @@ export class VehicleCrew {
       crew.layT = 0;
       return;
     }
-    _aim.copyFrom(target.eyePos).addInPlace(crew.aimAt);
+    _aim
+      .copyFromFloats(target.eyePos.x, target.eyePos.y, target.eyePos.z)
+      .addInPlace(crew.aimAt);
     const from = tank.muzzleToRef(_dir);
     const dx = _aim.x - from.x;
     const dy = _aim.y - from.y;
@@ -849,7 +847,7 @@ export class VehicleCrew {
       crew.layT = 0;
       return;
     }
-    _aim.copyFrom(target.eyePos);
+    _aim.copyFromFloats(target.eyePos.x, target.eyePos.y, target.eyePos.z);
     const from = tank.mgMuzzleToRef(_dir);
     const dx = _aim.x - from.x;
     const dy = _aim.y - from.y;

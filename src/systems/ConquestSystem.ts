@@ -9,11 +9,13 @@
  * systems. Squad orders are planned for a whole team at once (planSquads) so
  * squads can be spread — or deliberately stacked — relative to each other; a
  * claimed flag is penalised, never excluded. Round numbers come from
- * CONFIG.conquest, squad ones from CONFIG.bots.squad.
+ * CONFIG.conquest, squad ones from CONFIG.bots.squad. Babylon-free: positions
+ * are read as `Vector3Like` and the one it hands out (`scatterSpawn`) is
+ * `src/math`'s, so a caller feeding Babylon copies it by its fields.
  */
-import { Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import { Vector3, type Vector3Like } from "../math";
 import type { Bot, BotZone } from "../entities/Bot";
 import type { Combatant, Team } from "../entities/Combatant";
 import type { ControlPointDef, GameMap, SpawnPointDef } from "../world/MapBuilder";
@@ -70,10 +72,10 @@ export class ConquestSystem {
   /** Set once a side runs out; null while the round is live. */
   winner: Team | null = null;
 
-  /** Wired by Game: a flag changed hands (for the HUD and a sound). */
+  /** Wired by `SimCore`: a flag changed hands (the capture awards, then its `captured` event). */
   onCaptured: (point: ControlPoint, by: Team) => void = () => {};
   /**
-   * Wired by Game: a flag went neutral, and which side pushed it there.
+   * Wired by `SimCore`: a flag went neutral, and which side pushed it there.
    *
    * The team is carried rather than looked up by the handler, because by the
    * time one runs the only trace of who did it is who is standing in the ring
@@ -87,8 +89,8 @@ export class ConquestSystem {
    * Which spawn a body takes and where inside it — the ROUND's stream
    * (`RoundRandom`, `STREAM.spawn`), one for every body on both sides, since a
    * spawn is the round's decision rather than a shooter's. Public for the
-   * other half of the same decision, `scatterSpawn`, which both simulations
-   * call with it.
+   * other half of the same decision, `scatterSpawn`, which `SimCore` calls
+   * with it.
    */
   readonly spawnRand: Rand;
 
@@ -152,7 +154,7 @@ export class ConquestSystem {
   }
 
   /** The point a combatant is standing in, if any. */
-  pointAt(pos: Vector3): ControlPoint | null {
+  pointAt(pos: Vector3Like): ControlPoint | null {
     for (const p of this.points) {
       const dx = p.def.pos.x - pos.x;
       const dz = p.def.pos.z - pos.z;
@@ -167,7 +169,7 @@ export class ConquestSystem {
    * flag it merely walked across — is `none`.
    *
    * A conquest rule rather than wiring, which is why it is here and not a
-   * lambda in each simulation: whether a bot is holding or contesting is the
+   * lambda in the wiring: whether a bot is holding or contesting is the
    * squad's POSTURE (`defending`) read against who owns the ring, and the
    * client and the authority used to state that test once each.
    */
@@ -344,7 +346,7 @@ export class ConquestSystem {
    * stacking on it is the right answer, and forced spreading is what made bots
    * wander off from the fight that decided the game.
    */
-  planSquads(team: Team, centroids: Vector3[], previous: string[]): SquadOrder[] {
+  planSquads(team: Team, centroids: readonly Vector3Like[], previous: string[]): SquadOrder[] {
     const out: SquadOrder[] = [];
     if (this.points.length === 0) {
       for (let i = 0; i < centroids.length; i++) out.push({ pointId: "", defend: false });
@@ -377,7 +379,7 @@ export class ConquestSystem {
     return out;
   }
 
-  private pointValue(p: ControlPoint, team: Team, from: Vector3): number {
+  private pointValue(p: ControlPoint, team: Team, from: Vector3Like): number {
     const s = CONFIG.bots.squad;
     let score = 100;
     // Taking a flag off the enemy is worth more than grabbing a neutral one,
@@ -413,7 +415,7 @@ export class ConquestSystem {
   }
 }
 
-function near(a: Vector3, b: Vector3, dist: number): boolean {
+function near(a: Vector3Like, b: Vector3Like, dist: number): boolean {
   const dx = a.x - b.x;
   const dz = a.z - b.z;
   return dx * dx + dz * dz < dist * dist;
@@ -423,25 +425,34 @@ function near(a: Vector3, b: Vector3, dist: number): boolean {
  * A spawn POINT scattered into a POSITION, so a whole reinforcement wave sent
  * to one point does not arrive inside itself.
  *
- * **Both simulations resolve a spawn through this and nothing else** — the
- * offline round in `Game.spawnPointFor` and the deploy screen, the authority
- * in `HeadlessGame.spawnPointFor` — and a body is never scattered again on
- * ARRIVAL, because a client handed the authority's position must put the body
+ * **The simulation resolves a spawn through this and nothing else** —
+ * `SimCore.spawnPointFor`, offline and on the authority alike (the page asks
+ * with a `deploy` and is TOLD where the body stands) — and a body is never
+ * scattered again on ARRIVAL, because a client handed the authority's position must put the body
  * exactly there (see `Game.spawnPlayer`). The side that scatters is the side
- * that says where the body is, and it draws from that side's round stream —
+ * that says where the body is, and it draws from its round stream —
  * `ConquestSystem.spawnRand`, which every caller passes — because where a body
  * stands decides the fight it walks into.
+ *
+ * The position is a fresh `src/math` vector the caller owns; everything that
+ * takes it reads it as `Vector3Like` (`Bot.spawn`, `SimPlayer.spawn`,
+ * `Player.placeAt`) or copies it by its fields.
  */
 export function scatterSpawn(
-  pick: { pos: Vector3; yaw: number },
+  pick: { pos: Vector3Like; yaw: number },
   rand: Rand,
-): {
-  pos: Vector3;
-  yaw: number;
-} {
+): SpawnPick {
   const s = CONFIG.conquest.spawnScatter;
   return {
-    pos: pick.pos.add(new Vector3((rand() - 0.5) * s, 0, (rand() - 0.5) * s)),
+    pos: new Vector3(pick.pos.x, pick.pos.y, pick.pos.z).addInPlace(
+      new Vector3((rand() - 0.5) * s, 0, (rand() - 0.5) * s),
+    ),
     yaw: pick.yaw,
   };
+}
+
+/** A spawn resolved to a POSITION — what `scatterSpawn` hands out. */
+export interface SpawnPick {
+  pos: Vector3;
+  yaw: number;
 }

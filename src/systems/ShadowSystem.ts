@@ -2,19 +2,40 @@
  * ShadowSystem.ts — Owns the moon's shadow camera and the contact shadows
  * under combatants.
  *
- * The DirectionalLight here is the scene's ONLY Babylon light, and it exists
- * purely to define the shadow frustum: no material reads scene lights (cel
- * materials carry their own uniforms, effect materials are unlit), so it
- * shades nothing directly. Its ShadowGenerator renders a depth map that the
- * cel fragment shader samples as a hard two-level shadow term.
+ * The scene has NO Babylon light. Each map's light is a plain pair of
+ * vectors, its direction and where it stands (`MapLight`, the bodies' map's
+ * shape, `core/shadowWindow.ts`' `ShadowLight`), plus the side of its ortho
+ * window: it exists purely to define a shadow frustum, and shades nothing.
+ * The depth map drawn along it is sampled by the cel fragment shader as a
+ * hard two-level shadow term.
  *
- * Casters are the merged static world meshes, re-registered via setCasters()
- * after every map build (the map is disposed and rebuilt per round).
- * Characters never cast into the map — the player rig is ~60 meshes and each
- * bot 9, so per-frame caster cost would dwarf the ~40 merged static draws.
- * They get blob shadows instead: soft unlit alpha discs that follow each
- * combatant (raycast to the ground for the airborne-capable player, the
- * nav-surface height for always-grounded bots).
+ * **The world's maps are OUR renderer's** (`BABYLON_EXIT.md` X3.6a, X3.7b):
+ * the handover hands `WorldShadows` the casters on every shadow rung
+ * (`WorldShadows.casters`, set by `BlockHandover`), the four maps are
+ * textures `render/WorldShadows.ts` owns and draws, bound by our frame as
+ * themselves — no Babylon reader is handed one since `BABYLON_EXIT.md` X5.4h,
+ * which took the wrapped views away with Babylon's engine (the cel materials
+ * that held them neither draw nor compile). Casters ours cannot draw are the
+ * world's failure (`BlockHandover`, X3.7b). Until the first map hands ours
+ * its casters — the boot, the menu, a first round whose world failed — every
+ * map is bound as the lit texel (`TextureMaker.lit`, `ShadowBindings.lit`) and
+ * drawn by nobody; once
+ * ours holds them it keeps them, a teardown clearing them to lit
+ * (`WorldShadows`). Babylon's `ShadowGenerator`s, which drew the maps for the
+ * map editor's build alone after X3.7b and stood empty at the boot, were
+ * deleted at X5.3d with the `DirectionalLight`s that were their lights.
+ *
+ * The casters are the handover's, told after every map build (`setCasters`,
+ * the map being disposed and rebuilt per round).
+ * Characters never cast into the WORLD's maps — their shadow is the bodies'
+ * own map (`BodyShadows`) — and each also gets a blob shadow, the contact
+ * term: a soft unlit alpha disc that follows the combatant (on the floor the
+ * player's ground probe found, the nav-surface height for a bot). A blob is
+ * a FADE of its kit (`entities/fades.ts`), drawn by OUR renderer in the one
+ * back-to-front run (`render/FarthestRun.ts`, `BABYLON_EXIT.md` X4.6e), where
+ * Babylon's transparent list drew its mesh; its map is a canvas painted here
+ * and made OUR texture as Babylon's `DynamicTexture` made it (`blobMap`,
+ * `TextureMaker.picture`, `BABYLON_EXIT.md` X5.4d).
  *
  * Invariants:
  * - The light position is snapped to the shadow map's texel grid as it
@@ -24,18 +45,20 @@
  *   past the rung's `hold` (`held`), because an 8 m lever on the view moves
  *   a texel's worth on nearly every frame of play. Held is never stale: the
  *   snap makes it a window the map would have drawn anyway.
- * - The depth pass draws only the casters standing in the window (see
- *   getCustomRenderList) — Babylon culls nothing off an explicit renderList.
- * - The depth map records BACK faces (`forceBackFacesOnly`), so every caster
- *   must be a closed shape, and the bias is stated in metres
- *   (`CONFIG.graphics.shadows.bias`, converted by `depthBias`).
+ * - The depth pass draws only the casters standing in the window, through
+ *   the GPU cull over the light's frustum (`WorldDepth`).
+ * - The depth map records BACK faces (`WorldDepth`'s `"back"`), so every
+ *   caster must be a closed shape, and the bias is stated
+ *   in metres (`CONFIG.graphics.shadows.bias`, converted by `depthBias`).
  * - A SECOND map, the foliage's, records the FRONT faces of the translucent
  *   solids and nothing else (`CelMaterialFactory.isSolid`), over the same
- *   window. It shades nothing: it is how the translucency term measures how
- *   much crown the light crossed, which a back-face map cannot say.
+ *   window (`BlockHandover.passesOf`'s `PASS_SOLID`). It shades nothing: it
+ *   is how the translucency term measures how much crown the light crossed,
+ *   which a back-face map cannot say.
  * - Meshes with metadata.noShadowCaster (flat ground sheets, roads) must
  *   never be registered — they are receivers, and casting from them is acne.
- * - Blob discs are isPickable=false, metadata.noInk, and never casters.
+ * - Blob discs are no mesh, in no pick and no caster list, and out of the
+ *   glow's mask (the `noInk` and `noGlow` their meshes carried).
  * - The world's casters are drawn TWICE, as two cascades off the one focus: the
  *   far map over the map's own `shadowWindow`, and the NEAR map over
  *   `CONFIG.graphics.shadows.nearWindow` at the rung's `near` resolution,
@@ -48,50 +71,37 @@
  *   drawn once along a strike, on the frame it starts, so the moon's maps
  *   never move for a flash. Render-once, back faces, its own window.
  * - Either map may be OFF (`CONFIG.graphics.shadowTiers`), and off is a bound
- *   1x1 lit texture (`litShadowTexture`) rather than an absent one: every
- *   consumer declares both samplers. A rung change rebuilds a generator at the
- *   new size and re-adds the casters `setCasters` last handed over.
+ *   1x1 lit texture (`ShadowBindings.lit`) rather than an absent one: every
+ *   consumer declares both samplers. A rung change re-makes a map of ours at
+ *   the new size, owed a draw.
+ * - The maps' first hand to our renderer re-publishes each to every reader,
+ *   and each is drawn on the next frame our renderer prepares from where its
+ *   light stands; `ready` says when it has.
+ * - The light matrix of a map is Babylon's `ShadowGenerator.getTransformMatrix`
+ *   arithmetic, in the same order on the same helpers (`lightTransformToRef`,
+ *   the one copy, which the bodies' map reads too), so a reader samples the
+ *   texel a generator's matrix named.
  * - updateBlobs takes the player's ground height rather than probing for it:
  *   Player.floorY is that number, already found this frame.
  */
-import {
-  type AbstractMesh,
-  type BaseTexture,
-  Color3,
-  DirectionalLight,
-  DynamicTexture,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  RenderTargetTexture,
-  type Scene,
-  ShadowGenerator,
-  StandardMaterial,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { BLOB, Fade, fadeKit, type FadeKit } from "../entities/fades";
+import { createDisc } from "../geometry/primitives";
+import { Matrix, Vector3, type Vector3Like } from "../math";
+import type { OwnTexture } from "../render/HostBindGroup";
+import { type MadeTexture, newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import {
   depthBias,
-  litShadowTexture,
+  HALF_Z_RANGE,
+  lightTransformToRef,
   SHADOW_NEAR,
+  type ShadowLight,
   ShadowWindow,
 } from "../core/shadowWindow";
 import type { ShadowQuality } from "../core/settings";
 import type { Combatant } from "../entities/Combatant";
+import { WORLD_SHADOW_MAPS, type WorldShadowMap, type WorldShadows } from "../render/WorldShadows";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-
-/**
- * The layer the foliage light is pinned to, which no mesh carries — so the
- * light defines a shadow frustum and lights nothing. Distinct from
- * `BodyShadows`' proxy layer, which a mesh DOES carry.
- */
-const FOLIAGE_LAYER = 0x20000000;
-
-/** The lightning light's layer, for the same reason: it lights nothing. */
-const FLASH_LAYER = 0x40000000;
-
-/** The near cascade's light's layer, for the same reason again. */
-const NEAR_LAYER = 0x80000000;
 
 /**
  * The lightning map's largest side. A strike lasts half a second and is
@@ -100,19 +110,66 @@ const NEAR_LAYER = 0x80000000;
  */
 const FLASH_MAP_MAX = 1024;
 
+/**
+ * A map's light: where it points and where it stands — what a window places
+ * and the transform reads (`ShadowLight`) — and the side of its ortho window.
+ * The fields a Babylon `DirectionalLight` held for its generator until
+ * `BABYLON_EXIT.md` X5.3d, made as it made them: the direction the very
+ * vector it was handed, the position minus it, until a window places it.
+ */
+interface MapLight extends ShadowLight {
+  direction: Vector3;
+  /** The ortho window's side, in metres (the light's `shadowFrustumSize`). */
+  side: number;
+}
+
+/** A light along `direction`, standing at minus it, as `DirectionalLight`'s constructor stood one. */
+function mapLight(direction: Vector3, side: number): MapLight {
+  return { direction, position: direction.scale(-1.0), side };
+}
+
+/**
+ * One world map: its light, its window (the snap is in texels of ITS size),
+ * its resolution under the current rung, whether our texture stands while it
+ * is ours, and the matrix it is drawn and read with.
+ */
+interface WorldMap {
+  readonly name: WorldShadowMap;
+  readonly light: MapLight;
+  readonly win: ShadowWindow;
+  /** 0 is off, -1 not yet set — see `docs/rendering.md`, "The shadow rungs". */
+  size: number;
+  /** Our texture stands: the map is ours and has one. */
+  made: boolean;
+  /** The light's view-projection while the map is ours, rewritten in place. */
+  readonly matrix: Matrix;
+}
+
 export class ShadowSystem {
-  private readonly light: DirectionalLight;
-  /** The world's generator, or null while the rung has the moon's map OFF. */
-  private generator: ShadowGenerator | null = null;
-  /** Its resolution under the current rung; 0 is off, -1 not yet set. */
-  private mapSize = -1;
+  /** The moon's light: the far cascade's, which the other three copy their direction from. */
+  private readonly light: MapLight;
   /**
-   * What `setCasters` was last handed, kept so a rung change can rebuild a
-   * generator at a new size and give it the same casters back. The meshes are
-   * the map's and are disposed with it; `setCasters` replaces this with the
-   * next map's before anything could draw a stale one.
+   * The four maps, by name.
+   *
+   * **Why the foliage has a map of its own.** The world map records back faces
+   * so that a lit surface is compared against the far side of its own wall
+   * rather than against itself, which is what let its bias drop from 63 cm to
+   * 5. That same choice makes a face turned AWAY from the key its own recorded
+   * surface, so the map can no longer say how much of a pine's crown the light
+   * crossed on the way to it — and the translucency term needs exactly that to
+   * light a crown at its thin rim and not across its whole shaded side. The
+   * foliage's map is the front half of that measurement, drawn from the
+   * translucent solids alone, so it costs a handful of merged foliage draws
+   * rather than a second world. It shares the far map's focus, direction and
+   * side; its window is its own because the snap is in texels of ITS size.
    */
-  private casters: readonly Mesh[] = [];
+  private readonly maps: Record<WorldShadowMap, WorldMap>;
+  /**
+   * Whether the world's maps are OUR renderer's (`WorldShadows`): false only
+   * until the first map hands ours its casters, every map bound lit until
+   * then — see the header.
+   */
+  private ours = false;
   /**
    * What `lightMatrix` answers while the map is off: EVERY point to the MIDDLE
    * of the volume, (0.5, 0.5) at depth 0.5, so every reader samples the lit
@@ -128,17 +185,6 @@ export class ShadowSystem {
     0, 0, 0.5, 1,
   );
   /**
-   * The NEAR cascade: the world's casters again, over a small window at a
-   * fine texel — see `CONFIG.graphics.shadows.nearWindow` for why. A light
-   * of its own because a generator is one per light; a window of its own
-   * because the snap is in texels of ITS size.
-   */
-  private readonly nearLight: DirectionalLight;
-  private nearGen: ShadowGenerator | null = null;
-  private nearSize = -1;
-  private readonly nearWin = new ShadowWindow();
-  private readonly nearCasters: AbstractMesh[] = [];
-  /**
    * What the near matrix answers while that map is OFF: every receiver at
    * uv (-1, -1), outside the window, so the cascade blend gives the far map
    * all of it. Not `offMatrix`'s middle of the volume, which would read as a
@@ -150,8 +196,21 @@ export class ShadowSystem {
     0, 0, 0, 0,
     -3, -3, 0.5, 1,
   );
-  private readonly blobMaterial: StandardMaterial;
-  private readonly blobs = new Map<Combatant, Mesh>();
+  /** Where a map's light stands, as `WorldShadows.draw` takes it. */
+  private readonly lightEye = new Float32Array(3);
+  /**
+   * Every combatant's blob, made the first time it is placed: what our
+   * renderer draws. `blobFades` is the same fades in the order they were
+   * made, the order their meshes stood in the scene.
+   */
+  private readonly blobs = new Map<Combatant, Fade>();
+  readonly blobFades: Fade[] = [];
+  /** The arrays `MeshBuilder.CreateDisc` made every blob's mesh of. */
+  readonly blobKit: FadeKit = fadeKit(
+    createDisc({ radius: CONFIG.graphics.shadows.blobRadius, tessellation: 32 }),
+  );
+  /** The radial gradient every blob is cut by: our texture, painted here (`BABYLON_EXIT.md` X5.4d). */
+  readonly blobMap: MadeTexture;
   /**
    * Wired by `Game`: where a downed body's shadow goes, into `out`, and how
    * strong (0..1). 0 means "nothing to shade", which is every corpse nobody
@@ -169,41 +228,6 @@ export class ShadowSystem {
   corpseShadow: (cbt: Combatant, out: Vector3) => number = () => 0;
   /** Scratch for that callback — no per-frame allocation. */
   private readonly corpseAt = new Vector3();
-  /**
-   * Where this window stands: the light's cross-axis basis and the last
-   * texel-snapped focus, both kept after `place` so the render-list cull can
-   * project casters into the same basis. `BodyShadows` holds one of its own —
-   * see that module for why the arithmetic is shared and the instance is not.
-   */
-  private readonly win = new ShadowWindow();
-  /** Scratch for the cull, rebuilt on the frames the depth pass re-renders. */
-  private readonly windowCasters: AbstractMesh[] = [];
-  /**
-   * The FOLIAGE's front-face map: its own light (a generator is one per light),
-   * its own window (the snap is in texels of ITS size) and its own cull
-   * scratch, over the same focus, direction and side as the world's.
-   *
-   * **Why it exists.** The world map records back faces so that a lit surface
-   * is compared against the far side of its own wall rather than against
-   * itself, which is what let its bias drop from 63 cm to 5. That same choice
-   * makes a face turned AWAY from the key its own recorded surface, so the map
-   * can no longer say how much of a pine's crown the light crossed on the way
-   * to it — and the translucency term needs exactly that to light a crown at
-   * its thin rim and not across its whole shaded side. This map is the front
-   * half of that measurement, drawn from the translucent solids alone, so it
-   * costs a handful of merged foliage draws rather than a second world.
-   */
-  private readonly foliageLight: DirectionalLight;
-  private foliageGen: ShadowGenerator | null = null;
-  private foliageSize = -1;
-  /** The lightning's own map — see `flash`. Null while the rung has no sun map. */
-  private readonly flashLight: DirectionalLight;
-  private flashGen: ShadowGenerator | null = null;
-  private flashSize = -1;
-  private readonly flashWin = new ShadowWindow();
-  private readonly flashCasters: AbstractMesh[] = [];
-  private readonly foliageWin = new ShadowWindow();
-  private readonly foliageCasters: AbstractMesh[] = [];
   private fogStart = 24;
   private fogEnd = 78;
   /**
@@ -234,254 +258,233 @@ export class ShadowSystem {
   private readonly held = new Vector3(Infinity, Infinity, Infinity);
 
   /**
-   * The moon's depth map, for a reader that is not a material.
+   * The moon's depth map, for a reader that is not a material — as OUR
+   * renderer holds it (`render/WorldShadows.ts`), or the lit texel while it is
+   * not ours or off (`BABYLON_EXIT.md` X5.4d): what the shafts bind, as
+   * `ShadowBindings` hands our frame.
    *
-   * `mats` gets this pushed at startup and never again — the texture object is
-   * stable while its contents re-render — so a second reader that is not in
-   * the factory's lists (the volumetric pass, which is a `PostProcess` and not
-   * a `ShaderMaterial`) has to come and ask. It is the same texture, not a copy.
+   * `mats` gets this pushed when it changes, and the texture object is stable
+   * while its contents re-render — so a second reader that is not in the
+   * factory's lists (the volumetric pass, a stage of our post chain and no
+   * material) has to come and ask. It is the same texture, not a copy.
    */
-  get depthMap(): BaseTexture | null {
-    return this.generator?.getShadowMap() ?? litShadowTexture(this.scene);
+  get depthMap(): OwnTexture {
+    return this.ownOf(this.maps.far) ?? this.mats.shadows.lit;
   }
 
   /**
    * The light's view*projection, for the same reader and with one caveat worth
-   * stating: `getTransformMatrix` returns a matrix the generator MUTATES IN
-   * PLACE, so what a caller holds tracks the shadow camera whether or not it
-   * asks again. That is an implementation detail of Babylon's rather than a
-   * promise — the same one `update` declines to lean on below — so a caller
-   * that can afford to re-read every frame should.
+   * stating: the matrix is MUTATED IN PLACE (`lightTransform`) — so what a
+   * caller holds tracks the shadow camera
+   * whether or not it asks again. That is an implementation detail rather
+   * than a promise — the same one `update` declines to lean on below — so a
+   * caller that can afford to re-read every frame should.
    */
   get lightMatrix(): Matrix {
-    return this.generator?.getTransformMatrix() ?? this.offMatrix;
+    return this.matrixOf(this.maps.far) ?? this.offMatrix;
+  }
+
+  /**
+   * Whether every map is drawn for the casters `setCasters` last read: at
+   * once with none of ours (every map lit), and once `WorldShadows` has drawn
+   * every map owed with them. What a reader that samples a map once and keeps
+   * the answer waits on — the probes' bake.
+   */
+  get ready(): boolean {
+    return !this.ours || this.world.settled;
   }
 
   constructor(
-    private scene: Scene,
     private readonly mats: CelMaterialFactory,
     quality: ShadowQuality,
+    /** Our renderer's maps: who draws the world's shadows whenever the handover holds every caster. */
+    private readonly world: WorldShadows,
+    /** Our renderer's maker of the textures the game paints: the blobs' gradient. */
+    textures: TextureMaker,
   ) {
     const c = CONFIG.graphics.shadows;
-    this.light = new DirectionalLight(
-      "moonShadow",
-      new Vector3(-0.3, -0.85, 0.42).normalize(),
-      scene,
-    );
-    // Fixed square ortho window; auto-extends against the render list would
-    // stretch the window to the whole 240 m map and halve the texel density.
-    this.light.shadowFrustumSize = this.window;
-    this.light.shadowMinZ = SHADOW_NEAR;
-    this.light.shadowMaxZ = c.depthRange;
-    this.light.autoUpdateExtends = false;
+    // A fixed square ortho window each: one fitted to the casters would
+    // stretch to the whole 240 m map and halve the texel density.
+    this.light = mapLight(new Vector3(-0.3, -0.85, 0.42).normalize(), this.window);
+    const map = (name: WorldShadowMap, light: MapLight): WorldMap => ({
+      name,
+      light,
+      win: new ShadowWindow(),
+      size: -1,
+      made: false,
+      matrix: new Matrix(),
+    });
+    this.maps = {
+      far: map("far", this.light),
+      // The near cascade: the moon's volume over the near window.
+      near: map("near", mapLight(this.light.direction.clone(), c.nearWindow)),
+      foliage: map("foliage", mapLight(this.light.direction.clone(), this.window)),
+      // The lightning's light: aimed per strike by `flash`, and otherwise the
+      // moon's volume exactly.
+      flash: map("flash", mapLight(new Vector3(0, -1, 0), this.window)),
+    };
 
-    // The foliage's front-face map. A light of its own, because a shadow
-    // generator is one per light; pinned to a layer no mesh carries, so it can
-    // never become a lighting light for a StandardMaterial (BodyShadows' rule).
-    this.foliageLight = new DirectionalLight("foliageDepth", this.light.direction.clone(), scene);
-    this.foliageLight.includeOnlyWithLayerMask = FOLIAGE_LAYER;
-    this.foliageLight.shadowFrustumSize = this.window;
-    this.foliageLight.shadowMinZ = SHADOW_NEAR;
-    this.foliageLight.shadowMaxZ = c.depthRange;
-    this.foliageLight.autoUpdateExtends = false;
-    // The lightning's light: pinned to a layer nothing carries, aimed per
-    // strike by `flash`, and otherwise the moon's volume exactly.
-    this.flashLight = new DirectionalLight("flashDepth", new Vector3(0, -1, 0), scene);
-    this.flashLight.includeOnlyWithLayerMask = FLASH_LAYER;
-    this.flashLight.shadowFrustumSize = this.window;
-    this.flashLight.shadowMinZ = SHADOW_NEAR;
-    this.flashLight.shadowMaxZ = c.depthRange;
-    this.flashLight.autoUpdateExtends = false;
-
-    // The near cascade's light: the moon's volume over the near window,
-    // pinned to a layer nothing carries like the two above.
-    this.nearLight = new DirectionalLight("nearShadow", this.light.direction.clone(), scene);
-    this.nearLight.includeOnlyWithLayerMask = NEAR_LAYER;
-    this.nearLight.shadowFrustumSize = c.nearWindow;
-    this.nearLight.shadowMinZ = SHADOW_NEAR;
-    this.nearLight.shadowMaxZ = c.depthRange;
-    this.nearLight.autoUpdateExtends = false;
-
-    // The generators are built here, once all four lights exist.
+    // The maps are made here, once all four lights exist.
     this.setQuality(quality);
 
     // Blob shadow: a radial-gradient disc, unlit black, depth-write off so it
-    // layers over the ground without z-fighting.
-    const tex = new DynamicTexture(
-      "blobShadowTex",
-      { width: 128, height: 128 },
-      scene,
-      false,
-    );
-    const ctx = tex.getContext();
+    // layers over the ground without z-fighting (`render/FadeDraw.ts` holds
+    // the state its material had). Painted on a canvas as the
+    // `DynamicTexture` it was painted on, uploaded flipped with no mips.
+    const canvas = newCanvas(128, 128);
+    const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
     const grad = ctx.createRadialGradient(64, 64, 6, 64, 64, 64);
     grad.addColorStop(0, "rgba(0,0,0,1)");
     grad.addColorStop(0.55, "rgba(0,0,0,0.55)");
     grad.addColorStop(1, "rgba(0,0,0,0)");
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 128, 128);
-    tex.update();
-    this.blobMaterial = new StandardMaterial("blobShadow", scene);
-    this.blobMaterial.emissiveColor = Color3.Black();
-    this.blobMaterial.diffuseColor = Color3.Black();
-    this.blobMaterial.specularColor = Color3.Black();
-    this.blobMaterial.disableLighting = true;
-    this.blobMaterial.opacityTexture = tex;
-    this.blobMaterial.disableDepthWrite = true;
+    this.blobMap = textures.picture({ label: "blobShadowTex", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
   }
 
   /**
-   * Stands both maps up at a rung's sizes (`CONFIG.graphics.shadowTiers`),
+   * Stands every map up at a rung's sizes (`CONFIG.graphics.shadowTiers`),
    * and binds each one's texture and parameters to every consumer.
    *
    * A map whose size did not move is left exactly as it was — the same
-   * generator, the same caster list, no re-render. One that did is rebuilt
-   * from nothing: a `ShadowGenerator`'s size is fixed at construction, so a
-   * new resolution is a new generator, and the casters come back from
-   * `casters`. The windows are invalidated with it, because the texel snap is
-   * in texels of a size that just changed.
+   * texture, no re-draw. One that did is, while the maps are ours, a new
+   * texture, owed a draw. Its window is invalidated with it, because the
+   * texel snap is in texels of a size that just changed.
    */
   setQuality(quality: ShadowQuality): void {
-    const c = CONFIG.graphics.shadows;
     const tier = CONFIG.graphics.shadowTiers[quality];
     this.hold = tier.hold;
-    if (tier.sun !== this.mapSize) {
-      this.generator?.dispose();
-      this.generator = tier.sun > 0 ? this.buildWorld(tier.sun) : null;
-      this.mapSize = tier.sun;
-      this.win.invalidate();
-      this.held.setAll(Infinity);
-      this.mats.shadows.setShadowMap(this.generator?.getShadowMap() ?? litShadowTexture(this.scene));
-      this.mats.shadows.setShadowParams(depthBias(c.bias, c.depthRange), c.darkness, c.normalBias);
-      this.mats.shadows.setShadowMatrix(this.lightMatrix);
+    const sizes: Record<WorldShadowMap, number> = {
+      far: tier.sun,
+      // The near cascade only ever sits INSIDE a far map, so a rung with the
+      // sun off has none whatever its row says.
+      near: tier.sun > 0 ? tier.near : 0,
+      foliage: tier.foliage,
+      flash: Math.min(tier.sun, FLASH_MAP_MAX),
+    };
+    for (const name of WORLD_SHADOW_MAPS) {
+      const map = this.maps[name];
+      if (sizes[name] === map.size) continue;
+      map.size = sizes[name];
+      if (this.ours) {
+        this.remakeOurs(map);
+        // Drawn from where its light stands — a draw the next placement may
+        // well repeat, but a pause menu's rung change places nothing until
+        // play resumes, and the map must not stand empty behind it.
+        if (name !== "flash") this.drawOurs(map);
+      }
+      map.win.invalidate();
+      // The flash follows no held focus: it is placed per strike.
+      if (name !== "flash") this.held.setAll(Infinity);
+      this.publish(map);
     }
-    // The near cascade only ever sits INSIDE a far map, so a rung with the
-    // sun off has none whatever its row says.
-    const nearSize = tier.sun > 0 ? tier.near : 0;
-    if (nearSize !== this.nearSize) {
-      this.nearGen?.dispose();
-      this.nearGen = nearSize > 0 ? this.buildNear(nearSize) : null;
-      this.nearSize = nearSize;
-      this.nearWin.invalidate();
-      this.held.setAll(Infinity);
-      this.mats.shadows.setNearShadowMap(
-        this.nearGen?.getShadowMap() ?? litShadowTexture(this.scene),
-      );
-      this.mats.shadows.setNearShadowParams(
-        depthBias(c.bias, c.depthRange),
-        (c.nearNormalBiasTexels * c.nearWindow) / Math.max(1, nearSize),
-      );
-      this.mats.shadows.setNearShadowMatrix(
-        this.nearGen?.getTransformMatrix() ?? this.nearOffMatrix,
-      );
-    }
-    const flashSize = Math.min(tier.sun, FLASH_MAP_MAX);
-    if (flashSize !== this.flashSize) {
-      this.flashGen?.dispose();
-      this.flashGen = flashSize > 0 ? this.buildFlash(flashSize) : null;
-      this.flashSize = flashSize;
-      this.flashWin.invalidate();
-      this.mats.shadows.setFlashMap(this.flashGen?.getShadowMap() ?? litShadowTexture(this.scene));
-      this.mats.shadows.setFlashParams(depthBias(c.bias, c.depthRange));
-    }
-    if (tier.foliage !== this.foliageSize) {
-      this.foliageGen?.dispose();
-      this.foliageGen = tier.foliage > 0 ? this.buildFoliage(tier.foliage) : null;
-      this.foliageSize = tier.foliage;
-      this.foliageWin.invalidate();
-      this.mats.shadows.setFoliageMap(
-        this.foliageGen?.getShadowMap() ?? litShadowTexture(this.scene),
-      );
-      this.mats.shadows.setFoliageParams(depthBias(1, c.depthRange));
-    }
-  }
-
-  /** The world's generator at `size`, holding the casters already handed over. */
-  private buildWorld(size: number): ShadowGenerator {
-    const gen = new ShadowGenerator(size, this.light);
-    // Bias lives consumer-side in the cel shader (shadowParams), where the
-    // facet normal is known — not baked into the caster depths.
-    gen.bias = 0;
-    // The FAR side of every caster, which is what lets the bias be
-    // centimetres rather than the 63 cm a front-face map needed. A lit face is
-    // then compared against the back of its own wall or roof — a thickness
-    // behind it — rather than against itself, so there is no acne to hide and
-    // no bias-sized band of light where an eave meets the wall under it. What
-    // it asks of the casters is that they are CLOSED, which every piece the
-    // kit builds is (boxes, capped cylinders, the gable prism): an open sheet
-    // would record only the side facing away and cast from there.
-    gen.forceBackFacesOnly = true;
-    const map = gen.getShadowMap();
-    if (map) {
-      // Re-render only when told to (resetRefreshCounter in update/setCasters)
-      // — the world is static, so the depth pass is wasted on frames where
-      // the texel-snapped light window didn't move.
-      map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-      map.resetRefreshCounter();
-      // Draw only what stands in the window. Babylon culls NOTHING off an
-      // explicit renderList — `ObjectRenderer._prepareRenderingManager`
-      // dispatches every mesh that is enabled and visible — so without this
-      // the depth pass submits the whole village on every re-render: measured
-      // at 314 casters and 79k triangles, against ~150 that can reach the
-      // window. It is called only on the frames that actually re-render,
-      // which is why the cull is computed here rather than kept up to date in
-      // `update`.
-      map.getCustomRenderList = () =>
-        this.cullToWindow(map.renderList ?? [], this.win, this.light, this.window, this.windowCasters);
-    }
-    for (const m of this.casters) {
-      if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
-    }
-    return gen;
   }
 
   /**
-   * The near cascade's generator at `size`: `buildWorld` exactly, over the
-   * near light and window — the same casters and back faces, render-once and
-   * culled to what stands in its own small window.
+   * `map`'s texture of ours re-made at its size — cleared to lit — AFRESH
+   * whatever its size, as it was while Babylon's view of it was let go with
+   * it (until `BABYLON_EXIT.md` X5.4h): the old one destroyed, a new one made.
    */
-  private buildNear(size: number): ShadowGenerator {
-    const gen = new ShadowGenerator(size, this.nearLight);
-    gen.bias = 0;
-    gen.forceBackFacesOnly = true;
-    const map = gen.getShadowMap();
-    if (map) {
-      map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-      map.resetRefreshCounter();
-      map.getCustomRenderList = () =>
-        this.cullToWindow(
-          map.renderList ?? [],
-          this.nearWin,
-          this.nearLight,
-          CONFIG.graphics.shadows.nearWindow,
-          this.nearCasters,
+  private remakeOurs(map: WorldMap): void {
+    map.made = false;
+    this.world.setSize(map.name, 0);
+    this.world.setSize(map.name, map.size);
+    map.made = this.world.texture(map.name) !== null;
+  }
+
+  /**
+   * Hands the world's maps to our renderer (`ours`), once: every map made on
+   * it at the rung's sizes and published. Its draws are owed by whoever
+   * handed them over (`setCasters`). Nothing once ours holds them.
+   */
+  private takeOver(): void {
+    if (this.ours) return;
+    this.ours = true;
+    for (const name of WORLD_SHADOW_MAPS) {
+      const map = this.maps[name];
+      this.remakeOurs(map);
+      this.publish(map);
+    }
+  }
+
+  /** `map` as our renderer holds it, or null while it is not ours or off (the lit texel is bound then). */
+  private ownOf(map: WorldMap): OwnTexture | null {
+    return this.ours && map.made ? this.world.own(map.name) : null;
+  }
+
+  /** `map`'s light matrix as ours draws it — null while it is off or not ours. */
+  private matrixOf(map: WorldMap): Matrix | null {
+    return this.ours && map.size > 0 ? map.matrix : null;
+  }
+
+  /**
+   * `map`'s texture and parameters, bound to every consumer — our own
+   * texture to our renderer's frame while the map is ours, the lit texel
+   * otherwise.
+   */
+  private publish(map: WorldMap): void {
+    const c = CONFIG.graphics.shadows;
+    const shadows = this.mats.shadows;
+    const own = this.ownOf(map);
+    switch (map.name) {
+      case "far":
+        shadows.setShadowMap(own);
+        shadows.setShadowParams(depthBias(c.bias, c.depthRange), c.darkness, c.normalBias);
+        shadows.setShadowMatrix(this.lightMatrix);
+        return;
+      case "near":
+        shadows.setNearShadowMap(own);
+        shadows.setNearShadowParams(
+          depthBias(c.bias, c.depthRange),
+          (c.nearNormalBiasTexels * c.nearWindow) / Math.max(1, map.size),
         );
+        shadows.setNearShadowMatrix(this.matrixOf(map) ?? this.nearOffMatrix);
+        return;
+      case "flash": {
+        shadows.setFlashMap(own);
+        shadows.setFlashParams(depthBias(c.bias, c.depthRange));
+        const matrix = this.matrixOf(map);
+        if (matrix) shadows.setFlashMatrix(matrix);
+        return;
+      }
+      case "foliage": {
+        shadows.setFoliageMap(own);
+        shadows.setFoliageParams(depthBias(1, c.depthRange));
+        const matrix = this.matrixOf(map);
+        if (matrix) shadows.setFoliageMatrix(matrix);
+        return;
+      }
     }
-    for (const m of this.casters) {
-      if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
-    }
-    return gen;
   }
 
   /**
-   * The lightning's generator at `size`: the world's casters, back faces,
-   * render-once and culled to its own window — `buildWorld` with a different
-   * light, because it is the same question asked from somewhere else.
+   * `map`'s light view-projection into `map.matrix`, as Babylon's
+   * `ShadowGenerator.getTransformMatrix` computes it — `core/shadowWindow.ts`'s
+   * `lightTransformToRef`, over the light's window side and the depth range.
    */
-  private buildFlash(size: number): ShadowGenerator {
-    const gen = new ShadowGenerator(size, this.flashLight);
-    gen.bias = 0;
-    gen.forceBackFacesOnly = true;
-    const map = gen.getShadowMap();
-    if (map) {
-      map.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-      map.getCustomRenderList = () =>
-        this.cullToWindow(map.renderList ?? [], this.flashWin, this.flashLight, this.window, this.flashCasters);
-    }
-    for (const m of this.casters) {
-      if (!m.metadata?.noShadowCaster) gen.addShadowCaster(m, false);
-    }
-    return gen;
+  private lightTransform(map: WorldMap): void {
+    const light = map.light;
+    lightTransformToRef(
+      light,
+      light.side,
+      SHADOW_NEAR,
+      CONFIG.graphics.shadows.depthRange,
+      HALF_Z_RANGE,
+      map.matrix,
+    );
+  }
+
+  /** `map`, ours, drawn from where its light stands on the next frame our renderer prepares. */
+  private drawOurs(map: WorldMap): void {
+    if (map.size <= 0) return;
+    this.lightTransform(map);
+    map.light.position.toArray(this.lightEye);
+    this.world.draw(map.name, map.matrix.m, this.lightEye);
+  }
+
+  /** `map` re-drawn, while ours holds it: owed a draw. */
+  private redraw(map: WorldMap): void {
+    if (this.ours) this.drawOurs(map);
   }
 
   /**
@@ -490,49 +493,21 @@ export class ShadowSystem {
    * at no other time: a strike is half a second, and a player who crosses a
    * texel in that time is not going to see the shadow lag him.
    *
-   * The matrix goes to every material here, and the map renders inside this
-   * frame's `scene.render()`, before the main pass that samples it.
+   * The matrix goes to every material here, and the map is drawn in the
+   * encoder submitted ahead of this frame's draws, before the main pass that
+   * samples it.
    */
   flash(direction: Vector3, focus: Vector3): void {
-    const gen = this.flashGen;
-    if (!gen) return;
-    this.flashLight.direction.copyFrom(direction).normalize();
-    this.flashLight.shadowFrustumSize = this.window;
-    this.flashWin.invalidate();
-    this.flashWin.place(
-      this.flashLight,
-      focus,
-      this.window,
-      this.flashSize,
-      CONFIG.graphics.shadows.distance,
-    );
-    gen.getShadowMap()?.resetRefreshCounter();
-    this.mats.shadows.setFlashMatrix(gen.getTransformMatrix());
-  }
-
-  /** The foliage's front-face generator at `size`, with its solids. */
-  private buildFoliage(size: number): ShadowGenerator {
-    const gen = new ShadowGenerator(size, this.foliageLight);
-    gen.bias = 0;
-    const fmap = gen.getShadowMap();
-    if (fmap) {
-      fmap.refreshRate = RenderTargetTexture.REFRESHRATE_RENDER_ONCE;
-      fmap.resetRefreshCounter();
-      fmap.getCustomRenderList = () =>
-        this.cullToWindow(
-          fmap.renderList ?? [],
-          this.foliageWin,
-          this.foliageLight,
-          this.window,
-          this.foliageCasters,
-        );
-    }
-    for (const m of this.casters) {
-      if (!m.metadata?.noShadowCaster && this.mats.isSolid(m.material)) {
-        gen.addShadowCaster(m, false);
-      }
-    }
-    return gen;
+    const map = this.maps.flash;
+    if (map.size <= 0) return;
+    const light = map.light;
+    light.direction.copyFrom(direction).normalize();
+    light.side = this.window;
+    map.win.invalidate();
+    map.win.place(light, focus, this.window, map.size, CONFIG.graphics.shadows.distance);
+    this.redraw(map);
+    const matrix = this.matrixOf(map);
+    if (matrix) this.mats.shadows.setFlashMatrix(matrix);
   }
 
   /**
@@ -569,13 +544,12 @@ export class ShadowSystem {
     if (import.meta.env.DEV) this.warnIfWindowIsWasted(metres);
     if (metres === this.window) return;
     this.window = metres;
-    this.light.shadowFrustumSize = metres;
-    this.foliageLight.shadowFrustumSize = metres;
-    this.win.invalidate();
-    this.foliageWin.invalidate();
+    for (const map of [this.maps.far, this.maps.foliage]) {
+      map.light.side = metres;
+      map.win.invalidate();
+    }
     this.held.setAll(Infinity);
   }
-
   /**
    * The ceiling the doc above derives, checked instead of trusted.
    *
@@ -612,7 +586,7 @@ export class ShadowSystem {
     // The volume runs from `shadowMinZ - distance` to `depthRange - distance`
     // either side of the focus; the shorter half is the one that binds.
     const halfDepth = Math.min(
-      c.distance - this.light.shadowMinZ,
+      c.distance - SHADOW_NEAR,
       c.depthRange - c.distance,
     );
     // Where that half lands on the GROUND along the sun's azimuth, doubled to
@@ -637,12 +611,12 @@ export class ShadowSystem {
       direction[1],
       direction[2],
     ).normalize();
-    this.foliageLight.direction = this.light.direction.clone();
-    this.nearLight.direction = this.light.direction.clone();
+    this.maps.foliage.light.direction = this.light.direction.clone();
+    this.maps.near.light.direction = this.light.direction.clone();
     // Invalidate the snapped focus so the light re-centres on next update.
-    this.win.invalidate();
-    this.foliageWin.invalidate();
-    this.nearWin.invalidate();
+    this.maps.far.win.invalidate();
+    this.maps.foliage.win.invalidate();
+    this.maps.near.win.invalidate();
     this.held.setAll(Infinity);
   }
 
@@ -653,121 +627,21 @@ export class ShadowSystem {
   }
 
   /**
-   * Replaces the caster set with the freshly built map's visual meshes.
-   * Called after every MapBuilder.build() — the previous round's meshes are
-   * disposed, and a stale renderList entry would break the depth pass.
+   * The casters changed: read off `WorldShadows`, after every map build and
+   * at `Game.teardownMap`.
+   *
+   * **And it is where the maps come to our renderer**: after
+   * `BlockHandover.install`, which hands `WorldShadows` the casters on every
+   * map of ours, so the world's shadows are ours from the first map that did
+   * (`takeOver`) and drawn again for the new casters — the flash per strike
+   * and at no other time. NO casters of ours (`Game.teardownMap`, or a world
+   * the handover refused) keeps everything as it is: there is nothing to
+   * cast, and `WorldShadows` has already cleared ours to lit.
    */
-  setCasters(meshes: readonly Mesh[]): void {
-    this.casters = meshes;
-    const gen = this.generator;
-    const map = gen?.getShadowMap();
-    if (gen && map?.renderList) {
-      for (const m of map.renderList.slice()) gen.removeShadowCaster(m, false);
-    }
-    const fgen = this.foliageGen;
-    const fmap = fgen?.getShadowMap();
-    if (fgen && fmap?.renderList) {
-      for (const m of fmap.renderList.slice()) fgen.removeShadowCaster(m, false);
-    }
-    const lgen = this.flashGen;
-    const lmap = lgen?.getShadowMap();
-    if (lgen && lmap?.renderList) {
-      for (const m of lmap.renderList.slice()) lgen.removeShadowCaster(m, false);
-    }
-    const ngen = this.nearGen;
-    const nmap = ngen?.getShadowMap();
-    if (ngen && nmap?.renderList) {
-      for (const m of nmap.renderList.slice()) ngen.removeShadowCaster(m, false);
-    }
-    for (const m of meshes) {
-      if (m.metadata?.noShadowCaster) continue;
-      gen?.addShadowCaster(m, false);
-      ngen?.addShadowCaster(m, false);
-      lgen?.addShadowCaster(m, false);
-      // A translucent SOLID goes in both: the world's map for what it hides,
-      // and the foliage's for how thick it is.
-      if (this.mats.isSolid(m.material)) fgen?.addShadowCaster(m, false);
-    }
-    map?.resetRefreshCounter();
-    nmap?.resetRefreshCounter();
-    fmap?.resetRefreshCounter();
-  }
-
-  /**
-   * The casters that can write into the current shadow window.
-   *
-   * The light is ORTHOGRAPHIC, so a caster's shadow lands at its own position
-   * in the light's plane — depth slides it along the view axis and never
-   * sideways. That is what makes this exact rather than a guess: testing a
-   * caster's bounds against the window in that plane cannot drop anything that
-   * could have darkened a texel, so the depth map is identical to the one the
-   * full list produces. A cull that had to allow for shadows cast in from
-   * outside would need the window extended along the light, and this one does
-   * not.
-   *
-   * The caster is measured as its world BOX rather than its bounding sphere —
-   * the |e·a| half-extent projection, exact for an AABB — because a block
-   * merge produces meshes that are wide and flat, and a sphere around one has
-   * a 34 m radius where the block is four metres tall. Measured on Hollowmere:
-   * 314 casters to 153 through the sphere, to ~150 through the box.
-   *
-   * **What bounds this is the granularity of a caster, not the test.** Every
-   * caster is one `BlockMerge` mesh — one per 48 m map block per colour, ~12
-   * to a block — so a 110 m window straddling four blocks each way admits
-   * everything in sixteen of them however tight the arithmetic. Splitting them
-   * finer would cull better and cost the main pass the draw calls the merge
-   * exists to save, which is a bad trade in the other direction.
-   *
-   * Every caster's world matrix is frozen, so this is a handful of dot
-   * products per caster on the frames that re-render.
-   */
-  private cullToWindow(
-    all: readonly AbstractMesh[],
-    win: ShadowWindow,
-    light: DirectionalLight,
-    side: number,
-    list: AbstractMesh[],
-  ): AbstractMesh[] {
-    const c = CONFIG.graphics.shadows;
-    const half = side / 2;
-    const dir = light.direction;
-    const ax = win.axisX;
-    const ay = win.axisY;
-    // Where the light's camera sits along its own view axis. The window's
-    // near and far planes are measured from there.
-    const camDepth = win.snapped.z - c.distance;
-    const near = camDepth + light.shadowMinZ;
-    const far = camDepth + light.shadowMaxZ;
-    list.length = 0;
-    for (const mesh of all) {
-      const box = mesh.getBoundingInfo().boundingBox;
-      const p = box.centerWorld;
-      const e = box.extendSizeWorld;
-      const u = p.x * ax.x + p.y * ax.y + p.z * ax.z;
-      const ru = Math.abs(e.x * ax.x) + Math.abs(e.y * ax.y) + Math.abs(e.z * ax.z);
-      if (Math.abs(u - win.snapped.x) > half + ru) continue;
-      const v = p.x * ay.x + p.y * ay.y + p.z * ay.z;
-      const rv = Math.abs(e.x * ay.x) + Math.abs(e.y * ay.y) + Math.abs(e.z * ay.z);
-      if (Math.abs(v - win.snapped.y) > half + rv) continue;
-      const w = p.x * dir.x + p.y * dir.y + p.z * dir.z;
-      const rw =
-        Math.abs(e.x * dir.x) + Math.abs(e.y * dir.y) + Math.abs(e.z * dir.z);
-      if (w + rw < near || w - rw > far) continue;
-      list.push(mesh);
-    }
-    return list;
-  }
-
-  /**
-   * Forces the depth pass to re-render next frame even though the snapped
-   * focus has not moved. `update()` skips the render when the window has not
-   * shifted, which is right in play — the map is static — but wrong when a
-   * caster itself moves, as it does under the map editor's drag.
-   */
-  invalidate(): void {
-    this.generator?.getShadowMap()?.resetRefreshCounter();
-    this.nearGen?.getShadowMap()?.resetRefreshCounter();
-    this.foliageGen?.getShadowMap()?.resetRefreshCounter();
+  setCasters(): void {
+    if (this.world.casters === null) return;
+    this.takeOver();
+    for (const map of [this.maps.far, this.maps.near, this.maps.foliage]) this.redraw(map);
   }
 
   /**
@@ -786,44 +660,37 @@ export class ShadowSystem {
     // focus lands would shade a body against a wall it is not standing by.
     const held = this.held;
     if (Vector3.DistanceSquared(focus, held) > this.hold * this.hold) held.copyFrom(focus);
-    const gen = this.generator;
-    if (gen && this.win.place(this.light, held, this.window, this.mapSize, c.distance)) {
-      gen.getShadowMap()?.resetRefreshCounter();
+    const { far, near, foliage } = this.maps;
+    if (far.size > 0 && far.win.place(far.light, held, this.window, far.size, c.distance)) {
+      this.redraw(far);
       // Inside the guard, where it belongs: this is the branch that just
       // decided the shadow camera moved, and the matrix is a function of
-      // nothing else. Outside it, every frame paid a `setMatrix` on every cel
-      // material plus the grass and the water to re-hand them a matrix that
-      // had not changed — and the contract line above already claimed
-      // otherwise.
+      // nothing else. Outside it, every frame paid a `setMatrix` on every
+      // Babylon cel material (until `BABYLON_EXIT.md` X6.1c) to re-hand them
+      // a matrix that had not changed — and the contract line above already
+      // claimed otherwise.
       //
       // It is cheap even when it does run, and cheaper than it looks to skip:
-      // `getTransformMatrix` returns a matrix it mutates in place and
-      // `ShaderMaterial.setMatrix` stores the REFERENCE, so what the materials
-      // hold tracks the generator whether or not this line runs again. That is
-      // an implementation detail of Babylon's rather than a promise, which is
-      // why this stays a real re-upload on the frames the window moves instead
-      // of being deleted outright.
-      mats.shadows.setShadowMatrix(gen.getTransformMatrix());
+      // the matrix is mutated in place (`lightTransform`) and
+      // `ShadowBindings` stores the REFERENCE, which the frame copies off
+      // every frame, so what is drawn tracks it whether or not this line runs
+      // again. That is an implementation detail rather than a promise, which
+      // is why this stays a real publish on the frames the window moves
+      // instead of being deleted outright.
+      mats.shadows.setShadowMatrix(this.lightMatrix);
     }
     // The near cascade, off the same held focus on its own (finer) grid.
-    const ngen = this.nearGen;
-    if (
-      ngen &&
-      this.nearWin.place(this.nearLight, held, c.nearWindow, this.nearSize, c.distance)
-    ) {
-      ngen.getShadowMap()?.resetRefreshCounter();
-      mats.shadows.setNearShadowMatrix(ngen.getTransformMatrix());
+    if (near.size > 0 && near.win.place(near.light, held, c.nearWindow, near.size, c.distance)) {
+      this.redraw(near);
+      mats.shadows.setNearShadowMatrix(this.matrixOf(near) ?? this.nearOffMatrix);
     }
     // The foliage's window, off the same focus on its own texel grid. A
     // separate test because the two grids are different sizes: one moving
     // does not mean the other has.
-    const fgen = this.foliageGen;
-    if (
-      fgen &&
-      this.foliageWin.place(this.foliageLight, held, this.window, this.foliageSize, c.distance)
-    ) {
-      fgen.getShadowMap()?.resetRefreshCounter();
-      mats.shadows.setFoliageMatrix(fgen.getTransformMatrix());
+    if (foliage.size > 0 && foliage.win.place(foliage.light, held, this.window, foliage.size, c.distance)) {
+      this.redraw(foliage);
+      const matrix = this.matrixOf(foliage);
+      if (matrix) mats.shadows.setFoliageMatrix(matrix);
     }
   }
 
@@ -850,7 +717,7 @@ export class ShadowSystem {
   updateBlobs(
     player: Combatant,
     bots: readonly Combatant[],
-    camPos: Vector3,
+    camPos: Vector3Like,
     playerGroundY: number,
   ): void {
     this.updateBlob(player, camPos, playerGroundY);
@@ -864,34 +731,10 @@ export class ShadowSystem {
    * `updateBlobs` puts back whichever are owed.
    */
   hideBlobs(): void {
-    for (const blob of this.blobs.values()) blob.setEnabled(false);
+    for (const blob of this.blobFades) blob.node.visible = false;
   }
 
-  /**
-   * `cbt`'s blob switched on at its standing opacity, or back off, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`)
-   * — so the frame a body first stands on the floor does not also compile the
-   * blob's blended pipeline. It is the player's blob that `Game` asks for,
-   * which the first `updateBlobs` of the round would build anyway. A blob some
-   * frame has already switched on is left alone, and only the one this switched
-   * on is switched off.
-   */
-  warmBlob(on: boolean, cbt: Combatant): void {
-    if (!on) {
-      if (this.warmedBlob) this.warmedBlob.setEnabled(false);
-      this.warmedBlob = null;
-      return;
-    }
-    const fresh = !this.blobs.has(cbt);
-    const blob = this.blobFor(cbt);
-    if (!fresh && blob.isEnabled(false)) return;
-    blob.visibility = CONFIG.graphics.shadows.blobOpacity;
-    blob.setEnabled(true);
-    this.warmedBlob = blob;
-  }
-  private warmedBlob: Mesh | null = null;
-
-  private updateBlob(cbt: Combatant, camPos: Vector3, groundY: number): void {
+  private updateBlob(cbt: Combatant, camPos: Vector3Like, groundY: number): void {
     const blob = this.blobFor(cbt);
     // A dead combatant normally has no shadow, and for the 0.9 s the collapse
     // tween takes that was never visible enough to matter. A ragdoll lies
@@ -903,22 +746,25 @@ export class ShadowSystem {
     if (!cbt.alive) {
       corpse = this.corpseShadow(cbt, this.corpseAt);
       if (corpse <= 0) {
-        blob.setEnabled(false);
+        blob.node.visible = false;
         return;
       }
     }
-    blob.setEnabled(true);
+    blob.node.visible = true;
+    const at = blob.node.position;
     if (corpse > 0) {
       // All three axes from the corpse, `groundY` included — it is the height
       // the body DIED at, and a corpse is the one thing here that moves after
       // that. A body thrown down a bank or off a deck otherwise leaves its
       // shadow hanging at the height it was shot at. Whoever answers the
       // callback owes the floor under the body, not the body's own height.
-      blob.position.set(this.corpseAt.x, this.corpseAt.y + 0.04, this.corpseAt.z);
+      at.set(this.corpseAt.x, this.corpseAt.y + 0.04, this.corpseAt.z);
     } else {
-      blob.position.set(cbt.position.x, groundY + 0.04, cbt.position.z);
+      at.set(cbt.position.x, groundY + 0.04, cbt.position.z);
     }
-    const dist = Vector3.Distance(camPos, blob.position);
+    // Off the math's statics, which read a vector by its fields: `camPos` is
+    // the camera's (Babylon's until `BABYLON_EXIT.md` X6.1f).
+    const dist = Vector3.Distance(camPos, at);
     const fade = Math.min(
       1,
       Math.max(0, 1 - (dist - this.fogStart) / (this.fogEnd - this.fogStart)),
@@ -927,19 +773,19 @@ export class ShadowSystem {
       CONFIG.graphics.shadows.blobOpacity * fade * (corpse > 0 ? corpse : 1);
   }
 
-  private blobFor(cbt: Combatant): Mesh {
+  private blobFor(cbt: Combatant): Fade {
     let blob = this.blobs.get(cbt);
     if (!blob) {
-      blob = MeshBuilder.CreateDisc(
-        "blobShadow",
-        { radius: CONFIG.graphics.shadows.blobRadius, tessellation: 32 },
-        this.scene,
-      );
-      blob.rotation.x = -Math.PI / 2; // CreateDisc faces +Z; tip it face-up
-      blob.material = this.blobMaterial;
-      blob.isPickable = false;
-      blob.metadata = { noInk: true, noGlow: true };
+      blob = new Fade(BLOB);
+      // `CreateDisc`'s FRONT is its -Z, not its +Z, and its pipeline culls
+      // back faces: this turn sends local -Z UP, so the disc faces up and is
+      // seen from above, the floor's side, and from below it draws nothing.
+      // It turned the other way, face down, until the owner's decision of
+      // 2026-11-05 (`BABYLON_EXIT.md` X4.6e, "Decisions"): the contact term
+      // was drawn under every body to nobody standing above it.
+      blob.node.rotation.x = Math.PI / 2;
       this.blobs.set(cbt, blob);
+      this.blobFades.push(blob);
     }
     return blob;
   }

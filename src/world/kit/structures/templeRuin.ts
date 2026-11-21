@@ -4,7 +4,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import { CONFIG } from "../../../config";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
@@ -104,7 +103,7 @@ const CORE_BACK = 0.05;
  * ## The colliders are RINGS, and the whole thing turns on it
  *
  * The obvious build is three nested solid boxes. It looks right, it walks right
- * in the editor, and it silently loses its top tier. `NavGrid` keeps
+ * in a free camera, and it silently loses its top tier. `NavGrid` keeps
  * MAX_SURFACES = 3 per cell and `addSurface` RETURNS when it is full — so trace
  * a cell at the centre: terrain goes in, tier 1's top goes in, tier 2's top goes
  * in, and tier 3's top — the summit, the only part anyone climbs for — is
@@ -202,12 +201,11 @@ const CORE_BACK = 0.05;
  * `CONFORMS_TO_TERRAIN`.
  */
 export function buildTempleRuin(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "temple");
+  const b = new Build(mats, "temple");
   const w = p.width ?? 26;
   const d = p.depth ?? 22;
   // Keep the top tier from inverting on a small footprint: three tiers need six

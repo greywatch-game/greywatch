@@ -7,9 +7,19 @@
 //     [--viewfile v.json]   vantages instead: { "name": { "cam": [..], "tgt": [..] } }
 //                           in the placement's local frame, y above its ground
 //
-// Prints the install time, the scene's vertex count, and per vantage the frame
-// rate (4 s warm-up, 8 s counted) and the active mesh count. Run-to-run spread
-// on one box is about 3%; a change inside that is no change. Needs a GPU.
+// Prints the install time, the world's vertex count, and per vantage the frame
+// rate (4 s warm-up, 8 s counted) and the world's draws. Run-to-run spread on
+// one box is about 3%; a change inside that is no change. Needs a GPU.
+//
+// Both counts are OUR renderer's: a round made Babylon no mesh (the world
+// since BABYLON_EXIT.md X3.7b, the colliders since X5.3e), so the scene's
+// own vertex and active-mesh counts read 0 until it went (X6.1h). The vertices are every surface
+// the build recorded (`GameMap.world`, each `vertexCount` — the blocks, the
+// floor and every scatter placement's copy); the draws are what the main
+// pass's world draw issued on the last frame (`Game.handover.stats.drawn`,
+// census.mjs's world term) — one plain draw a material over the GPU's cull
+// (`render/WorldBlocks.ts`), so it moves with a new material, not with what
+// a vantage sees.
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -51,12 +61,20 @@ try {
   await H.installRound(page);
   const installMs = Date.now() - t0;
   await H.waitUntilDrawn(page);
-  const verts = await page.evaluate(() => window.__celshock.scene.getTotalVertices());
-  console.log(`install ${installMs} ms; scene vertices ${verts}`);
+  const verts = await page.evaluate(() =>
+    window.__celshock.map.world.surfaces.reduce((n, s) => n + s.vertexCount, 0),
+  );
+  console.log(`install ${installMs} ms; world vertices ${verts}`);
   for (const [name, v] of Object.entries(V)) {
     await page.evaluate(({ px, pz, rot, v }) => {
       const g = window.__celshock;
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      // No bodies: the session's roster (`g.net.roster`) re-shows a living
+      // one every frame, so it draws none past 0 m instead.
+      const roster = g.net?.roster;
+      if (roster) {
+        roster.setViewDistance(0);
+        for (const body of roster.soldiers) body.setEnabled(false);
+      }
       const c = Math.cos(rot);
       const s = Math.sin(rot);
       const W = (p) => [px + p[0] * c + p[2] * s, p[1], pz - p[0] * s + p[2] * c];
@@ -87,8 +105,8 @@ try {
       await count(4000);
       return count(8000);
     });
-    const active = await page.evaluate(() => window.__celshock.scene.getActiveMeshes().length);
-    console.log(`${name.padEnd(10)} fps ${fps.toFixed(1)}  active ${active}`);
+    const draws = await page.evaluate(() => window.__celshock.handover.stats.drawn);
+    console.log(`${name.padEnd(10)} fps ${fps.toFixed(1)}  draws ${draws}`);
   }
 } finally {
   await browser.close();

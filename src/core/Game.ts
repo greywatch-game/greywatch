@@ -1,26 +1,60 @@
 /**
  * Game.ts — Orchestrator: scene init, main loop, and ALL cross-system
- * wiring. The only place systems meet — systems never import each other; new
- * cross-system behavior is a callback wired here.
+ * wiring on the PAGE. The only place the page's systems and views meet —
+ * systems never import each other; new cross-system behavior is a callback
+ * wired here.
+ * **The round is not simulated here.** Every
+ * round is a MATCH, played by a `Match` (`server/Match.ts`, running the
+ * simulation core the authority always runs) — a server's, or the page's
+ * OWN: a `Match` this page hosts in a Worker or on a channel in its own
+ * thread (`localOwner`, `net/LocalOwner.ts`), opened per round by
+ * `openLocalRound`, stepped once a frame in `updateWorld` and handed the time
+ * it held from `tick`. Either way the page joins it through the same
+ * `NetSession`, sends its player's acts as messages the authority validates,
+ * and hears what it decided through one switch, `onNetEvent`, which ends in
+ * the presentation methods for the player (`playerHit`, `playerDown`,
+ * `seatAnswer`, `playerSpawned`) — one client model, so there is nothing to
+ * drift. What the page still SIMULATES is its own player as a PREDICTION (the
+ * sweep, the ground, regen for the HUD, the camera), the hull under that
+ * player when they drive one or the cupola gun when they lay one (reported
+ * as `drive`/`gun`), and the prediction systems (`combat`, `grenades`,
+ * `antiTank`, `glass`) that answer its own acts before the authority does.
+ * Whether the page OWNS the match is asked as two getters, `remoteRound` and
+ * `localRound`, and only where the answer is about WHO HOSTS it — who may
+ * restart, choose the map and the difficulty, whether a pause or the deploy
+ * screen holds the world, and the facts that follow from there being a
+ * server at all (the clouds' and the storm's shared clock, the ping column,
+ * whose seed a capture names, the flow fields a server match's smoke walker
+ * steers by). Never what the page PREDICTS. **Its views read the round off the wire and
+ * nothing else**: the bodies (`net.roster`, read through `mapBodies`), the
+ * posed hulls (`syncNetVehicles`), and the flags and tickets onto this page's
+ * own `conquest`, all in `updateNetWorld` whoever hosts the match — so no
+ * object of the authority's is nameable here, and nothing here depends on
+ * when it answers.
  * WHERE THINGS ARE, because this is a long file and a change should not need a
  * read of it: the constructor is CONSTRUCTION ONLY (a linear list of `new X`,
  * which has to stay there — those fields are what strictPropertyInitialization
  * checks) and ends in three calls. Cross-system callbacks are `wireSystems` and
- * the four subject methods under it (`wireDeaths`, `wireGrenades`, `wireBattle`,
- * `wireConquest`) — a new one goes in whichever names its subject. Browser
- * listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
+ * the subject methods under it (`wireDeaths`, `wireGrenades`, `wireBattle`,
+ * `wireVehicles`, `wireAntiTank`) — a new one goes in whichever names its
+ * subject; what the SIMULATION says is `onNetEvent`, whoever hosts the
+ * match. Browser listeners are `installDomListeners`. Screen callbacks are `wireScreens`.
  * `tick` is a dispatch: the input handling for each screen is its own
  * `update*Screen`/`updateMenuCard`/`updatePauseMenu` method, and only `playing`,
- * `dying` and `editor` are inline, because they are two lines each.
+ * `dying` and `viewer` are inline, because they are two lines each.
+ * The dev-only map VIEWER (`F2`, `toggleViewer`) is a LID over a round, the one
+ * that moves the camera.
  * The remembered difficulty/map/loadout live in `prefs.ts`, the display
  * settings in `settings.ts`; neither applies anything, that is this file's job.
  * Which SERVER is `net/RegionBook.ts` — the list, the pick, and the automatic
  * pick — and it neither stores nor draws, for the same split: `setRegion` here
  * is what writes the pref and what tells the lobby screen.
  * State machine: menu -> deploy -> playing (deploy re-entered on each death)
- * -> roundover. The 3D scene renders live behind every state. The SHAPE of it
+ * -> roundover. The frame is drawn live behind every state (ours since
+ * `BABYLON_EXIT.md` X5.4f, `core/SceneFrame.ts`: there is no Babylon scene since X6.1h). The SHAPE of it
  * is `ScreenStack.ts` and not this file: what a screen may cover, what it holds
- * offline, what it owes a netplay round and whether the scoreboard is owed to
+ * in the page's own match, what it owes a server's round and whether the
+ * scoreboard is owed to
  * it are one declared row per state there. This file holds one `ScreenStack`,
  * moves it with `go`/`raiseLid`/`lowerLid`, and never assigns a state —
  * `Game.state` is a getter. `takeDown` is the one place that knows what putting
@@ -32,66 +66,120 @@
  * simulate, and a fogged frame or a panned fire is wrong in exactly the states
  * that do not. Nothing may move the camera after any of them.
  * ConquestSystem.update runs before BattleSystem.update (bots see this frame's
- * flag ownership). Muzzle-flash light budget is spent here
- * (spendMuzzleLightBudget) — new per-bot transient lights need the same
- * treatment; a grenade's blast light is deliberately outside it (seconds
- * apart, not eighty a second). A bot goes down through registerBotKill
- * whichever of the three things killed it — rifle, player rifle, grenade — and
- * whoever put it there is credited through creditKill, one door each: the
- * victim's death is known where it fell and the kill only where it was fired.
+ * flag ownership) — inside the authority's `SimCore.step`, which keeps the
+ * order. Muzzle-flash
+ * light budget is spent here (spendMuzzleLightBudget) — new per-bot transient
+ * lights need the same treatment; a grenade's blast light is deliberately
+ * outside it (seconds apart, not eighty a second). A bot's death, its killer's
+ * credit and every award are the simulation's (one ledger, in the authority's
+ * `SimCore`); the page draws the killfeed line off the authority's `kill`
+ * (`onNetKill`), the score feed off its `score` (`onNetEvent`), and the
+ * corpse when the roster's interpolated death arrives (`roster.onDeath`).
  * The map is a `MapDef` held in one field (`mapDef`) and built in one method
- * (`installMap`), which both a round start and an editor rebuild go through —
- * no map's layout or environment may be named anywhere else in here.
- * Also owns: the glow's RULES (`GlowRules` — which meshes may bloom this frame,
- * and the distance fade on each — the bloom is the one
- * pass that reads a material and never asks where the mesh stands, so without
- * it a glow is the last thing left when the world around it has gone to fog;
- * infiniteDistance exempts the moon),
- * ShadowSystem wiring (casters re-registered per round from map.visuals),
+ * (`installMap`), which a round start goes through and nothing else — no
+ * map's layout or environment may be named anywhere else in here.
+ * Also owns: the glow's RULES (`GlowRules` — what may bloom this frame, and
+ * the distance fade on each — the bloom is the one
+ * pass that reads a material and never asks where the surface stands, so
+ * without it a glow is the last thing left when the world around it has gone
+ * to fog — one statement each, `glowAdmits` and `bloomColour`, asked by every
+ * draw of ours into the glow's mask (the emissive palette's `WorldGlow`, the
+ * visors, the pieces, the billows, the fires) and of the moon by `SkyDraw`,
+ * which `admits` alone reaches, a moon having no fade; `GlowPass` asked them
+ * of Babylon's meshes through an interface of that name until
+ * `BABYLON_EXIT.md` X5.3d),
+ * ShadowSystem wiring (told per round when the handover has its casters),
  * WorldCulling wiring (the map filed per install, the eye pushed from `tick` in
  * every state beside the shader's own — it decides how much of the map Babylon
  * walks each frame and writes nothing onto any mesh),
- * pipeline.imageProcessingEnabled === false, window.__celshock debug handle.
+ * the answer to a LOST graphics device (`deviceLost`, `BABYLON_EXIT.md` X5.4i:
+ * the teardown between frames, then the page reloaded to the menu, or the
+ * boot's plate for a second loss inside the window — `core/deviceLoss.ts` —
+ * and no build or match opened after it, `deviceIsLost`),
+ * window.__celshock debug handle (DEV builds only).
+ *
+ * ## Licence
+ *
+ * `inFrustum` only — with `inPlanes`, the same test over planes copied to
+ * numbers — restates Babylon.js 9.28's sphere-against-frustum test
+ * (`Culling/boundingSphere.js`, `BoundingSphere.isInFrustum`, through
+ * `Maths/math.plane.js`' `dotCoordinate`), which is licensed under the Apache
+ * License, Version 2.0 (`licenses/babylonjs.md`;
+ * https://www.apache.org/licenses/LICENSE-2.0). "Babylon.js — Copyright 2023
+ * The Babylon.js team" (its NOTICE). Changes from the original: a centre
+ * and a radius as numbers in place of a `BoundingSphere`.
  */
-import {
-  Color3,
-  DefaultRenderingPipeline,
-  Matrix,
-  type PostProcess,
-  Scene,
-  type SubMesh,
-  Vector3,
-  Viewport,
-  WebGPUCacheRenderPipeline,
-  type WebGPUEngine,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { Color3, type Color3Like, Color4, Matrix, type Plane, Vector3, type Vector3Like } from "../math";
 import {
   CelMaterialFactory,
   fogAmountAt,
+  writePaletteIndex,
 } from "../shaders/CelShader";
+import { ChainPasses } from "../render/ChainPasses";
+import { Renderer } from "../render/Renderer";
+import { BodyDraw } from "../render/BodyDraw";
+import { HullDraw } from "../render/HullDraw";
+import { ViewDraw, type ViewDrawSegment } from "../render/ViewDraw";
+import { PoolDraw, type PoolKit } from "../render/PoolDraw";
+import { BlastDraw } from "../render/BlastDraw";
+import { CloudDraw } from "../render/CloudDraw";
+import { SkyDraw } from "../render/SkyDraw";
+import { GrassDraw } from "../render/GrassDraw";
+import { ZoneDraw } from "../render/ZoneDraw";
+import { WaterDraw } from "../render/WaterDraw";
+import { NearestRun } from "../render/NearestRun";
+import { GlassDraw } from "../render/GlassDraw";
+import { FadeDraw } from "../render/FadeDraw";
+import { FADE, FarthestRun } from "../render/FarthestRun";
+import { PLACED_WORDS } from "../render/celVertex";
+import { FlameDraw } from "../render/FlameDraw";
+import { ParticleDraw, type ParticleCamera } from "../render/ParticleDraw";
+import type { CelRecipe } from "../render/celMaterial";
+import { HULL_CHARRED } from "../render/hullProgram";
+import { BodyShadowMap } from "../render/BodyShadowMap";
+import { LampAtlas } from "../render/LampAtlas";
+import { ProbeBake } from "../render/ProbeBake";
+import { WorldGlow } from "../render/WorldGlow";
+import { WorldShadows } from "../render/WorldShadows";
+import { GlowBlur } from "../render/GlowBlur";
+import { PostChain } from "../render/PostChain";
 import { PaperGrain } from "../shaders/PaperGrain";
 import { CelInk } from "../shaders/CelInk";
-import { fxaaShaderIsOurs } from "../shaders/Fxaa";
-import { FrameDepth } from "../shaders/FrameDepth";
-import { fadesOwnBloom } from "../shaders/EmissiveWorld";
-import { GlowPass } from "../shaders/GlowPass";
+import { Fxaa } from "../shaders/Fxaa";
+import { GlowPass, glowKernels } from "../shaders/GlowPass";
 import { MotionBlur } from "../shaders/MotionBlur";
-import { Volumetrics, type VolumetricRung } from "../shaders/Volumetrics";
-import { Bot } from "../entities/Bot";
+import { Volumetrics, volumetricStages, type VolumetricRung } from "../shaders/Volumetrics";
 import { difficultyNames, profileFor } from "../entities/BotSkill";
 import { callsign } from "../entities/callsigns";
 import { OTHER_TEAM, type Combatant, type Team } from "../entities/Combatant";
+import type { CanvasSurface } from "./CanvasSurface";
 import { FrameCap } from "./FrameCap";
+import { answerLoss, takeLossNotice } from "./deviceLoss";
+import { type FrameClock, FrameLoop } from "./FrameLoop";
 import { FrameProfile } from "./FrameProfile";
-import { PipelineWarmup } from "./PipelineWarmup";
+import { PendingData } from "./PendingData";
+import { type DeclaredPipelines, PipelineWarmup } from "./PipelineWarmup";
 import { P } from "./profilePhases";
 import { NetSession, type LocalGun, type LocalHull } from "../net/NetSession";
+import { LocalOwner } from "../net/LocalOwner";
+import type { MatchHost } from "../net/matchHost";
+import { NetSoldier } from "../entities/NetSoldier";
+import {
+  KIT_COLORS,
+  pooledBody,
+  soldierKits,
+  VISOR_COLORS,
+  writeRigCentres,
+  writeRigDrawing,
+  type SoldierRig,
+} from "../entities/SoldierModel";
 import { clearRequestTimings, fetchMatches } from "../net/lobby";
 import { HitCredits } from "../net/HitCredits";
 import { NetShotQueue, type PendingShot } from "../net/NetShotQueue";
 import { RegionBook } from "../net/RegionBook";
 import {
+  MAX_FRAME_DT,
   SNAPSHOT_HZ,
   TICK_HZ,
   type MapVoteMessage,
@@ -99,6 +187,8 @@ import {
 } from "../net/protocol";
 import { type FinishId } from "../entities/finishes";
 import { Player } from "../entities/Player";
+import { PlayerView } from "../entities/PlayerView";
+import type { DriveInput, GunInput, Vehicle } from "../entities/Vehicle";
 import {
   DRIVER,
   GUNNER,
@@ -106,18 +196,15 @@ import {
   chooseSeat,
   type SeatHolder,
   type CrewSeat,
-  type DriveInput,
-  type GunInput,
-  type Vehicle,
-} from "../entities/Vehicle";
-import { resolveOrdnance, type EquipmentId } from "../entities/equipment";
+} from "../entities/hullSeats";
+import { type EquipmentId } from "../entities/equipment";
 import { type SightId } from "../entities/sights";
 import {
   throwableCarried,
   throwableShort,
   type ThrowableId,
 } from "../entities/throwables";
-import { VIEWMODEL_GROUP } from "../entities/ViewModel";
+import { segmentBounds, type ViewMesh, type ViewSegment } from "../entities/viewTree";
 import {
   carriedSetup,
   isWeaponId,
@@ -127,49 +214,52 @@ import {
 } from "../entities/weapons";
 import { AimAssistSystem } from "../systems/AimAssistSystem";
 import { Atmosphere } from "../systems/Atmosphere";
-import { BattleSystem } from "../systems/BattleSystem";
-import { CaptureZoneSystem } from "../systems/CaptureZoneSystem";
+import { CaptureZoneSystem, zoneRecipes } from "../systems/CaptureZoneSystem";
+import { CombatFx, FADE_EMISSIVE } from "../systems/CombatFx";
+import { type Fade, type FadeKit, SPARK, DISC } from "../entities/fades";
 import {
   CombatSystem,
   type DamageKind,
   type Hittable,
 } from "../systems/CombatSystem";
-import {
-  ConquestSystem,
-  scatterSpawn,
-  type ControlPoint,
-} from "../systems/ConquestSystem";
+import { ConquestSystem } from "../systems/ConquestSystem";
 import { DeathCam } from "../systems/DeathCam";
 import { VehicleCamera } from "../systems/VehicleCamera";
-import { VehicleCrew } from "../systems/VehicleCrew";
 import {
   VehicleSystem,
   type VehicleOrders,
 } from "../systems/VehicleSystem";
+import { VehicleViews } from "../systems/VehicleViews";
+import { hullKits } from "../entities/vehicleModels";
+import { composeHull, hullPalette, writeHullDrawing, type HullKit, type SphereGate } from "../entities/vehicleRig";
+import { composeNode, worldSphere, writePieceDrawing, type Piece, type PieceGate, type PieceKit, type PieceKits } from "../entities/pieces";
+import { MARK_DEPTH_UNITS, MARK_PAINTS, MARK_SHAPES } from "../systems/BulletMarks";
 import { GrassSystem } from "../systems/GrassSystem";
-import { BlastDebrisSystem } from "../systems/BlastDebrisSystem";
-import { DebrisSystem } from "../systems/DebrisSystem";
+import { BlastDebrisSystem, HARD_TINT, type DebrisGround } from "../systems/BlastDebrisSystem";
+import { DebrisSystem, SHARD_COLOR } from "../systems/DebrisSystem";
+import { writePosedDrawing, type PosedPiece } from "../systems/poseView";
 import { GlassSystem } from "../systems/GlassSystem";
-import { AntiTankSystem } from "../systems/AntiTankSystem";
+import { GlassFx } from "../systems/GlassFx";
+import { AntiTankFx } from "../systems/AntiTankFx";
+import { AntiTankSystem, MINE_POOL, ROCKET_POOL } from "../systems/AntiTankSystem";
 import {
-  crewLost,
-  crushSweep,
   fireHullGun,
   fireHullMg,
   type HullRound,
   type HullRules,
 } from "../systems/hullRules";
-import { settleKill, type KillLedger } from "../systems/killRules";
+import type { KillLedger } from "../systems/killRules";
+import { GrenadeFx } from "../systems/GrenadeFx";
 import { GrenadeSystem, type BlastGround } from "../systems/GrenadeSystem";
+import { SIM_PHASES, type SimPhase } from "../sim/stepTiming";
 import { PhysicsWorld, type HavokInstance } from "../systems/PhysicsWorld";
 import { RagdollSystem } from "../systems/RagdollSystem";
 import { ReflectionSystem } from "../systems/ReflectionSystem";
 import { RotorWash } from "../systems/RotorWash";
 import { RoundRandom, STREAM, freshSeed } from "../systems/RoundRandom";
-import { ScoreBook, awardKill, awardZone, paysKiller } from "../systems/ScoreBook";
 import { LightingSystem, type RoomLight } from "../systems/LightingSystem";
 import { AmbienceSystem } from "../systems/AmbienceSystem";
-import { BodyShadows, type ShadowBody } from "../systems/BodyShadows";
+import { BODY_SHADOW_PROXIES, BodyShadows, type ShadowBody } from "../systems/BodyShadows";
 import { GiVolume } from "../systems/GiVolume";
 import { LocalShadows } from "../systems/LocalShadows";
 import { ShadowSystem } from "../systems/ShadowSystem";
@@ -177,18 +267,21 @@ import { Sky } from "../systems/Sky";
 import { LightningStrikes } from "../systems/LightningStrikes";
 import { WaterSystem } from "../systems/WaterSystem";
 import { WorldCulling, type PooledBody } from "../systems/WorldCulling";
+import { BlockHandover, type WorldOwner } from "../systems/BlockHandover";
 import {
+  applyClearColor,
   applyEnvironment,
   bodyDrawDistanceOf,
+  hullDrawDistanceOf,
   type EnvironmentSpec,
 } from "../world/environment";
 import { Leash, LEASH_KILLER } from "../world/leash";
 import { perTeamOf, type Heightfield } from "../world/layout";
-import type { EditorSession } from "../editor";
+import type { ViewerSession } from "../viewer";
 import type { MixerSession } from "../dev/mixer";
-import type { BenchScript, FightHash } from "../bench/BenchScript";
+import type { BenchScript } from "../bench/BenchScript";
 import { MAPS, loadHeights, type MapDef } from "../world/maps";
-import { MapBuilder, type BuildOptions, type GameMap } from "../world/MapBuilder";
+import { MapBuilder, type GameMap } from "../world/MapBuilder";
 import { TerrainField } from "../world/TerrainField";
 import { newRayHit } from "../world/RayWorld";
 import { DeployScreen } from "../ui/DeployScreen";
@@ -207,8 +300,9 @@ import { LobbyScreen } from "../ui/LobbyScreen";
 import { Minimap } from "../ui/Minimap";
 import { TouchControls } from "../ui/TouchControls";
 import { GyroInput } from "./GyroInput";
+import { CullCheckPanel } from "../ui/CullCheckPanel";
 import { ProfileChip } from "../ui/ProfileChip";
-import { enterFullscreenOnTouch } from "../pwa/register";
+import { enterFullscreenOnTouch, keepScreenAwake } from "../pwa/register";
 import { CameraSystem } from "./CameraSystem";
 import { InputManager } from "./InputManager";
 import {
@@ -247,10 +341,47 @@ import { PointerLockChase } from "./PointerLockChase";
 import { Sfx } from "./Sfx";
 import { UrlOverrides, urlFlag } from "./urlOverrides";
 import { setViewerTeam, teamLook } from "./teamView";
-import { forgetBindGroups } from "./webgpuLeaks";
+import { RenderId } from "./renderId";
+import { SceneFrame } from "./SceneFrame";
 
-/** Grass bends around combatants; in the editor there are none. */
-const EMPTY_PUSHERS: readonly Combatant[] = [];
+/**
+ * The bodies in the round when there is no round — the menu and the building
+ * card: nothing on the minimap, under a blob, in the bodies' shadow map or in
+ * the grass.
+ */
+const NO_SOLDIERS: readonly NetSoldier[] = [];
+
+/**
+ * The profiler slot each of the core's timed phases is filed into
+ * (`LocalOwnerHooks.fileTiming`, off the page's own match). A `Record` over the
+ * core's phase names, so a phase the core adds does not compile here until it
+ * has a slot.
+ */
+const SIM_SLOT: Readonly<Record<SimPhase, number>> = {
+  conquest: P.simConquest,
+  vehicles: P.simVehicles,
+  bots: P.simBots,
+  grenades: P.simGrenades,
+  antiTank: P.simAntiTank,
+};
+/** …indexed as `SimCore.timing` is. */
+const SIM_SLOTS: readonly number[] = SIM_PHASES.map((name) => SIM_SLOT[name]);
+
+/** Nobody — what the page's prediction systems are handed to hurt. */
+const NO_TARGETS: Hittable[] = [];
+/** …and the same nobody, as the bodies a crush would sweep. */
+const NO_BODIES: Combatant[] = [];
+
+/**
+ * The ledger the page's own hull rules hold: a door no kill reaches. Those
+ * rules run only as a PREDICTION (`resolveShell`/`resolveMg`), where every
+ * target refuses local damage, so nothing is ever credited or charged through
+ * them — the round's kills are the authority's, whoever hosts the match.
+ */
+const NO_LEDGER: KillLedger = {
+  credit: () => false,
+  botDown: () => {},
+};
 
 /**
  * A benchmark, from the moment `?bench=` books one to the frame it ends — see
@@ -262,20 +393,40 @@ interface BenchRun {
   kit: typeof import("../bench/BenchScript");
   /** Laid at the bake's end, when there is a built map to lay it over. */
   script: BenchScript | null;
-  fight: FightHash;
+  /** Fight steps handed to the match — one `advance` each. */
+  steps: number;
+  /**
+   * The segment the last frame was labelled with, -1 before the first: a frame
+   * that changes it drops the step timing still to be filed
+   * (`LocalOwner.dropTiming`), which belongs to the segment it was posted
+   * under.
+   */
+  segment: number;
   /** The player's own tier, put back when the run ends. */
   difficulty: number;
   /** The bot the spectator follows, by roster index; -1 for none yet. */
   focus: number;
   roundEnded: boolean;
+  /**
+   * The run is over and its fight's hash is being read back off the match
+   * (`endBench`): the ring is halted and nothing more is stepped or recorded.
+   */
+  ending: boolean;
+  /**
+   * The HOLD before a touch device's run (`holdBench`): `tap` until the
+   * prompt is tapped, `settle` until the screen has, and null once the run
+   * has started — from the first frame on a fine pointer.
+   */
+  hold: "tap" | "settle" | null;
+  /** Wall-clock seconds since the tap, and the sizes unchanged for how long. */
+  holdFor: number;
+  holdStill: number;
+  /** The canvas and the window the settle last saw. */
+  holdCanvasW: number;
+  holdCanvasH: number;
+  holdWindowW: number;
+  holdWindowH: number;
 }
-
-/**
- * The camera's own local forward, for `getDirection`. A module constant because
- * the one caller runs per frame and `Axis.Z` would be the same object read
- * through another import.
- */
-const FORWARD_Z = new Vector3(0, 0, 1);
 
 /**
  * One arm of the server's event union, named by its own tag.
@@ -296,7 +447,7 @@ interface Seat {
   tank: Vehicle;
   /**
    * Which of the hull's two jobs this offer is for. `chooseSeat` decides it,
-   * the same call `HeadlessGame.seat` grants with, so the "first man drives"
+   * the same call `SimCore.seat` grants with, so the "first man drives"
    * rule and the eviction order are stated in one place for both processes.
    */
   seat: CrewSeat;
@@ -311,10 +462,23 @@ interface Seat {
  * Half the plate's own height, so the thing rests ON the road rather than
  * half-buried in it — an art constant and therefore here rather than in
  * `CONFIG.equipment`, which is where the numbers a designer tunes live. It has
- * to agree with `buildMineBody`'s cylinder, which is the one other place the
- * plate's size is written.
+ * to agree with the body cylinder in `minePieceParts` (`entities/MineModel.ts`),
+ * which is the one other place the plate's size is written.
  */
 const MINE_LIFT = 0.04;
+
+/**
+ * The most hulls one frame draws (`hullDraw`, `BABYLON_EXIT.md` X4.2b): what
+ * its staging arrays and buffers are sized to, not a rule about a map. The
+ * densest shipped fleet is six (Sarab, Cinderhaven); a map past this draws,
+ * each frame, the first sixteen hulls that are PRESENT and not faded out by
+ * the map's draw distance, those drawn whole first and the fading ones after
+ * them, each in hardstanding order (`drawHulls` skips a hidden or faded-out
+ * one before it counts, X4.2d), so which hulls go undrawn moves as hulls are
+ * hidden, placed again and driven through the fade — and says so on the
+ * console at the install (`installMap`).
+ */
+const HULL_DRAW_CAPACITY = 16;
 
 /**
  * The key a burning molotov's held-open sound is filed under in `Sfx`.
@@ -330,23 +494,69 @@ function fireSoundKey(id: number): number {
 }
 
 /**
- * Squared eye distance to a submesh's bounding-sphere centre, for the
- * front-to-back opaque sort installed in the constructor.
- *
- * Squared because a sort only needs the ORDER, and the centre rather than the
- * near point because this is picking a drawing order rather than measuring
- * anything: a merged block's near point would order two overlapping blocks
- * more correctly and cost a radius lookup per comparison to do it, and getting
- * that pair the wrong way round costs one block's early rejection rather than
- * a wrong picture.
+ * Files surface `i` into the first `n` of a list sorted nearest first: a stable
+ * insertion, so it moves ahead only of one strictly farther, as Babylon's stable sort
+ * over the order its meshes were made in. Allocates nothing.
  */
-function eyeDistanceSq(sub: SubMesh, eye: Vector3): number {
-  const c = sub.getBoundingInfo().boundingSphere.centerWorld;
-  const dx = c.x - eye.x;
-  const dy = c.y - eye.y;
-  const dz = c.z - eye.z;
-  return dx * dx + dy * dy + dz * dz;
+function fileNearest(keys: Float64Array, order: Int32Array, n: number, key: number, i: number): void {
+  let r = n;
+  while (r > 0 && keys[r - 1] > key) {
+    keys[r] = keys[r - 1];
+    order[r] = order[r - 1];
+    r--;
+  }
+  keys[r] = key;
+  order[r] = i;
 }
+
+/**
+ * Files `code` into the first `n` of a list sorted FARTHEST first: a stable
+ * insertion, so it moves ahead only of one strictly nearer, as Babylon's stable
+ * sort over its active list put its transparent meshes (`backToFrontSortCompare`).
+ * Allocates nothing.
+ */
+function fileFarthest(keys: Float64Array, order: Int32Array, n: number, key: number, code: number): void {
+  let r = n;
+  while (r > 0 && keys[r - 1] < key) {
+    keys[r] = keys[r - 1];
+    order[r] = order[r - 1];
+    r--;
+  }
+  keys[r] = key;
+  order[r] = code;
+}
+
+/**
+ * Babylon's frustum test of a mesh under its default culling strategy
+ * (`CULLINGSTRATEGY_BOUNDINGSPHERE_ONLY`): its world bounding sphere against
+ * the six planes, `BoundingSphere.isInFrustum` operation for operation — out
+ * where any plane has the centre at or more than a radius behind it.
+ */
+function inFrustum(x: number, y: number, z: number, radius: number, planes: readonly Plane[]): boolean {
+  for (let i = 0; i < 6; i++) {
+    const p = planes[i];
+    if (p.normal.x * x + p.normal.y * y + p.normal.z * z + p.d <= -radius) return false;
+  }
+  return true;
+}
+
+/**
+ * `inFrustum` over planes copied to numbers (`heldPlanes`, a plane's normal then
+ * its `d`): the same arithmetic, read through no getter, so a test made forty
+ * times a frame boxes nothing however it is compiled.
+ */
+function inPlanes(x: number, y: number, z: number, radius: number, planes: Float64Array): boolean {
+  for (let i = 0; i < 24; i += 4) {
+    if (planes[i] * x + planes[i + 1] * y + planes[i + 2] * z + planes[i + 3] <= -radius) return false;
+  }
+  return true;
+}
+
+/**
+ * A world fire's world matrix, as its frozen mesh held it: the identity, in
+ * the float32 its `world` uniform was uploaded as (`flamePull`).
+ */
+const IDENTITY_16 = Float32Array.of(1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1);
 
 /**
  * The carried-light id for one of the kit screen's bench lamps. A function so
@@ -386,22 +596,25 @@ function burstSpacing(rounds: number): number {
 }
 
 /**
- * Top-level orchestrator: owns the scene, all systems, the game state machine,
- * and the per-frame update loop. The ENGINE is the one thing here it does not
- * own — `main.ts` builds it (WebGPU's is async) and hands it in, exactly as it
- * hands in Havok.
+ * Top-level orchestrator: owns the frame, all systems, the game state machine,
+ * and the per-frame update loop. The DEVICE and the CANVAS are the things here
+ * it does not make — `main.ts` asks for the device (WebGPU's is async),
+ * configures the canvas's context and hands both in as the device and the
+ * `CanvasSurface`, exactly as it hands in Havok (`BABYLON_EXIT.md` X5.4h).
+ * There is no Babylon scene and no engine under one (X6.1h).
  *
  * Systems never import each other — `Game` is the only place they meet, and
  * cross-system behavior belongs in this wiring rather than in an import.
  */
-/**
- * The rung a pass is built at purely to CLAIM the shafts' slot, when the player
- * has them off. It is the cheapest one, it is never drawn, and it exists only
- * because `attachPostProcess` appends — see the constructor.
- */
-const FIRST_VOLUMETRIC_RUNG = Object.keys(
-  CONFIG.graphics.volumetrics.rungs,
-)[0] as VolumetricRung;
+/** A failure of the clouds with no round standing is the console's (`CloudDraw.onFailed`). */
+function cloudsFailedOverMenu(reason: string): void {
+  console.error(`[sky] the clouds cannot be drawn — ${reason}`);
+}
+
+/** …and of the dome and the moon (`SkyDraw.onFailed`). */
+function skyFailedOverMenu(reason: string): void {
+  console.error(`[sky] the sky cannot be drawn — ${reason}`);
+}
 
 /** A 32-bit FNV-1a of a map id — the storm's seed. */
 function hashId(id: string): number {
@@ -413,10 +626,55 @@ function hashId(id: string): number {
   return h >>> 0;
 }
 
+/**
+ * Runs `steps` in order, each on its own: one that throws is said on the
+ * console and stops none after it — a lost device's teardown and the page
+ * let go under its plate (`Game.deviceLost`), where a throw from a dispose
+ * meeting a dead device, or a field a constructor that threw never set, must
+ * not leave the rest undone.
+ */
+function eachStep(what: string, steps: readonly (() => void)[]): void {
+  for (const step of steps) {
+    try {
+      step();
+    } catch (error) {
+      console.error(`[device] ${what}: a step threw, the rest go on`, error);
+    }
+  }
+}
+
 export class Game {
-  private engine: WebGPUEngine;
-  private scene: Scene;
+  /**
+   * THE CANVAS (`core/CanvasSurface.ts`, `BABYLON_EXIT.md` X5.4h): its WebGPU
+   * context, its backing store's size and the scaling level that size is read
+   * through — what every reader of a render size, a scaling level or an
+   * aspect ratio asks. The render-scale setting's setter is
+   * `applyRenderScale`. Public for the probes (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly surface: CanvasSurface;
   private mats: CelMaterialFactory;
+  /**
+   * OUR renderer (`src/render/`), every pass of the frame on the game's own
+   * device (`BABYLON_EXIT.md` X5.4f to X5.4h). Built once with the factory
+   * whose fields fill its frame.
+   */
+  readonly renderer: Renderer;
+  /**
+   * The map's world as `renderer` draws it, in every pass of a round and
+   * never by Babylon, of which no mesh is made (`BABYLON_EXIT.md` X3.3,
+   * X3.7b) — and what it cannot draw, the world's failure (`worldFailed`).
+   */
+  readonly handover: BlockHandover;
+  /** A `worldFailed` is waiting for the task in hand to end: a second is the same failure. */
+  private worldFailing = false;
+  /**
+   * Whose world the round in hand is drawn with: the owner `installMap`
+   * latched into the handover for it (a fresh object an install), and null
+   * from `startRound` until the new round installs — while the OLD map still
+   * stands under its building card, whose failure is then no news of the
+   * round being built (`worldFailed`).
+   */
+  private roundWorld: WorldOwner | null = null;
   private input: InputManager;
   private cameraSys: CameraSystem;
   private hud: HUD;
@@ -461,28 +719,64 @@ export class Game {
    */
   private readonly prof = new FrameProfile();
   /**
-   * The frame-rate cap (`Settings.fpsCap`). Installed as the engine's frame
-   * requester once, in the constructor, and only ever re-RATED after — at 0 it
-   * admits every refresh, so the loop runs exactly as it did without one.
+   * The frame-rate cap (`Settings.fpsCap`): the ADMITTER our loop asks of
+   * every refresh (`frameLoop`), only ever re-RATED after the constructor — at
+   * 0 it admits every refresh, so the loop runs exactly as it did without one.
    */
   private readonly frameCap = new FrameCap();
   /** The profiler's corner of the HUD. Up only while the ring is recording. */
   private profChip: ProfileChip;
   private sfx: Sfx;
   private mapBuilder: MapBuilder;
+  /**
+   * **The page's own match**, and this page's OWNERSHIP of it
+   * (`net/LocalOwner.ts`): the host — a `Match` in a Worker, or on a channel
+   * in this thread (`src/net/matchHost.ts`) — and everything owning it means.
+   * Every round that is not a server's is one of its matches, opened, begun
+   * and closed from here (`openLocalRound`, `leaveMatch`), and joined
+   * through a `NetSession` exactly as a server's is — so the round is decided
+   * over there, by the same `Match` a server runs, and reaches this page only
+   * as the wire.
+   *
+   * What OWNING it buys is the clock: the match steps only when this page
+   * hands it time (`LocalOwner.step`, from `updateWorld` — the one door), so
+   * a pause and the deploy screen genuinely hold the world, and the time a
+   * frame does not step is handed over as HELD (`LocalOwner.pass`, from
+   * `tick`) so the match's clock stays on the wall's and the client's offset
+   * never sees a hold. Its channel is read off it every time
+   * (`localOwner.match`), because a lost host is replaced.
+   */
+  private readonly localOwner: LocalOwner;
+  /**
+   * Every round's resolve — the simulation half —
+   * and on this page only ever a PREDICTION: this client's own shot, shell
+   * and belt, resolved here for the tracer and the hitmarker guess while the
+   * authority decides.
+   */
   private combat: CombatSystem;
+  /**
+   * Every round's PICTURE: the tracer, spark, disc and mark pools. Fed by
+   * `combat.onRound` and by `drawNetShots`, and never writes the simulation.
+   */
+  private combatFx: CombatFx;
   /** Thrown grenades — the one thing on the map that is not hitscan. */
   private grenades: GrenadeSystem;
   /**
+   * The grenades' PICTURE: every flight's body, a fire's flames and a blast's
+   * billows. Reads `grenades`' pools after each `update` and is handed the
+   * rest by its events (`onBlast`, `onIgnited`, `onBurntOut`), and never
+   * writes the simulation — the `CombatFx` split one system over.
+   */
+  private grenadeFx: GrenadeFx;
+  /**
    * The anti-tank kit in the world: rockets in the air, mines on the ground.
    *
-   * Offline only, and on a map with armour only — the same gate the hulls
-   * themselves take in `installMap`, for the same reason. Built unconditionally
-   * all the same: its two pools are eight bodies and sixteen plates, and a
-   * system that exists and is never asked anything costs one `update` call a
-   * frame over two empty loops.
+   * The player's own rocket PREDICTED the frame the trigger goes; the
+   * authority's rockets and mines are drawn off the wire (`NetOrdnance`).
    */
   private antiTank: AntiTankSystem;
+  /** The AT kit's PICTURE — the rockets and the plates, posed off `antiTank`'s pools. */
+  private antiTankFx: AntiTankFx;
   /** The only physics engine in the game, and the two things that use it. */
   private physics: PhysicsWorld;
   /** Corpses under physics. */
@@ -497,39 +791,104 @@ export class Game {
   private blastDebris: BlastDebrisSystem;
   /** Breakable glazing — the one part of the world that is not static. */
   private glass: GlassSystem;
+  /** The picture of a pane going in — `glass`'s view. Client only. */
+  private glassFx: GlassFx;
   /** The player's own death: a stand-in body, and the camera that watches it. */
   private deathCam: DeathCam;
   private aimAssist: AimAssistSystem;
   /**
    * The armour on the field. Empty on every map that states no hardstandings,
-   * which is two of the four shipped.
+   * which is three of the seven shipped.
    *
-   * In a NETPLAY round it is built exactly the same way and OWNED differently:
-   * the fleet is `predicted`, so no hull here takes local damage and neither
-   * hardstanding clock runs — the authority decides all of it, and everything
-   * but the hull this player is sitting in is posed from the wire. See
-   * `docs/vehicles.md`.
+   * **The page's fleet is a picture and one prediction, whoever hosts the
+   * match**: it is built `predicted`, so no hull
+   * here takes local damage and neither hardstanding clock runs, and every
+   * hull but the one this player drives is POSED off the wire
+   * (`syncNetVehicles`). The one exception is the hull under its own driver,
+   * which this page steps and reports. See `docs/vehicles.md`.
    */
   private vehicles: VehicleSystem;
+  /**
+   * What the fleet LOOKS like — one `VehicleView` per hull, built over
+   * `vehicles` by `installMap` and torn down by `teardownMap`, stepped right
+   * after every `vehicles.update` and drawn (its joints composed) once a
+   * frame beside the bodies, before the render. The authority has no such
+   * thing.
+   */
+  private vehicleViews: VehicleViews;
   /** The view from outside the hull you are driving. `DeathCam`'s shape. */
   private vehicleCam: VehicleCamera;
   /**
-   * The bots that drive. Empty on a map with no hardstandings, because the
-   * boarding sweep walks a fleet that has nothing in it — and empty in a
-   * NETPLAY round for a different reason: the hulls are there, but this client
-   * runs no AI at all, so the crews inside them are the authority's and a
-   * local one would be a second brain steering a hull posed from the wire.
-   *
-   * It is a system of its own rather than a branch inside `BattleSystem`
-   * because a bot in a hull is not a bot doing something unusual: it is out of
-   * `Bot`'s FSM entirely, and everything about how it moves, what it can see
-   * and what it shoots with belongs to the vehicle. See `VehicleCrew`'s header.
+   * The flags and the tickets as the authority has them — a MIRROR, written
+   * from the wire (`NetRoster`, `updateNet`) and stepped by nobody. Every
+   * gauge, the deploy screen's offer and the capture rings read it.
    */
-  private crew: VehicleCrew;
-  private battle: BattleSystem;
   private conquest: ConquestSystem;
   /** The flags' in-world markers — rings, skirts and beacons. */
   private zones: CaptureZoneSystem;
+  /**
+   * The rings' and the flags' draw (`BABYLON_EXIT.md` X4.6b): every surface of
+   * `zones`, fed by `drawZones` and ordered by `nearestPull` inside the render.
+   */
+  private readonly zoneDraw: ZoneDraw;
+  /**
+   * The grass field as our renderer draws it (`BABYLON_EXIT.md` X4.6c);
+   * `grass` writes its runs and values, and `drawGrass` passes it through the
+   * size gate.
+   */
+  private readonly grassDraw: GrassDraw;
+  /**
+   * The water as our renderer draws it (`BABYLON_EXIT.md` X4.6d); `water`
+   * writes its values and which shape each body takes, and `drawWater` passes
+   * each through the size gate.
+   */
+  private readonly waterDraw: WaterDraw;
+  /**
+   * The one nearest-first run of the zones, the blades and the water (X4.6d): where
+   * each falls among the rest, ordered by `nearestPull` inside the render.
+   */
+  private readonly nearestRun: NearestRun;
+  /**
+   * A round's glazing as our renderer draws it (`BABYLON_EXIT.md` X4.6e): the
+   * handover hands it the map's glass, the reflection bake points each group
+   * at its cube, `glassFx` collapses a broken pane in it, and `farthestPull`
+   * says which groups draw, in what order.
+   */
+  private readonly glassDraw: GlassDraw;
+  /**
+   * The fading pools — every spark, dust disc, scorch and blob — as our
+   * renderer draws them (X4.6e), their members read inside the render by
+   * `farthestPull`.
+   */
+  private readonly fadeDraw: FadeDraw;
+  /**
+   * The one back-to-front run of the see-through panes and the fades (X4.6e):
+   * where each falls among the rest, ordered by `farthestPull` inside the render.
+   */
+  private readonly farthestRun: FarthestRun;
+  /** The four fading kits, in `FADE_KITS`' order, for `farthestPull`'s spheres. */
+  private readonly fadeKits: readonly FadeKit[];
+  /**
+   * The fading pools' members in the order their meshes stood in the scene —
+   * the sparks, the discs, the scorch — then the blobs, which a pool grows as
+   * bodies are first placed (`ShadowSystem.blobFades`): the order `farthestPull`
+   * files them in, which breaks a tie.
+   */
+  private readonly fadePools: readonly (readonly Fade[])[];
+  /**
+   * How many blobs stood before this map's panes in Babylon's scene: those
+   * made before its build (an earlier round's, kept since), counted as the
+   * round's glazing is installed. Where `farthestPull` files the panes among
+   * the blobs, which breaks a tie at one distance to the bit; 0 in a first round.
+   */
+  private blobsBeforeGlass = 0;
+  /**
+   * The last render's frustum planes, as numbers (`nearestPull`), and whether a
+   * render has given any: what a surface is tested against inside the render, and
+   * what a flag asks of the LAST one before it steps (`FlagCloth.inView`).
+   */
+  private readonly heldPlanes = new Float64Array(24);
+  private planesHeld = false;
   private lighting: LightingSystem;
   /**
    * The world's sustained sounds — the fires, and whatever is put beside them.
@@ -547,16 +906,249 @@ export class Game {
    */
   private readonly lightning = new LightningStrikes();
   private shadows: ShadowSystem;
+  /** The world's directional maps as our renderer owns them: every round's. */
+  private readonly worldShadows: WorldShadows;
   /**
    * The bodies' own shadow map — soldiers and hulls, and nothing static.
    *
    * A system of its own rather than a third thing inside `ShadowSystem`, and the
    * reason is the refresh rate: that one re-renders when its window moves and
-   * this one re-renders every frame, so they are two render targets with two
-   * schedules that happen to share a direction. What keeps them in step is that
+   * this one re-renders every frame, so they are two maps with two schedules
+   * that happen to share a direction. What keeps them in step is that
    * `applyEnvironment` pushes that direction to both from one line.
    */
   private bodyShadows: BodyShadows;
+  /**
+   * The bodies' map as our renderer owns it, in every state (`BABYLON_EXIT.md`
+   * X4.1c): no generator is kept for it, so one it cannot draw is the round's
+   * failure (`worldFailed`, wired at the install).
+   */
+  private readonly bodyShadowMap: BodyShadowMap;
+  /**
+   * Every BODY as our renderer draws it (`BABYLON_EXIT.md` X4.1d): each
+   * side's kit on the GPU once, and each frame's bodies as instances of it —
+   * fed by `drawBodies`, drawn while a ROUND's map is installed. Its
+   * pipelines are asked here, once for the session, and one that cannot be
+   * built is the round's failure (`worldFailed`, wired at the install).
+   */
+  private readonly bodyDraw: BodyDraw;
+  /**
+   * The rigs `installBodyPools` filed, in the order `WorldCulling` was handed
+   * them — the index its per-body verdict is read by (`drawsBody`).
+   */
+  private pooledRigs: SoldierRig[] = [];
+  /**
+   * This frame's drawn bodies' segments, in drawing order: each one's
+   * bounding-sphere centre in the world, three doubles a segment — what the
+   * order and the bloom are pulled off inside the render (`bodyPull`).
+   * Sized when `bodyDraw` is built.
+   */
+  private segmentCentres = new Float64Array(0);
+  /** `bodyPull`'s scratch: one body's segment keys, and a visor's centre. */
+  private segmentKeys = new Float64Array(0);
+  /** Which segment of a kit is its visor (`KitDrawing.visor`, the same in each). */
+  private visorSegment = 0;
+  private readonly visorAt = new Vector3();
+  /** Each side's visor as `bloomColour` reads a material: its colour, alpha 1. */
+  private readonly visorMaterials = VISOR_COLORS.map((emissiveColor) => ({ emissiveColor, alpha: 1 }));
+  private readonly visorBloom = new Color4();
+  /**
+   * Every HULL as our renderer draws it (`BABYLON_EXIT.md` X4.2b): every
+   * kind's kit in both views' colours on the GPU once, and each frame's
+   * hulls as instances of it — fed by `drawHulls`, drawn while a ROUND's map
+   * is installed. Its pipeline is asked here, once for the session, and one
+   * that cannot be built is the round's failure (`worldFailed`, wired at the
+   * install).
+   */
+  private readonly hullDraw: HullDraw;
+  /**
+   * The player's own WEAPON as our renderer draws it (`BABYLON_EXIT.md`
+   * X4.3c, X4.3d): every segment of the viewmodel on the GPU once — the
+   * opaque parts, the optics' glasses and the kit card — and each frame's
+   * drawn segments one draw apiece, the card first, the opaque parts in
+   * Babylon's group-1 order, the glasses back to front — fed by `drawView`,
+   * drawn in EVERY state (the kit screen covers `menu`, where
+   * no map stands), so it is built and hooked here for the session. Its
+   * pipelines are asked here, and one that cannot be built is the round's
+   * failure while one stands (`worldFailed`, wired at the install), the
+   * console's otherwise.
+   */
+  private readonly viewDraw: ViewDraw;
+  /**
+   * The cloud ring's draw, OUR renderer's for the SESSION (`BABYLON_EXIT.md`
+   * X4.5b), as the weapon's is: `Sky` stands each ring on it and writes it each
+   * order. Whoever hears of a failure is `onFailed`'s, as the weapon's, but only
+   * while a ring stands: a map stating none has no draw to refuse it for.
+   */
+  private readonly cloudDraw: CloudDraw;
+  /** The dome's and the moon's draws, on the same terms (`BABYLON_EXIT.md` X4.5c). */
+  private readonly skyDraw: SkyDraw;
+  /** `drawView`'s scratch: this frame's evaluated segments in drawing order, and the sort's keys. */
+  private readonly viewDrawn: ViewMesh[] = [];
+  private viewOrder = new Int32Array(0);
+  /** `drawView`'s scratch: this frame's evaluated glasses, back to front, by their place in the evaluation. */
+  private readonly viewGlasses: number[] = [];
+  private viewKeys = new Float64Array(0);
+  /** Each lit segment's and each glass's LOCAL bounding-sphere centre, three doubles a slot — what the bloom's fade (`viewPull`) and a glass's distance (`drawView`) are measured from. */
+  private viewCentres = new Float64Array(0);
+  private readonly viewCentre = new Vector3();
+  private readonly viewBloom = new Color4();
+  /** Each kit's index in the order `hullDraw` was handed them — a hull's kit word (`drawHulls`). */
+  private readonly hullKitIndex: Map<HullKit, number>;
+  /**
+   * This frame's drawn hulls' segments, in drawing order: each one's world
+   * bounding sphere, four doubles a segment (centre, radius; NaN for one not
+   * drawn) — what the order and the frustum are pulled off inside the render
+   * (`hullPull`). Sized when `hullDraw` is built.
+   */
+  private hullSpheres = new Float64Array(0);
+  /** `hullPull`'s scratch: one hull's segment keys. */
+  private hullKeys = new Float64Array(0);
+  /**
+   * Each hull's draw-distance FADE this frame (`WorldCulling.hullFade`,
+   * `BABYLON_EXIT.md` X4.2d), by its index in the fleet — the view's and the
+   * hull's, `VehicleViews`' invariant — written by `fadeHulls` in the cull
+   * span and read twice after it: by `RotorWash.update` (the wash fades with
+   * its hull, the post-commit review's owner decision) and by `drawHulls`.
+   * 1 for a hull not composed this frame — not present, or no draw
+   * installed — and for every hull on a map that states no distance, so a
+   * reader multiplying by it changes nothing there. Grown to the fleet's
+   * size, never per frame.
+   */
+  private hullFades = new Float64Array(0);
+  /** `fadeHulls`' scratch: a hull's whole measure, composed this frame (`composeHull`). */
+  private readonly hullMeasure = { x: 0, y: 0, z: 0, radius: 0 };
+  /** The size gate a hull's segment is drawn under: `WorldCulling`'s, this frame (`drawHulls`). */
+  private readonly keepsHullSegment: SphereGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
+  /** The detail tier a hull's whole measure is asked, this frame: `WorldCulling`'s (`drawHulls`, X4.2c). */
+  private readonly keepsHullDetail: SphereGate = (x, y, z, radius) => this.culling.keepsDetail(x, y, z, radius);
+  /**
+   * The effect POOLS' pieces as our renderer draws them (`BABYLON_EXIT.md`
+   * X4.4b): every kit a pool puts in the world — the tracer, the spent case,
+   * the frag and the bottle, the rocket and the mine — on the GPU once, and
+   * each frame's drawn pieces as instances of them, fed by `drawPieces`; and
+   * the bullet marks' (`markDraw`, fed by `drawMarks`) — both drawn while a
+   * ROUND's map is installed, their pipelines asked here once for the
+   * session, and one that cannot be built is the round's failure
+   * (`worldFailed`, wired at the install). The sparks and the dust discs were
+   * no part of either: they stayed Babylon meshes, fading among the panes in its
+   * transparent sort, until X4.6 (the owner's decision of 2026-11-01).
+   */
+  private readonly pieceDraw: PoolDraw;
+  private readonly markDraw: PoolDraw;
+  /** Each piece kit's index in the order `pieceDraw` was handed them — a piece's kit word (`drawPieces`). */
+  private readonly pieceKitIndex: Map<PieceKit, number>;
+  /** Each piece kit's UNLIT segment (one at most, DEV-checked where the kits are taken), or -1 — what a piece's bloom is measured off (`piecePull`). */
+  private pieceUnlit = new Int32Array(0);
+  /** Each piece kit's unlit segment as `bloomColour` reads a material: its `getEmissive` colour, alpha 1. */
+  private pieceBloomOf: ({ readonly emissiveColor: Color3; readonly alpha: number } | null)[] = [];
+  private readonly pieceBloom = new Color4();
+  /**
+   * This frame's drawn pieces' segments, in drawing order: each one's world
+   * bounding sphere, four doubles a segment (NaN for one not drawn) — what
+   * the order and the bloom are pulled off inside the render (`piecePull`).
+   * Sized when `pieceDraw` is built.
+   */
+  private pieceSpheres = new Float64Array(0);
+  /** `piecePull`'s scratch: one piece's segment keys. */
+  private pieceKeys = new Float64Array(0);
+  /** The size gate a piece's CEL segment is drawn under: `WorldCulling`'s, this frame (`drawPieces`). */
+  private readonly keepsPieceSegment: PieceGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
+  /**
+   * This frame's drawn marks, by slot in `BulletMarks.slots` — in slot order
+   * as `drawMarks` gathers them, and front to back once `markPull` has sorted
+   * them inside the render; and the sort's keys.
+   */
+  private markDrawn = new Int32Array(0);
+  private markKeys = new Float64Array(0);
+  /**
+   * The blast's BILLOWS as our renderer draws them (`BABYLON_EXIT.md` X4.4c):
+   * every batch `BlastFx` poses — a slot each, and the sparks' and trails'
+   * — one draw, its billows instances of one of two icospheres, into the main
+   * pass and the glow's mask, fed by `drawBlasts` and pulled inside the
+   * render (`blastPull`); and the DEBRIS pools' (`debrisDraw`, fed by
+   * `drawDebris`, pulled by `debrisPull`): every glass shard and rubble
+   * chunk, posed straight off its body's pose. Both drawn while a ROUND's map
+   * is installed, their pipelines asked here once for the session, and one
+   * that cannot be built is the round's failure, as the pieces' are. The
+   * SCORCH was no part of either: it stayed a Babylon mesh, fading among the
+   * panes, until X4.6 (the owner's decision of 2026-11-01).
+   */
+  private readonly blastDraw: BlastDraw;
+  private readonly debrisDraw: PoolDraw;
+  /** What `bloomColour` reads as a batch of billows' material: the fire's body, alpha 1. */
+  private blastBloomOf: { readonly emissiveColor: Color3; readonly alpha: number } | null = null;
+  private readonly blastBloom = new Color4();
+  /** `blastPull`'s scratch: the drawn batches (indices into `BlastFx.batches`) and their sort keys. */
+  private blastDrawn = new Int32Array(0);
+  private blastKeys = new Float64Array(0);
+  /**
+   * The FIRES as our renderer draws them (`BABYLON_EXIT.md` X4.4d): every
+   * world fire the handover took — a block's merge of flame surfaces — and
+   * every flame of a burning molotov (`GrenadeFx.flames`), each one draw of
+   * its surface under its matrix, into the main pass and the glow's mask,
+   * fed by `drawFires` and pulled inside the render (`flamePull`). Drawn
+   * while a ROUND's map is installed, its pipelines asked here once for the
+   * session; one that cannot be built is the round's failure, as the
+   * pieces' are.
+   */
+  private readonly flameDraw: FlameDraw;
+  /**
+   * THE ROUND'S DECLARED PIPELINES (`BABYLON_EXIT.md` X4.4e): every draw of
+   * ours a round can use whatever its map, each of whose pipelines is asked
+   * ONCE, here at construction, for the session — the bodies, the hulls,
+   * the weapon, the bodies' shadow map, the lamps' proxies (the atlas's
+   * moving casters; its static ones are the map's, asked at its install)
+   * and every effect pool of ours (the pieces: the tracers, the brass, the
+   * thrown and laid bodies of both sides of the wire; the marks; the
+   * billows; the shards and the rubble; the fires; and since X4.6e the
+   * sparks, the dust discs, the scorch and the blobs) and the glazing. The building card
+   * waits on this list by name (`core/PipelineWarmup.ts`), beside the map's
+   * own pipelines, which its install asked — and on nothing else: nothing is
+   * drawn for a pipeline's sake (no vantage since X5.4c) — and our cache is
+   * SEALED once the card is down (`PipelineCache.seal`), so a compile in play
+   * is a DEV warning naming what this list missed — but for the glow blur's
+   * new widths on a device-pixel-ratio change (`applyRenderScale`), the one
+   * ask the seal allows. **This is what the `warm(on)` poses of the pools
+   * that are ours became** (X4.4e). A new draw of ours joins it, or its first
+   * use compiles in the round.
+   */
+  private readonly roundPipelines: readonly DeclaredPipelines[];
+  /**
+   * `flamePull`'s scratch, sized to the draw's capacity at each install:
+   * this frame's drawn fires — a molotov flame by its index in
+   * `GrenadeFx.flames`, a world fire `k` as `flames + k` — front to back
+   * once sorted, and the sort's keys.
+   */
+  private flameDrawn = new Int32Array(0);
+  private flameKeys = new Float64Array(0);
+  /**
+   * `flamePull`'s reverse index, kept through the sort: each drawn fire's
+   * place in the ACTIVE list (`flameRank`, beside `flameDrawn`), and where
+   * the fire at each place in the active list was sorted to (`flameWhere`),
+   * so the mask's remap is a lookup rather than a search.
+   */
+  private flameRank = new Int32Array(0);
+  private flameWhere = new Int32Array(0);
+  /**
+   * What `bloomColour` reads as a fire's material: the world's one
+   * `FlameMaterial` itself, so its alpha is read live, as `GlowPass` read it.
+   */
+  private flameBloomOf: { readonly emissiveColor: Color3; readonly alpha: number } | null = null;
+  private readonly flameBloom = new Color4();
+  /** The debris draw's cel recipe, whose third slot is the map's EARTH, painted per map (`installMap`). */
+  private debrisRecipe: CelRecipe | null = null;
+  /**
+   * This frame's drawn debris, in drawing order: each one's piece (shards
+   * first, then chunks, by index in `debrisPieces`), and the sort's keys —
+   * front to back once `debrisPull` has sorted them inside the render.
+   */
+  private debrisDrawn = new Int32Array(0);
+  private debrisKeys = new Float64Array(0);
+  /** Every debris piece our renderer may draw — the shards, then the chunks — with each one's kit word (a chunk's is its paint's, by burst). */
+  private debrisPieces: readonly PosedPiece[] = [];
+  /** The size gate a piece of debris is drawn under: `WorldCulling`'s, this frame (`drawDebris`). */
+  private readonly keepsDebris: PieceGate = (x, y, z, radius) => this.culling.keepsSphere(x, y, z, radius);
   /**
    * The irradiance volume — bounce light, sky occlusion and point lights that
    * stop at walls (`systems/GiVolume.ts`). Built beside the two shadow maps and
@@ -569,6 +1161,17 @@ export class Game {
    * and everything that moves redrawn from proxies (`systems/LocalShadows.ts`).
    */
   private localShadows: LocalShadows;
+  /** The lamps' atlas as our renderer owns it: every round's. */
+  private readonly lampAtlas: LampAtlas;
+  /** The reflection bake as our renderer draws it: every round's (X3.6c). */
+  private readonly probeBake: ProbeBake;
+  /**
+   * The emissive palette's share of the glow's mask as our renderer draws it:
+   * every round's whose palette glows (X3.6d). Public for the
+   * reason `glow` is: the smoke scripts that read the mask back ask it
+   * whether it is drawing (`drawing`, `drawn`).
+   */
+  readonly worldGlow: WorldGlow;
   /**
    * The URL's session overrides of the display settings — `?gi=`,
    * `?shadows=`, `?volumetrics=` and `?nominimap` — and of the round's seed,
@@ -578,14 +1181,16 @@ export class Game {
   private readonly overrides = new UrlOverrides();
   /**
    * The round's seed and every outcome stream drawn from it
-   * (`systems/RoundRandom.ts`) — this simulation's, as `HeadlessGame` holds
-   * the authority's. Handed to every system that decides an outcome when it
-   * is built, and reseeded once per round in `buildRound`.
+   * (`systems/RoundRandom.ts`) — the PAGE's, which decides no outcome but
+   * the player's own cone (`STREAM.player`, rolled here and sent as a
+   * direction); every other stream is the authority's. Reseeded once per
+   * round in `buildRound`, from the same seed the page's own match is begun
+   * on.
    */
   private readonly random = new RoundRandom();
   /**
-   * The world as the glazing reflects it — one cube, baked per map install.
-   * The only render target here besides the shadow map.
+   * The world as the glazing and the water reflect it — a cube per glazed
+   * block and per body of water, baked per map install by our renderer.
    */
   private reflections: ReflectionSystem;
   /**
@@ -594,7 +1199,7 @@ export class Game {
    *
    * **The bake is spent over FRAMES and this is where those frames are.**
    * `installMap` is one synchronous turn, so no frame can render inside it and
-   * a probe cannot bake there; `ReflectionSystem.releaseBatch` rides a render
+   * a probe cannot bake there; `ReflectionSystem.releaseOurs` rides a render
    * observable and lets a budget's worth go per frame after it. Before this,
    * those frames were the first frames of `deploy` and then of the ROUND — one
    * on every shipped map, and **47 frames over 44.8 seconds on a 1500 m map**
@@ -602,9 +1207,10 @@ export class Game {
    * where nothing simulates and the scene still renders, which is exactly the
    * shape of frame this needs, so the card stays up until the queue is empty.
    *
-   * It moves the cost rather than removing it — `ReflectionSystem.faceOf` is
-   * the half that removes it — and what it buys is that a round is a round
-   * when it starts. `ENGINE_UPGRADE.md` S0c.
+   * It moves the cost rather than removing it — Babylon's bake's per-face
+   * cull was the half that removed it, and our bake culls each face too —
+   * and what it buys is that a round is a round when it starts.
+   * `ENGINE_UPGRADE.md` S0c.
    */
   private bakeWait: {
     /** What `bakePending` was when the wait opened, for the card's bar. */
@@ -617,26 +1223,15 @@ export class Game {
     since: number;
     /**
      * The wait's SECOND phase, once the bake has drained or been given up on:
-     * the pipeline warm-up, which draws the whole map from every place a life
-     * can start so that WebGPU compiles the round's pipelines under the card
-     * rather than on the spawn frame (`FINDINGS.md` 16). Null while the bake
-     * is still draining. It is part of THIS wait rather than one of its own so
-     * that everything which already ends the wait — `go`, and `buildPending`'s
+     * the pipeline warm-up, which waits for every pipeline of ours the round
+     * can use — the declared list and the map's — so none is compiled on the
+     * spawn frame (`FINDINGS.md` 16). Null while the bake is still
+     * draining. It is part of THIS wait rather than one of its own so that
+     * everything which already ends the wait — `go`, and `buildPending`'s
      * reading of it — ends the warm-up too without being told it exists.
      */
     warm: PipelineWarmup | null;
   } | null = null;
-  /**
-   * The camera's pose while a warm-up frame stands it at a vantage, put back
-   * straight after that frame's render — see `stageWarmFrame`. Scratch rather
-   * than a copy per frame.
-   */
-  private readonly warmPose = { pos: new Vector3(), rot: new Vector3() };
-  /**
-   * The bodies a warm-up frame's shadow passes draw: the death cam's stand-in,
-   * filled once when the warm-up opens (`beginWarmup`).
-   */
-  private readonly warmBodies: ShadowBody[] = [];
   /**
    * The authority put us in the world while there was no world to put us in.
    *
@@ -667,7 +1262,7 @@ export class Game {
    * `leaveMatch` — because the position belongs to the build it arrived
    * during, and both of those get a fresh seat or no session at all.
    */
-  private pendingSpawn: { pos: Vector3; yaw: number } | null = null;
+  private pendingSpawn: { pos: Vector3Like; yaw: number } | null = null;
   /**
    * How much of the map the frame's own mesh walk is offered. Owns nothing
    * that draws and writes nothing onto a mesh — see `WorldCulling`, which is
@@ -675,6 +1270,21 @@ export class Game {
    */
   private culling: WorldCulling;
   private atmosphere: Atmosphere;
+  /**
+   * Every GPU particle field of the game's — the ash since `BABYLON_EXIT.md`
+   * X4.7c, the rotor wash since X4.7d — stepped on the frame's animation ratio
+   * and drawn where Babylon's group drew its particles. `Atmosphere` and
+   * `RotorWash` decide the fields; this runs and draws them.
+   */
+  private readonly particleDraw: ParticleDraw;
+  /** The view's inverse, made once: `ParticleDraw`'s camera, as `_render` made it. */
+  private readonly particleInvView = new Matrix();
+  /**
+   * The frame's view, copied into a matrix of its own to be inverted there, as
+   * since `BABYLON_EXIT.md` X6.1e: the copy carries the numbers and none of
+   * the camera matrix's identity flag, which the inversion's shortcut reads.
+   */
+  private readonly particleView = new Matrix();
   /**
    * The dust under the rotors. A picture and nothing else: it reads the fleet
    * and writes nothing back, exactly as the mote field reads the eye.
@@ -691,70 +1301,141 @@ export class Game {
   private foliageBuilt: FoliageQuality | null = null;
   private post: PaperGrain;
   /**
-   * The light shafts, or null when the player has them off — which is a
-   * DETACHED pass and not a zeroed one, the post chain's own rule.
+   * The light shafts' CPU half, or null when the player has them off — which
+   * is a stage the post chain does not draw and not a zeroed one, the chain's
+   * own rule.
    *
    * Rebuilt rather than reconfigured on a rung change: the tap count is a WGSL
-   * `const`, so each rung is its own compiled shader. See `setVolumetrics`.
+   * `const`, so each rung is its own compiled shader — and its own stage of
+   * the chain, every one declared at construction (`volumetricStages`). See
+   * `setVolumetrics`.
    */
   private volumetrics: Volumetrics | null = null;
-  /** Which rung is BUILT, so a no-op change does not recompile a shader. */
+  /** Which rung is BUILT, so a no-op change rebuilds nothing. */
   private volumetricsRung: VolumetricRung | null = null;
   /**
-   * Where in the camera's chain the shafts go — claimed once in the
-   * constructor, because `attachPostProcess` APPENDS and only the moment
-   * between the pipeline and the blur knows where they belong.
+   * Whether the shafts' stage draws this frame: latched by `syncVolumetrics`
+   * once every input the pass reads exists, which is where Babylon's pass
+   * used to be attached. For a pass `setVolumetrics` has just built that is
+   * the same frame (every input is standing); only the session's first render,
+   * before the frame's depth exists, has no shafts — as with Babylon's pass.
    */
-  private volumetricsSlot = 0;
   private volumetricsAttached = false;
   /**
-   * The pipeline's FXAA pass and where it sits in the camera's chain, claimed
-   * once in the constructor so the setting can take it off and put it back
-   * without moving anything behind it. See `setFxaaEnabled`.
+   * FXAA's CPU half and the post chain's stage it is drawn as
+   * (`shaders/Fxaa.ts`, `BABYLON_EXIT.md` X5.2c2): the chain's first stage of
+   * ours, straight after the ink. See `setFxaaEnabled`.
    */
-  private fxaa: PostProcess;
-  private fxaaSlot = 0;
-  private fxaaAttached = true;
+  private fxaa: Fxaa;
   private motionBlur: MotionBlur;
   /**
    * The ink. One full-screen edge over the depth the frame already wrote —
    * `shaders/CelInk.ts` owns the argument and the measurements.
    */
   private celInk: CelInk;
-  /**
-   * The frame's depth, wrapped once for the two passes that sample it. Held
-   * only so the pair are handed the same object — nothing here reads it.
-   */
-  private frameDepth: FrameDepth;
   /** The environment the sky is currently painted for — see applySky(). */
   private skyEnv: EnvironmentSpec | null = null;
   private player: Player;
+  /**
+   * What the player LOOKS like — the viewmodel, the flash and the brass.
+   * `player` is told through `PlayerPicture`; `Game` reads it directly for the
+   * two world points only the drawing knows — the muzzle and the throwing
+   * hand — which is where the rifle on screen decides where a tracer, a
+   * rocket and a grenade start.
+   */
+  private playerView: PlayerView;
+  /**
+   * The RENDER ID the viewmodel's render cache is keyed on — ours, with
+   * Babylon's meaning (`core/renderId.ts`, `BABYLON_EXIT.md` X5.4b), moved by
+   * our frame where `scene.render` moved Babylon's (`sceneFrame`, X5.4f).
+   * Public for a probe (`plans/webgpu-ref/readers.mjs`).
+   */
+  readonly renderId = new RenderId();
+  /**
+   * THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+   * `scene.render()` did, in its order, called from `tick` in its place —
+   * there is no scene since X6.1h. Its points are where every module that
+   * hung off a scene observable hangs now, and our renderer's host is its
+   * (`SceneFrame.host`). Public for the harness's frame adapter
+   * (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly sceneFrame: SceneFrame;
+  /**
+   * The page's READINESS (`core/PendingData.ts`, `BABYLON_EXIT.md` X6.1h):
+   * what is still being waited on — the water's foam mask while it decodes —
+   * and `isReady`, what `scene.isReady()` answered until the scene went. Read
+   * by nothing in the game; public for the frame adapter's `ready`
+   * (`scripts/lib/frameAdapter.mjs`), which the bank, `npm run shots` and the
+   * skills' scripts wait on.
+   */
+  readonly pending = new PendingData();
+  /**
+   * The frame's six FRUSTUM PLANES (`SceneFrame.frustumPlanes`, the scene's
+   * until `BABYLON_EXIT.md` X6.1f): the very array this file's culls and
+   * `Sky`'s moon read, null before the first frame. Public for the frame
+   * adapter (`scripts/lib/frameAdapter.mjs`' `camera()`), which READS it and
+   * never re-derives the planes.
+   */
+  get frustumPlanes(): readonly Plane[] | null {
+    return this.sceneFrame.frustumPlanes;
+  }
+  /**
+   * THE LOOP, ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+   * animation-frame request `FrameCap` admits, the clock (`getDeltaTime` and
+   * `getFps`, Babylon's arithmetic), the frame's one encoder and one submit,
+   * and the frame's begin and end — what Babylon's `runRenderLoop`,
+   * `beginFrame` and `endFrame` were. Public for the harness's frame adapter
+   * (`plans/webgpu-ref/harness.mjs`).
+   */
+  readonly frameLoop: FrameLoop;
+  /** The boot's "No graphics device" plate, put back up (`main.ts`): `deviceLost`'s second answer. */
+  private readonly deviceFailed: () => void;
+  /**
+   * The graphics device was lost (`deviceLost`, its first line), and is never
+   * found again: the page reloads or stands the plate. From then on no BUILD
+   * and no MATCH is opened — `startRound`, `buildRound` and `joinMatch`
+   * refuse, the three doors every other one goes through (`openLocalRound`
+   * is `buildRound`'s alone). `buildRound` is the one that matters: the two
+   * frames `startRound` books it behind are the browser's, not the loop's, so
+   * `FrameLoop.stop` does not cancel them, and a loss inside them would
+   * otherwise open the page's own match afresh (`deviceGone` having left the
+   * last) and build the whole map on the dead device under the plate. It
+   * asks again past each of its awaits for the same reason. Nothing else
+   * reads it.
+   */
+  private deviceIsLost = false;
   private canvas: HTMLCanvasElement;
   /**
    * The bloom — mask, blur and compose — which `shaders/GlowPass.ts` owns.
-   * Held for the profiler, and public for the reason `scene` and `battle`
-   * are: the smoke scripts that check the glow read its mask off
-   * `window.__celshock`.
+   * Held for the profiler, and public for the reason `scene` is: the smoke
+   * scripts that check the glow read its mask off `window.__celshock`.
    */
   readonly glow: GlowPass;
-  /** Non-null only while the state is "editor". Dev builds only. */
-  private editor: EditorSession | null = null;
   /**
-   * Held across `toggleEditor`'s dynamic `import()`, because `this.editor` is
-   * not the latch it looks like: it is not assigned until the session has been
-   * built, which is a map build and a screenful of teardown after the await
-   * returns. Two F2s inside a cold import both got past `if (this.editor)` and
-   * ran the whole opening twice — a second `installMap` disposing the map the
-   * first had just handed to `createEditor`, and the first session leaked with
-   * no reference left to dispose it. Dev builds only, and the window is one
-   * cold load wide, but it is exactly the failure `installMap` exists to stop.
+   * The bloom's blur and box filter as OUR draws (`BABYLON_EXIT.md` X5.2b), in
+   * the passes `GlowPass` binds on its own targets; its pipelines are on the
+   * round's declared list, every rung's at every render scale at the current
+   * device pixel ratio (`glowKernels`), and declared again when that ratio
+   * moves (`applyRenderScale`). Public for the probe's adapter
+   * (`plans/webgpu-ref/post.mjs`).
    */
-  private editorLoading = false;
-
+  readonly glowBlur: GlowBlur;
+  /**
+   * The post chain's stages, every one OUR draw since `BABYLON_EXIT.md`
+   * X5.2d (the ink, FXAA, the shafts, the blur, the grade), the host that
+   * routes them (`render/PostChain.ts`) and the owner that sizes the frame
+   * our renderer draws and begins every pass of theirs after the camera's
+   * render, into its pool and the canvas (`render/ChainPasses.ts`, ours since
+   * X5.4f; `shaders/PostPasses.ts`, with Babylon's public API, before). Public
+   * for the harness's and the probe's adapters (`plans/webgpu-ref/harness.mjs`,
+   * `post.mjs`).
+   */
+  readonly postChain: PostChain;
+  readonly chainPasses: ChainPasses;
   /**
    * The dev audio mixer's session, or null. `F4`.
    *
-   * Nothing like `editor` beyond the dynamic import it shares: the mixer is a
+   * Nothing like the viewer beyond the dynamic import it shares: the mixer is a
    * panel over a round that carries on underneath it, so there is no state
    * transition, no map rebuild and nothing to put back — which is why it does
    * not go through `go`/`raiseLid` and is not a row in `SCREENS`. What it
@@ -762,13 +1443,45 @@ export class Game {
    * panel (see `MixerPanel.dispose`): you close it to go and listen.
    */
   private mixer: MixerSession | null = null;
-  /** `editorLoading`'s twin, for the same one-cold-import-wide window. */
+  /** `viewerLoading`'s twin, for the same one-cold-import-wide window. */
   private mixerLoading = false;
+
+  /**
+   * The dev-only map viewer's session (`F2`, `src/viewer/`, `BABYLON_EXIT.md`
+   * X5.3b), non-null only while its lid is up. A LID, unlike the mixer:
+   * `toggleViewer` raises it over a round and `takeDown` puts it away, however
+   * it comes down.
+   */
+  private viewer: ViewerSession | null = null;
+  /**
+   * Held across `toggleViewer`'s dynamic `import()`, because `this.viewer` is
+   * not the latch it looks like: it is not assigned until the session has been
+   * built, after the await returns. Two F2s inside a cold import would both get
+   * past `if (this.viewer)` and run the whole opening twice, the first session
+   * leaking with no reference left to dispose it. Dev builds only, and the
+   * window is one cold load wide.
+   */
+  private viewerLoading = false;
+  /**
+   * The shadow window's focus as the viewer's lid found it: its camera tail
+   * moves the window, and a deploy screen or a round-over card under it would
+   * not move it back (`sceneOwed`).
+   */
+  private viewerFocus = new Vector3();
+  /**
+   * The viewer's lid came down, however it came down, and the scene it moved
+   * is owed back to the camera the session put back: the shadow window, the
+   * light slots and the lamps' atlas. Honoured by the next `tick`, inside the
+   * frame and after its state's arm (`honourSceneOwed`), and cleared by any
+   * camera tail that runs first (`updateSceneForCamera`) — a live frame's own
+   * tail is the debt paid.
+   */
+  private sceneOwed = false;
 
   /**
    * The map being played, as the layout/environment pair `src/world/maps.ts`
    * keeps together. The single place either half is named: everything from the
-   * round start to the editor session reads it off here, so a second map is a
+   * round start to the viewer's session reads it off here, so a second map is a
    * `MapDef` in that registry and a write to this field, not a hunt through the
    * orchestrator for the fourteen places the old constants were spelled out.
    */
@@ -797,18 +1510,14 @@ export class Game {
    *
    * `MapDef.heights` is a lazy `import()` (ENGINE_UPGRADE.md S7), so the
    * heightfield is a fetch and `installMap` is one synchronous turn that
-   * cannot contain one. This is where the fetch is put down: the two async
-   * doors into a build — `buildRound` and `toggleEditor` — resolve it before
-   * they start, and everything from there on reads it here.
-   *
-   * **It is the module's own object and is written through.** The editor's
-   * terrain brush edits `map.terrain.field`, which is this, and the rebuild
-   * tier reads the edits straight back — exactly as it did when the field hung
-   * off the layout constant. `null` is a level floor and is what a map with no
-   * `heights` resolves to.
+   * cannot contain one. This is where the fetch is put down: the one async
+   * door into a build, `buildRound`, resolves it before it starts, and
+   * everything from there on reads it here. It is the module's own object
+   * (`map.terrain.field` is this), and `null` is a level floor and is what a
+   * map with no `heights` resolves to.
    *
    * The one invariant is that it is `mapDef`'s and not the last map's, which is
-   * why nothing assigns it outside those two doors: see `buildRound`, where the
+   * why nothing assigns it outside that door: see `buildRound`, where the
    * authority is allowed to rotate the map inside the very fetch that is
    * answering for it.
    */
@@ -818,7 +1527,7 @@ export class Game {
    * The state machine: the step the game is on, and the screens raised over it.
    *
    * Everything about what a state IS — whether it is a step or a lid, what a lid
-   * may cover, whether the world under it is held, whether it owes the netplay
+   * may cover, whether the world under it is held, whether it owes a server's
    * frame, whether it is owed the scoreboard — is declared per state in
    * `ScreenStack.ts` rather than written out at the call sites that ask. This
    * file's three moves are `go`, `raiseLid` and `lowerLid`, and there is no
@@ -906,6 +1615,18 @@ export class Game {
   /** Scratch for a fire light's position, lifted off the floor it burns on. */
   private readonly fireLightAt = new Vector3();
   /**
+   * A fire's floor, copied for its readers — the noise, the scorch, the light
+   * and the held-open sound — into a scratch of the page's own. A COPY since
+   * the readers were on Babylon's math, kept at `BABYLON_EXIT.md` X6.1e (which
+   * moved them onto `src/math`) so no reader is handed the simulation's own
+   * vector. Read inside the call.
+   */
+  private readonly fireAt = new Vector3();
+  /** A blast's point, copied for `onExplosion`'s readers on the same terms. */
+  private readonly blastPoint = new Vector3();
+  /** What a blast went off on, copied for `BlastDebrisSystem` — see `debrisGroundOf`. */
+  private readonly debrisGround: DebrisGround = { surface: "hard", normal: new Vector3(0, 1, 0) };
+  /**
    * What a burning molotov SOUNDS like: the burning drum's graph with the
    * three terms `CONFIG.molotov.sound` restates. Built once — `Sfx.ambience`
    * is called with it every frame a fire burns.
@@ -934,15 +1655,33 @@ export class Game {
     return this.overrides.shadows(this.settings.shadows);
   }
   /**
-   * The networked round, or null offline.
+   * The round's session — null only where there is no round (the menu, a
+   * build that has not opened one yet).
    *
-   * A field and a branch rather than a mode flag threaded through everything:
-   * with no session, every path below runs exactly as it always has, and
-   * nothing in `src/net/` is even constructed. What the branch buys is that the
-   * two authorities — this machine and the server — can never both be running,
-   * which is the failure that would be invisible and unfixable.
+   * **Every round is a match.** A server's, or
+   * the page's own: a `Match` this page hosts
+   * (`local`, in a Worker or on a channel in this thread) and joins through
+   * this same session, so there is one client model — the same prediction,
+   * the same events, the same validation — and never two authorities running
+   * at once. What the page OWNING the match changes is asked as one question,
+   * `NetSession.local`: who may restart, choose the map and the difficulty,
+   * and whether a pause or the deploy screen holds the world.
    */
   private net: NetSession | null = null;
+
+  /**
+   * The round standing is a SERVER's: starting, restarting, choosing and
+   * holding it are not this page's to do. The authority question every such
+   * door asks — never `!this.net`, which is true of no round any more.
+   */
+  private get remoteRound(): boolean {
+    return this.net !== null && !this.net.local;
+  }
+
+  /** …and the round standing is the page's OWN match (`NetSession.local`). */
+  private get localRound(): boolean {
+    return this.net?.local === true;
+  }
 
   /**
    * Which server this client is browsing and joining, and the read behind both.
@@ -985,11 +1724,11 @@ export class Game {
   private playerName = "player";
 
   /**
-   * Reused each frame: the player plus every bot — what `ConquestSystem`
-   * counts occupancy from, what `awardZone` pays and what the grass bends
-   * around. No hull: armour captures nothing (see `buildRound`).
+   * What the grass bends around this frame — the player and every living
+   * body off the wire — refilled in place (`fillPushers`). It decides
+   * nothing: who stands in a flag is the authority's to count.
    */
-  private readonly combatants: Combatant[] = [];
+  private readonly pushers: Combatant[] = [];
   /** Scratch for the shadow focus point — no per-frame allocation. */
   private readonly shadowFocus = new Vector3();
   /**
@@ -1035,8 +1774,8 @@ export class Game {
    * is what points it at one, and on the three maps closed by the rim it is
    * pointed at nothing and never says a word.
    *
-   * **It kills offline and draws in a match.** In a netplay round the
-   * authority runs a leash of its own against the position this client
+   * **It draws and never kills.** The authority — a server's match or the
+   * page's own — runs a leash of its own against the position this client
    * reported, and that one is what ends a life — this one is a prediction off
    * predicted movement, kept because the countdown has to be on screen the
    * instant the line is crossed rather than a round trip later, and it is the
@@ -1077,11 +1816,11 @@ export class Game {
    * of two readers ran first is one the other silently never sees.
    *
    * A flag rather than a test on the state, because the question is not which
-   * screen is up: offline the world is held under the deploy card and the
-   * pause card and stepped under the death cam, and in a netplay round it is
-   * stepped under all three. `updateWorld` and `updateNetWorld` already know
-   * which of them ran, and this is them saying so rather than a third opinion
-   * that can drift from both.
+   * screen is up: in the page's own match the world is held under the deploy
+   * card and the pause card and stepped under the death cam, and in a server's
+   * match it is stepped under all three. `updateWorld` and `updateNetWorld`
+   * already know which of them ran, and this is them saying so rather than a
+   * third opinion that can drift from both.
    */
   private fleetStepped = false;
 
@@ -1100,25 +1839,22 @@ export class Game {
   };
   /**
    * Who is telling which hull what to do, asked once per hull per frame by
-   * `VehicleSystem.update`.
+   * the page's `VehicleSystem.update`.
    *
-   * **This file is the only place that can answer**, because it is the only
-   * place that knows both about the player's seat and about the bot crews —
-   * which is the same reason `driving` lives here. Built once and held, so the
-   * lookup on the one path that runs every frame of every round allocates
-   * nothing.
-   *
-   * The player is asked FIRST, and that ordering is not arbitrary: `evict`
-   * takes a crew out of a hull on the frame the player mounts it, but a crew
-   * disbanded and a seat taken are two writes and this is read between them on
-   * exactly nothing. Asking the player's hull first means the answer is right
-   * whichever order they land in.
+   * **On this page there is one answer**: the player, for the hull they are
+   * predicting (`driveFor`/`gunFor`), and the wire for every other hull
+   * (`remoteFor`/`remoteGunFor`). There is no crew here — the bots that drive
+   * and gun are the authority's, whoever hosts the match — so nothing on this
+   * page decides who holds a chair: the `seat` the simulation sends does. Built
+   * once and held, so the lookup on the one path that runs every frame of every
+   * round allocates nothing.
    */
   private readonly vehicleOrders: VehicleOrders = {
+    // Only the hull this player is PREDICTING is ever stepped from input here,
+    // and there is no crew on this page: the
+    // bots that drive are the authority's, whoever hosts the match.
     driveFor: (tank) =>
-      tank === this.driving && this.drivingSeat === DRIVER
-        ? this.drive
-        : this.crew.driveFor(tank),
+      tank === this.driving && this.drivingSeat === DRIVER ? this.drive : null,
     /**
      * The cupola gun's own owner, asked the same way and with the same
      * player-first ordering — and it is a genuinely independent answer: the
@@ -1126,35 +1862,35 @@ export class Game {
      * bot is gunning, and both are ordinary.
      */
     gunFor: (tank) =>
-      tank === this.driving && this.drivingSeat === GUNNER
-        ? this.gunOrder
-        : this.crew.gunFor(tank),
+      tank === this.driving && this.drivingSeat === GUNNER ? this.gunOrder : null,
     /**
-     * Where a machine gun somebody ELSE is laying has got to.
-     *
-     * Null offline, always: there is no wire, so every gun on the field is
-     * laid by something in this process. In a match it is the snapshot's,
-     * except for the one gun this player is holding — which is the same
-     * carve-out `remoteFor` makes for the hull under a driver, made
-     * independently because the two seats can be two different people.
+     * Where a machine gun somebody ELSE is laying has got to: the snapshot's
+     * — except for the one gun this player is holding, which is laid HERE off
+     * `gunFor` and reported (`gunner`). The same carve-out `remoteFor` makes
+     * for the hull under a driver, made independently because the two seats
+     * can be two different people.
      */
-    remoteGunFor: (tank) =>
-      this.net && !(tank === this.driving && this.drivingSeat === GUNNER)
-        ? this.net.vehicles.mgFor(this.vehicles.hulls.indexOf(tank))
-        : null,
+    remoteGunFor: (tank) => {
+      if (tank === this.driving && this.drivingSeat === GUNNER) return null;
+      return this.net?.vehicles.mgFor(this.vehicles.hulls.indexOf(tank)) ?? null;
+    },
     /**
-     * In a netplay round every hull but the one under this player is posed
-     * from the wire — the mirror of the authority's own answer, where only the
-     * hulls with a PERSON in them are.
+     * Every hull but the one under this player is posed from where the
+     * authority has it, off the wire — the mirror of the simulation's own
+     * answer, where only the hulls with a PERSON in them are posed from a
+     * report.
      *
-     * Asked before `driveFor` by `VehicleSystem.update`, so the player's own
-     * hull needs no term here: `stateFor` answers null for it, because
-     * `NetVehicles` skips the samples for a hull carrying the local slot.
+     * **The one under a DRIVER is this page's PREDICTION**:
+     * stepped by `driveFor` off this player's sticks through
+     * `Vehicle.update`, and reported as a `DriveMessage` at `INPUT_HZ`, so the
+     * machine a person drives is the same one whoever hosts the match,
+     * picture included. Asked before `driveFor` by `VehicleSystem.update`,
+     * which is why the carve-out is here.
      */
-    remoteFor: (tank) =>
-      this.net && !(tank === this.driving && this.drivingSeat === DRIVER)
-        ? this.net.vehicles.stateFor(this.vehicles.hulls.indexOf(tank))
-        : null,
+    remoteFor: (tank) => {
+      if (tank === this.driving && this.drivingSeat === DRIVER) return null;
+      return this.net?.vehicles.stateFor(this.vehicles.hulls.indexOf(tank)) ?? null;
+    },
   };
 
   /**
@@ -1179,153 +1915,280 @@ export class Game {
   private readonly hullPlace = new Vector3();
   /** Scratch for the shell: the muzzle, the gun's axis, and the marker's point. */
   private readonly shellFrom = new Vector3();
+  /** A hull's centre, copied for the engine voice (`fireAt`'s terms). */
+  private readonly engineAt = new Vector3();
   private readonly shellDir = new Vector3();
   /** …and for where a rocket leaves the tube, or a mine goes down. */
   private readonly ordnanceAt = new Vector3();
   private readonly markerAt = new Vector3();
   private readonly markerOut = new Vector3();
-  private readonly markerViewport = new Viewport(0, 0, 1, 1);
+  /** The frame's transform, copied into a matrix of its own for the projection. */
+  private readonly markerTransform = new Matrix();
+  /** Babylon's `Viewport` as `ProjectToRef` reads it: the render size, set at each projection. */
+  private readonly markerViewport = { x: 0, y: 0, width: 1, height: 1 };
 
   /**
-   * The two doors a kill reaches OFFLINE, as `settleKill` asks for them: the
-   * killer's row, and a bot's death. `HeadlessGame` builds its own pair, and
-   * every door onto a kill on either side goes through `settleKill`.
-   */
-  private readonly ledger: KillLedger = {
-    credit: (by, victim, headshot) => this.creditKill(by, victim, headshot),
-    botDown: (bot, killer, by) =>
-      this.registerBotKill(bot, killer, by === this.player),
-  };
-
-  /**
-   * What `hullRules` asks of this simulation — built once in the constructor,
-   * after the systems it reaches exist. Where a match differs from an offline
-   * round it differs HERE, never in the rule: a hull's round in a match is a
-   * prediction, so it aims at `enemyTargets` and draws no splash.
+   * What `hullRules` asks of this page — built once in the constructor, after
+   * the systems it reaches exist. **A PREDICTION's and nothing else's**: a
+   * hull's guns and tracks are the authority's (its `SimCore`'s own
+   * `hullRules`), and what is left here is the driver's and the gunner's own
+   * round, which aims at `enemyTargets`, draws no splash, and kills
+   * nobody (every target refuses local damage) — hence `NO_LEDGER`.
    */
   private readonly hullRules: HullRules;
   /**
    * What this life owes before the next one, latched by `enterDying` and spent
-   * by `updateDeathCam` when the shot is over. Offline it is the config
-   * constant; in a networked round it is whatever the `died` event said.
+   * by `updateDeathCam` when the shot is over — the simulation's respawn clock
+   * as the blow armed it: the authority's `died` (`playerDown`), whoever
+   * hosts the match.
    */
   private deathRespawnIn: number = CONFIG.conquest.respawnDelay;
   /** Where the player's feet were when they died — scratch for `enterDying`. */
   private readonly deathFeet = new Vector3();
-  /**
-   * The round's board, OFFLINE: kills, deaths and points, one row per roster
-   * SLOT.
-   *
-   * Per body rather than per team, because the team totals are the sum of the
-   * rows and a second set of counters for them is a second set that can drift.
-   * Indexed by slot rather than split between the bot pool and a pair of
-   * fields for the player, which is what it was before points arrived: a human
-   * holds a roster slot like everybody else (`BattleSystem.seatPlayer`) and the
-   * bot sitting in it is benched, so the player's line simply IS that slot's
-   * line and nothing has to reconcile a seventeenth body with a sixteen-row
-   * board.
-   *
-   * **Netplay writes none of this.** In a match the board is the authority's
-   * and arrives whole (`NetSession.slotKills`): this client runs no AI, its
-   * local `BattleSystem` is a pool of dead bodies nobody steps, and a client
-   * that added up the kill events it happened to receive would show a
-   * different board on every screen. `scoreRows` is where the two sources
-   * meet, and it is the only reader of either.
-   */
-  private readonly scores = new ScoreBook();
 
   /**
    * **The two things the game cannot start without are both arguments now, and
    * they are arguments for the same reason.** `havok` is the instantiated WASM
-   * module (see `PhysicsWorld`); `engine` is a `WebGPUEngine` whose
-   * `initAsync` has already resolved. Both are REQUIRED, both are awaited by
-   * `main.ts` before this constructor is reached, and a failure of either is
-   * the boot screen's business — so nothing in here has to be written twice
-   * for a machine that never got one.
+   * module (see `PhysicsWorld`); `device` is the `GPUDevice` and `surface` the
+   * canvas its WebGPU context is configured on (`core/CanvasSurface.ts`), both
+   * the GAME's since `BABYLON_EXIT.md` X5.4h, asked for and configured by
+   * `main.ts` as Babylon's `WebGPUEngine` asked for and configured its own.
+   * All are REQUIRED, all are awaited by `main.ts` before this constructor is
+   * reached, and a failure of any is the boot screen's business — so nothing
+   * in here has to be written twice for a machine that never got one.
    *
-   * The engine used to be built here, back when it was a `WebGLEngine` and its
-   * constructor was synchronous. WebGPU's is not: an adapter and a device are
-   * both `await`s. What did NOT change is that this constructor stays
-   * synchronous — `Game` is not a `static async create()`, because
-   * `window.__celshock` existing with every pool non-null the moment the
-   * constructor returns is what ~40 smoke scripts rest on (`VERIFYING.md`).
-   * Awaiting in `main.ts` and injecting the result is what keeps both of those
-   * true at once, and it is the move `havok` already made.
-   *
-   * The MSAA and stencil arguments moved with the options they are about, and
-   * are in `main.ts` beside the `initAsync` call — where there is also a note
-   * on why `WebGPUEngine.CreateAsync` is not what builds this.
+   * What did NOT change is that this constructor stays synchronous — `Game`
+   * is not a `static async create()`, because `window.__celshock` existing
+   * with every pool non-null the moment the constructor returns is what ~40
+   * smoke scripts rest on (`VERIFYING.md`). Awaiting in `main.ts` and
+   * injecting the result is what keeps both of those true at once, and it is
+   * the move `havok` already made.
    */
   constructor(
     canvas: HTMLCanvasElement,
     havok: HavokInstance,
-    engine: WebGPUEngine,
+    device: GPUDevice,
+    surface: CanvasSurface,
+    local: MatchHost,
+    /**
+     * The frame's clock (`FrameClock`), made by the boot before the canvas's
+     * first size and sampled at every size that took since (`main.ts`); our
+     * loop samples it at every frame of its own.
+     */
+    clock: FrameClock,
+    /**
+     * Puts the boot's "No graphics device" plate back up (`main.ts`, whose
+     * screen it is): a device lost a second time inside the window
+     * (`deviceLost`, `core/deviceLoss.ts`).
+     */
+    deviceFailed: () => void,
   ) {
     this.canvas = canvas;
-    this.engine = engine;
-    this.engine.customAnimationFrameRequester = this.frameCap.requester;
-    this.scene = new Scene(this.engine);
-    this.scene.collisionsEnabled = true;
-    // The scene has no Babylon lights at all: cel materials carry their own
+    this.deviceFailed = deviceFailed;
+    this.surface = surface;
+    // **The page's own match host** — in a Worker or on a channel in this
+    // thread (`src/net/matchHost.ts`), chosen by
+    // the boot and handed in as `havok` and the device are. Every round that is
+    // not a server's is a match on it (`openLocalRound`).
+    this.localOwner = new LocalOwner(local, {
+      fileTiming: (timing) => this.prof.fileTiming(P.sim, SIM_SLOTS, timing),
+      roundFailed: (reason) => {
+        if (this.localRound) this.failLocalRound(reason, this.net!);
+      },
+      hostLost: (reason) => {
+        if (this.localRound) this.failLocalRound(reason, this.net!);
+      },
+      replaced: (host) => this.prof.setSimMode(host.mode),
+    });
+    this.prof.setSimMode(local.mode);
+    // THE LOOP is ours (`core/FrameLoop.ts`, `BABYLON_EXIT.md` X5.4g): the
+    // refresh `FrameCap` admits, the clock, the frame's one encoder and its
+    // one submit — `?gpu` times the whole frame on it (`gpu.frame`; `main.ts`
+    // asked the device for `timestamp-query`). Started at the constructor's
+    // end, where `runRenderLoop` was.
+    // The clock is the boot's (`main.ts`), sampled at every size of the
+    // canvas that took too (`CanvasSurface.onSized`, X5.4h), where Babylon's
+    // engine ran `_initializeMainAttachments` and its performance monitor took
+    // a sample — so the delta and the rate are Babylon's sample for sample.
+    this.frameLoop = new FrameLoop(this.frameCap, device, this.prof, clock, urlFlag("gpu"));
+    // A LOST device (`BABYLON_EXIT.md` X5.4i, row "X5.4, a lost device"):
+    // the teardown, then the page RELOADED to the menu — or, a second time
+    // inside the window, the boot's plate (`deviceLost`). Every reason is
+    // answered, `"destroyed"` with the rest: a device of ours is never
+    // destroyed on purpose, and `lost.mjs` loses one by destroying it. A
+    // promise settles once, so nothing in the answer re-enters it.
+    void device.lost.then((info) => this.deviceLost(info));
+    this.prof.setFrameTimer(this.frameLoop.submit.timer);
+    // What Babylon's scene input manager did to the canvas when a scene
+    // attached it, on Babylon's engine, until `BABYLON_EXIT.md` X5.4h
+    // (`CanvasSurface.adoptInput`): the tab index, the press and release
+    // default-prevented and focusing, the pointer captured, and the release
+    // it made on a blur or a cancel with a press held. Where the scene was
+    // built until X6.1h, so in the order it was.
+    surface.adoptInput();
+    // THE FRAME is ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+    // `scene.render()` did, in its order — and since X6.1h there is no scene
+    // at all. Before anything hangs on its points, and before our renderer,
+    // whose host it is.
+    this.sceneFrame = new SceneFrame(this.renderId, device, this.frameLoop);
+    // There are no Babylon lights at all: cel materials carry their own
     // key/ambient/point-light uniforms (fed by the LightingSystem) and every
     // effect material is unlit emissive.
-    this.mats = new CelMaterialFactory(this.scene);
-    // Stepped moon shadows + contact blobs. Must exist before any cel
-    // material is created so the shadow map binds on creation.
-    this.shadows = new ShadowSystem(this.scene, this.mats, this.shadowQuality);
-    // Same rule as the line above, and it binds a sampler every cel material
-    // DECLARES: `SHADOW_SAMPLER_NAMES` lists `bodyShadowMap`, and a declared
-    // sampler with nothing behind it is a bind group that fails to build and
-    // every draw using it silently lost. So this exists before the first
-    // material does, and there is no state in which it does not.
-    this.bodyShadows = new BodyShadows(this.scene, this.mats, this.shadowQuality);
-    // The lamps' atlas, for the same rule: `SHADOW_SAMPLER_NAMES` lists it, so
-    // it is bound before the first material exists — the lit 1x1 on a rung
-    // that has none.
-    this.localShadows = new LocalShadows(this.scene, this.mats, this.shadowQuality);
+    // Our renderer first: the factory makes a ground's textures, and its
+    // shadows their lit and no-cloud texels, through the renderer's maker
+    // (`TextureMaker`, `BABYLON_EXIT.md` X5.4d). The two pulls below read the
+    // factory only once a frame is drawn.
+    this.renderer = new Renderer(
+      this.sceneFrame.host,
+      (out) => this.mats.fillFrame(out),
+      (out) => this.mats.fillFrameTextures(out),
+      // `?gpu` times our culls too (`gpu.cull`); `main.ts` asked the device
+      // for `timestamp-query`, and the renderer builds no timer without it.
+      { timePasses: urlFlag("gpu") },
+    );
+    this.mats = new CelMaterialFactory(this.renderer.textureMaker);
+    this.prof.setCullTimer(this.renderer.timer);
+    // The world's four directional maps as our renderer draws them, in every
+    // round (`BABYLON_EXIT.md` X3.6a, X3.7b).
+    this.worldShadows = new WorldShadows(this.renderer);
+    // Stepped moon shadows + contact blobs. Must exist before the first frame,
+    // so the frame's shadow map is bound from the first.
+    this.shadows = new ShadowSystem(this.mats, this.shadowQuality, this.worldShadows, this.renderer.textureMaker);
+    // Same rule as the line above, and it binds a texture every cel program
+    // DECLARES: the frame's textures list `bodyShadowMap`, and a frame with
+    // one unbound draws nothing. So this exists before the first frame does,
+    // and there is no state in which it does not. Its map is
+    // our renderer's in every state, a pass of its own (`BABYLON_EXIT.md`
+    // X4.1c), and its pipeline is asked here, once for the session.
+    this.bodyShadowMap = new BodyShadowMap(this.renderer, BODY_SHADOW_PROXIES);
+    this.bodyShadows = new BodyShadows(this.mats, this.shadowQuality, this.bodyShadowMap);
+    // Every body, ours in every round (`BABYLON_EXIT.md` X4.1d): each side's
+    // kit built here, once, and its six pipelines (three plain, three behind
+    // the fade's screen door) asked for the session, so the building card's
+    // warm-up waits for them like any of ours. The
+    // most bodies a frame can hold: a side's ceiling twice and the death
+    // cam's stand-in.
+    this.bodyDraw = new BodyDraw(
+      this.renderer,
+      soldierKits().map((kit) => ({
+        segments: kit.segments.map((seg) => ({
+          positions: seg.geometry.positions,
+          normals: seg.geometry.normals,
+          uvs2: seg.geometry.uvs2,
+          indices: seg.geometry.indices,
+          emissive: seg.emissive,
+        })),
+      })),
+      { cel: this.mats.bodyCelRecipe(KIT_COLORS), visor: this.mats.bodyEmissiveRecipe(VISOR_COLORS) },
+      2 * CONFIG.bots.maxPerTeam + 1,
+      (order, glow, n, glowOn) => this.bodyPull(order, glow, n, glowOn),
+    );
+    this.segmentCentres = new Float64Array(this.bodyDraw.capacity * this.bodyDraw.segments * 3);
+    this.segmentKeys = new Float64Array(this.bodyDraw.segments);
+    this.visorSegment = soldierKits()[0].visor;
+    // Every hull, ours in every round (`BABYLON_EXIT.md` X4.2b), on the
+    // bodies' terms: every kind's kit in both views' colours built here,
+    // once — a segment's vertices carrying its colour's slot in the hulls'
+    // one palette, which the charred paint is a slot of too — and its
+    // pipeline asked for the session, so the building card's warm-up waits
+    // for it like any of ours, and none is posed for it.
+    const kits = hullKits();
+    const palette = hullPalette(kits);
+    this.hullKitIndex = new Map(kits.map((kit, i) => [kit, i]));
+    this.hullDraw = new HullDraw(
+      this.renderer,
+      kits.map((kit) => ({
+        segments: kit.segments.map((seg) => {
+          writePaletteIndex(seg.geometry, palette.slotOf(seg.color));
+          return {
+            positions: seg.geometry.positions,
+            normals: seg.geometry.normals,
+            uvs2: seg.geometry.uvs2!,
+            indices: seg.geometry.indices,
+          };
+        }),
+      })),
+      this.mats.hullCelRecipe(palette.colors.map((hex) => Color3.FromHexString(hex))),
+      palette.charred,
+      HULL_DRAW_CAPACITY,
+      (order, matrices, n) => this.hullPull(order, matrices, n),
+    );
+    this.hullSpheres = new Float64Array(this.hullDraw.capacity * this.hullDraw.segments * 4);
+    this.hullKeys = new Float64Array(this.hullDraw.segments);
+    // …and what it drew, for the same reason as the bodies' below
+    // (`ProfileReport.hulls`): Babylon's counter has counted no hull since
+    // X4.2b.
+    this.prof.setHulls(() => {
+      const { drawn, instances } = this.hullDraw.stats;
+      return { drawn, instances };
+    });
+    // A capture says what the body draw drew, which Babylon's draw counter
+    // has not counted since X4.1d (`ProfileReport.bodies`) — a COPY, which a
+    // halted ring keeps.
+    this.prof.setBodies(() => {
+      const { drawn, masked, instances } = this.bodyDraw.stats;
+      return { drawn, masked, instances };
+    });
+    // The lamps' atlas, for the same rule: the frame's textures list it, so
+    // it is bound before the first frame — the lit 1x1 on a rung that has
+    // none.
+    // Its atlas is our renderer's in every round, as the world's maps are
+    // (`BABYLON_EXIT.md` X3.6b, X3.7b).
+    this.lampAtlas = new LampAtlas(
+      this.renderer,
+      CONFIG.graphics.localShadows.staticFacesPerFrame,
+      CONFIG.graphics.localShadows.maxProxies,
+    );
+    this.localShadows = new LocalShadows(this.mats, this.shadowQuality, this.lampAtlas);
+    // The reflection probes' cubes as our renderer bakes them, in every round
+    // (`BABYLON_EXIT.md` X3.6c, X3.7b):
+    // the probe's eye is PASSED in a frame of the bake's own, which the
+    // factory fills, rather than moved onto every material.
+    this.probeBake = new ProbeBake(
+      this.renderer,
+      (out, eye) => this.mats.fillBakeFrame(out, eye),
+      CONFIG.graphics.reflection.size,
+      CONFIG.graphics.reflection.probesPerFrame,
+    );
+    // The emissive palette's share of the glow's mask as our renderer draws
+    // it, in every round whose palette glows (`BABYLON_EXIT.md` X3.6d,
+    // X3.7b) — with its main pass (X3.6e): drawn first in `GlowPass`'s mask,
+    // which stays Babylon's. The rules are the glow's own two (below), asked
+    // of the palette's materials.
+    this.worldGlow = new WorldGlow(this.renderer, {
+      admits: () => this.glowAdmits(),
+      colour: (recipe, out) => {
+        const material = this.mats.emissiveMaterialOf(recipe);
+        const c = this.paletteBloom;
+        if (material) this.bloomColour(material, 1, c);
+        else c.set(0, 0, 0, 1);
+        out[0] = c.r;
+        out[1] = c.g;
+        out[2] = c.b;
+        out[3] = c.a;
+      },
+    });
     // The same rule again, for the irradiance volume's seven textures: every
     // cel material declares them, so they are published before the first one
-    // exists and stay published whatever the setting says.
-    this.gi = new GiVolume(
-      this.engine,
-      this.scene,
-      this.mats,
-      this.overrides.gi(this.settings.gi),
-    );
+    // exists and stay published whatever the setting says. Its GPU half is
+    // OUR renderer's (`render/GiCompute.ts`, `BABYLON_EXIT.md` X5.1b), whose
+    // dispatch is a LATE prepare pushed in this constructor — AFTER
+    // `ProbeBake`'s, above, which is the whole of why the bake reads the
+    // previous frame's compose: the late list runs in push order. Build the
+    // volume before the bake, or hook the bake again after it, and the order
+    // reverses with no error.
+    this.gi = new GiVolume(this.renderer, this.mats, this.overrides.gi(this.settings.gi));
     this.input = new InputManager(canvas);
-    this.cameraSys = new CameraSystem(this.scene);
+    this.cameraSys = new CameraSystem(this.sceneFrame, this.surface);
 
-    // **Draw the opaque queue front to back**, which Babylon does not do on its
-    // own: its default is `PainterSortCompare`, grouping by material id and
-    // leaving depth to chance. That is the right default for a scene whose cost
-    // is state changes and the wrong one for this scene, whose cost is PIXELS —
-    // a street of towers occludes most of itself, and a fragment is only
-    // rejected before it shades if whatever stands in front of it was drawn
-    // first. Ordering is the whole of the win; nothing about the picture moves,
-    // because opaque draws are order-independent through the depth buffer.
-    //
-    // It is also what makes `backed` glazing pay (see `CelMaterialFactory
-    // .getGlass`): a curtain wall only saves the shading of the shaft behind it
-    // if the pane is down first, and by material id it would be a coin toss.
-    //
-    // The comparator is ours rather than `RenderingGroup.frontToBackSortCompare`
-    // because that one reads `subMesh._distanceToCamera`, which Babylon fills in
-    // only on the transparent path. Cost is two bounding-sphere reads per
-    // comparison over a couple of hundred submeshes — microseconds, against the
-    // fill it is buying back.
-    this.scene.setRenderingOrder(0, (a, b) => {
-      const eye = this.scene.activeCamera?.globalPosition;
-      if (!eye) return 0;
-      return eyeDistanceSq(a, eye) - eyeDistanceSq(b, eye);
-    });
-    // **The viewmodel's group does NOT clear depth before it draws**, where
-    // Babylon's default for every group above 0 is to clear. It lived in `Sky`
-    // while the moon shared that group; the moon is in group 0 now and what the
-    // line still holds up is ONE depth image for the frame — the world and the
-    // gun together — which `FrameDepth` hands to the ink and the blur, and which
-    // `GlowPass` occludes the bloom against. Clear it and all three readers
-    // see a buffer holding the weapon alone.
-    this.scene.setRenderingAutoClearDepthStencil(VIEWMODEL_GROUP, false);
+    // **ONE depth image for the frame** — the world and the gun together —
+    // which every post stage reads (`FrameTargets.depth`, our renderer's), and
+    // which the glow's mask occludes the bloom against. The viewmodel had a rendering group of its
+    // own until `BABYLON_EXIT.md` X4.3d, whose depth clear (Babylon's default
+    // for every group above 0) was switched off here so the three readers saw
+    // more than the gun; every surface of it is our renderer's now, drawn at
+    // the END of group 0 into the same depth (`ViewDraw`), and no group above
+    // 0 holds anything.
 
     // Post-processing: FXAA smooths the hard cel/outline edges. Glow comes
     // from an emissive MASK rather than threshold bloom — it keys off material
@@ -1336,166 +2199,143 @@ export class Game {
     // compose in its own last line; the glow puts no pass on the camera at
     // all, so building it here puts nothing in the chain ahead of the ink.
     //
-    // The RULES are this file's, because both are questions about the game.
+    // The RULES are this file's, because both are questions about the game
+    // (`glowAdmits`, `bloomColour`, which every draw of ours into the mask
+    // asks, each with the distance it measured: the "`GlowRules`" the
+    // comments here name, the interface `GlowPass` took for its own mesh path
+    // until `BABYLON_EXIT.md` X5.3d).
     //
     // The bloom is the ONE pass that reads a material and never asks where the
-    // mesh carrying it stands, so without the fade a glow is the last thing left
+    // surface carrying it stands, so without the fade a glow is the last thing left
     // when everything around it has gone to fog: Greyfen's chapel windows are
     // 0.08 m slivers whose whole read at 60 m is bloom, and they sat on a wall
     // faded almost to white as three saturated cyan bars. Fogging the emissive
-    // MATERIAL cannot fix it — `EmissiveFog` fades the base colour toward the
+    // MATERIAL cannot fix it — the unlit draws fade the base colour toward the
     // FOG, and a bloom drawn from that would be a pale haze round every far
     // lamp — so the base pass and the bloom are attenuated separately, and the
     // bloom is by far the larger term. It does NOT reproduce an emissive
     // texture's `level`, which is sound only while nothing in this game pairs a
-    // texture with a glow — the moon is the one textured emissive and it is
-    // exempt below.
-    //
-    // `infiniteDistance` is the exemption and it is exactly the right test:
-    // every sky mesh sets it (see Sky.prepare), it means "this rides with the
-    // camera", and the moon is the one glowing thing that must never fog — it
-    // is not in the valley, and its bounding sphere is a dome radius away, so
-    // any distance fade would delete it outright.
-    const glow = new GlowPass(this.scene, this.cameraSys.camera, {
-      // The kit screen hangs a dark card behind the weapon (see
-      // `inspect.backdrop`), and the one thing in the game that card cannot
-      // cover is the bloom: it is composited over the FINISHED frame, so a lamp
-      // the bench is standing in front of blooms straight through it. Only what
-      // is on the stage may bloom while the stage is up, which still leaves the
-      // reticle and the hot parts of the weapon itself glowing — exactly what
-      // the screen is for. "On the stage" is the viewmodel's rendering group,
-      // and nothing else is in it: the moon, which shared it once and needed an
-      // `infiniteDistance` test to be picked back out, draws in group 0 now
-      // (see `Sky.apply`).
-      admits: (mesh) =>
-        this.state !== "loadout" || mesh.renderingGroupId === VIEWMODEL_GROUP,
-      colour: (mesh, material, out) => {
-        const emissive = material.emissiveColor;
-        // Read off the base Material: only PBR declares it.
-        let k =
-          (material as { emissiveIntensity?: number }).emissiveIntensity ?? 1;
-        // …and the emissive palette fades its own, PER PIXEL, because one of
-        // its meshes is a whole block's lamps and a centre would be a whole
-        // block wrong (`EmissiveWorld.ts`). Its colour is white, so what goes
-        // over is this rule's scale alone.
-        if (!mesh.infiniteDistance && !fadesOwnBloom(material)) {
-          // The sphere's CENTRE, deliberately — not the NEAR point, which is
-          // what a per-mesh ink width used to be measured to. A bloom is a soft
-          // blob with no edge to speak of, so its middle is where it reads
-          // from; the near
-          // point of a block-merged mesh (the chapel's six windows are one,
-          // 8.5 m of radius) sits a whole radius early and fogged them by 16%
-          // where the wall behind was at 35%. Every glowing mesh here is a
-          // fitting or a window, so a centre is never far from the light it
-          // stands for.
-          const sphere = mesh.getBoundingInfo().boundingSphere;
-          const d = Vector3.Distance(
-            sphere.centerWorld,
-            this.cameraSys.camera.globalPosition,
-          );
-          k *= 1 - fogAmountAt(d);
-        }
-        out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
-      },
+    // texture with a glow: the moon is the one textured emissive, and it is no
+    // mesh here (`SkyDraw`). It is also the one glowing thing that must never
+    // fog, not being in the valley, so it is handed no fade at all.
+    // The blur and the box filter are OUR draws (X5.2b), declared at the
+    // device pixel ratio the page boots at; and since X5.4e every pass of the
+    // glow is our renderer's, on its own targets (`Renderer.targets`): the
+    // mask (`recordGlowMask`: the palette, the visors, the pools FIRST, the
+    // weapon's lit parts LAST) and the blur's five. `GlowPass` keeps the RULES
+    // — when, at what size, which kernel — and asks for each.
+    const glowBlur = new GlowBlur(this.renderer, glowKernels(window.devicePixelRatio || 1));
+    this.glowBlur = glowBlur;
+    const targets = this.renderer.targets;
+    const glow = new GlowPass(this.sceneFrame, this.cameraSys.camera, this.surface, {
+      // The frame's size — its depth's, which the mask borrows. Worth ~20% of
+      // the frame on the three big maps against a mask that redrew the whole
+      // visible scene to occlude itself (docs/rendering.md, "The glow: what
+      // the depth share replaced").
+      frameWidth: () => targets.depth.width,
+      frameHeight: () => targets.depth.height,
+      resize: (mw, mh, dw, dh, nw, nh, ww, wh) => targets.sizeGlow(mw, mh, dw, dh, nw, nh, ww, wh),
+      mask: () => this.renderer.recordGlowMask(),
+      downReady: () => glowBlur.downReady(),
+      blurReady: (kernel) => glowBlur.blurReady(kernel),
+      down: (w, h, outputHeight) => glowBlur.down(w, h, outputHeight),
+      blur: (i, kernel, across, fromDown, w, h, outputHeight) =>
+        glowBlur.blur(i, kernel, across, fromDown, w, h, outputHeight),
     });
     this.glow = glow;
-    // THE INK GOES ON FIRST, and the ordering is the whole of why it is
-    // constructed here rather than beside the other three passes. A
-    // `PostProcess` given a camera attaches itself, and `attachPostProcess`
-    // APPENDS — so what is built first runs first. The ink is part of the
-    // PICTURE and not a grade over one: FXAA below then antialiases the lines
-    // it draws (they come off a depth buffer, which has no antialiasing of its
-    // own), and the shafts, the smear and the grain all land on top of inked
-    // geometry rather than under it.
-    // The frame's own depth image, captured ONCE and read by two passes — the
-    // ink's edges and the blur's weapon mask. It has to exist before either of
-    // them, since a declared sampler that is still null at apply time loses the
-    // draw silently; `FrameDepth` argues the rest.
-    this.frameDepth = new FrameDepth(this.scene, this.cameraSys.camera);
-    // The bloom's compose is the ink's last line rather than a pass of its own
-    // (`GlowPass`'s header): after the ink, so a bloom lies over the lines
-    // round its lamp rather than under them, and before FXAA and everything
-    // else, which treat it as part of the picture.
-    this.celInk = new CelInk(
-      this.scene,
-      this.cameraSys.camera,
-      glow,
-      this.frameDepth,
+    // The two spans inside the frame's render are the FRAME's to bracket
+    // (`SceneFrame.timeWith`, `BABYLON_EXIT.md` X5.4g): `drawWorld` in its
+    // draw phase and `glow` around this pass's work.
+    this.sceneFrame.timeWith(this.prof, glow);
+    // THE FRAME: our renderer's target (`Renderer.targets.frame`, with its
+    // depth, X5.4e), which its own passes clear and draw — sized as the frame
+    // starts by the post chain's pass owner, `ChainPasses` (ours since X5.4f),
+    // which begins every pass of the chain after the camera's render, into
+    // its pool and the canvas. No Babylon `PostProcess` stands on the camera
+    // since X5.2d, no `outputRenderTarget` since X5.4e, and there is no
+    // scene since X6.1h.
+    const chainPasses = new ChainPasses(
+      this.renderer.device,
+      this.sceneFrame.host,
+      targets,
+      // The context the boot configured (`main.ts`): a canvas has one.
+      surface.context,
     );
-    // The ink is also the pass the scene draws into, and so the one whose depth
-    // the mask borrows. Worth ~20% of the frame on the three big maps against
-    // a mask that redrew the whole visible scene to occlude itself
-    // (docs/rendering.md, "The glow: what the depth share replaced").
-    glow.drawsInto(this.celInk.pass);
-    const pipeline = new DefaultRenderingPipeline("post", false, this.scene, [
-      this.cameraSys.camera,
-    ]);
-    // The cel shader outputs display-ready colors; the default image
-    // processing pass would re-apply gamma and wash them out.
-    pipeline.imageProcessingEnabled = false;
-    // FXAA is BUILT always and taken off the camera by the setting
-    // (`setFxaaEnabled`), never by `fxaaEnabled`: that setter rebuilds the
-    // pipeline, which re-attaches its passes by APPENDING — behind the shafts,
-    // the blur and the grade. So its slot is claimed here, while it is the last
-    // pass in the chain: detaching nulls its entry, and re-attaching appends it
-    // again and hands back the index, which is the one public way to learn it.
-    // The null left behind is skipped by the chain, as the shafts' hole is.
-    pipeline.fxaaEnabled = true;
-    this.fxaa = pipeline.fxaa;
-    this.cameraSys.camera.detachPostProcess(this.fxaa);
-    this.fxaaSlot = this.cameraSys.camera.attachPostProcess(this.fxaa);
-    // The pass is Babylon's and the SHADER is ours (`shaders/Fxaa.ts`),
-    // registered under the name the pass looks up. If Babylon's own text ever
-    // wins that race the frame is simply soft again, so a DEV build says so.
-    if (import.meta.env.DEV) {
-      this.fxaa.onApplyObservable.addOnce(() => {
-        if (!fxaaShaderIsOurs()) {
-          console.warn("FXAA is running Babylon's shader, not shaders/Fxaa.ts");
-        }
+    this.chainPasses = chainPasses;
+    {
+      const camera = this.cameraSys.camera;
+      // Before anything in the frame draws (`onBeforeRenderObservable`, where
+      // `PostPasses.prepareFrame` hung): the frame at this frame's render size,
+      // read as Babylon sized a post-process's input
+      // (`getRenderWidth(true) * 1 | 0`), named for its reader.
+      this.sceneFrame.onBeforeRenderObservable.add(() => {
+        if (this.sceneFrame.activeCamera !== camera) return;
+        chainPasses.prepareFrame(
+          surface.getRenderWidth(true) | 0,
+          surface.getRenderHeight(true) | 0,
+          this.postChain?.firstActive() ?? null,
+        );
       });
+      // After the camera's render: the chain's passes, the frame drawn.
+      this.sceneFrame.onAfterCameraRenderObservable.add(() => {
+        if (this.sceneFrame.activeCamera !== camera) return;
+        chainPasses.record(this.postChain);
+      });
+      // The frame's end: the canvas's pass, on a frame nothing began it.
+      this.sceneFrame.finishWith(() => chainPasses.finishFrame());
     }
+    // THE INK GOES FIRST: our post chain's first stage (X5.2d), reading the
+    // frame the scene drew. It is part of the PICTURE and not a grade over
+    // one: FXAA below then antialiases the lines it draws (they come off a
+    // depth buffer, which has no antialiasing of its own), and the shafts,
+    // the smear and the grain all land on top of inked geometry rather than
+    // under it. The bloom's compose is its last line rather than a pass of
+    // its own (`GlowPass`'s header): after the ink, so a bloom lies over the
+    // lines round its lamp rather than under them, and before FXAA and
+    // everything else, which treat it as part of the picture.
+    this.celInk = new CelInk(this.cameraSys.camera, glow, targets);
+    // The frame's clear — its colour to the frame's clear colour and its
+    // depth, then its depth again — is our renderer's own opening pass and
+    // main pass (`Renderer.end`, `BABYLON_EXIT.md` X5.4e), and nothing else
+    // clears. The canvas's boot frames keep X5.2d's state (no clear: what the
+    // swap chain hands over, the owner's decision, row "X5.2, the boot
+    // canvas"), and every frame the chain draws its last stage overwrites the
+    // canvas whole.
+    // FXAA: OUR draw since X5.2c2, the post chain's stage after the ink it
+    // antialiases (`shaders/Fxaa.ts`).
+    this.fxaa = new Fxaa();
     // The light shafts: volumetric moonlight marched through the shadow
     // volume, after FXAA and before the blur — they belong to the same instant
-    // as the geometry, so they have to smear and be graded with it.
-    //
-    // **The SLOT is claimed here by attaching and immediately detaching**, and
-    // that is the whole reason `Game` does this rather than the pass: Babylon's
-    // `attachPostProcess` APPENDS, so only this point in the assembly knows
-    // where the shafts go, and `detachPostProcess` NULLS the entry rather than
-    // removing it — so the hole survives for `syncVolumetrics` to refill, on
-    // the first frame the depth image exists and on every later frame the
-    // player turns them back on. The blur and the grade append after the hole
-    // and the order is exact whatever the setting does.
+    // as the geometry, so they have to smear and be graded with it. The CPU
+    // half is built for the boot's rung (none while the player has them off),
+    // and the chain holds a STAGE for every rung (`volumetricStages`), each
+    // drawn while the pass `syncVolumetrics` latched ready is at its rung.
     const bootRung = this.overrides.volumetrics(this.settings.volumetrics);
-    const first = new Volumetrics(
-      this.scene,
-      this.cameraSys.camera,
-      this.frameDepth,
-      bootRung ?? FIRST_VOLUMETRIC_RUNG,
-    );
-    this.volumetricsSlot = this.cameraSys.camera.attachPostProcess(first.pass);
-    this.cameraSys.camera.detachPostProcess(first.pass);
     if (bootRung) {
+      const first = new Volumetrics(this.cameraSys.camera, targets, bootRung);
       this.volumetrics = first;
       this.volumetricsRung = bootRung;
       this.seedVolumetrics(first, this.mapDef.environment);
-    } else {
-      first.dispose();
     }
     // Then the look smears, with the shafts already in the frame — they belong
     // to the same instant as the geometry, so they have to blur with it.
-    this.motionBlur = new MotionBlur(
-      this.scene,
-      this.cameraSys.camera,
-      this.frameDepth,
-    );
+    this.motionBlur = new MotionBlur(this.cameraSys.camera, targets);
     // Vignette/grain/aberration go last, over the finished frame. Grain in
     // particular has to land AFTER the blur: smeared grain reads as smudge.
-    this.post = new PaperGrain(
-      this.scene,
-      this.cameraSys.camera,
-      this.frameDepth,
-    );
+    // The ink (X5.2d), FXAA, the shafts, the blur (X5.2c2) and the grade
+    // (X5.2c1) are OUR draws: the post chain's host, its stages in THIS
+    // order over the frame our renderer drew, whose passes `ChainPasses` begins
+    // after the camera's render. The order is the host's list, not an
+    // append, and a setting turns a stage off rather than taking a pass off a
+    // camera, so there is no slot to hold.
+    this.post = new PaperGrain(this.cameraSys.camera, targets);
+    this.postChain = new PostChain(this.renderer, [
+      this.celInk.stage,
+      this.fxaa.stage,
+      ...volumetricStages(targets, () => (this.volumetricsAttached ? this.volumetrics : null)),
+      this.motionBlur.stage,
+      this.post.stage,
+    ]);
     this.sfx = new Sfx();
     this.hud = new HUD();
     // After the HUD: its root is the element every screen appends to.
@@ -1520,132 +2360,482 @@ export class Game {
     // Thunder is the strike's own event, raised the frame its flash starts;
     // `Sfx` delays it by the distance on the audio clock.
     this.lightning.onStrike = (distance) => this.sfx.thunder(distance);
-    this.atmosphere = new Atmosphere(this.scene);
+    // Every particle field's update and draw is our renderer's (X4.7c the ash,
+    // X4.7d the rotor wash), on Babylon's clock:
+    // the frame's animation ratio (`SceneFrame.animationRatio`,
+    // `Scene.animate`'s arithmetic over our loop's delta since X5.4g), read as
+    // the frame draws, which is when `GPUParticleSystem.animate` read it; and
+    // the camera as `_render` bound it, the view and the projection APART, the
+    // view's inverse and the eye.
+    this.particleDraw = new ParticleDraw(
+      this.renderer,
+      (out) => this.readParticleCamera(out),
+      () => this.sceneFrame.animationRatio,
+    );
+    this.atmosphere = new Atmosphere(this.particleDraw, this.renderer.textureMaker);
     // Beside the mote field because it is the same kind of thing — a standing
-    // GPU emitter driven off where something is — and NOT beside the fleet,
-    // which it never touches. The server builds no such class at all.
-    this.rotorWash = new RotorWash(this.scene);
-    // `mats` is not for building materials here — both systems own their own
-    // shader. It is the publisher of the shadow map, its matrix and its params,
-    // which both now sample (see `celShadow`).
-    this.water = new WaterSystem(this.scene, this.mats);
-    this.grass = new GrassSystem(this.scene, this.mats);
+    // GPU emitter driven off where something is, its rings fields of ours on
+    // the same `ParticleDraw` (X4.7d) — and NOT beside the fleet, which it
+    // never touches. The server builds no such class at all.
+    this.rotorWash = new RotorWash(this.particleDraw, this.renderer.textureMaker);
+    // `mats` is not for building materials here — both systems' pictures are our
+    // renderer's. It is the holder of the map's key, the one thing either asks it
+    // for (`keyLight`); the shadow map, its matrix and its params reach both
+    // shaders off the frame (see `celShadow`).
+    this.waterDraw = new WaterDraw(this.renderer);
+    this.water = new WaterSystem(this.pending, this.mats, this.waterDraw, this.renderer.textureMaker);
+    this.grassDraw = new GrassDraw(this.renderer);
+    this.grass = new GrassSystem(this.grassDraw, this.mats);
+    // A round's GLAZING is our renderer's (`BABYLON_EXIT.md` X4.6e): the
+    // handover takes it from the build, the reflection bake points each group
+    // at its cube, and a break collapses a pane in its buffer.
+    this.glassDraw = new GlassDraw(this.renderer, (into) => this.glassPull(into));
     // Same relationship to `mats` as the two above, in the other direction:
-    // this one PUBLISHES to it — the cube the glazing samples, baked from the
-    // map itself. Built here so a pane material is born holding the sampler.
-    this.reflections = new ReflectionSystem(this.scene, this.mats);
+    // this one reads it — each glazing group's recipe — and points a round's
+    // glazing at the cubes it bakes from the map itself, or at its default
+    // cube, which nothing bakes. (It published that cube to every pane
+    // material too, wrapped for Babylon's glazing, which only the map
+    // editor's build drew; the wrap went at X5.3d.)
+    this.reflections = new ReflectionSystem(this.sceneFrame, this.mats, this.probeBake, this.glassDraw);
     // A cube is baked once per install and keeps the bounce it was baked
-    // under, so the bake waits for the volume `installMap` has just cleared.
-    this.reflections.setBakeGate(() => this.gi.converged);
-    // Takes over `scene.getActiveMeshCandidates`, and offers the WHOLE scene
-    // until a map is installed — so where in this constructor it stands
-    // decides nothing: it rebuilds its list off `scene.meshes` wholesale the
-    // first time it is asked, and the scene's own observables only ever set a
-    // flag. Nothing it does is visible to a ray, a collision, a shadow caster
-    // or a cube probe; see `WorldCulling`, which is the whole argument.
-    this.culling = new WorldCulling(this.scene);
+    // under, so the bake waits for the volume `installMap` has just cleared —
+    // and the shadows it samples, which our renderer draws a frame or more
+    // after the install, once its pipelines are built (`ShadowSystem.ready`).
+    this.reflections.setBakeGate(() => this.gi.converged && this.shadows.ready);
+    // Decides what our renderer's draws are offered — the map's cull cells
+    // and their reach, the size gate, the pooled bodies' verdicts and fades,
+    // the hulls' — and hooks nothing of the scene's (its candidate list for
+    // Babylon's mesh walk went with the walk, `BABYLON_EXIT.md` X5.4f). It
+    // holds no cell until `installMap` hands it a map and no body until the
+    // pools are installed, so where in this constructor it stands decides
+    // nothing. Nothing it does is visible to a
+    // ray, a collision, a shadow caster or a cube probe; see `WorldCulling`,
+    // which is the whole argument.
+    this.culling = new WorldCulling(this.sceneFrame, this.surface);
+    // The world our renderer draws, in every pass, with no fallback: what it
+    // cannot draw is the round's end (`worldFailed`).
+    this.handover = new BlockHandover(
+      this.renderer,
+      this.mats,
+      this.culling,
+      this.worldShadows,
+      this.lampAtlas,
+      this.probeBake,
+      this.worldGlow,
+      // The fire draw, built below with the molotov's pool it shares; the
+      // handover only hands it a map's fires at an install, long after.
+      {
+        setWorld: (fires) => this.flameDraw.setWorld(fires),
+        clearWorld: () => this.flameDraw.clearWorld(),
+      },
+      this.glassDraw,
+      (reason, owner) => this.worldFailed(reason, owner),
+      {
+        mode: this.overrides.cullMode,
+        // After the HUD, which built `#hud`.
+        report: this.overrides.cullCheck ? new CullCheckPanel().show : null,
+      },
+    );
+    // A capture says what our renderer took and drew, which Babylon's own
+    // draw counter could not (`ProfileReport.blocks`).
+    this.prof.setBlocks(() => this.handover.stats);
     this.mapBuilder = new MapBuilder(
-      this.scene,
       this.mats,
       this.lighting,
       this.ambience,
     );
-    this.combat = new CombatSystem(this.scene, this.mats);
-    this.grenades = new GrenadeSystem(this.scene, this.mats);
+    this.combat = new CombatSystem();
+    this.combatFx = new CombatFx(this.mats);
+    // The one event the picture of a round needs, and it is wired here rather
+    // than with the cues in `wireBattle` because it is the PAIR's: the
+    // simulation raises it once per resolved round and draws nothing, the view
+    // flies the streak and spawns the impact on arrival. Systems never import
+    // each other; this line is where the two meet.
+    this.combat.onRound = (muzzle, to, kind, normal, mark) =>
+      this.combatFx.drawRound(muzzle, to, kind, normal, mark);
+    this.grenades = new GrenadeSystem();
+    // The grenades' picture reads this page's own pool — its prediction of
+    // its own throw, and the fires the authority lit (`drawFire`).
+    this.grenadeFx = new GrenadeFx(this.mats, this.grenades);
+    // The one event a blast's picture needs, wired here beside `onRound` for
+    // that line's reason: the simulation probes the ground and draws nothing,
+    // the view puts the six billowed layers up. Raised by every resolved
+    // blast and by the `explode` event's `drawBlast` alike.
+    this.grenades.onBlast = (at, power, ground) => this.grenadeFx.blast(at, power, ground);
     // The one physics engine, and its three clients. `PhysicsWorld` is INJECTED
     // into each rather than imported by any — see its header, and the
     // `BattleSystem`←`CombatSystem` precedent in CLAUDE.md. It is stood up
     // synchronously on the module `main.ts` already awaited, so all three
     // clients build their pools in their own constructors and nothing below
     // ever has to ask whether physics has arrived yet.
-    this.physics = new PhysicsWorld(this.scene, havok);
-    this.ragdolls = new RagdollSystem(this.scene, this.physics);
-    this.debris = new DebrisSystem(this.scene, this.mats, this.physics);
-    this.blastDebris = new BlastDebrisSystem(this.scene, this.mats, this.physics);
+    this.physics = new PhysicsWorld(havok);
+    this.ragdolls = new RagdollSystem(this.physics);
+    this.debris = new DebrisSystem(this.mats, this.physics);
+    this.blastDebris = new BlastDebrisSystem(this.renderer.textureMaker, this.mats, this.physics);
     this.glass = new GlassSystem();
-    this.deathCam = new DeathCam(this.scene, this.mats);
-    this.vehicles = new VehicleSystem(this.scene, this.mats, this.random);
+    this.glassFx = new GlassFx(this.glassDraw);
+    // The one event a break's picture needs, wired here beside `onRound` for
+    // that line's reason: the simulation keeps the panes, the boxes and the
+    // nav graph and draws nothing; the view collapses the glazing when a pane
+    // goes (by any path, a late joiner's catch-up included). There is no
+    // collider mesh to tell (`BABYLON_EXIT.md` X5.3e): the box leaving every
+    // query is the simulation's one write, `RayWorld.remove`.
+    this.glass.onBroken = (pane) => this.glassFx.collapse(pane);
+    this.deathCam = new DeathCam();
+    this.vehicles = new VehicleSystem(this.random);
+    this.vehicleViews = new VehicleViews();
     this.vehicleCam = new VehicleCamera();
-    // The crew's context, built once exactly as `BattleSystem`'s `BattleCtx`
-    // is: everything a driver may ask about the rest of the game, and nothing
-    // else. The two lists are asked for rather than captured, because what
-    // `vehicles` and `battle` hand out is replaced every round.
-    this.crew = new VehicleCrew({
-      hulls: () => this.vehicles.hulls,
-      roster: () => this.battle.bots,
-      aside: (bot) => this.battle.aside(bot),
-      setOccupied: (tank, seat, on) => this.vehicles.setOccupied(tank, seat, on),
-      exitSpot: (tank) => this.vehicles.exitSpot(tank),
-      targetsFor: (team) => this.battle.hittablesAgainst(team),
-      // The hull is taken out of its own pick for the length of the ray, which
-      // is `VehicleCamera`'s trick and `VehicleSystem.groundAt`'s: a crew's
-      // eye sits five centimetres above the top of its own collider, so every
-      // sightline to anything shorter than the cupola dives straight back into
-      // it. Two property writes and no allocation — `world/solid.ts` forbids
-      // minting a predicate that closes over the hull, and this is a per-think
-      // call.
-      visibleFrom: (tank, to) => {
-        const was = tank.body.isPickable;
-        tank.body.isPickable = false;
-        const seen = this.battle.losBetween(tank.eyePos, to);
-        tank.body.isPickable = was;
-        return seen;
-      },
-      fireShell: (tank, by) => this.resolveShell(tank, by),
-      fireMg: (tank, by) => this.resolveMg(tank, by),
-    }, this.random);
     // The anti-tank kit in the world. It owns the flight and the trigger and
     // nothing else: what a detonation is WORTH is `ordnanceEffect`'s and
     // spending it is `resolveOrdnance`'s, through the same `blastAt` the tank
     // shell already goes through.
-    this.antiTank = new AntiTankSystem(this.scene, this.mats);
+    this.antiTank = new AntiTankSystem();
+    this.antiTankFx = new AntiTankFx(this.mats, this.antiTank);
     this.aimAssist = new AimAssistSystem();
-    this.battle = new BattleSystem(this.scene, this.mats, this.combat, this.random);
     this.conquest = new ConquestSystem(this.random);
-    this.zones = new CaptureZoneSystem(this.scene, this.mats);
-    // The weapon is parented to the camera, so the camera has to exist first.
-    this.player = new Player(this.scene, this.mats, this.cameraSys.camera);
+    // The rings and the flags are OUR renderer's (`BABYLON_EXIT.md` X4.6b).
+    this.zoneDraw = new ZoneDraw(this.renderer, zoneRecipes(this.mats));
+    this.zones = new CaptureZoneSystem(
+      this.mats,
+      this.zoneDraw,
+      (x, y, z, radius) => !this.planesHeld || inPlanes(x, y, z, radius, this.heldPlanes),
+    );
+    this.nearestRun = new NearestRun(this.renderer, this.zoneDraw, this.grassDraw, this.waterDraw, (into) =>
+      this.nearestPull(into),
+    );
+    // The weapon hangs from the camera (its tree's root reads the camera's
+    // world, `ViewModel.tree`), so the camera has to exist first. Its render
+    // cache is keyed on OUR render id, moved by our frame where the scene's
+    // render moved Babylon's (`core/renderId.ts`, `SceneFrame.render`).
+    this.playerView = new PlayerView(this.mats, this.cameraSys.camera, this.renderId);
+    this.player = new Player(this.playerView);
     this.player.shotRand = this.random.stream(STREAM.player);
     this.player.setBodyHidden(true); // hidden until a round starts
-    // The sky hangs behind every state (menu included), so it is dressed
-    // once here and re-applied per round alongside the environment.
-    this.sky = new Sky(this.scene);
+    this.viewDraw = this.buildViewDraw();
+    // …and what it drew, for the bodies' reason (`ProfileReport.view`):
+    // Babylon's counter has counted no opaque part of the weapon since X4.3c.
+    this.prof.setView(() => {
+      const { drawn, masked } = this.viewDraw.stats;
+      return { drawn, masked };
+    });
+    // The effect pools' pieces and the bullet marks, ours in every round
+    // (`BABYLON_EXIT.md` X4.4b), on the bodies' terms: every kit built by the
+    // view that made the first of its meshes (above, so each material was
+    // asked of the factory where it always was), uploaded here once, and the
+    // draws' pipelines asked for the session — so the building card's warm-up
+    // waits for them like any of ours.
+    const pieceKits = this.pieceKits;
+    const pieceKitList = [pieceKits.tracer, pieceKits.casing, pieceKits.frag, pieceKits.bottle, pieceKits.rocket, pieceKits.mine];
+    this.pieceKitIndex = new Map(pieceKitList.map((kit, i) => [kit, i]));
+    const celPaints: string[] = [];
+    const unlitPaints: string[] = [];
+    const slotIn = (list: string[], hex: string): number => {
+      const k = hex.toLowerCase();
+      let i = list.findIndex((h) => h.toLowerCase() === k);
+      if (i < 0) i = list.push(hex) - 1;
+      return i + 1;
+    };
+    const pieceDrawKits: PoolKit[] = pieceKitList.map((kit) => ({
+      segments: kit.segments.map((seg) => ({
+        positions: seg.geometry.positions,
+        normals: seg.geometry.normals,
+        colors: seg.geometry.colors,
+        uvs: seg.geometry.uvs,
+        indices: seg.geometry.indices,
+        slot: seg.unlit !== null ? slotIn(unlitPaints, seg.unlit) : slotIn(celPaints, seg.cel!),
+        unlit: seg.unlit !== null,
+      })),
+    }));
+    // A piece blooms in ONE colour, measured off ONE segment's sphere
+    // (`piecePull`), so a kit with a second unlit segment would draw it with
+    // the first one's bloom, silently — refused where the kits are taken.
+    if (import.meta.env.DEV) {
+      for (const kit of pieceKitList) {
+        if (kit.segments.filter((s) => s.unlit !== null).length > 1) {
+          throw new Error(`Game: piece kit "${kit.name}" has more than one unlit segment, and a piece blooms in one colour`);
+        }
+      }
+    }
+    this.pieceUnlit = Int32Array.from(pieceKitList, (kit) => kit.segments.findIndex((s) => s.unlit !== null));
+    this.pieceBloomOf = pieceKitList.map((kit) => {
+      const lit = kit.segments.find((s) => s.unlit !== null);
+      return lit ? { emissiveColor: Color3.FromHexString(lit.unlit!), alpha: 1 } : null;
+    });
+    // Every piece a frame can hold: each pool's slots, a grenade's two
+    // bodies apiece, the simulation's and the wire's.
+    const pieceCapacity =
+      CONFIG.effects.tracerPoolSize +
+      CONFIG.gunfeel.casingPool +
+      2 * 2 * CONFIG.grenade.poolSize +
+      2 * ROCKET_POOL +
+      2 * MINE_POOL;
+    this.pieceDraw = new PoolDraw(
+      this.renderer,
+      "pieces",
+      pieceDrawKits,
+      {
+        cel: this.mats.poolCelRecipe(celPaints.map((hex) => Color3.FromHexString(hex))),
+        unlit: this.mats.poolEmissiveRecipe(unlitPaints.map((hex) => Color3.FromHexString(hex))),
+      },
+      pieceCapacity,
+      (order, glow, n, glowOn) => this.piecePull(order, glow, n, glowOn),
+    );
+    this.pieceSpheres = new Float64Array(this.pieceDraw.capacity * this.pieceDraw.segments * 4);
+    this.pieceKeys = new Float64Array(this.pieceDraw.segments);
+    // The marks: a kit a SHAPE in each PAINT (the paint is a slot in the
+    // vertices, so a shape painted twice is two kits), shape-major — a mark's
+    // kit word is `shape * paints + paint` — at the marks' own depth bias.
+    const paints = MARK_PAINTS.length;
+    const markKits: PoolKit[] = [];
+    for (const shape of MARK_SHAPES) {
+      for (let p = 0; p < paints; p++) {
+        markKits.push({
+          segments: [
+            {
+              positions: shape.positions,
+              normals: shape.normals,
+              colors: null,
+              uvs: null,
+              indices: shape.indices,
+              slot: p + 1,
+              unlit: false,
+            },
+          ],
+        });
+      }
+    }
+    this.markDraw = new PoolDraw(
+      this.renderer,
+      "marks",
+      markKits,
+      {
+        cel: this.mats.poolCelRecipe(MARK_PAINTS.map((hex) => Color3.FromHexString(hex)), MARK_DEPTH_UNITS),
+        unlit: null,
+      },
+      CONFIG.effects.markPoolSize,
+      (order, _glow, n) => this.markPull(order, n),
+    );
+    this.markDrawn = new Int32Array(this.markDraw.capacity);
+    this.markKeys = new Float64Array(this.markDraw.capacity);
+    // The fires (`BABYLON_EXIT.md` X4.4d): the molotov's one flame uploaded
+    // with each map's world fires (the handover's, at its install), a draw a
+    // fire, on the world's one fire material (`GrenadeFx.flameMaterial`).
+    const flameMaterial = this.grenadeFx.flameMaterial;
+    this.flameBloomOf = flameMaterial;
+    this.flameDraw = new FlameDraw(
+      this.renderer,
+      this.grenadeFx.flameShape,
+      this.grenadeFx.flames.length,
+      flameMaterial,
+      (into, glowOn) => this.flamePull(into, glowOn),
+    );
+    // The blast's billows (`BABYLON_EXIT.md` X4.4c): the two icospheres
+    // uploaded once, every batch `BlastFx` holds a draw, its paint the
+    // factory's (`getBlast`).
+    const blasts = this.grenadeFx.blasts;
+    const blastPaint = this.mats.getBlast();
+    this.blastBloomOf = { emissiveColor: blastPaint.emissiveColor, alpha: blastPaint.alpha };
+    this.blastDraw = new BlastDraw(
+      this.renderer,
+      blasts.shapes,
+      blastPaint,
+      blasts.batches.reduce((n, b) => n + b.cap, 0),
+      blasts.batches.length,
+      (into, glowOn) => this.blastPull(into, glowOn),
+    );
+    this.blastDrawn = new Int32Array(blasts.batches.length);
+    this.blastKeys = new Float64Array(blasts.batches.length);
+    // The debris (X4.4c): a kit a SHARD (its vertices rewritten on every cut,
+    // so the draw is built dynamic) and a kit a CHUNK in each of its two
+    // paints — the stone and the map's earth, a slot written per map
+    // (`installMap`) — at the cel palette of the three `get` materials they
+    // wore. A shard's kit word is its index; a chunk's is
+    // `shards + chunk * 2 + (earth ? 1 : 0)`.
+    const shardKits: PoolKit[] = this.debris.pieces.map(() => ({
+      segments: [
+        {
+          positions: new Float32Array(this.debris.shardVertices * 3),
+          normals: new Float32Array(this.debris.shardVertices * 3),
+          colors: null,
+          uvs: null,
+          indices: this.debris.shardIndices,
+          slot: 1,
+          unlit: false,
+        },
+      ],
+    }));
+    const chunkKits: PoolKit[] = [];
+    for (const box of this.blastDebris.chunkBoxes) {
+      for (const slot of [2, 3]) {
+        chunkKits.push({
+          segments: [{ positions: box.positions, normals: box.normals, colors: null, uvs: box.uvs, indices: box.indices, slot, unlit: false }],
+        });
+      }
+    }
+    const debrisCel = this.mats.poolCelRecipe([Color3.FromHexString(SHARD_COLOR), Color3.FromHexString(HARD_TINT), Color3.Black()]);
+    this.debrisRecipe = debrisCel;
+    this.debrisPieces = [...this.debris.pieces, ...this.blastDebris.pieces];
+    this.debrisDraw = new PoolDraw(
+      this.renderer,
+      "debris",
+      [...shardKits, ...chunkKits],
+      { cel: debrisCel, unlit: null },
+      this.debrisPieces.length,
+      (order, _glow, n) => this.debrisPull(order, n),
+      true,
+    );
+    // A cut writes its shard's vertices over our copy, as it wrote them onto
+    // the mesh it was (`updateVerticesData`).
+    this.debris.onCut = (shard, positions, normals) => this.debrisDraw.rewrite(shard, 0, positions, normals);
+    // `debrisPull` writes a piece's world at `k * 16`: every debris kit is
+    // ONE segment, which that stride rests on.
+    if (import.meta.env.DEV && this.debrisDraw.segments !== 1) {
+      throw new Error(`Game: the debris kits are ${this.debrisDraw.segments} segments wide, not 1`);
+    }
+    this.debrisDrawn = new Int32Array(this.debrisDraw.capacity);
+    this.debrisKeys = new Float64Array(this.debrisDraw.capacity);
+    // The fading pools (`BABYLON_EXIT.md` X4.6e): the four kits each pool
+    // made its meshes of, the sparks' and the discs' colours a slot each, the
+    // scorch's and the blob's maps (ours, `TextureMaker`'s since X5.4d).
+    this.fadeKits = [this.combatFx.sparkKit, this.combatFx.discKit, this.blastDebris.scorchKit, this.shadows.blobKit];
+    this.fadePools = [this.combatFx.fades, this.blastDebris.scorchFades, this.shadows.blobFades];
+    this.fadeDraw = new FadeDraw(
+      this.renderer,
+      this.fadeKits.map((k) => ({ positions: k.geometry.positions, uvs: k.geometry.uvs ?? null, indices: k.geometry.indices })),
+      this.mats.poolEmissiveRecipe(FADE_EMISSIVE),
+      () => this.mats.materialEpoch,
+      this.blastDebris.scorchMap,
+      this.shadows.blobMap,
+    );
+    this.farthestRun = new FarthestRun(
+      this.renderer,
+      this.glassDraw,
+      this.fadeDraw,
+      (into) => this.farthestPull(into),
+      (k) => this.fadeDraw.kit[k] === SPARK,
+    );
+    // …and what all five drew (`ProfileReport.pools`): Babylon's counter has
+    // counted no tracer, mark, thrown or laid body, nor any case, since X4.4b,
+    // nor any billow, shard or chunk since X4.4c, nor any fire since X4.4d,
+    // nor the cloud ring since X4.5b, nor the dome and the moon since X4.5c, nor
+    // the rings and the flags since X4.6b, nor the grass since X4.6c, nor the
+    // water since X4.6d, nor the glazing, a spark, a disc, a scorch or a blob
+    // since X4.6e (pools, those last four, but the rest's draws owe the sum too),
+    // nor the ash since X4.7c, nor the rotor wash since X4.7d (a draw a field,
+    // no pool).
+    this.prof.setPools(() => ({
+      drawn:
+        this.pieceDraw.stats.drawn +
+        this.markDraw.stats.drawn +
+        this.blastDraw.stats.drawn +
+        this.debrisDraw.stats.drawn +
+        this.flameDraw.stats.drawn +
+        this.cloudDraw.stats.drawn +
+        this.skyDraw.stats.drawn +
+        this.zoneDraw.stats.drawn +
+        this.grassDraw.stats.blades +
+        this.grassDraw.stats.turf +
+        this.waterDraw.stats.drawn +
+        this.glassDraw.stats.backed +
+        this.glassDraw.stats.seeThrough +
+        this.fadeDraw.stats.drawn +
+        this.particleDraw.stats.drawn,
+      masked:
+        this.pieceDraw.stats.masked +
+        this.blastDraw.stats.masked +
+        this.flameDraw.stats.masked +
+        this.skyDraw.stats.masked +
+        this.fadeDraw.stats.masked,
+      instances: this.pieceDraw.stats.instances,
+      marks: this.markDraw.stats.instances,
+      billows: this.blastDraw.stats.instances,
+      debris: this.debrisDraw.stats.instances,
+      fires: this.flameDraw.stats.drawn,
+      clouds: this.cloudDraw.stats.drawn,
+      sky: this.skyDraw.stats.drawn,
+      zones: this.zoneDraw.stats.drawn,
+      grass: this.grassDraw.stats.blades + this.grassDraw.stats.turf,
+      water: this.waterDraw.stats.drawn,
+      glass: this.glassDraw.stats.backed + this.glassDraw.stats.seeThrough,
+      fades: this.fadeDraw.stats.drawn,
+      particles: this.particleDraw.stats.drawn,
+    }));
+    // The sky's ring is OUR renderer's (X4.5b), its dome and moon too (X4.5c), and
+    // `Sky` is handed them below.
+    this.cloudDraw = new CloudDraw(this.renderer, cloudsFailedOverMenu);
+    this.skyDraw = new SkyDraw(this.renderer, () => this.glowAdmits(), skyFailedOverMenu);
+    // The list itself — see the field. Every entry's asks were made by its
+    // constructor, above; this states them, in one place.
+    this.roundPipelines = [
+      { name: "bodies", ready: this.bodyDraw.ready },
+      { name: "the bodies' shadow map", ready: this.bodyShadowMap.ready },
+      { name: "the lamps' proxies", ready: this.lampAtlas.proxiesReady },
+      { name: "hulls", ready: this.hullDraw.ready },
+      { name: "the weapon", ready: this.viewDraw.ready },
+      { name: "pieces", ready: this.pieceDraw.ready },
+      { name: "marks", ready: this.markDraw.ready },
+      { name: "billows", ready: this.blastDraw.ready },
+      { name: "debris", ready: this.debrisDraw.ready },
+      { name: "fires", ready: this.flameDraw.ready },
+      { name: "the clouds", ready: this.cloudDraw.ready },
+      { name: "the sky", ready: this.skyDraw.ready },
+      { name: "the rings and flags", ready: this.zoneDraw.ready },
+      { name: "the grass", ready: this.grassDraw.ready },
+      { name: "the water", ready: this.waterDraw.ready },
+      { name: "the glazing", ready: this.glassDraw.ready },
+      { name: "the sparks, dust discs, scorch and blobs", ready: this.fadeDraw.ready },
+      // The ash's update and both its blends (a map change can flip one,
+      // `Atmosphere.apply`), and the rotor wash's update and draw (X4.7d).
+      { name: "the ash and the rotor wash", ready: this.particleDraw.ready },
+      // The volume's trace and compose at every tier and its vis pass (X5.1b):
+      // a tier changed in a round compiles nothing.
+      { name: "the irradiance volume", ready: this.gi.ready },
+      // The bloom's box filter and its blur at every rung and render scale at
+      // the boot's device pixel ratio (X5.2b): a Glow or Render Scale setting
+      // changed in a round compiles nothing.
+      { name: "the glow's blur", ready: this.glowBlur.ready },
+      // The post chain's stages of ours (X5.2c1: the grade), into the canvas
+      // and, for a stage another follows, into the chain's pool.
+      { name: "the post chain", ready: this.postChain.ready },
+    ];
+    // The sky is painted once here, the boot map's, and re-applied per round
+    // alongside the environment; it is DRAWN only while a map stands
+    // (`Sky.setStanding`, from `installMap` and `teardownMap`).
+    this.sky = new Sky(this.sceneFrame, this.cloudDraw, this.skyDraw, this.renderer.textureMaker, this.surface);
     // The clouds' shadow field, bound once: `Sky` keeps one texture for the
     // life of the process and rewrites it as the ring drifts. Until now every
     // material held `ShadowBindings`' own "no cloud" texel.
     this.mats.shadows.setCloudShadowMap(this.sky.cloudShadowMap);
+    // The frame under the boot's fade, the sky being undrawn with no map
+    // standing (`BABYLON_EXIT.md` X4.5c). Nothing has applied an environment
+    // yet, and the menu's photograph is of this same map.
+    applyClearColor(this.sceneFrame.clearColor, this.mapDef.environment);
     this.applySky();
 
     this.hullRules = {
-      ledger: this.ledger,
+      ledger: NO_LEDGER,
       combat: this.combat,
       hulls: () => this.vehicles.hulls,
-      // The tank's own side's enemies. In a match `battle`'s list is empty for
-      // the reason `enemyTargets` gives at length, and the driver's team is
-      // the hull's — a bot crew fires only offline.
-      gunTargets: (team) =>
-        this.net ? this.enemyTargets() : this.battle.hittablesAgainst(team),
-      bodies: (team) => this.battle.hittablesAgainst(team),
-      // **Skipped outright in a match**, which is where a shell differs from a
-      // grenade: a thrown grenade's local copy is the ARC the thrower watched
-      // and its blast goes off a few centimetres from the authority's, while a
-      // shell's local blast would go off at whatever this client's own ray
-      // happened to find — a body the server rewound somewhere else, a pane it
-      // has already broken — which can be a street away. The authority's
-      // `explode` event draws the only fireball.
-      blastAt: (at, team, by, spec) => {
-        if (!this.net) this.grenades.blastAt(at, team, by, spec);
-      },
-      hearGunshot: (at, team, dir) => this.battle.hearGunshot(at, team, dir),
+      // The bodies the wire is drawing, and the hulls — `enemyTargets`, whose
+      // every member refuses local damage.
+      gunTargets: () => this.enemyTargets(),
+      // The crush is never swept on this page: the tracks are the
+      // authority's, whoever hosts the match.
+      bodies: () => NO_BODIES,
+      // **Skipped outright**, which is where a shell differs from a grenade:
+      // a thrown grenade's local copy is the ARC the thrower watched and its
+      // blast goes off a few centimetres from the authority's, while a shell's
+      // local blast would go off at whatever this client's own ray happened to
+      // find — a body the server rewound somewhere else, a pane it has already
+      // broken — which can be a street away. The authority's `explode` event
+      // draws the only fireball.
+      blastAt: () => {},
+      // No bot on this page hears anything: the AI is the authority's,
+      // whoever hosts the match, and it hears the shot it resolves.
+      hearGunshot: () => {},
       personIn: (tank, seat) =>
         tank === this.driving && this.drivingSeat === seat ? this.player : null,
-      crewOf: (tank, seat) => this.crew.crewOf(tank, seat),
-      // The driver's own screen, on the terms a shell's direct hit gets it: a
-      // kill flash and the note under it. A bot crew's gets none of it.
-      onCrushed: (by) => {
-        if (by !== this.player) return;
-        this.hitCue(true, false);
-      },
+      crewOf: () => null,
     };
 
     // Everything above is CONSTRUCTION, and stays here because the fields it
@@ -1664,8 +2854,16 @@ export class Game {
     // before the first frame rather than on the first visit to the screen.
     this.applySettings();
     this.showMenu();
-    // Debug/test handle (used by automated smoke tests).
-    (window as unknown as { __celshock: Game }).__celshock = this;
+    // What a lost device left for the menu the reload brought up (`deviceLost`,
+    // `core/deviceLoss.ts`), once: the toast `worldFailed` and the lobby say
+    // theirs in.
+    const lossNotice = takeLossNotice();
+    if (lossNotice !== null) this.hud.toast(lossNotice);
+    // Debug/test handle, DEV builds only: every script that drives the game
+    // boots it through `scripts/dev-server.mjs`, and a production page has no
+    // reason to hand the whole `Game` to its console. The profiler's handle
+    // below is the one that ships.
+    if (import.meta.env.DEV) (window as unknown as { __celshock: Game }).__celshock = this;
     // The profiler's own handle, beside it and for the same reason — but this
     // one SHIPS, because the whole point of the instrument is the devices that
     // will never run a dev server. It is the instrument itself rather than a
@@ -1681,13 +2879,65 @@ export class Game {
     // carrying both plays the benchmark.
     if (this.overrides.bench !== null) void this.bootBench(this.overrides.bench);
     else this.joinFromUrl();
-    this.engine.runRenderLoop(() => this.tick());
+    this.frameLoop.start(() => this.tick());
   }
+
+  /**
+   * Whether the WORLD's emissives may bloom this frame, asked by every draw of
+   * ours into the mask but the weapon's: the emissive palette (`WorldGlow`),
+   * the visors (`BodyDraw`), the pieces, the billows, the sparks and the
+   * fires. Babylon has drawn nothing into it since `BABYLON_EXIT.md` X5.3d.
+   *
+   * The kit screen hangs a dark card behind the weapon (see
+   * `inspect.backdrop`), and the one thing in the game that card cannot
+   * cover is the bloom: it is composited over the FINISHED frame, so a lamp
+   * the bench is standing in front of blooms straight through it. Only what
+   * is on the stage may bloom while the stage is up, which still leaves the
+   * reticle and the hot parts of the weapon itself glowing — exactly what
+   * the screen is for. "On the stage" is the viewmodel, and the rule is
+   * stated by its DRAW (`BABYLON_EXIT.md` X4.3d): `ViewDraw` masks the
+   * weapon's lit parts in every state and never asks — where until then
+   * this asked of a rendering group, the viewmodel's having been one. Every
+   * draw that asks is the world's, and so is the moon (`SkyDraw`, which asks
+   * here too).
+   */
+  private glowAdmits(): boolean {
+    return this.state !== "loadout";
+  }
+
+  /**
+   * A material's bloom colour, into `out` — its emissive colour times its
+   * intensity and `fade`, the alpha its own. Asked only by draws of ours: the
+   * visors, the weapon, the pieces, the billows and the fires, each passing
+   * the distance fade it measured, and the emissive palette (`WorldGlow`),
+   * which fades per pixel and passes 1.
+   */
+  private bloomColour(
+    material: { readonly emissiveColor: Color3Like; readonly alpha: number },
+    fade: number,
+    out: Color4,
+  ): void {
+    const emissive = material.emissiveColor;
+    // No material of ours states an intensity (Babylon's PBR alone declared
+    // one), so the scale is the fade.
+    const k = fade;
+    out.set(emissive.r * k, emissive.g * k, emissive.b * k, material.alpha);
+  }
+
+  /** `WorldGlow`'s colour, pulled once a frame per palette material: scratch, so no frame allocates. */
+  private readonly paletteBloom = new Color4();
 
   /**
    * Installs every cross-system callback. **This is the wiring rule's one
    * home**: systems never import each other, so anything one has to tell
-   * another is a callback assigned here or in one of the four methods below.
+   * another is a callback assigned here or in one of the methods below.
+   *
+   * **What is wired here is the page's PICTURE and its PREDICTION — no
+   * rule**. The systems that decide a round meet
+   * inside the authority's `SimCore`, whose own `wire` is their wiring
+   * whoever hosts the match; the page hears what they decided through one
+   * switch, `onNetEvent`, which ends in the presentation methods for the
+   * player.
    *
    * Split by SUBJECT rather than by system, because that is how a change
    * arrives — a grenade behaviour is `wireGrenades`, a death is
@@ -1696,30 +2946,15 @@ export class Game {
    */
   private wireSystems(): void {
     // Systems never import each other; every cross-system behaviour is a
-    // callback installed here.
+    // callback installed here. Nothing on this page damages the local
+    // `Player` any more — its hits are the authority's (`damage`), which
+    // reach `playerHit` — so this is the door's presentation half and
+    // nothing reaches it.
     this.player.onDamaged = (amount, died, from, kind) =>
       this.onPlayerDamaged(amount, died, from, kind);
-    this.battle.setPlayer(this.player);
-    // A bot's round killed somebody. The two halves are taken separately
-    // because they are known in different places: the shooter is credited
-    // whoever it hit — including the player, which is the one kill on the board
-    // a bot used to be denied — while the ticket, the killfeed line and the
-    // corpse are owed only when a BOT fell. The player's own death goes through
-    // `onPlayerDamaged`, which `takeDamage` reached before this callback ran.
-    this.battle.onBotKill = (victim, by) =>
-      settleKill(this.ledger, by, victim, by.team, "round");
-    // The score feed, OFFLINE: every body on the roster earns, and the one
-    // row this screen belongs to is the filter. In a match the same feed is
-    // fed by the `score` event instead, because the awards are the
-    // authority's — see `onNetEvent`.
-    this.scores.onAward = (slot, kind, points) => {
-      if (slot === this.battle.playerSlot) this.hud.addScore(kind, points);
-      this.bench?.fight.award(slot, kind, points);
-    };
     this.wireDeaths();
     this.wireGrenades();
     this.wireBattle();
-    this.wireConquest();
     this.wireVehicles();
     this.wireAntiTank();
   }
@@ -1750,22 +2985,18 @@ export class Game {
     // lists make everywhere else in this game.
     this.antiTank.hullNear = (at, radius, team) =>
       this.vehicles.hostileNear(at, radius, team);
-    // One rocket or one mine going off — `resolveOrdnance`, the same function
-    // the authority spends it through.
-    //
-    // **In a match none of it is ours.** The rocket that reached here is the
-    // local PREDICTION of one the authority is also flying — see
-    // `launchRocket` — and it decides nothing: the hull refuses local damage
-    // (`Vehicle.predicted`), the splash has an empty list to resolve against,
-    // and the fireball arrives on the server's `explode` event with the right
-    // power on it. Drawing one here as well would be two blasts a round trip
-    // apart, at two points that agree only to within the flight — which for a
-    // rocket that detonated on a hull this client has drawn a tenth of a
-    // second behind is metres, not centimetres. A hull's shell skips its own
-    // splash for the same reason (`hullRules.blastAt`).
-    this.antiTank.onDetonated = (hit) => {
-      if (!this.net) resolveOrdnance(hit, this.grenades);
-    };
+    // One rocket going off, and **none of it is ours**: this page's AT kit only
+    // ever flies a local PREDICTION of a rocket the authority is also
+    // flying — see `launchRocket` — and it decides nothing: the hull refuses
+    // local damage (`Vehicle.predicted`) and the fireball arrives on the
+    // server's `explode` event with the right power on it. Drawing one here as
+    // well would be two blasts a round trip apart, at two points that agree
+    // only to within the flight — which for a rocket that detonated on a hull
+    // this client has drawn a tenth of a second behind is metres, not
+    // centimetres. A hull's shell skips its own splash for the same reason
+    // (`hullRules.blastAt`). The authority spends every rocket through
+    // `resolveOrdnance`, whoever hosts the match, and says so with `explode`.
+    this.antiTank.onDetonated = () => {};
   }
 
   /**
@@ -1777,67 +3008,29 @@ export class Game {
    * reason.
    */
   private wireVehicles(): void {
+    // A hull burned: raised by THIS page's copy of it, which the wire wrecks
+    // through the same door (`syncNetVehicles`, `Vehicle.wreck`). The
+    // toast and nothing else — **what it costs whoever was inside is decided
+    // where the hull burned** (the authority's `SimCore`, `onDestroyed`,
+    // D14): the body put down beside the wreck arrives as a `seat` answer and
+    // the death as the `damage`/`died` pair, so this page charges no ticket
+    // and starts no clock of its own.
     this.vehicles.onDestroyed = (tank) => {
       if (tank.team === this.player.team) {
         this.hud.toast(
           `${tank.name} DESTROYED - ${Math.round(CONFIG.vehicles.respawnDelay)}s`,
         );
       }
-      // The hull burning is not the same event as the crew dying, and only one
-      // of the two is conditional: everybody hears the toast, and the body is
-      // only killed if it was the one inside THIS hull.
-      // A bot crew burns with the hull exactly as the player does, and the
-      // two are mutually exclusive by construction: `Vehicle.occupied` is written
-      // on both transitions, so nobody can be in a hull somebody else is in.
-      this.crew.hullDestroyed(tank);
-      if (tank !== this.driving) return;
-      // **In a match none of the rest is this client's.** The authority put
-      // this body down beside the wreck and killed it before this frame ever
-      // ran: the `seat` event is what takes the camera off the hull and the
-      // `damage`/`died` pair is what raises the death cam, exactly as they do
-      // for a round through the chest. Running the three lines below as well
-      // would place the body a second time, charge a local ticket and start a
-      // respawn clock the server already owns.
-      if (this.net) return;
-      // Beside the wreck, not inside it — the death cam stands a corpse at the
-      // player's last position, and a body falling through a hull that is still
-      // solid is the one thing this ordering exists to avoid. Then the kill
-      // goes through `takeDamage`, which is the one door a death offline takes:
-      // it is what charges the ticket, files the row and raises the cam.
-      //
-      // **The hull BREWING UP is the blow, and saying so is what fixes three
-      // things at once** — this is the same event `onCrewLost` spends on a bot
-      // crew below and the two must say the same thing about it. `tank.center`
-      // is where it came from, so the corpse is thrown clear of its own wreck
-      // rather than lying down beside it and the damage arc points at the
-      // thing that killed them; `"shell"` is what it was, so a driver burned
-      // out of a hull leaves the ground exactly as anyone else caught by an
-      // explosion does; and the bearing is also what `onPlayerDamaged` derives
-      // the KILLFEED from, which without one read `OUT OF BOUNDS killed YOU` —
-      // the leash's line, on a death the leash had nothing to do with. Nobody
-      // can destroy their own side's hull (every list a shell, a rocket and a
-      // mine resolve against is the other team's by construction), so the
-      // enemy team that line names is right by the same derivation every other
-      // death uses.
-      this.player.placeAt(this.vehicles.exitSpot(tank));
-      this.clearVehicle();
-      this.player.takeDamage(this.player.health, tank.center, "shell");
     };
-    this.vehicles.onRespawned = (tank) => {
-      if (tank.team === this.player.team) this.hud.toast(`${tank.name} READY`);
-    };
-    // What being in a hull COSTS a bot, applied here rather than inside
-    // `VehicleCrew` for the reason every cross-system consequence is applied
-    // here: that system owns the pairing and `BattleSystem` owns the roster,
-    // and neither may reach for the other. It is the same pair of lines
-    // `mount`/`clearVehicle` spend on the player, one layer along.
-    this.crew.onBoarded = (bot) => this.battle.setCrewed(bot, true);
-    this.crew.onLeft = (bot) => this.battle.setCrewed(bot, false);
-    // …and what it costs him when it burns: `crewLost`, the authority's door
-    // too. `tank.center` as the bearing and `"shell"` as what it was — the
-    // player's half of this event is in `onDestroyed` above and passes the same
-    // pair; they are one thing happening to whoever was inside.
-    this.crew.onCrewLost = (bot, tank) => crewLost(this.ledger, bot, tank);
+    // A fresh hull on its pad is NOT this fleet's to announce: the page's
+    // fleet is posed and runs no hardstanding clock, so `onRespawned` never
+    // fires from it. The READY toast is the wire's arrival edge instead
+    // (`syncNetVehicles`).
+  }
+
+  /** A hull back on its pad — the READY toast, for the player's own side. */
+  private hullReady(tank: Vehicle): void {
+    if (tank.team === this.player.team) this.hud.toast(`${tank.name} READY`);
   }
 
   /**
@@ -1846,15 +3039,15 @@ export class Game {
    */
   private wireDeaths(): void {
     // A corpse under physics is metres from where its feet were when it died,
-    // and `Bot.position` stops updating at that moment — so the body itself
+    // and a body's position stops updating at that moment — so the body itself
     // has to say where its shadow goes. Only the ragdoll system knows; every
-    // other dead bot answers 0 and keeps the old no-shadow behaviour.
+    // other dead body answers 0 and keeps the old no-shadow behaviour.
     // The player answers through the death cam's stand-in body rather than
     // through itself, for the same reason and with the same result: `Player`
     // has no rig to have fallen anywhere, and the corpse does.
     this.shadows.corpseShadow = (cbt, out) => {
       const subject =
-        cbt instanceof Bot
+        cbt instanceof NetSoldier
           ? cbt
           : cbt === this.player
             ? this.deathCam.subject
@@ -1882,222 +3075,115 @@ export class Game {
    * The one non-hitscan weapon: who a blast may hurt, and what a hit reports.
    */
   private wireGrenades(): void {
-    // Grenades resolve their blast against the thrower's own target list, the
-    // same way a bullet does — so friendly fire is excluded by construction
-    // here too, and this system never learns what a team is.
-    this.grenades.hittablesFor = (team) => this.battle.hittablesAgainst(team);
-    // Netplay: the blast belongs to the authority and arrives as an `explode`
-    // event, which reaches the thrower like everybody else. The local copy is
-    // the ARC — the thing the thrower watched leave their hand — and firing
-    // this as well would flash, bang and shake twice, a fraction of a second
-    // apart, at two points that agree only to within the round trip.
-    this.grenades.onExploded = (at, power, ground) => {
-      if (!this.net) this.onExplosion(at, power, ground);
-    };
-    this.grenades.onBlastHit = (victim, thrower, by, killed) => {
-      // "Was that ours" is a comparison against our own `Player`, which is why
-      // the grenade carries the thrower rather than a flag saying so — that
-      // system has no way to know what a player is.
-      // The killer's row whoever fell, and the bot's death if a bot did: a
-      // blast that finishes the player is still a kill somebody threw, and the
-      // player's own death has already been handled, all the way down to the
-      // deploy screen, by `onPlayerDamaged`.
-      if (killed) settleKill(this.ledger, by, victim, thrower, "blast");
-      // The marker is a bot's alone — the player is not a target of their own.
-      if (by === this.player && victim instanceof Bot) {
-        this.hud.flashHitmarker(killed);
-      }
-    };
-    // A molotov's burn: `onBlastHit`'s shape exactly, minus the hitmarker on
-    // every tick — a fire hurts somebody four times a second for as long as
-    // they stand in it, and a marker at that rate is a strobe that says
-    // nothing the first one did not. The KILL still gets one, because a kill
-    // is the one thing about a burn the thrower cannot see from where they
-    // threw it.
-    this.grenades.onBurnHit = (victim, thrower, by, killed) => {
-      if (!killed) return;
-      settleKill(this.ledger, by, victim, thrower, "fire");
-      if (by === this.player && victim instanceof Bot) {
-        this.hud.flashHitmarker(true);
-      }
-    };
-    // A fire starting: the bottle's noise, the mark the burn leaves, and a
-    // light that stands where it burns until `onBurntOut` takes it away.
-    // Raised on both sides of the wire — offline by the bottle breaking, in a
-    // match by the authority's `blaze` event through `drawFire` — so none of
-    // this is gated on `net` the way a blast's `onExploded` is.
-    this.grenades.onIgnited = (id, at, ground) => {
-      const lc = CONFIG.molotov.light;
-      this.sfx.molotov(at);
-      this.blastDebris.scorchAt(at, CONFIG.molotov.scorch, ground);
-      this.fireLightAt.copyFrom(at);
-      this.fireLightAt.y += lc.y;
-      // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
-      // still for the whole of its life, so its shadows are baked once like a
-      // lantern's — and `fast`, because it burns up and dies down faster than
-      // the irradiance volume's averaged sweep can follow (see `RoomLight`).
-      // Its intensity starts at nothing and is eased by `pushFires`.
-      this.fireLights.set(
-        id,
-        this.lighting.add(this.fireLightAt, lc.color, lc.range, 0, lc.flicker, true),
-      );
-    };
-    this.grenades.onBurntOut = (id) => {
-      const light = this.fireLights.get(id);
-      if (light) {
-        this.lighting.remove(light);
-        this.fireLights.delete(id);
-      }
-      this.sfx.ambienceOff(fireSoundKey(id));
-    };
-    // A bot asking for a grenade on a position. The arm has the last word — a
-    // solve it cannot make returns false and the bot spends nothing. What
-    // leaves the hand is the bot's own pouch (`Bot.throwable`), on the same
-    // arc either way.
-    this.battle.throwGrenadeFor = (bot, from, at) =>
-      this.grenades.throwAt(from, at, bot.team, bot, bot.throwable);
-    // A launcher bot's rocket, flown toward the POINT it asked for
-    // (`AntiTankSystem.launchToward`). `considerRocket` has already decided
-    // the target is armour.
-    this.battle.fireRocketFor = (bot, from, at) => {
-      const dir = this.antiTank.launchToward(from, at, bot.team, bot);
-      if (!dir) return false;
-      // Heard exactly as the player's launcher is, and by the same door: a
-      // rocket leaving is the loudest thing on the map after a tank gun, and
-      // the side that fired it has just told everybody where it is.
-      this.battle.hearGunshot(from, bot.team, dir);
-      this.sfx.launcher(from);
-      return true;
-    };
+    // This page's grenades are a PREDICTION and nothing else — the
+    // arc the thrower watched leave their hand (`releaseGrenade`), whose blast
+    // the authority owns. So it may hurt nobody: the list is empty, where it
+    // used to be a local roster the match never stepped.
+    this.grenades.hittablesFor = () => NO_TARGETS;
+    // `onExploded` is left unwired on purpose: the blast belongs to the
+    // authority and arrives as an `explode` event, which reaches the thrower
+    // like everybody else, and firing one here as well would flash, bang and
+    // shake twice, a fraction of a second apart, at two points that agree only
+    // to within the round trip.
+    // A fire starting and going out, on this page's pool: the authority's
+    // `blaze` through `drawFire`, so a fire is lit one way.
+    this.grenades.onIgnited = (id, at, ground) => this.fireLit(id, at, ground);
+    this.grenades.onBurntOut = (id) => this.fireOut(id);
   }
 
   /**
-   * What the bots need from the rest of the game: their sounds, their spawns,
-   * their squad orders, and what standing on a flag means to them.
+   * A fire starting: the bottle's noise, the mark the burn leaves, and a light
+   * that stands where it burns until `fireOut` takes it away — the fire the
+   * authority decided, arriving as its `blaze`.
+   *
+   * The flames and the ignition's billows first, because that is where they
+   * always were: inside the ignition, ahead of the event. `at` is the
+   * simulation's, so the readers after the view share one COPY (`fireAt`).
+   */
+  private fireLit(id: number, at: Vector3Like, ground: BlastGround): void {
+    const lc = CONFIG.molotov.light;
+    this.grenadeFx.ignite(id, at);
+    const fire = this.fireAt.copyFrom(at);
+    this.sfx.molotov(fire);
+    this.blastDebris.scorchAt(fire, CONFIG.molotov.scorch, this.debrisGroundOf(ground));
+    this.fireLightAt.copyFrom(fire);
+    this.fireLightAt.y += lc.y;
+    // A FIXTURE, in `LightingSystem`'s own words for this case: it stands
+    // still for the whole of its life, so its shadows are baked once like a
+    // lantern's — and `fast`, because it burns up and dies down faster than
+    // the irradiance volume's averaged sweep can follow (see `RoomLight`).
+    // Its intensity starts at nothing and is eased by `pushFires`.
+    this.fireLights.set(
+      id,
+      this.lighting.add(this.fireLightAt, lc.color, lc.range, 0, lc.flicker, true),
+    );
+  }
+
+  /** The fire `fireLit` named is out: its flames, its light and its voice. */
+  private fireOut(id: number): void {
+    this.grenadeFx.burntOut(id);
+    const light = this.fireLights.get(id);
+    if (light) {
+      this.lighting.remove(light);
+      this.fireLights.delete(id);
+    }
+    this.sfx.ambienceOff(fireSoundKey(id));
+  }
+
+  /**
+   * The rounds' picture and the glass's, on this page. The bots' sounds, their
+   * spawns, their squad orders and the flags they stand on are the
+   * authority's (`SimCore.wire`) and reach this page off the wire
+   * (`onNetEvent`, the snapshots).
    */
   private wireBattle(): void {
-    // Bots fire constantly and all over the map, so their shots are
-    // spatialised and voice-capped rather than played flat like the player's.
-    this.battle.onBotFired = (bot, at) => {
-      this.sfx.botShot(at);
-      // Gunfire gives an enemy away on the minimap for a couple of seconds.
-      if (bot.team !== this.player.team) this.minimap.reveal(bot);
-    };
-    // A bot reloading is a window the player can push into, so it has to be
-    // audible. Spatialised for the same reason bot fire is.
-    this.battle.onBotReloaded = (bot) => this.sfx.botReload(bot.position);
-    // Boots, from bots close enough for them to carry. `Sfx.botStep` rejects
-    // the rest on distance — this fires for all 16 of them, so nothing
-    // upstream should do work per step.
-    this.battle.onBotStepped = (bot) => this.sfx.botStep(bot.position);
-    // A round cracking past is a cue, not a hit. CombatSystem finds these
-    // inside the target loop it already runs per shot, and has no business
-    // knowing what a bot is — so the routing happens here.
-    // The same event is the player's only warning that the rounds are meant
-    // for them: a bot's report is spatialised and late, but the round itself
-    // goes supersonic past the ear first. `suppress` ignores anything that
-    // isn't a bot, so both handlers can take every near miss.
-    // `at` is CombatSystem's scratch vector — `suppress` keeps only `from`
-    // and `nearMiss` reads it inside the call, so nothing outlives it here.
-    this.combat.onNearMiss = (near, from, at) => {
-      this.battle.suppress(near, from);
-      if (near === this.player) {
-        this.sfx.nearMiss(at);
-        this.player.suppress();
-      }
-    };
     // A round arriving. Routed here rather than called directly for the same
-    // reason the near miss is: `CombatSystem` fires the player's rounds and
-    // all sixteen bots' and has no business knowing what `Sfx` is. Every gate
-    // on this — distance, rate, the voice reserve — is on the far side, with
-    // the budget it protects.
-    this.combat.onImpact = (at, kind) => this.sfx.impact(at, kind);
-    // The segment a round flew, offered to the glass. Every round from every
-    // shooter comes through here, so the sweep is bounded on the far side and
-    // this is one call.
-    //
-    // **The client is authoritative over glass only when there is no server.**
-    // In a netplay round its own shot is a prediction: the pane goes and the
-    // shards fly at once, and the collider is left standing until the
-    // authority's `glass` event confirms it. Bots' rounds in a netplay round
-    // decide nothing at all here — a bot on this side is a body being drawn,
-    // and `BattleSystem` is not stepped in a match.
+    // reason the near miss is: `CombatFx` draws the player's rounds and all
+    // sixteen bots' and has no business knowing what `Sfx` is. It rides the
+    // TRACER's clock, which is the view's, so it is the view's event. Every
+    // gate on this — distance, rate, the voice reserve — is on the far side,
+    // with the budget it protects.
+    this.combatFx.onImpact = (at, kind) => this.sfx.impact(at, kind);
+    // The segment a round flew, offered to the glass — a PREDICTED round,
+    // the only one this page resolves: the pane goes and the shards fly at
+    // once, and the collider is left standing until the authority's `glass`
+    // event confirms it.
+    // Never authoritative: every round this page fires is a prediction.
     this.combat.onShotPath = (origin, dir, dist) => {
-      this.glass.shoot(origin, dir, dist, !this.net);
+      this.glass.shoot(origin, dir, dist, false);
     };
     // A pane going in: the crack, and the shards. `at` is the crossing point
     // and `dir` the round's own direction, which is what throws them — but the
     // burst is cut from the PANE, so the sheet is what it is handed. The map is
     // where that comes from rather than the event, because the pane's index is
     // its identity on both sides of the wire and its geometry is the map's.
+    //
+    // Both arrive as the simulation's (`Vector3Like`), so they are COPIED
+    // here — fresh, once per pane broken, which is rare and leaves the burst
+    // free to keep what it is given.
     this.glass.onBreak = (pane, at, dir) => {
-      this.sfx.impact(at, "glass");
+      const p = new Vector3(at.x, at.y, at.z);
+      this.sfx.impact(p, "glass");
       const geom = this.map?.panes[pane];
-      if (geom) this.debris.burst(geom, at, dir, this.cameraSys.camera.position);
-    };
-    this.battle.spawnPointFor = (bot) => this.spawnPointFor(bot.team);
-    // Squad orders are planned as a group, so squads can be spread across
-    // objectives — or deliberately stacked on the one that decides the round.
-    this.battle.planSquads = (team, centroids, previous) =>
-      this.conquest.planSquads(team, centroids, previous);
-    // A bot is "on" a flag only when it is the one it was sent to. Whether that
-    // means contesting it or holding it is the squad's posture — a conquest
-    // rule, and the authority asks the same method.
-    this.battle.zoneFor = (bot) => this.conquest.zoneFor(bot);
-  }
-
-  /**
-   * Flags changing hands, and the two ways the player is told about it.
-   */
-  private wireConquest(): void {
-    this.conquest.onCaptured = (point, by) => {
-      this.awardZone(point, by, "capture");
-      if (by === this.player.team) this.sfx.capture();
-      else this.sfx.flagLost();
-      const who = teamLook(by).name.toUpperCase();
-      this.hud.showMessage(`${point.def.name.toUpperCase()} CAPTURED BY ${who}`, 2.5);
-    };
-    this.conquest.onNeutralised = (point, by) => {
-      this.awardZone(point, by, "neutralise");
-      this.hud.toast(`${point.def.name} — neutralised`);
+      if (geom) this.debris.burst(geom, p, new Vector3(dir.x, dir.y, dir.z), this.cameraSys.camera.position);
     };
   }
 
   /**
-   * Pays everyone of `by` standing in `point` for what the flag just did.
-   *
-   * **Presence at the moment it happened is the whole rule**, which is why
-   * this runs from inside the conquest callback rather than off a snapshot of
-   * who was there a moment ago: the meter moved because those bodies were in
-   * the ring, and the ring is `pointAt` — the same test that moved it, so the
-   * board cannot pay somebody the capture never counted.
-   *
-   * Not split between them. A squad that takes a flag in a third of the time
-   * one body would has done the thing the mode is about, and dividing the
-   * award would pay each of them less for doing it better.
-   *
-   * Offline only, and by construction rather than by a gate: no client steps
-   * `ConquestSystem`, so neither callback above ever fires in a match. There
-   * the authority runs the SAME PASS over its own bodies — literally the same
-   * one, `ScoreBook`'s `awardZone`, which is where the rest of the rule lives
-   * (the `alive` skip and why a benched bot must not be paid). This method is
-   * the wiring that hands it the three things the two simulations disagree
-   * about: whose bodies, what a point is, and what a slot means.
+   * A flag changed hands — the sound and the banner, off the authority's
+   * `captured`. The awards it paid are the authority's and arrive as their
+   * own events (`score`).
    */
-  private awardZone(
-    point: ControlPoint,
-    by: Team,
-    kind: "capture" | "neutralise",
-  ): void {
-    awardZone(
-      this.scores,
-      this.combatants,
-      point,
-      by,
-      kind,
-      (unit) => this.conquest.pointAt(unit.position),
-      (unit) => this.slotOf(unit),
-    );
+  private flagCaptured(name: string, by: Team): void {
+    if (by === this.player.team) this.sfx.capture();
+    else this.sfx.flagLost();
+    const who = teamLook(by).name.toUpperCase();
+    this.hud.showMessage(`${name.toUpperCase()} CAPTURED BY ${who}`, 2.5);
+  }
+
+  /** A flag went neutral — `flagCaptured`'s twin. */
+  private flagNeutralised(name: string): void {
+    this.hud.toast(`${name} — neutralised`);
   }
 
   /**
@@ -2145,7 +3231,10 @@ export class Game {
       const locked = document.pointerLockElement === canvas;
       // Only a transition OUT of a held lock, and never the browser taking
       // back a lock it granted a beat ago — see `PointerLockChase.changed`.
-      const lost = this.lockChase.changed(locked, performance.now());
+      // The dev viewer's right-drag lock is its own and never the round's:
+      // registered as held, its release on the lowering would land in
+      // `playing` as a player leaving and pause the round it went back to.
+      const lost = this.lockChase.changed(locked && this.state !== "viewer", performance.now());
       // `dying` counts too. The death cam deliberately KEEPS the lock — there
       // is nothing to click, and dropping it on the way in would pause the
       // very shot it is about to show — so it has a lock to lose like any
@@ -2162,7 +3251,7 @@ export class Game {
       }
     });
     window.addEventListener("keydown", () => this.sfx.unlock(), { once: true });
-    // Through `applyRenderScale` rather than straight to `engine.resize`,
+    // Through `applyRenderScale` rather than straight to `surface.resize`,
     // because `devicePixelRatio` is not a constant: it changes when a window
     // crosses to a monitor with a different density and when the page is
     // zoomed, and the scaling level is computed from it. Setting the level
@@ -2173,6 +3262,16 @@ export class Game {
     // the old dimensions — leaving the canvas stretched across a viewport it
     // no longer matches. The second, late resize is the one that lands.
     window.addEventListener("orientationchange", () => {
+      this.applyRenderScale();
+      window.setTimeout(() => this.applyRenderScale(), 300);
+    });
+    // The same pair on a phone going fullscreen (`pwa/register.ts`), and for
+    // a suspected version of the same reason: three phone captures in one
+    // session all read an 832x384 window at save, and two of them a 1170x618
+    // canvas that window does not make — a canvas that had not followed its
+    // window. Unproven; the profiler now files the size every frame was drawn
+    // at (`ProfileReport.viewport`), so the next capture says which.
+    document.addEventListener("fullscreenchange", () => {
       this.applyRenderScale();
       window.setTimeout(() => this.applyRenderScale(), 300);
     });
@@ -2188,14 +3287,14 @@ export class Game {
       this.profChip.keep();
     });
 
-    // The map editor and the audio mixer are development tools: the whole of
-    // src/editor and src/dev is behind a dynamic import so none of it reaches
-    // a production bundle.
+    // The map viewer and the audio mixer are development tools: the whole of
+    // src/viewer and src/dev is behind a dynamic import so none of it reaches
+    // a production bundle. `F2` is the viewer, `F4` the mixer.
     if (import.meta.env.DEV) {
       window.addEventListener("keydown", (e) => {
         if (e.code === "F2") {
           e.preventDefault();
-          void this.toggleEditor();
+          void this.toggleViewer();
         } else if (e.code === "F4") {
           e.preventDefault();
           void this.toggleMixer();
@@ -2219,6 +3318,14 @@ export class Game {
     this.profChip.onCapture = (full) =>
       this.prof.capture(full ? "save" : "keep", full);
     this.profChip.onTrace = () => this.prof.trace();
+    // A benchmark's hold, tapped: the run waits on the screen from here
+    // (`Game.holdBench`).
+    this.profChip.onHoldTap = () => {
+      const run = this.bench;
+      if (run?.hold !== "tap") return;
+      run.hold = "settle";
+      this.profChip.setHold("Starting…");
+    };
     this.overlayScreen.onDifficulty = (tier) => this.setDifficulty(tier);
     this.overlayScreen.onMap = (index) => this.setMap(index);
     this.overlayScreen.onOpenLoadout = () => this.openLoadout();
@@ -2227,14 +3334,14 @@ export class Game {
     // handler is bound to a button that `hideOverlay` throws away, and a click
     // landing between that and the next repaint must not start a second round.
     this.overlayScreen.onStart = () => {
-      // `!this.net` as well as the state, and it is the netplay card that owes
-      // it: a round is the AUTHORITY's to start, and the round-over card no
-      // longer draws this button in a match — but the markup is what the
-      // handler is bound to and the markup outlives none of these transitions,
-      // so the guard is here as well as in the drawing. Offline it is always
-      // true, since `enterMenu` leaves the match on the way to the only other
-      // state this fires in.
-      if (this.net) return;
+      // `remoteRound` as well as the state, and it is a server's card that
+      // owes it: a round is the AUTHORITY's to start, and the round-over card
+      // does not draw this button in a server's match — but the markup is what
+      // the handler is bound to and the markup outlives none of these
+      // transitions, so the guard is here as well as in the drawing. In the
+      // page's own match the page is the owner, and starting the next round
+      // is its call.
+      if (this.remoteRound) return;
       if (this.state === "menu" || this.state === "roundover") this.startRound();
     };
     // The round-over card's ballot. An ASK and nothing more — the authority
@@ -2266,9 +3373,9 @@ export class Game {
     this.player.onCarryChanged = () => this.applyCarry();
     // A reload beginning, however it began — the key, or the last round leaving
     // the magazine inside `tryShot`. The clacks are keyed to the gesture's own
-    // length, and in a match the authority is told so that the people around
-    // this player hear the magazine change: a reload is the cue to push, and
-    // it is the one thing a person does that the server has no way to derive.
+    // length, and the authority is told so that the people around this player
+    // hear the magazine change: a reload is the cue to push, and it is the one
+    // thing a person does that the authority has no way to derive.
     this.player.onReload = () => {
       this.sfx.reload(this.player.reloadTime, this.player.report, this.player.reloadCue);
       this.net?.sendReload();
@@ -2311,11 +3418,12 @@ export class Game {
       // hides the overlay and ends in `enterDeploy`, which sets the state.
       if (action === "resume") this.resume();
       else if (action === "settings") this.openSettings();
-      // Not drawn in a match (`showPause`), and refused here for `onStart`'s
-      // reason: restarting is the authority's, and Quit to menu is what a
-      // player reaching for this in a match actually wants.
+      // Not drawn in a server's match (`showPause`), and refused here for
+      // `onStart`'s reason: restarting is the authority's, and Quit to menu is
+      // what a player reaching for this in a match actually wants. In the
+      // page's own match the page IS the authority.
       else if (action === "restart") {
-        if (!this.net) this.startRound();
+        if (!this.remoteRound) this.startRound();
       } else this.enterMenu();
     };
     // Guarded for the same reason `onStart` is, and it is the weaker of the
@@ -2327,35 +3435,33 @@ export class Game {
     // wiring, and is not what the guard should rest on.
     this.deployScreen.onDeploy = (spawn) => {
       if (this.state !== "deploy") return;
-      // In a netplay round this is a REQUEST and not a deployment. The
-      // authority owns the body: it decides whether that spawn is still one
-      // this team may use and when the reinforcement clock allows it, and the
-      // `spawn` event it answers with is what actually puts the player in the
-      // world — through the same `spawnPlayer` this line calls offline. Putting
-      // them there here as well would be the client deciding an outcome, and
-      // the outcome it would decide is the one thing on this screen the server
-      // cannot afford to have a second opinion about: where somebody is.
-      if (this.net) {
-        // The kit goes with the ask. It is chosen on this screen — the kit
-        // screen is one key away from it — and the authority resolves every
-        // round this body fires out of what it is told here, so a deploy that
-        // carried only a spawn is one where a player who switched weapons
-        // since joining goes on dealing the damage of the gun they left in the
-        // menu. See `DeployMessage.weapon`.
-        this.net.sendDeploy(
-          this.conquest.spawnIndex(spawn),
-          this.weapon,
-          this.equipment,
-          this.throwable,
-        );
-        this.deployScreen.setPending();
-        return;
-      }
-      // Scattered HERE rather than on the way in: this is a spawn POINT, and
-      // turning one into a position is what `scatterSpawn` is. The netplay
-      // branch above returns before it, because the position that branch is
-      // eventually answered with has already been scattered by the authority.
-      this.spawnPlayer(scatterSpawn(spawn, this.conquest.spawnRand));
+      // This is a REQUEST and not a deployment. The authority owns the body:
+      // it decides whether that spawn is still one this team may use and when
+      // the reinforcement clock allows it, and the `spawn` event it answers
+      // with is what actually puts the player in the world. Putting them there
+      // here as well would be the client deciding an outcome, and the outcome
+      // it would decide is the one thing on this screen the authority cannot
+      // afford to have a second opinion about: where somebody is.
+      //
+      // In the page's own match it is the same request, answered while HELD:
+      // the page owns the match and holds its respawn clock (the countdown on
+      // this screen), so the match honours the ask on arrival and says so at
+      // once, though nothing has stepped since the screen went up
+      // (`docs/multiplayer.md`, "A match its OWNER drives").
+      if (!this.net) return;
+      // The kit goes with the ask. It is chosen on this screen — the kit
+      // screen is one key away from it — and the authority resolves every
+      // round this body fires out of what it is told here, so a deploy that
+      // carried only a spawn is one where a player who switched weapons since
+      // joining goes on dealing the damage of the gun they left in the menu.
+      // See `DeployMessage.weapon`.
+      this.net.sendDeploy(
+        this.conquest.spawnIndex(spawn),
+        this.weapon,
+        this.equipment,
+        this.throwable,
+      );
+      this.deployScreen.setPending();
     };
   }
 
@@ -2414,16 +3520,18 @@ export class Game {
    * Moves the game on to a step, taking down every screen the player had raised
    * over the last one.
    *
-   * The three transitions that leave a round — the menu, a round starting, F2
-   * into the editor — each used to write out the same list of screens to put
-   * away, and the copies had already drifted: F2 from the lobby left the match
-   * list hanging over the editor's own panel, because that one list was written
+   * The transitions that left a round — the menu, a round starting, and F2
+   * into the map editor while there was one — each used to write out the same
+   * list of screens to put away, and the copies had already drifted: F2 from
+   * the lobby left the match list hanging over the editor's panel, because that
+   * one list was written
    * before the lobby existed. The other twelve transitions wrote none of it and
-   * were not merely untidy but broken, and only in a netplay round, where a step
-   * can be decided by the wire while a lid is up: a `died` landing under the
-   * settings screen used to overwrite `settings` with `deploy` and strand the
-   * screen on top — visible, uncloseable (`closeSettings` guards on a state that
-   * was gone), with the deploy screen live and taking input underneath it.
+   * were not merely untidy but broken wherever a step can be decided by the
+   * wire while a lid is up — a netplay round then, every round now: a `died`
+   * landing under the settings screen used to overwrite `settings` with
+   * `deploy` and strand the screen on top — visible, uncloseable
+   * (`closeSettings` guards on a state that was gone), with the deploy screen
+   * live and taking input underneath it.
    *
    * So no caller decides which screens to take down. `ScreenStack.go` hands back
    * what was up and `takeDown` knows what each one means, which is the same
@@ -2435,9 +3543,10 @@ export class Game {
    * STEP's screen rather than a lid — there is no row in `SCREENS` to hang
    * them off — so they were left to the callers, and the callers had the same
    * drift the lids used to: three of the seven transitions below hid the card
-   * and four did not. That is invisible offline, where the four are only ever
-   * reached from a state with no card up, and it is the lid bug again in a
-   * netplay round, where the wire decides the step: a `spawn` landing under
+   * and four did not. That was invisible while a round could be played
+   * offline, where the four were only ever reached from a state with no card
+   * up, and it is the lid bug again wherever the wire decides the step — which
+   * is every round now: a `spawn` landing under
    * the building card put the player in the world behind it, and nothing ever
    * took it down again (see `bakeWait` below, which is the half that made it
    * permanent). Hiding it here costs a class write on a step change and makes
@@ -2516,6 +3625,9 @@ export class Game {
         return;
       case "lobby":
         this.lobbyScreen.hide();
+        return;
+      case "viewer":
+        this.closeViewer();
         return;
       default: {
         const unhandled: never = lid;
@@ -2724,7 +3836,7 @@ export class Game {
     // A no-op unless it moved; a move is one uniform on every bumped ground.
     this.mats.setGroundRelief(this.settings.groundRelief);
     // A no-op unless the tier moved; a change stands up a new texture set and
-    // republishes it to every cel material (`GiVolume.setQuality`).
+    // republishes it to the frame (`GiVolume.setQuality`).
     this.gi.setQuality(this.overrides.gi(this.settings.gi));
     // Each a no-op unless its own map's rung moved; a change rebuilds that
     // generator at the new size and re-binds it to every consumer.
@@ -2736,9 +3848,8 @@ export class Game {
     this.grass.setQuality(this.settings.grass);
     this.setFxaaEnabled(this.settings.fxaa);
     this.setMotionBlurEnabled(this.settings.motionBlur);
-    // After the blur, and that is the order rather than a preference: the
-    // blur's own toggle takes the grade off and puts it back to keep the
-    // chain's tail, so the grade has the last word on whether it is attached.
+    // The grade's switch is its stage's `active()`: off, the post chain's host
+    // opens no pass for it, and the last stage still on writes the canvas.
     this.post.setEnabled(this.settings.paperGrain);
     // The look speeds go to the camera and stop there: the aim assist reads its
     // own bound off `stickYawRate`, which already carries the stick's.
@@ -2813,7 +3924,7 @@ export class Game {
   private setProfiling(on: boolean): void {
     if (on === this.prof.armed) return;
     if (on) {
-      this.prof.arm(this.scene, this.glow);
+      this.prof.arm(this.surface);
       this.prof.setMap(this.mapDef.id);
     } else {
       this.prof.disarm();
@@ -2822,10 +3933,13 @@ export class Game {
   }
 
   /**
-   * Sizes the backing store from the player's render scale and the display.
+   * Sizes the backing store from the player's render scale and the display:
+   * the render-scale setting's SETTER (`BABYLON_EXIT.md` X5.4h), on the
+   * game's own canvas (`core/CanvasSurface.ts`, Babylon's `resize` and
+   * `setSize` ported).
    *
-   * Babylon's scaling level is the RECIPROCAL of the resolution — level 1 means
-   * one backing pixel per CSS pixel, which is what the engine has always run at
+   * The scaling level is the RECIPROCAL of the resolution — level 1 means one
+   * backing pixel per CSS pixel, which is what Babylon's engine always ran at
    * because `adaptToDeviceRatio` was never passed. On a 2x panel that is a
    * quarter of the display's pixels, upscaled by the compositor. The setting is
    * expressed against the DISPLAY instead (see `CONFIG.graphics.renderScales`),
@@ -2837,46 +3951,50 @@ export class Game {
    *
    * **It is therefore also where anything stated in BACKING-STORE pixels is
    * re-derived**, because this is the one line that moves them — or read per
-   * frame, which is what both readers do: `GlowPass` re-derives its blur
-   * kernel from the scaling level before each blur (the setter returns on an
-   * unchanged value), and `WorldCulling`'s size gate converts beside the
-   * camera's FOV, which it has to read anyway.
+   * frame off the surface, which is what both readers do: `GlowPass`
+   * re-derives its blur kernel from the scaling level before each blur, and
+   * `WorldCulling`'s size gate converts beside the camera's FOV, which it has
+   * to read anyway.
    */
   private applyRenderScale(): void {
     const dpr = window.devicePixelRatio || 1;
-    this.engine.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
+    this.surface.setHardwareScalingLevel(1 / (dpr * this.settings.renderScale));
+    // The glow's blur at every rung and render scale at THIS ratio: a no-op
+    // unless the ratio moved, and then its new widths (up to five) are the one
+    // exception to the seal (`BABYLON_EXIT.md` X5.2's row "pipelines"). The
+    // blur is skipped while they compile — no bloom for ~3 frames, where
+    // Babylon compiled them synchronously and drew it: a live difference the
+    // owner accepted (row "a DPR change in play", `render/GlowBlur.ts`).
+    this.glowBlur.declare(glowKernels(dpr));
   }
 
   /**
-   * Builds, rebuilds or removes the shaft pass for a quality setting.
+   * Builds, rebuilds or removes the shafts' CPU half for a quality setting.
    *
    * **A rung change is a REBUILD and not a uniform**: the tap count is a WGSL
-   * `const` interpolated per rung, so each is its own compiled shader. That is
-   * why this guards on `volumetricsRung` — `applySettings` runs on every change
-   * to every setting, and recompiling a shader because somebody toggled the FPS
-   * counter would be a hitch with no cause anyone could see.
+   * `const` interpolated per rung, so each is its own compiled shader and its
+   * own stage of the post chain — every one declared when the chain was built,
+   * so a change in play compiles nothing. The guard on `volumetricsRung`
+   * keeps `applySettings`, which runs on every change to every setting, from
+   * rebuilding the pass because somebody toggled the FPS counter.
    *
    * The new pass is SEEDED before it goes anywhere. Everything it reads — the
    * moon's colour, the map's air, the shadow window — is already standing, and
    * a pass that waited for the next `applySky` would show the config's air over
    * this map until the next round started.
    *
-   * It does not attach: `syncVolumetrics` does that on the first frame the
-   * depth image exists, which is also the frame after this on a live rebuild.
+   * It does not turn the stage on: `syncVolumetrics` latches it on the first
+   * frame every input exists, which is also the frame after this on a live
+   * rebuild.
    */
   private setVolumetrics(q: VolumetricQuality): void {
     const want = this.overrides.volumetrics(q);
     if (want === this.volumetricsRung) return;
-    const camera = this.cameraSys.camera;
-    if (this.volumetrics) {
-      camera.detachPostProcess(this.volumetrics.pass);
-      this.volumetrics.dispose();
-      this.volumetrics = null;
-      this.volumetricsAttached = false;
-    }
+    this.volumetrics = null;
+    this.volumetricsAttached = false;
     this.volumetricsRung = want;
     if (!want) return;
-    const vol = new Volumetrics(this.scene, camera, this.frameDepth, want);
+    const vol = new Volumetrics(this.cameraSys.camera, this.renderer.targets, want);
     this.seedVolumetrics(vol, this.mapDef.environment);
     this.volumetrics = vol;
   }
@@ -2912,9 +4030,11 @@ export class Game {
    * Everything stood around the EYE rather than over the map, pushed in EVERY
    * state because every state renders and only some of them simulate: the
    * shader's eye, the water's grid, the grass patches, the cull's
-   * neighbourhood and the mote field — and the rotor wash, on the fleet's
-   * terms rather than the eye's. Once a frame, from `tick`, inside the cull
-   * span; the order below is load-bearing and each line says why.
+   * neighbourhood and the mote field — and, off the cull's eye, every hull's
+   * compose and draw-distance fade (`fadeHulls`), then the rotor wash, on the
+   * fleet's terms rather than the eye's and faded with its hull. Once a
+   * frame, from `tick`, inside the cull span; the order below is
+   * load-bearing and each line says why.
    */
   private followEye(fleetStepped: boolean): void {
     // The eye the cel shader fogs and rims against, last of all and in EVERY
@@ -2939,17 +4059,9 @@ export class Game {
     // frustum: a deploy screen over a meadow is a live view of it too. Nothing
     // here advances its clock — see `GrassSystem.follow`.
     //
-    // **Both of these come BEFORE the cull, because both decide `isVisible`
-    // on their own meshes and the cull's `offer` reads it.** The grass hides a
-    // patch mesh with no patches this frame and the water swaps a body's grid
-    // for its quad by distance; with the cull first, a mesh switched ON here
-    // was not offered and dropped out for exactly one frame. Running down a
-    // meadow that was an 8 m patch blinking out 13–26 m ahead about three
-    // times a second — the middle LOD rings are narrower than a patch, so one
-    // empties and refills every few strides. The water's live frames were
-    // safe only because the camera tail's `water.update` follows first; in a
-    // state with no tail it lost its near surface on the frame the eye came
-    // within the grid's reach.
+    // (Neither is a mesh now, the grass since X4.6c and the water since X4.6d, so
+    // neither has a switch for the cull's `offer` to read; what the size gate says
+    // of each is asked after the cull, in `drawGrass` and `drawWater`.)
     this.grass.follow(this.cameraSys.camera);
     // And on the same terms and for the same reason: the map around the eye,
     // rather than the map. Every state renders and only some of them simulate,
@@ -2960,15 +4072,26 @@ export class Game {
     this.culling.update(this.cameraSys.camera.position);
     // And on exactly those terms again, for a map whose dust is emitted around
     // the eye rather than over the whole square (`ParticleSpec.volume`). A
-    // no-op for every map that states none, which is all of them but one.
+    // no-op for every map that states none — all but three (Sarab, Cinderhaven
+    // and Kurenai state one).
     this.atmosphere.update(this.cameraSys.camera.position);
+    // Every hull composed, once, and asked its draw-distance FADE: after the
+    // cull, whose `offer` just set the eye the fade is asked
+    // from, and BEFORE the wash below, which fades with its hull — the drawing
+    // reads the same fades inside the render (`drawHulls`). Nothing writes a
+    // hull's joints after this in the frame: `VehicleViews.update` ran in the
+    // world step.
+    this.fadeHulls();
     // The dust under the rotors, on the fleet's terms rather than the eye's: a
     // held world is a machine frozen over a street, and one still boiling that
     // street is the droning-engine lie with a picture instead of a sound. In
     // the cull span rather than a span of its own because that is what it is —
     // a per-frame push at a standing GPU emitter, the mote field's own shape,
-    // and at most one question per machine on the field.
-    this.rotorWash.update(fleetStepped);
+    // and at most one question per machine on the field. Handed each hull's
+    // fade, so a hull faded out at its map's draw distance takes its dust,
+    // its spray and its ripple with it (X4.2d's post-commit review): 1 on a
+    // map that states none, which changes nothing.
+    this.rotorWash.update(fleetStepped, this.hullFades);
     // …and the WATER's half of the same wash, straight off the sites that call
     // just worked out. It is here rather than beside `water.update` in the
     // camera tail for two reasons that both come out of WHERE each one runs.
@@ -2986,10 +4109,12 @@ export class Game {
   }
 
   /**
-   * The shafts' frame: the three shadow maps they march through, pushed, and
-   * the pass attached on the first frame its depth image exists (or taken off
-   * if it stops existing). Once a frame, from `tick`, after every state has
-   * had its go at the camera and before the render the shafts are drawn into.
+   * The shafts' frame: the three maps they march through, pushed — each as
+   * OUR renderer holds it (a map's own, the lit texel where it is off, the
+   * clouds' field), which the stage binds — and the stage latched on on the
+   * first frame every input exists, its depth image the last (or off if one
+   * stops existing). Once a frame, from `tick`, after every state has had its
+   * go at the camera and before the render the shafts are drawn in.
    */
   private syncVolumetrics(): void {
     const vol = this.volumetrics;
@@ -2999,13 +4124,11 @@ export class Game {
     // `ShadowSystem.lightMatrix` explains — the generator mutates that matrix
     // in place, and leaning on it is leaning on an implementation detail of
     // Babylon's.
-    const map = this.shadows.depthMap;
-    if (map) vol.setShadow(map, this.shadows.lightMatrix);
+    vol.setShadow(this.shadows.depthMap, this.shadows.lightMatrix);
     // And the bodies', which is what lets a soldier standing in a beam cut it.
     // Re-read for the same reason the line above is: both generators mutate
     // their matrix in place.
-    const bodyMap = this.bodyShadows.depthMap;
-    if (bodyMap) vol.setBodyShadow(bodyMap, this.bodyShadows.lightMatrix);
+    vol.setBodyShadow(this.bodyShadows.depthMap, this.bodyShadows.lightMatrix);
     // And the clouds', so a beam stops where the ground under it goes into a
     // cloud's shadow.
     vol.setCloudShadow(
@@ -3013,65 +4136,34 @@ export class Game {
       this.sky.cloudShadowArea,
       this.sky.cloudShadowRay,
     );
-    const on = vol.ready;
-    if (on === this.volumetricsAttached) return;
-    const camera = this.cameraSys.camera;
-    if (on) {
-      camera.attachPostProcess(vol.pass, this.volumetricsSlot);
-    } else {
-      camera.detachPostProcess(vol.pass);
-    }
-    this.volumetricsAttached = on;
+    this.volumetricsAttached = vol.ready;
   }
 
   /**
-   * Takes FXAA off the camera or puts it back, into the slot it was built in.
+   * Turns FXAA on or off: its stage's `active()`, so off is a pass the post
+   * chain does not open.
    *
    * A setting rather than a fixed part of the chain because what it costs is
    * a phone's: on a high-density panel the backing store already holds two or
    * more device pixels per CSS pixel, so a stair is far less visible, and it is
    * a whole-frame read and write on a GPU whose frame is fill rather than draw
-   * calls (`FINDINGS.md` 5). The shader (Babylon's text, `shaders/Fxaa.ts`) also
-   * moves its early exit to the end on a Mali driver, so there every pixel pays the full edge search.
-   *
-   * Detached and re-attached at `fxaaSlot`, the shafts' trick
-   * (`syncVolumetrics`): `detachPostProcess` NULLS the entry rather than
-   * removing it, and `attachPostProcess` with an index refills a null, so the
-   * order behind it is untouched either way. Nothing throws if this is wrong;
-   * the symptom is FXAA softening the grain.
+   * calls (`FINDINGS.md` 5). The shader is Babylon's text as compiled
+   * (`shaders/wgsl/fxaa.ts`): its Mali arm never ran under WebGPU, the driver
+   * info Babylon tested for it being the empty string on every device.
    */
   private setFxaaEnabled(on: boolean): void {
-    if (on === this.fxaaAttached) return;
-    const camera = this.cameraSys.camera;
-    if (on) camera.attachPostProcess(this.fxaa, this.fxaaSlot);
-    else camera.detachPostProcess(this.fxaa);
-    this.fxaaAttached = on;
+    this.fxaa.setEnabled(on);
   }
 
   /**
-   * Adds or removes the motion blur pass, keeping the chain's order.
-   *
-   * The order is load-bearing and documented on both passes: the shafts, then
-   * the blur, then the grade — the shafts belong to the frame they smear with, and
-   * grain over a smear reads as a dirty lens. Babylon's `attachPostProcess`
-   * APPENDS, so simply re-attaching the blur would put it behind the grade.
-   * Taking the grade off and putting it back after is what restores the order
-   * without computing an index into a chain that also holds the pipeline's own
-   * FXAA — and it is Game's job because Game is what assembled the chain.
-   *
-   * Nothing throws if this is wrong. The symptom is smeared grain.
+   * Turns the motion blur on or off: its stage's `active()`, so off is a
+   * pass the post chain does not open. The ORDER is the chain's list, which
+   * this file assembled (the shafts, then the blur, then the grade — the
+   * shafts belong to the frame they smear with, and grain over a smear reads
+   * as a dirty lens), and nothing here moves it (`BABYLON_EXIT.md` X5.2c2:
+   * the blur is no Babylon pass to take off a camera and put back).
    */
   private setMotionBlurEnabled(on: boolean): void {
-    if (on === this.motionBlur.isEnabled) return;
-    const camera = this.cameraSys.camera;
-    const pass = this.motionBlur.pass;
-    if (on) {
-      this.post.detach();
-      camera.attachPostProcess(pass);
-      this.post.attach();
-    } else {
-      camera.detachPostProcess(pass);
-    }
     this.motionBlur.setEnabled(on);
   }
 
@@ -3111,7 +4203,7 @@ export class Game {
       -(drag.x * i.dragRate + this.input.stickLookX * i.stickRate * dt),
       -(drag.y * i.dragRate + this.input.stickLookY * i.stickRate * dt),
       camera.fov,
-      this.engine.getAspectRatio(camera),
+      this.surface.getAspectRatio(camera),
       // The hole the SCREEN says it has left, measured this frame. It used to
       // be a constant in `CONFIG.viewmodel.inspect` welded to a CSS
       // percentage, and moving it here is what let the kit screen be laid out
@@ -3185,11 +4277,11 @@ export class Game {
    * third slot at all.
    *
    * ONE term, and it is the map's: a hardstanding is stated or it is not.
-   * There is deliberately no second term asking whether this is a netplay
-   * round — the authority fields the same hulls off the same layout and
-   * resolves the third slot off the join (see `Match.admit`), so the slot is
-   * offered online and off or the same kit would mean two different things on
-   * the two sides of the wire.
+   * There is deliberately no second term asking who hosts the round — the
+   * authority fields the same hulls off the same layout and resolves the
+   * third slot off the join (see `Match.admit`), whether it is a server's
+   * match or the page's own, so the slot is offered in both or the same kit
+   * would mean two different things on the two sides of the wire.
    *
    * It used to be two terms, and the second was "the round has to be offline".
    * That is what this comment said until armour crossed the wire; the term was
@@ -3329,12 +4421,13 @@ export class Game {
    *
    * **Only from the menu or the lobby over it, and that guard is the whole
    * safety argument.** `startRound` reads `mapDef` to apply the environment,
-   * paint the sky and build the map, and hands the result to battle, conquest,
-   * the flag markers and the minimap. Writing this field at any other time
-   * leaves all four pointing into a `GameMap` that `installMap` has already
-   * disposed — which throws nothing and renders last round's world over this
-   * one's. The lobby is safe for the same reason the menu is: it is a lid over
-   * it, no round is standing, and the next thing to read the field is a build.
+   * paint the sky and build the map, and hands the result to the flags this
+   * page mirrors (`conquest`), the flag markers and the minimap. Writing this
+   * field at any other time leaves all four pointing into a `GameMap` that
+   * `installMap` has already disposed — which throws nothing and renders last
+   * round's world over this one's. The lobby is safe for the same reason the
+   * menu is: it is a lid over it, no round is standing, and the next thing to
+   * read the field is a build.
    *
    * This is the PREFERENCE and is remembered as one. A map that arrives from a
    * match server is not a pick and goes through `applyMatchMap`, which
@@ -3420,6 +4513,158 @@ export class Game {
     this.openLobby();
   }
 
+  /**
+   * The world could not be drawn — our renderer, which draws it in every
+   * pass of a round, refused a surface of it or lost a pass of it
+   * (`BlockHandover`, `WorldCulling.setMap`), and Babylon holds no mesh of it
+   * to fall back on, so there is no honest half-world to play in: said on
+   * the console, the round left for the menu (`enterMenu`, which leaves a
+   * server's match — `leaveMatch` — as it leaves the page's own), and a
+   * toast saying the map could not be drawn — `loadHeights`' precedent.
+   * `BABYLON_EXIT.md` X3.7, "What becomes of a failure".
+   *
+   * **Run after the task in hand**, as each pass's loss always was: a
+   * failure can land INSIDE a render (a refused pass), whose commands still
+   * hold the buffers the menu's teardown destroys, or inside `installMap`,
+   * whose caller must finish its turn before the map it built is taken
+   * down. ONE a failure: the handover says each install's once, and a
+   * second arriving before the first is spent is the same round's.
+   *
+   * **A failure belongs to the INSTALL it came from** (`owner`, which names
+   * the map in the console line and the toast — never `mapDef`, which a
+   * welcome may already have moved to the next one). One from the map still
+   * standing under the NEXT round's building card — landing between
+   * `startRound` and that round's install, which will tear it down anyway —
+   * is said against its own map and is not the new round's end: a pipeline
+   * failed for the session fails the new install on its own account.
+   */
+  private worldFailed(reason: string, owner: WorldOwner): void {
+    if (owner !== this.roundWorld && this.buildPending()) {
+      console.error(
+        `[world] ${owner.id}: the map could not be drawn — ${reason} ` +
+          "(it was already being replaced; the round being built is not affected)",
+      );
+      return;
+    }
+    if (this.worldFailing) return;
+    this.worldFailing = true;
+    queueMicrotask(() => {
+      this.worldFailing = false;
+      console.error(`[world] ${owner.id}: the map could not be drawn — ${reason}`);
+      this.enterMenu();
+      this.hud.toast(`${owner.name} could not be drawn on this device`);
+    });
+  }
+
+  /**
+   * The graphics device was LOST (`BABYLON_EXIT.md` X5.4i, the owner's (A),
+   * row "X5.4, a lost device"): every draw of ours is made on that device
+   * and on no other, nothing here rebuilds one in place (`FINDINGS.md` 74), so
+   * the page RELOADS itself to the menu, a one-line notice left for it
+   * (`core/deviceLoss.ts`) — the round lost offline, the match left in a
+   * server's, to be rejoined from the lobby; the settings are
+   * `localStorage`'s and survive it. A second loss inside
+   * `CONFIG.graphics.deviceLossWindow` of the last puts the boot's "No
+   * graphics device" plate back up instead (`deviceFailed`), and leaves the
+   * page standing under it: the loop stopped, the match left, the sound
+   * suspended, the pointer let go.
+   *
+   * **The teardown first, then the answer, whatever the teardown does**: a
+   * throw from any of it (a field a constructor that threw never set, a
+   * dispose meeting a dead device) is said and the answer still runs — a
+   * dead frame that never reloads is the one outcome this exists to end. It
+   * runs off the device's `lost`, a microtask, so between frames: after the
+   * last frame's submit, with none recording (a frame is one synchronous
+   * `FrameLoop` step, and nothing settles inside one). In the order the loss
+   * owes it (`BABYLON_EXIT.md` X5.4i): the loop STOPPED, so no frame runs
+   * into what follows; our renderer disposed — its frame buffer, the
+   * frame's targets and every texture the maker made, destroyed at once (the
+   * one exception to "destroyed after the frame's submit", there being no
+   * frame after it); the chain's passes, its pool and the canvas's depth,
+   * which are `Game`'s and not the renderer's; the frame's submit, its
+   * timer's queries and buffers — the encoder made after the last submit
+   * abandoned, never finished; and the lamps' atlas, which nothing else
+   * reaches (`LocalShadows.dispose` releases nothing). Under a reload most of
+   * it is moot, the page dropping everything; it is done anyway, so each
+   * dispose path has its caller and the plate's page holds nothing.
+   *
+   * **The device is not destroyed here**: a lost one has nothing to give
+   * back, and the page drops it. Nor does a reload owe anything for what the
+   * surface hung on the canvas (`CanvasSurface.adoptInput`'s listeners),
+   * the boot's `uncapturederror` listener or the context's configuration:
+   * the document goes with them. What this does not do is resume a frame —
+   * so `FrameLoop`'s order against the cap and the clock sample a restore
+   * once took are moot (`FrameLoop`'s header).
+   *
+   * **Nothing is opened after it** (`deviceIsLost`, set FIRST): a build
+   * `startRound` had already booked two frames ahead, or a join, a welcome
+   * or a bench's script reaching for a round while the reload is under way
+   * or the plate stands, is refused at its door — so the plate's page holds
+   * nothing, and a reload's last moments start nothing on the dead device.
+   */
+  private deviceLost(info: GPUDeviceLostInfo): void {
+    this.deviceIsLost = true;
+    console.warn(`WebGPU device lost (${info.reason}): ${info.message}`);
+    const notice =
+      "the graphics device was lost, so the game restarted" +
+      (this.remoteRound ? " — rejoin the match from Online" : "");
+    try {
+      eachStep("the lost device's teardown", [
+        () => this.frameLoop.stop(),
+        () => this.renderer.dispose(),
+        () => this.chainPasses.dispose(),
+        () => this.frameLoop.submit.dispose(),
+        () => this.lampAtlas.dispose(),
+      ]);
+    } finally {
+      if (answerLoss(Date.now(), notice) === "reload") {
+        console.warn("[device] reloading to the menu");
+        location.reload();
+      } else {
+        console.warn("[device] lost again inside the window: the page stays on the boot's plate");
+        this.deviceGone();
+      }
+    }
+  }
+
+  /**
+   * The second answer to a lost device (`deviceLost`): the boot's plate up
+   * FIRST, then the page let go of under it, each step on its own so one
+   * that throws stops none after it — the match left (a server's slot back
+   * to its bot, the page's own match closed), the sound suspended (a held
+   * ambience would drone under the plate for ever) and the pointer lock
+   * released (the plate is read with a cursor).
+   */
+  private deviceGone(): void {
+    eachStep("letting the page go", [
+      () => this.deviceFailed(),
+      () => this.leaveMatch(),
+      () => this.sfx.setSuspended(true),
+      () => document.exitPointerLock(),
+    ]);
+  }
+
+  /**
+   * The camera as `GPUParticleSystem._render` bound it, for `ParticleDraw`, asked
+   * as the main pass begins (the frame's transform is this frame's by then, as
+   * the scene's was at the group's draw): the frame's view and projection
+   * apart (`SceneFrame`, the scene's until `BABYLON_EXIT.md` X6.1f), the view's
+   * inverse by `Matrix.invertToRef` (the same doubles rounded to the same floats),
+   * and the active camera's `globalPosition`.
+   */
+  private readParticleCamera(out: ParticleCamera): void {
+    const view = this.sceneFrame.getViewMatrix();
+    out.view.set(view.m);
+    out.projection.set(this.sceneFrame.getProjectionMatrix().m);
+    Matrix.FromArrayToRef(view.m, 0, this.particleView).invertToRef(this.particleInvView);
+    out.invView.set(this.particleInvView.m);
+    const eye = this.sceneFrame.activeCamera?.globalPosition;
+    if (!eye) return;
+    out.eye[0] = eye.x;
+    out.eye[1] = eye.y;
+    out.eye[2] = eye.z;
+  }
+
   private tick(): void {
     // First line and last line: `frame` is the span every other one sits
     // inside, and it is opened here rather than by `begin` so that the table of
@@ -3431,14 +4676,14 @@ export class Game {
     // that took this frame and the last, which is how long apart the two are
     // SEEN — stepping the world by when a callback got the thread is judder
     // under an evenly paced display (`FrameCap`'s header).
-    const real = this.engine.getDeltaTime() / 1000;
+    const real = this.frameLoop.clock.getDeltaTime() / 1000;
     // …except under a benchmark, where every frame is the FIXED step whatever
     // either clock says (`CONFIG.profiling.bench`): what a run compares is the
     // cost of the same frames, so the frames may not depend on the device.
-    const dt =
-      this.state === "bench"
-        ? CONFIG.profiling.bench.dt
-        : Math.min(this.frameCap.elapsed(real), 0.05);
+    // The clamp is the WIRE's (`MAX_FRAME_DT`): the authority prices a
+    // person's first movement sample on how long a frame here may be.
+    const seen = this.frameCap.elapsed(real);
+    const dt = this.state === "bench" ? CONFIG.profiling.bench.dt : Math.min(seen, MAX_FRAME_DT);
     // The match's render clock is read at the same instant, and before anything
     // in this frame asks it: where on the authority's timeline this frame is
     // posed is a question about when it is SEEN (`Connection`'s header).
@@ -3450,7 +4695,10 @@ export class Game {
     // instrument, and a frame rate that stops being reported the moment you
     // open a menu is a frame rate you cannot investigate. It takes the real
     // delta rather than the clamped one — see `HUD.setFps`.
-    this.hud.setFps(this.engine.getFps(), real);
+    this.hud.setFps(this.frameLoop.clock.getFps(), real);
+    // A round on screen keeps it on, a menu and a pause let it sleep
+    // (`pwa/register.ts`); unchanged, it returns on its first line.
+    keepScreenAwake(this.screens.inRound);
     // Beside the readout above and on the same terms: every state, because a
     // hitch on the deploy screen is still a hitch and a ring that stopped
     // filling the moment a menu opened would be a ring nobody could trust.
@@ -3464,8 +4712,9 @@ export class Game {
     // because `dt` is time that has already passed and the screen that was up
     // for it is the one this frame belongs to; and before the arms rather than
     // inside four of them, because that was the arrangement nothing but prose
-    // held together. Offline, and in every state that is either IN the fight or
-    // has none behind it, this returns on its first line.
+    // held together. In the page's own match, and in every state that is
+    // either IN the fight or has none behind it, this returns on its first
+    // line.
     this.prof.begin(P.roundBehind);
     this.updateRoundBehind(dt);
     this.prof.end(P.roundBehind);
@@ -3495,12 +4744,12 @@ export class Game {
       case "lobby":
         this.updateLobbyScreen();
         break;
-      // The netplay frame a pause does not stop is `updateRoundBehind`'s, above.
-      // The lid stays on the half of the frame that is genuinely this client's:
-      // the player does not move, does not shoot, and reports nothing while the
-      // menu is up — `updateNet` sends no move sample because it asks for
-      // `state === "playing"`, so being paused is already indistinguishable on
-      // the wire from standing still.
+      // The server's frame a pause does not stop is `updateRoundBehind`'s,
+      // above. The lid stays on the half of the frame that is genuinely this
+      // client's: the player does not move, does not shoot, and reports nothing
+      // while the menu is up — `updateNet` sends no move sample because it asks
+      // for `state === "playing"`, so being paused is already indistinguishable
+      // on the wire from standing still.
       case "paused":
         this.updatePauseMenu(dt);
         break;
@@ -3526,10 +4775,17 @@ export class Game {
           break;
         }
         this.updatePendingLock(dt);
+        // Bracketed as `gameplay` for the bench's reason below: a death-cam
+        // frame is a played frame — the whole world steps under it — and its
+        // `world` and `sim` spans belong under the parent the tree says.
+        this.prof.begin(P.gameplay);
         this.updateDeathCam(dt);
+        this.prof.end(P.gameplay);
         break;
-      case "editor":
-        this.updateEditor(dt);
+      // The dev-only viewer's lid. A server's round behind it is stepped by
+      // `updateRoundBehind` above, as under the pause; the page's own is held.
+      case "viewer":
+        this.updateViewer(dt);
         break;
       // Bracketed as `gameplay`, because that is what it is — a played frame
       // whose body is a script — and a capture of one reads against a capture
@@ -3540,6 +4796,15 @@ export class Game {
         this.prof.end(P.gameplay);
         break;
     }
+    // A lowered viewer's camera tail, if one is owed and no arm above ran its
+    // own — inside the frame, so its spans are this frame's, and after every
+    // arm has placed the camera.
+    this.honourSceneOwed();
+
+    // The page's own match is handed the frame's clock: what `updateWorld`
+    // stepped, and the rest of the frame as time it HELD (`LocalOwner.pass`).
+    // After the arm, so whatever this frame stepped is counted first.
+    this.localOwner.pass(seen, this.localRound, this.localRound && this.net!.seated);
 
     // Whatever the wire queued for a netplay frame that this state did not
     // run. It is DROPPED rather than carried: a `fire` event is a moment, and
@@ -3569,12 +4834,14 @@ export class Game {
     this.post.update(dt);
     // After every state has placed the camera: the clouds stand in the world
     // and are drawn back to front from wherever the eye is this frame. In a
-    // match the ring's turn is read off the AUTHORITY's clock, as the
-    // lightning is, so every client's clouds — and their shadows — agree.
+    // server's match the ring's turn is read off the AUTHORITY's clock, as the
+    // lightning is, so every client's clouds — and their shadows — agree. In
+    // the page's own there is nobody to agree with, and the page's clock is
+    // the one that stops for a pause.
     this.sky.update(
       dt,
       this.cameraSys.camera.position,
-      this.net ? this.net.conn.now() / 1000 : null,
+      this.remoteRound ? this.net!.conn.now() / 1000 : null,
     );
     // Where the clouds' shadow lies and how far the crossfade has run, pushed
     // in every state for the drift's reason: the sky moves behind a menu too,
@@ -3587,10 +4854,10 @@ export class Game {
     // the shafts are drawn into.
     this.syncVolumetrics();
     // Every frame in every state, so the basis it reprojects against can never
-    // go stale while the player sits in a menu. In the editor the free-fly cam
-    // drives the Babylon camera directly and never touches these angles, so
-    // the pass sees no rotation and stays inert — which is what we want in an
-    // authoring tool.
+    // go stale while the player sits in a menu. Under the viewer the free-fly
+    // cam drives the camera directly and never touches these angles,
+    // so the pass sees no rotation and stays inert — which is what we want in
+    // a dev tool.
     this.motionBlur.update(this.cameraSys.aimYaw, this.cameraSys.aimPitch, dt);
     this.prof.end(P.post);
     // **Read ONCE, here, and spent twice below.** Two of the pushes at the end
@@ -3601,12 +4868,6 @@ export class Game {
     // frame already has and not a new one.
     const fleetStepped = this.fleetStepped;
     this.fleetStepped = false;
-    // The building card's pipeline warm-up, if one is standing: the camera at
-    // a vantage for THIS frame only, and the whole map offered to the render.
-    // Before the eye is followed, which is what carries the vantage into the
-    // cull, the water and the grass; put back straight after the render, so
-    // nothing of it reaches the next frame. See `stageWarmFrame`.
-    const warming = this.stageWarmFrame();
     this.prof.begin(P.culling);
     this.followEye(fleetStepped);
     this.prof.end(P.culling);
@@ -3618,13 +4879,13 @@ export class Game {
     // first second of a spawn. After `lighting.update` on the frames that run one, because
     // its point-light visibility is written per SLOT and the slots are that
     // frame's; on the frames that do not, they are simply the last ones
-    // chosen. All compute — no draw call — so what this span measures is the
-    // CPU side of recording it, and the GPU's share is in `gpu.frame`.
-    // Never from a warm-up's vantage: the volume converges around the camera
-    // behind the card, and one dragged to every flag in turn would have to
-    // converge again around the deploy screen.
+    // chosen. All compute — no draw call — and since `BABYLON_EXIT.md` X5.1b
+    // only its CPU half is here: this span is the lights, the channels, the
+    // hulls and the params written and the dispatch ARMED; the three passes
+    // are RECORDED by our renderer's late prepare as the main pass begins
+    // (`GiCompute`), so under `render`, and the GPU's share is in `gpu.frame`.
     this.prof.begin(P.gi);
-    if (this.map && !warming) {
+    if (this.map) {
       this.gi.update(this.cameraSys.camera.position, this.lighting, this.map.rays.hulls);
     }
     this.prof.end(P.gi);
@@ -3648,15 +4909,10 @@ export class Game {
     // order it was ever owed, and it is now last in the frame rather than last
     // in the world step — so the rule that nothing may move the camera after
     // it is if anything harder to break.
-    //
-    // Never from a warm-up's vantage either, or the map's fires pan to each
-    // flag the building card stands at in turn.
-    if (!warming) {
-      this.sfx.setListener(
-        this.cameraSys.camera.position,
-        this.cameraSys.forwardToRef(this.listenerForward),
-      );
-    }
+    this.sfx.setListener(
+      this.cameraSys.camera.position,
+      this.cameraSys.forwardToRef(this.listenerForward),
+    );
     this.pushHullEngines(fleetStepped);
     this.pushAmbience();
     this.prof.end(P.audio);
@@ -3669,12 +4925,47 @@ export class Game {
     this.pushTouchControls();
     this.pushScoreboard();
     this.prof.begin(P.render);
-    this.scene.render();
+    this.drawBodies();
+    // The hulls are ours too (`BABYLON_EXIT.md` X4.2b): their joints composed
+    // here, after every write, and their drawing handed to our renderer —
+    // where Babylon composed their nodes inside the render until X4.2a.
+    this.drawHulls();
+    // …and the player's own weapon (X4.3b-d): its joints evaluated as the
+    // render evaluated its nodes, every surface handed to our renderer — the
+    // card, the opaque parts in Babylon's group-1 order, the glasses back to
+    // front.
+    this.drawView();
+    // …and the effect pools' pieces and the bullet marks (X4.4b): posed
+    // where every pool already put them this frame, handed to our renderer.
+    this.drawPieces();
+    this.drawMarks();
+    // …and the blast's billows and the debris (X4.4c): the batches `BlastFx`
+    // posed, and every shard and chunk off its body's pose.
+    this.drawBlasts();
+    this.drawDebris();
+    // …and the fires (X4.4d): the world's, and the molotov's flames where
+    // `GrenadeFx` stood them.
+    this.drawFires();
+    // …and the rings and the flags (X4.6b): through the size gate here, the
+    // rest inside the render.
+    this.drawZones();
+    // …and the grass (X4.6c) on the same terms, its patches chosen by `follow`
+    // above.
+    this.drawGrass();
+    // …and the water (X4.6d) on the same terms, each body's shape chosen by `follow`
+    // above.
+    this.drawWater();
+    // …and the glazing and the fading pools (X4.6e), all of them read inside the
+    // render, where the camera and the frustum are this frame's.
+    this.drawBlended();
+    // THE FRAME, ours (`core/SceneFrame.ts`, `BABYLON_EXIT.md` X5.4f): what
+    // `scene.render()` did, in its order — the camera's update and matrices,
+    // the render id, the draw phase, the post chain — where it was called.
+    this.sceneFrame.render();
     this.prof.end(P.render);
-    if (warming) this.unstageWarmFrame();
     // AFTER the render, because the render is the thing being waited for: a
     // frame's share of the reflection bake is released from inside
-    // `scene.render` and has already been issued by the time this line runs,
+    // the frame's render and has already been issued by the time this line runs,
     // so asking here is asking about a frame that happened rather than one
     // that is about to. It is not an arm of the switch above and must not
     // become one — `loading` simulates nothing and this decides nothing about
@@ -3682,8 +4973,8 @@ export class Game {
     if (this.bakeWait) this.updateBakeWait();
 
     // The frame is closed LAST, after the bake's drain, so `frame` is the whole
-    // of what the render loop did rather than most of it — and after
-    // `scene.render()` in particular, because Babylon's counters are what that
+    // of what the render loop did rather than most of it — and after the
+    // frame's render in particular, because the counters are what that
     // render just did and asking any earlier reports the previous frame's.
     //
     // The context is gathered behind `armed` rather than pushed unconditionally
@@ -3703,16 +4994,17 @@ export class Game {
    *
    * A plain loop rather than a `filter` or a `reduce`, because it runs once a
    * frame while the profiler is armed and neither of those is free. It counts
-   * what `BattleSystem` itself would count — `aside` is the skip test every
-   * loop over `bots` owes, and a bot in a tank or on the bench is not a body in
-   * the fight. In a netplay round the roster is somebody else's and the bots
-   * are posed rather than simulated, which is why this can read zero there and
-   * that is the honest answer.
+   * the bodies DRAWN standing — the roster off the wire, whoever hosts the
+   * match: alive, and not inside a hull, which is the wire's statement of
+   * `BattleSystem.aside` (a slot the round does not field arrives dead). The
+   * local player's own slot is skipped, as the pool never draws it.
    */
   private countAliveBots(): number {
+    const net = this.net;
+    if (!net) return 0;
     let n = 0;
-    for (const bot of this.battle.bots) {
-      if (bot.alive && !this.battle.aside(bot)) n++;
+    for (const soldier of net.roster.soldiers) {
+      if (soldier.alive && soldier.slot !== net.slot && !net.vehicles.riding(soldier.slot)) n++;
     }
     return n;
   }
@@ -3722,8 +5014,8 @@ export class Game {
    *
    * The menu is a LIST — the cursor keys move and step it, and the dedicated
    * keys are accelerators rather than the only way to reach a row. The
-   * round-over card has a cursor only on a match's ballot, so offline it takes
-   * the confirm and the way out and nothing else.
+   * round-over card has a cursor only on a server's ballot, so in the page's
+   * own match it takes the confirm and the way out and nothing else.
    */
   private updateMenuCard(dt: number): void {
     this.overlayT += dt;
@@ -3766,8 +5058,9 @@ export class Game {
       }
     }
     // The round-over card's way OUT, which its system corner draws on Esc and
-    // B: the main menu offline, and out of the MATCH in one — the pause list's
-    // Quit to menu, since that is what `enterMenu` is from here too. Behind
+    // B: the main menu, and out of the MATCH when it is a server's — the
+    // pause list's Quit to menu, since that is what `enterMenu` is from here
+    // too. Behind
     // the same half second as the confirm, so a player who pressed Escape for
     // a pause on the frame the round ended is not thrown out of it.
     //
@@ -3787,7 +5080,8 @@ export class Game {
       this.enterMenu();
       return;
     }
-    // The ballot, which is the one control a round-over card has in a match:
+    // The ballot, which is the one control a round-over card has in a server's
+    // match:
     // left and right along the row, confirm to cast. It is the same three
     // presses the menu's own list takes, and the confirm BREAKS for the menu's
     // reason — the tail below would otherwise spend the same key on a round
@@ -3816,15 +5110,15 @@ export class Game {
     // deploy through the Deploy button and nowhere else, or a click on the
     // map or difficulty row would start the round out from under the pick.
     //
-    // **`!this.net` is what makes this the OFFLINE confirm**, and the state is
-    // not that question: `menu` never has a session (`enterMenu` leaves the
-    // match on the way in), but `roundover` in a match is a WAIT on the
-    // authority's rotation, and this line was the widest of the three doors
-    // into starting a round nobody else was playing. It is also the one a
-    // player is most likely to fall through, because pad Start closes the kit
-    // screen and is this very key, and the round-over card arrives under their
-    // fingers.
-    if (this.input.confirmPressed && this.overlayT > 0.5 && !this.net) {
+    // **`remoteRound` is what makes this the OWNER's confirm**, and the state
+    // is not that question: `menu` never has a session (`enterMenu` leaves the
+    // match on the way in), but `roundover` in a server's match is a WAIT on
+    // the authority's rotation, and this line was the widest of the three
+    // doors into starting a round nobody else was playing. It is also the one
+    // a player is most likely to fall through, because pad Start closes the
+    // kit screen and is this very key, and the round-over card arrives under
+    // their fingers. In the page's own match the next round is the page's.
+    if (this.input.confirmPressed && this.overlayT > 0.5 && !this.remoteRound) {
       this.startRound();
     }
   }
@@ -3848,10 +5142,12 @@ export class Game {
     this.respawnT -= dt;
     // The round carries on without us, and this is the screen that reads it —
     // the map below is drawn from `conquest.points`, which the wire keeps
-    // current, and the bodies behind the card and the tickets on the strip are
-    // stepped from a frame. That frame is `updateRoundBehind`'s and has already
-    // run when this arm is reached, which is what leaves this method with only
-    // the clock and the input that are its own.
+    // current, and in a server's match the bodies behind the card and the
+    // tickets on the strip are stepped from a frame. That frame is
+    // `updateRoundBehind`'s and has already run when this arm is reached, which
+    // is what leaves this method with only the clock and the input that are
+    // its own. (In the page's own match there is no such frame: the match is
+    // held under this screen, and so is everything drawn from it.)
     //
     // Stepped before the redraw, so the marker, the plate and the title move on
     // the frame the key was pressed. Both axes step the same list — the
@@ -4033,9 +5329,9 @@ export class Game {
         this.input.padInHand ? "pad" : this.input.touchActive ? "touch" : "kbm",
       );
     }
-    // Offline the round under a pause is held, so what the card was raised
-    // with stays true; in a match it is not held at all.
-    if (this.net) {
+    // In the page's own match the round under a pause is held, so what the
+    // card was raised with stays true; in a server's it is not held at all.
+    if (!this.worldHeld) {
       this.pauseRoundT -= dt;
       if (this.pauseRoundT <= 0) {
         this.pauseRoundT = CONFIG.pauseCard.refresh;
@@ -4106,16 +5402,18 @@ export class Game {
     // Suspends the audio clock, so the tail of the last shot is still there
     // when the round starts again instead of ringing out over the menu.
     //
-    // OFFLINE ONLY, and not merely because a live fight should be audible.
-    // Suspending stops `AudioContext.currentTime`, and a networked round goes
-    // on making noise the moment it is stopped: `hit`, `damage` and `explode`
-    // all sound straight off the wire, from the message handler, in whatever
-    // state the client happens to be in. Scheduled against a clock that is not
-    // running, none of them plays and none of them ENDS — so each holds a
-    // voice against the cap until the resume, at which point the whole
-    // pause-worth of them fires on the same instant. The choice is between a
-    // menu with gunfire behind it and a menu that saves the gunfire up.
-    if (!this.net) this.sfx.setSuspended(true);
+    // ONLY WHERE THE PAUSE HOLDS THE WORLD — the page's own match — and not
+    // merely because a live fight should be audible. Suspending stops
+    // `AudioContext.currentTime`, and a server's round goes on making noise
+    // the moment it is stopped: `hit`, `damage` and `explode` all sound
+    // straight off the wire, from the message handler, in whatever state the
+    // client happens to be in. Scheduled against a clock that is not running,
+    // none of them plays and none of them ENDS — so each holds a voice against
+    // the cap until the resume, at which point the whole pause-worth of them
+    // fires on the same instant. The choice is between a menu with gunfire
+    // behind it and a menu that saves the gunfire up. A held match says
+    // nothing while it is held: nothing steps, so nothing is relayed.
+    if (this.worldHeld) this.sfx.setSuspended(true);
     document.exitPointerLock();
   }
 
@@ -4179,11 +5477,13 @@ export class Game {
   private enterMenu(): void {
     // A benchmark that is still booked here never reached its first frame — a
     // build that failed under it — and goes with the round it was booked on,
-    // or the next round the PLAYER starts would be taken over by it.
-    // `endBench` clears its own before it comes this way.
+    // or the next round the PLAYER starts would be taken over by it — or one
+    // whose fight is still being read back (`endBench`), let go with the
+    // round. `finishBench` clears its own before it comes this way.
     if (this.bench) {
       this.difficulty = this.bench.difficulty;
       this.bench = null;
+      this.profChip.setHold(null);
     }
     // Takes down the pause card, the kit screen and the settings with it —
     // whichever of them the player was looking at when they quit. All three used
@@ -4199,7 +5499,7 @@ export class Game {
     // The lobby is that route, and without this the second join is refused by
     // `joinMatch`'s own guard and looks like a dead button.
     this.leaveMatch();
-    // The match's map went with it. A netplay round is played on whatever the
+    // The match's map went with it. A server's round is played on whatever the
     // authority is running (`applyMatchMap`), which is not a choice this player
     // made and was deliberately never persisted — so the menu goes back to
     // offering the one they did pick, rather than to whichever stranger's round
@@ -4214,16 +5514,14 @@ export class Game {
     // (`clearVehicle`), which is what stands down the player's own unpanned
     // engine: `pushHullEngines` skips the hull the player is sitting in, so a
     // helicopter quit out of once kept its rotor running under the main menu.
-    // The seat is also what puts the body back in `battle.humans` and takes the
-    // invulnerability off it, and this must stay ABOVE the line below because
-    // giving up a seat puts the viewmodel back. And above `battle.reset`, for
-    // the crews' reason in `teardownMap`.
+    // The seat is also what takes the invulnerability off the body, and this
+    // must stay ABOVE the line below because giving up a seat puts the
+    // viewmodel back.
     this.teardownMap();
     this.player.setBodyHidden(true);
     this.hud.clearDamageDirections();
     this.hud.setCapture(null);
     this.hud.setLeash(null);
-    this.battle.reset();
     document.exitPointerLock();
     // Same gate the round-over screen uses: the confirm that got here must not
     // fall through into starting the next round.
@@ -4236,20 +5534,19 @@ export class Game {
    * standing in one — it awaits the map's floor now (`MapDef.heights`), and
    * that wait is inside this window rather than beside it.
    *
-   * A method rather than `this.state === "loading"` written out twice, because
-   * `toggleEditor` has to ask it on both sides of an await and TypeScript
-   * carries the first check's narrowing straight through one — it calls the
-   * second comparison dead, which is precisely the assumption the second check
-   * exists to refuse. Behind a call it cannot narrow, so the question stays
-   * askable.
+   * A method rather than `this.state === "loading"` written out at every
+   * caller: a caller asking it on both sides of an await would have the first
+   * check's narrowing carried straight through by TypeScript, which calls the
+   * second comparison dead — precisely the assumption the second check exists
+   * to refuse. Behind a call it cannot narrow, so the question stays askable.
    *
    * **It is not "the state is `loading`" any more, and the difference is the
    * whole of what `bakeWait` changed.** `loading` used to be the two frames
    * between the confirm and the build; it is now those two frames AND however
    * many the reflection bake takes to drain behind the card, which on a 1500 m
    * map is forty-seven of them. What every caller here is guarding against is a
-   * build that has not run yet — a second one queued behind it, an editor
-   * opened into it, a welcome arriving before there is a map to correct — and
+   * build that has not run yet — a second one queued behind it, a welcome
+   * arriving before there is a map to correct — and
    * once the wait is open the build HAS run. Reading the state alone would
    * refuse a map change or a team correction for the length of the drain and
    * drop it on the floor, because the branch that defers to `buildRound`
@@ -4262,12 +5559,12 @@ export class Game {
   /**
    * `F4`: the audio mixer, over whatever is on screen.
    *
-   * `toggleEditor`'s shape and almost none of its problems. There is no state
-   * transition here and no map to rebuild, so the two pre-await guards that
-   * method needs do not apply — what is left is the same one-cold-import-wide
-   * double-open window, and the same whole-body DEV gate, which is what makes
-   * `src/dev/` unreachable under `vite build` and keeps the chunk out of the
-   * bundle entirely rather than emitting an orphan nobody fetches.
+   * `toggleViewer`'s shape and almost none of its problems. There is no state
+   * transition here, so no lid is raised — what is left is the same
+   * one-cold-import-wide double-open window, and the same whole-body DEV gate,
+   * which is what makes `src/dev/` unreachable under `vite build` and keeps the
+   * chunk out of the bundle entirely rather than emitting an orphan nobody
+   * fetches.
    *
    * The pointer lock has to go, and that is the one thing the panel cannot do
    * for itself: under a lock a click reaches no element at all, so a mixer
@@ -4293,7 +5590,7 @@ export class Game {
       this.hud.toast("could not open the mixer");
       return;
     } finally {
-      // Cleared before the opening for `toggleEditor`'s reason: everything
+      // Cleared before the opening for `toggleViewer`'s reason: everything
       // below is synchronous, and a throw in the import must not wedge F4 for
       // the rest of the session.
       this.mixerLoading = false;
@@ -4310,143 +5607,137 @@ export class Game {
       // like it means.
       at: () => {
         const c = this.cameraSys.camera;
-        return c.position.add(c.getDirection(FORWARD_Z).scale(10));
+        const p = c.position.add(this.cameraSys.lookDirection().scale(10));
+        return new Vector3(p.x, p.y, p.z);
       },
       // And two metres, for the one cue that is only itself up close: a round
       // going PAST passes inside `hitRadius + suppressRadius`, and at ten
       // metres the panner and the air have made it a different sound.
       near: () => {
         const c = this.cameraSys.camera;
-        return c.position.add(c.getDirection(FORWARD_Z).scale(2));
+        const p = c.position.add(this.cameraSys.lookDirection().scale(2));
+        return new Vector3(p.x, p.y, p.z);
       },
       driving: () => this.driving !== null,
     });
   }
 
   /**
-   * Enters or leaves the map editor. Dev-only, and the import is dynamic so
-   * `src/editor` never reaches a production bundle.
+   * `F2`: the dev-only MAP VIEWER, raised as a lid over a round or lowered
+   * (`BABYLON_EXIT.md` X5.3b; rows "X5.3, the viewer's key and reach" and "the
+   * viewer's overlays"). It covers `playing`, `dying` and `deploy` in both
+   * kinds of round, and from every other state — the menu, a build, the
+   * round-over card, another lid, a benchmark — it does nothing
+   * (`SCREENS.viewer.covers` refuses it).
    *
-   * Leaving always restarts the round rather than resuming. BattleSystem,
-   * ConquestSystem, Minimap and DeployScreen all cache the GameMap they were
-   * handed, so the only safe way back from a session that may have rebuilt the
-   * map is to build a fresh one and re-point all of them — which is exactly
-   * what `startRound` does.
+   * The mixer's shape: the whole body behind the DEV gate, which is what makes
+   * `src/viewer/` unreachable under `vite build`, and a latch across the one
+   * cold import. It is a LID where the mixer is a panel, so it is raised
+   * BEFORE anything is changed — the state is `viewer` by the time the pointer
+   * lock is let go, so its loss pauses nothing (`installDomListeners`) — and
+   * everything it changes is put back by `closeViewer`, which `takeDown` calls
+   * however the lid comes down: this method lowering it, or a step the wire
+   * decides under it (a `died`, a `roundover`, a rotation, a lost host).
    */
-  private async toggleEditor(): Promise<void> {
-    // Gating the whole body, not just the keybind: this is what makes the
-    // dynamic import unreachable under `vite build`, so Rollup drops the
-    // editor chunk entirely rather than emitting an orphan nobody fetches.
+  private async toggleViewer(): Promise<void> {
     if (!import.meta.env.DEV) return;
-    // A map is mid-build and a `buildRound` is already queued for the next
-    // frame. Opening the editor into that would put a second build behind it
-    // and leave the editor holding a map that the first one had disposed —
-    // the failure `installMap` exists to prevent, arriving by the one door it
-    // does not cover. One frame, and F2 works on the next.
-    if (this.buildPending()) return;
-    // A benchmark, booked or running, is the whole session: the editor would
-    // tear its map down under it. Escape stops one first.
-    if (this.bench) return;
-    // A previous F2 is still waiting on the import. Its `createEditor` has not
-    // run yet, so `this.editor` is still null and would wave this one through.
-    if (this.editorLoading) return;
-    if (this.editor) {
-      // Leaving rebuilds the map from the layout module, so anything edited
-      // and not written to disk is gone. Until the editor can save, that is
-      // every edit — ask before throwing the work away.
-      if (
-        this.editor.hasUnsavedChanges &&
-        !window.confirm("Discard unsaved map edits and return to the game?")
-      ) {
-        return;
+    if (this.viewer) {
+      if (!this.lowerLid("viewer")) return;
+      // Back into a live frame: the pointer lock it held is owed back, by the
+      // resume's own route and for its reasons (`resume`). The deploy screen
+      // takes none. (The scene the viewer's camera moved is `closeViewer`'s,
+      // since a lid the wire takes down owes it too.)
+      if (this.state === "playing" || this.state === "dying") {
+        this.input.consumeFire();
+        this.lockChase.owe();
       }
-      this.editor.dispose();
-      this.editor = null;
-      this.hud.setEditing(false);
-      this.startRound();
       return;
     }
-
-    this.editorLoading = true;
-    let createEditor;
+    if (this.viewerLoading || !this.map) return;
+    // Asked before the import as well as after it, so F2 on the menu fetches
+    // nothing; the raise below is the guard that counts.
+    if (this.state !== "playing" && this.state !== "dying" && this.state !== "deploy") return;
+    this.viewerLoading = true;
+    let createViewer;
     try {
-      // TWO awaits under the one latch, and the second is the map's FLOOR.
-      // F2 is reachable from the menu, where no round has ever been built and
-      // `floor` is still null — and the heightfield is a chunk of its own now
-      // (`MapDef.heights`), so it has to be asked for rather than read off the
-      // layout. It is the module's OWN object: the terrain brush writes through
-      // it and `buildEditorMap` reads the edits straight back, which is what
-      // lets the editor's rebuild tier stay synchronous.
-      ({ createEditor } = await import("../editor"));
-      this.floor = await loadHeights(this.mapDef);
+      ({ createViewer } = await import("../viewer"));
     } catch (err) {
-      // A floor the network ate, or an editor chunk. Nothing has been torn
-      // down yet, so there is nothing to put back — say so and leave the round
-      // where it was.
-      console.error("[editor] could not open", err);
-      this.hud.toast("could not open the editor");
+      console.error("[viewer] could not open", err);
+      this.hud.toast("could not open the viewer");
       return;
     } finally {
-      // Cleared before the opening rather than after it: everything below this
-      // point is synchronous, so nothing can interleave with it, and a throw in
-      // either await must not wedge F2 for the rest of the session.
-      this.editorLoading = false;
+      // Cleared before the opening rather than after it: everything below is
+      // synchronous, so nothing can interleave with it, and a throw in the
+      // import must not wedge F2 for the rest of the session.
+      this.viewerLoading = false;
     }
-    // Both pre-await guards owe a second look. The import and the floor are
-    // both task boundaries, so the `loading` state that was clear a moment ago
-    // may not be — a round started underneath would have its build stomped to
-    // "editor" here.
-    if (this.buildPending() || this.editor) return;
-
-    // F2 is reachable from every screen in the game — the pause card, whose
-    // suspended audio context and hidden chrome an editor session would
-    // otherwise inherit; the kit screen and the settings, either of which would
-    // sit over the editor's own panel; and the lobby, which used to be missing
-    // from the list here and did exactly that. `go` takes down whichever it was
-    // — and the menu's own card with them, which is not a lid but is `go`'s all
-    // the same, because F2 is reachable from the menu too.
-    this.go("editor");
-    const map = this.buildEditorMap();
+    const map = this.map;
+    if (this.viewer || !map || !this.raiseLid("viewer")) return;
+    this.viewerFocus.copyFrom(this.shadowFocus);
+    // The weapon hangs from the camera the viewer is about to fly — put away
+    // by the lid's own flag, never `bodyHidden`, which a step decided under
+    // the lid writes for the state it lands in (`Player.setLidHidden`).
+    this.player.setLidHidden(true);
     this.hud.setEditing(true);
-    this.deployScreen.hide();
-    // And from the death cam, whose body would otherwise be left standing in
-    // the map the editor is about to rebuild — `installMap` frees the ragdoll
-    // slot underneath it, so the cam has to be told rather than find out.
-    this.deathCam.stop();
-    this.hud.setDeathCam(false);
-    this.minimap.setVisible(false);
-    this.player.setBodyHidden(true);
+    // A resume's lock still being chased is not the viewer's to take.
+    this.lockChase.cancel();
+    // Held as the pause holds it: in the page's own match the world under the
+    // lid is stopped, and so is the audio clock with it (`pause`'s reasons). A
+    // server's round goes on making noise, and is left to.
+    if (this.worldHeld) this.sfx.setSuspended(true);
     if (document.pointerLockElement) document.exitPointerLock();
-
-    this.editor = createEditor({
+    this.viewer = createViewer({
       canvas: this.canvas,
       camera: this.cameraSys.camera,
       input: this.input,
-      scene: this.scene,
       map,
-      rebuildMap: () => this.buildEditorMap(),
-      mapId: this.mapDef.id,
       layout: this.mapDef.layout,
       environment: this.mapDef.environment,
       fixtures: this.lighting.fixtures,
       applyEnvironment: (env) => {
-        applyEnvironment(this.scene, env, this.mats);
+        applyEnvironment(this.sceneFrame.clearColor, env, this.mats);
         this.celInk.applyEnvironment();
       },
-      invalidateShadows: () => this.shadows.invalidate(),
-      worldMoved: () => {
-        const map = this.map;
-        if (!map) return;
-        this.gi.worldMoved();
-        this.localShadows.setWorld(map.size, map.colliderBoxes, map.rayGroups, map.visuals);
-      },
     });
-    // Open where the player was standing, looking the way they were looking.
-    this.editor.warpTo(
-      this.cameraSys.camera.position.clone(),
-      this.cameraSys.aimYaw,
-      this.cameraSys.aimPitch,
-    );
+  }
+
+  /**
+   * What the viewer's lid changed, undone — half of `takeDown("viewer")`, and
+   * called from nowhere else, so it runs however the lid comes down: `F2`, or
+   * a step the wire decides under it. The session puts back the camera and
+   * the map's own environment itself (`ViewerSession.dispose`); this puts
+   * back what was the page's: the HUD's chrome, the lid's hold on the weapon
+   * (which leaves whatever the state under it says — a step decided under the
+   * lid has already said it), the audio clock, and the scene the viewer's
+   * camera moved, owed to the next frame (`sceneOwed`) rather than run from a
+   * keydown or a socket's message between two.
+   */
+  private closeViewer(): void {
+    this.viewer?.dispose();
+    this.viewer = null;
+    this.hud.setEditing(false);
+    this.player.setLidHidden(false);
+    this.sfx.setSuspended(false);
+    this.sceneOwed = true;
+  }
+
+  /**
+   * The camera tail a lowered viewer owes, run once at no time from the
+   * shadow focus its lid found — in the frame after the lid came down, after
+   * that frame's state arm, so the camera is wherever this frame leaves it
+   * and nothing moves it after `lighting.update` (the end-of-frame order).
+   * A live frame's own tail has already paid it (`updateSceneForCamera`
+   * clears the flag); a deploy screen, a round-over card or a pause runs
+   * none, and the shadow window, the light slots and the lamps' atlas would
+   * stand where the viewer flew. Never on the way to a build or the menu:
+   * what stands then is no longer the round the lid was over.
+   */
+  private honourSceneOwed(): void {
+    if (!this.sceneOwed) return;
+    this.sceneOwed = false;
+    const s = this.state;
+    if (!this.map || s === "loading" || s === "menu") return;
+    this.updateSceneForCamera(0, this.shadowFocus.copyFrom(this.viewerFocus), null, this.pushers);
   }
 
   /**
@@ -4476,34 +5767,41 @@ export class Game {
     // this leaves a fire crackling at a coordinate on a map that no longer
     // exists, under whatever the new one builds there — or under the menu.
     this.sfx.ambienceAllOff();
+    // Our renderer's copies of the blocks go with the meshes they stand for.
+    this.handover.clear();
+    // …and the round's seal on our pipeline cache (`finishBakeWait`): the
+    // next map's install asks pipelines of its own, before its card is down.
+    this.renderer.pipelines.seal(false);
     this.map?.dispose();
     this.map = null;
-    this.combat.clearTransient();
+    this.sky.setStanding(false);
+    this.combatFx.clearTransient();
     // A grenade whose fuse outlived the map it was thrown across would go off
-    // over terrain that no longer exists — and, in the editor, in the middle
-    // of a rebuild.
+    // over terrain that no longer exists.
     this.grenades.reset();
+    this.grenadeFx.reset();
     // …and everything the AT kit has left lying about. A mine that outlived
     // its map would be waiting under a street that no longer exists, which is
     // the same failure a live fuse would be.
     this.antiTank.reset();
-    // The flag markers are geometry hung off the old map's terrain. The editor
-    // draws proxies of its own and would double every ring; a round rebuilds
-    // them. Either way they cannot survive the map they were placed on.
+    this.antiTankFx.reset();
+    // The flag markers are geometry hung off the old map's terrain; a round
+    // rebuilds them, and they cannot survive the map they were placed on.
     this.zones.dispose();
     // The storm, and the thunder it still owes: the next map's weather is
     // its own, and the menu has none.
     this.lightning.setSpec(null, 0);
     this.sfx.thunderAllOff();
-    // Everybody out BEFORE the fleet is torn down, and before `battle.reset()`
-    // kills the roster: a crew left holding a disposed hull is the same stale
-    // pointer `clearVehicle` is called from here to prevent, and one holding a
-    // bot the reset has just killed would steer a tank with a corpse in it.
-    this.crew.clear();
-    this.crew.setMap(null);
-    // Out of the fight's target list before they stop existing: `buildRound`
-    // put every hull there (`addHuman`), and nothing else takes one out.
-    for (const tank of this.vehicles.hulls) this.battle.removeHuman(tank);
+    // Every fire's light, whatever lit it: the flames went with
+    // `grenadeFx.reset` and the voices with `ambienceAllOff`, above, and a
+    // fire the authority lit is put out by nothing this page will hear again.
+    // The SIMULATION's world is not this page's to let go: it is the match's,
+    // which `leaveMatch` closes.
+    for (const light of this.fireLights.values()) this.lighting.remove(light);
+    this.fireLights.clear();
+    // The fleet's drawing first — every view lets go of its hull's picture and
+    // takes its body and rig out of the scene — then the fleet.
+    this.vehicleViews.dispose();
     this.vehicles.dispose();
     // The dust rings under that fleet, which would otherwise go on asking the
     // hulls just disposed for a wash.
@@ -4516,14 +5814,37 @@ export class Game {
     this.grass.dispose();
     this.reflections.clear();
     this.atmosphere.apply(undefined, 0, 0);
-    this.shadows.setCasters([]);
+    this.shadows.setCasters();
+    // A body map failing for a map that is gone is no news of the next one —
+    // and no body is drawn over the menu.
+    this.bodyShadowMap.setFailure();
+    this.hullDraw.uninstall();
+    this.bodyDraw.uninstall();
+    this.pieceDraw.uninstall();
+    this.markDraw.uninstall();
+    this.blastDraw.uninstall();
+    this.debrisDraw.uninstall();
+    this.flameDraw.uninstall();
+    this.zoneDraw.uninstall();
+    this.grassDraw.uninstall();
+    this.waterDraw.uninstall();
+    this.nearestRun.uninstall();
+    this.glassDraw.uninstall();
+    this.glassDraw.clear();
+    this.fadeDraw.uninstall();
+    this.farthestRun.uninstall();
+    // The weapon stays drawn — the kit screen covers the menu — but a failure
+    // of it with no round standing is the console's (X4.3c).
+    this.viewDraw.onFailed((reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`));
+    this.cloudDraw.onFailed(cloudsFailedOverMenu);
+    this.skyDraw.onFailed(skyFailedOverMenu);
     // …and the bodies' blobs, which only a simulating frame places, so each
     // would stay lit on a floor that is no longer there.
     this.shadows.hideBlobs();
     this.localShadows.clearWorld();
     this.gi.clearMap();
     this.culling.setMap(null, 0);
-    this.physics.setMap(null, false);
+    this.physics.setMap(null);
     // And every JS reference to the map's DATA — the nav graph, the cover
     // map, the ray world, the floor, the colliders, the panes — so the collector
     // can have the last map back while the menu is up, rather than when the
@@ -4531,69 +5852,55 @@ export class Game {
     // part through a quit and asking a heap snapshot who kept it: these are
     // every holder that answer named. What they cost was memory rather than
     // behaviour, which is why nothing had ever noticed — a Cinderhaven's worth
-    // of it, sitting under a photograph.
-    this.battle.clearMap();
+    // of it, sitting under a photograph. (The roster's own handle was one of
+    // them, and is the match's now — `leaveMatch` closes it.)
     this.player.clearGround();
     this.combat.setWorld(null);
+    this.combatFx.setWorld(null);
     this.grenades.setWorld(null);
     this.grenades.setTerrain(new TerrainField());
+    this.grenadeFx.setWorld(null);
+    this.grenadeFx.setTerrain(new TerrainField());
     this.antiTank.setWorld(null);
     this.antiTank.setTerrain(new TerrainField());
     this.aimAssist.setWorld(null);
     this.deathCam.setWorld(null);
     this.vehicleCam.setWorld(null);
     this.glass.clearMap();
+    this.glassFx.clearMap();
     this.deployScreen.clearMap();
     this.minimap.clearMap();
     this.mapBuilder.release();
-    // And what BABYLON kept of it, which the lines above cannot reach: every
-    // bind group cached against the map's buffers and textures, ~15k a
-    // Coldharbour, none of which can ever be hit again (`webgpuLeaks.ts`).
-    forgetBindGroups();
   }
 
   /**
    * Throws the standing map away, builds `this.mapDef` afresh, and hands the
    * result to everything that reads geometry or environment off it.
    *
-   * THE ONE PLACE A MAP IS BUILT. Both callers — a round starting and an editor
-   * rebuild — owe this whole sequence, and before it was one method they were
-   * two copies of it that had already drifted apart. The failure mode is silent
-   * in the worst way: a system added to the round's copy and forgotten in the
-   * editor's keeps a cached pointer into a disposed map, so the editor renders
-   * last build's water over this build's terrain and nothing throws. Anything
-   * new that consumes a `GameMap` or an `EnvironmentSpec` goes here, and both
-   * callers get it.
+   * THE ONE PLACE A MAP IS BUILT, and its one caller is a round starting
+   * (`buildRound`). It had two once — the map editor's rebuild was the other,
+   * until `BABYLON_EXIT.md` X5.3c deleted the editor — and before it was one
+   * method they were two copies of it that had already drifted apart, silently
+   * in the worst way: a system added to one copy and forgotten in the other
+   * kept a cached pointer into a disposed map, and nothing threw. Anything new
+   * that consumes a `GameMap` or an `EnvironmentSpec` goes here.
    *
-   * What deliberately stays with the callers is what they genuinely disagree
-   * about: the round applies the environment and repaints the sky, while the
-   * editor drives `applyEnvironment` itself so it can toggle its work light;
-   * and the round alone owns the things that are about a FIGHT rather than a
-   * map — battle, conquest, the flag markers and the minimap.
-   *
-   * The particle field is the one thing the editor gains by being folded in
-   * here, and it is a fix rather than a side effect: `atmosphere.apply` used to
-   * be the round's alone, so an editor opened from a live round drifted ash and
-   * one opened from the main menu did not. It is the map's own weather and it
-   * now runs in both. What strips the night back for authoring is the work
-   * light, which is the editor's to toggle.
-   *
-   * `editor: true` keeps geometry per layout item instead of block-merging it,
-   * which is what makes an individual placement selectable. It costs ~10x the
-   * draw calls — never judge frame cost from the editor.
+   * What deliberately stays with the caller is the environment and what is
+   * about a FIGHT rather than a map: the round applies the environment and
+   * repaints the sky, and owns the flags this page mirrors, the flag markers
+   * and the minimap.
    */
-  private installMap(opts?: BuildOptions): GameMap {
+  private installMap(): GameMap {
     const { layout, environment } = this.mapDef;
     // Which map the ring is recording. Here rather than in `setMap` because
-    // this is the one place a map is BUILT, and both doors into it — a round
-    // starting and an editor rebuild — come through here; a capture that named
+    // this is the one place a map is BUILT; a capture that named
     // the map the player last picked rather than the one under their feet
-    // would be wrong in exactly the netplay case (`applyMatchMap`) where it
+    // would be wrong in exactly a server's match (`applyMatchMap`), where it
     // matters most. A no-op while the profiler is disarmed.
     this.prof.setMap(this.mapDef.id);
     // The floor comes off `this.floor` rather than off the layout, because it
     // is fetched rather than bundled — see the field, and `MapDef.heights`.
-    // Both doors into this method resolve it first; nothing here may wait.
+    // The door into this method resolves it first; nothing here may wait.
     const heights = this.floor ?? undefined;
     // The old map, gone whole — the other half of this method, and the half
     // the menu owes on its own. See `teardownMap`.
@@ -4603,13 +5910,27 @@ export class Game {
     // as the world is built and a change waits for the next one
     // (`CONFIG.graphics.foliage`).
     const foliage = CONFIG.graphics.foliage.tiers[this.settings.foliage].detail;
-    const map = this.mapBuilder.build(layout, environment, heights, { ...opts, foliage });
+    // The flow fields only where something on this page steers by them: a
+    // server's match (the netplay smoke's walker). The bots are steered by the
+    // authority off its own world (`BuildOptions.navFields`) — in the page's
+    // own match, in its host. (The viewer sweeps the fields it draws itself.)
+    const navFields = this.remoteRound;
+    // Our renderer draws the world in every pass, and what it cannot draw
+    // fails the world (`BABYLON_EXIT.md` X3.7b): no build makes a mesh of it
+    // (X6.1g).
+    const map = this.mapBuilder.build(layout, environment, heights, {
+      foliage,
+      navFields,
+      onSurface: this.handover.onSurface,
+      onScatter: this.handover.onScatter,
+    });
     this.map = map;
+    this.sky.setStanding(true);
     // What the profiler reports is the rung this map was built WITH.
     this.foliageBuilt = this.settings.foliage;
     this.pushProfileGraphics();
     // The shadow camera follows the environment's key light, and its casters
-    // are the fresh map's visuals — last build's meshes are now disposed.
+    // are the fresh map's surfaces, handed over by the handover's install.
     this.shadows.setLightDirection(environment.lighting.direction);
     // The storm, seeded off the map's id so its schedule is the map's own and
     // the same on every client in a match (see `LightningStrikes`).
@@ -4633,14 +5954,14 @@ export class Game {
     // none can be missed.
     if (this.volumetrics) this.seedVolumetrics(this.volumetrics, environment);
     this.shadows.setFogRange(environment.fogStart, environment.fogEnd);
-    // How far a BODY is worth drawing, to the three systems that gate on it: a
-    // rig is not drawn, a remote body is not drawn and a corpse is not worth
-    // tumbling. One number resolved once and pushed three times, which is what
-    // keeps `bots.lodDisableDistance` and `bots.death.maxDistance` the same
-    // distance by construction — see `config/fogWall.ts`.
+    // How far a BODY is worth drawing, to the two systems that gate on it: a
+    // body is not drawn and a corpse is not worth tumbling. One number
+    // resolved once and pushed to both, which is what keeps the roster's draw
+    // gate and the ragdoll pool's the same distance by construction —
+    // see `config/fogWall.ts`.
     //
     // It used to be stated twice — here, where the fog is painted, and in
-    // CONFIG, where those three read it — with a dev warning when a map
+    // CONFIG, where its readers took it — with a dev warning when a map
     // disagreed. It is now stated once, by the map, for a reason that warning
     // could only report: a map is allowed to have no fog, and on one that can
     // see three hundred metres a body vanishing at seventy-eight vanishes in
@@ -4648,20 +5969,28 @@ export class Game {
     // installed, which is the shipped valleys' number.
     //
     // And it is `fogEnd` only until a map says otherwise. The fog is where the
-    // WORLD stops being worth drawing; a body is fourteen meshes wide and two
-    // pixels tall long before that, and a map with no fog at all had no such
+    // WORLD stops being worth drawing; a body is two pixels tall long before
+    // that, and a map with no fog at all had no such
     // distance to give them. See `EnvironmentSpec.bodyDrawDistance`, which is
-    // `ENGINE_UPGRADE.md` S8, and note that the fourth reader below is
+    // `ENGINE_UPGRADE.md` S8, and note that the third reader below is
     // deliberately NOT on it.
     const bodyDraw = bodyDrawDistanceOf(environment);
-    this.battle.setViewDistance(bodyDraw);
     this.ragdolls.setViewDistance(bodyDraw);
     this.net?.roster.setViewDistance(bodyDraw);
-    // And a fourth reader of the FOG, for the same reason turned inside out:
+    // …and where a body's distance FADE ends (`BABYLON_EXIT.md` X4.1e): the
+    // cull ramps a body out short of the roster's switch rather than letting
+    // it pop there, off the same number and never a gate of its own.
+    this.culling.setBodyDrawDistance(bodyDraw);
+    // And where a HULL's fade ends (`BABYLON_EXIT.md` X4.2d): the map's own
+    // `hullDrawDistance`, capped at the fog and floored at a hull's gun reach
+    // — infinite, every hull drawn at any range, on a map that states none.
+    // The cull's alone: nothing the authority or a hull decides reads it.
+    this.culling.setHullDrawDistance(hullDrawDistanceOf(environment));
+    // And a third reader of the FOG, for the same reason turned inside out:
     // past the fog wall there is nothing to see, so there is nothing to WALK
-    // either. `WorldCulling` files the fresh map's meshes and
-    // decides which of them Babylon's per-frame active-mesh pass is offered —
-    // it writes nothing onto any of them, so unlike the three lines above it,
+    // either. `WorldCulling` grows the fresh map's cells from its records and
+    // decides what our renderer's culls are handed — it writes nothing onto
+    // anything they draw, so unlike the two lines above it,
     // and unlike every other line in this method, nothing downstream can tell
     // it ran. See `ENGINE_UPGRADE.md` wall 1.
     //
@@ -4672,38 +6001,122 @@ export class Game {
     // the second one exact — past it a structure draws `fogColor` in front of
     // ground that draws `fogColor` — and nothing else does.
     this.culling.setMap(map, environment.fogEnd);
+    // And the fresh map's world to our renderer, cut against the cells the
+    // cull grew. Whose world it is, for its failure: a fresh owner an
+    // install, the round's from here on.
+    const owner: WorldOwner = { id: this.mapDef.id, name: this.mapDef.name };
+    this.roundWorld = owner;
+    // The bodies are no part of the world the handover hands over, and have
+    // no fallback either (`BABYLON_EXIT.md` X4.1d): a ROUND's map draws them,
+    // a pipeline of theirs that cannot be built — this install's, and every
+    // one after it, the pipelines being the session's — or a pass of ours
+    // refused under them fails the round as the world's passes do. Installed
+    // BEFORE the world, so they draw ahead of it at the one point both use,
+    // as Babylon's opaque queue drew the rigs ahead of ours.
+    // The hulls on the bodies' terms, and installed AHEAD of them (X4.2b):
+    // Babylon's opaque queue, the hulls' meshes in it, drew before the
+    // bodies' draw of ours, so a hull goes down first at the one point both
+    // use.
+    // The pools' pieces and the marks on the bodies' terms, installed AHEAD
+    // of the hulls, the bodies and the world (X4.4b): the pools' meshes were
+    // in Babylon's opaque queue, which drew before every draw of ours at the
+    // one point all of them use — so a mark still goes down before the wall
+    // it is biased off.
+    // The blast's billows and the debris on the same terms (X4.4c), the
+    // billows first: every one of them was in that queue too, so each goes
+    // down ahead of everything else of ours at that point — the order among
+    // the four differing from the queue's front-to-back interleave only
+    // where two of them tie, the bodies' accepted price.
+    // The FIRES on the same terms (X4.4d), and FIRST of all: they were in
+    // that queue until X4.4d, ahead of the billows' draw of ours, front to
+    // back among themselves as they still are.
+    // THE ONE RUN ahead of even those (X4.6d): the RINGS AND FLAGS, the BLADES and the
+    // WATER in Babylon's one nearest-first order, first at this point and behind what
+    // is left of that queue, the `backed` panes, with which nothing in it ties
+    // (`NearestRun`'s header). The TURF first at `"opaque"`.
+    // AHEAD of even the run: the `backed` panes, the last of that queue in a
+    // round, ours since X4.6e (`GlassDraw`), nearest first, so a pane still goes
+    // down ahead of the blocks it saves the shading of. Its see-through panes
+    // and every fade are the back-to-front run's, behind the moon at
+    // `"beforeBlended"` (`FarthestRun`).
+    this.glassDraw.install((reason) => this.worldFailed(reason, owner));
+    this.blobsBeforeGlass = this.shadows.blobFades.length;
+    this.grassDraw.install((reason) => this.worldFailed(reason, owner));
+    this.zoneDraw.install((reason) => this.worldFailed(reason, owner));
+    this.waterDraw.install((reason) => this.worldFailed(reason, owner));
+    this.nearestRun.install();
+    this.fadeDraw.install((reason) => this.worldFailed(reason, owner));
+    this.farthestRun.install();
+    this.flameDraw.install((reason) => this.worldFailed(reason, owner));
+    this.blastDraw.install((reason) => this.worldFailed(reason, owner));
+    this.pieceDraw.install((reason) => this.worldFailed(reason, owner));
+    this.markDraw.install((reason) => this.worldFailed(reason, owner));
+    this.debrisDraw.install((reason) => this.worldFailed(reason, owner));
+    this.hullDraw.install((reason) => this.worldFailed(reason, owner));
+    this.bodyDraw.install((reason) => this.worldFailed(reason, owner));
+    // The weapon is drawn for the SESSION (X4.3c), so this hands it only whom
+    // to tell: the round, while one stands — told at once if its pipelines
+    // failed already, as every round after one that failed is.
+    this.viewDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    // …and the clouds, on the same terms but for one: a failed pipeline is told
+    // only if a ring stands. `startRound` has stood this map's by this line
+    // (`applySky`, ahead of this install), so a ring that came after the failure
+    // refuses its round here, and a map stating none plays on (X4.5b).
+    this.cloudDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    // …and the dome and the moon, on the clouds' terms (X4.5c).
+    this.skyDraw.onFailed((reason) => this.worldFailed(reason, owner));
+    this.handover.install(map, owner);
+    // The bodies' map is no part of the world the handover hands over, but it
+    // has no fallback either: a pipeline of it that cannot be built fails the
+    // round as the world's passes do — this install's, and every one after
+    // it, the pipeline being the session's.
+    this.bodyShadowMap.setFailure((reason) => this.worldFailed(reason, owner));
+    // …and the visors into the glow's mask AFTER the world's palette, which
+    // the handover registered just now: the palette went down first in that
+    // pass while Babylon drew the visors.
+    this.bodyDraw.installMask();
+    // …and the pieces' unlit parts after the visors, where Babylon's mask
+    // drew the pools' meshes: after everything first in that pass.
+    this.pieceDraw.installMask();
+    // …and the billows' bloom after the pieces' (X4.4c): Babylon's mask drew
+    // their meshes after every draw of ours there. (No shard or chunk is
+    // emissive: the debris has no mask.)
+    this.blastDraw.installMask();
+    // …and the fires' after the billows' (X4.4d): Babylon's mask drew their
+    // meshes after every draw of ours, the billows' last among them.
+    this.flameDraw.installMask();
+    // The fires' pull is sized to what the handover handed over just now.
+    this.flameDrawn = new Int32Array(this.flameDraw.capacity);
+    this.flameKeys = new Float64Array(this.flameDraw.capacity);
+    this.flameRank = new Int32Array(this.flameDraw.capacity);
+    this.flameWhere = new Int32Array(this.flameDraw.capacity);
     // How hard the grade is pushed is the map's; whether it runs at all stays
     // the player's (`applySettings`). A vignette that reads as dread over a
     // night village reads as a lens fault over a bright one.
     this.post.setGrade(environment.grade);
-    this.shadows.setCasters(map.visuals);
-    // The lamps' casters: the colliders a MOVING light's proxies are drawn
-    // from, and the visuals a fixture's static tile is baked from. Every light
-    // holding tiles loses them — they were the last map's.
-    this.localShadows.setWorld(
-      map.size,
-      map.colliderBoxes,
-      map.rayGroups,
-      map.visuals,
-    );
+    // AFTER `handover.install`, which hands `WorldShadows` the casters of a
+    // round: this map's shadows are read off that here.
+    this.shadows.setCasters();
+    // The lamps' world: the colliders a MOVING light's proxies are drawn from
+    // (a fixture's static tile is baked from the casters the handover handed
+    // `LampAtlas`). Every light holding tiles loses them — they were the last
+    // map's.
+    this.localShadows.setWorld(map.size, map.colliderBoxes, map.rayGroups);
     // What the bounce light traces: the fresh map's colliders, their albedo and
     // its floor. The volume restarts unconverged and spends its first sweeps at
     // the warm budget; nothing it does is a draw call.
     this.gi.setMap(map, environment.floorColor);
-    // And the other thing baked off the fresh map's visuals: what its glass
-    // reflects. Same reason as the line above it — last build's meshes are
-    // disposed, and this one holds a render list of them until it is told.
-    // Editor builds park the probes and bake nothing, exactly as the physics
-    // world below refuses one: a bake is a build step, and the editor is where
-    // a build stops being rare.
-    this.reflections.build(map, opts?.editor === true);
+    // And the other thing baked off the fresh map: what its glass reflects,
+    // off the world the handover handed our bake above — the last build's
+    // queue emptied.
+    this.reflections.build(map);
     this.atmosphere.apply(environment.particles, map.size, map.size);
     // And what the map's WATER reflects, which is the same bake from a second
     // set of points — handed in as a callback rather than reached for, and
     // called from INSIDE the build because a probe has to stand where the
     // water is and only the bed-depth bake knows where that is.
     this.water.build(map.water, environment, map.terrain, (sites) =>
-      this.reflections.bakeWater(sites, map, opts?.editor === true),
+      this.reflections.bakeWater(sites, map),
     );
     this.grass.build(
       map.grass,
@@ -4730,10 +6143,9 @@ export class Game {
       map.terrain,
       map.obstacles,
       this.deckAt,
-      // …and the same colliders as MESHES, which is the OTHER question a body
-      // asks of them: not what it stands on but what it walks into.
-      // `moveWithCollisions` was the last thing in the frame still asking that
-      // of the whole scene — see `world/CollisionField.ts`.
+      // …and the sweep, which is the OTHER question a body asks of the same
+      // colliders: not what it stands on but what it walks into — see
+      // `world/CollisionField.ts`.
       map.collidables,
     );
     // **The solid world as a SEGMENT QUERY, to the six systems that used to ask
@@ -4746,12 +6158,15 @@ export class Game {
     // has changed — see `world/RayWorld.ts` for the two questions and which
     // caller asks which.
     //
-    // `BattleSystem` and `VehicleSystem` are not in this list and are not
-    // exceptions: both are handed the whole `GameMap` already, and both take it
-    // off `map.rays` where they take `nav`, `cover` and `obstacles`.
+    // `VehicleSystem` is not in this list and is not an exception: it is
+    // handed the whole `GameMap` already, and takes it off `map.rays` where it
+    // takes `obstacles`. The bots' `BattleSystem` is the authority's, off its
+    // own world (`buildSimWorld`).
     this.combat.setWorld(map.rays);
+    this.combatFx.setWorld(map.rays);
     this.grenades.setWorld(map.rays);
-    // Whether a molotov that breaks on THIS screen lights anything: in a match
+    this.grenadeFx.setWorld(map.rays);
+    // Whether a molotov that breaks on THIS screen lights anything: in a round
     // the fire is the authority's and arrives as a `blaze` event, so the
     // thrower's own local bottle flies and breaks and lights nothing — the
     // hulls' `predicted` below, for the same reason one system over.
@@ -4764,7 +6179,8 @@ export class Game {
     // proxies — the same terrain the player's ground probe falls back to, and
     // the map's own mist and moon, which are what colour the blast dust.
     this.grenades.setTerrain(map.terrain);
-    this.grenades.setEnvironment(environment);
+    this.grenadeFx.setTerrain(map.terrain);
+    this.grenadeFx.setEnvironment(environment);
     // The same backstop under a rocket's flight, and for the same reason. The
     // AT kit has no environment of its own to be given: everything it draws
     // that is weather-dependent is drawn by the blast, which is the grenades'.
@@ -4774,17 +6190,21 @@ export class Game {
     // district turn up different ground. (The scorch needs no telling — it
     // multiplies the floor rather than painting a colour on it.)
     this.blastDebris.setEnvironment(environment);
+    // …and our renderer's copy of that earth (X4.4c): the debris palette's
+    // third slot, as the `get` material the chunks wore held it.
+    if (this.debrisRecipe && this.blastDebris.earth) {
+      this.mats.repaintPool(this.debrisRecipe, 3, Color3.FromHexString(this.blastDebris.earth));
+    }
     // The static world corpses and shards land on. Same reason the grenades are
     // cleared above: a physics world still holding shapes built from the map
-    // that was just disposed is geometry that no longer exists, and in the
-    // editor that means in the middle of a rebuild. Editor builds register
-    // nothing at all.
-    this.physics.setMap(map, opts?.editor === true);
-    // The panes, and the collider meshes standing behind them. Same
-    // reason as every line above it: a system holding last build's geometry is
-    // holding meshes that are already disposed, and glass is the one that would
-    // then write vertices into them.
+    // that was just disposed is geometry that no longer exists.
+    this.physics.setMap(map);
+    // The panes, their boxes and their glazing. Same reason as every line
+    // above it: a system holding last build's geometry is holding a world that
+    // is already gone, and the glass's view is the one that would then write
+    // vertices into a draw that no longer holds them.
     this.glass.setMap(map);
+    this.glassFx.setMap(map);
     // The armour, last, and it is the one line in this method with two reasons
     // to build NOTHING.
     //
@@ -4794,40 +6214,48 @@ export class Game {
     // a live pointer into a disposed `Vehicle`, which is not a stale picture but a
     // crash the next time the camera framed it.
     //
-    // **A netplay round builds the same fleet and owns none of it.** The
+    // **Every round builds the same fleet and owns none of it.** The
     // authority runs its own `VehicleSystem` off the same `vehicleSpawns`, so
     // a hull exists on both sides with the same collider in the same place —
-    // and `predicted` is what says which side decides: every hull in a match
+    // and `predicted` is what says which side decides: every hull on this page
     // refuses local damage, runs neither hardstanding clock, and is posed from
     // the wire by `NetVehicles`, except the one this player is sitting in.
     // See `docs/vehicles.md` and `docs/multiplayer.md`.
     //
-    // Nothing is built for the EDITOR: a vehicle is not level data to be
-    // authored — the hardstanding is, and that is a layout entry — and a
-    // solid, pickable mesh with no `SelectionRef` behind it is something the
-    // centre-screen pick can land on and fail to resolve. The last map's fleet
-    // and its crews are already gone — `teardownMap`, at the top.
-    if (opts?.editor !== true) this.vehicles.build(map, this.net !== null);
-    // The bearing half of a driver's steering. Null in the editor, and null in
-    // a NETPLAY round for a different reason worth stating: the hulls are
-    // there, but the crews inside them are the authority's — this client runs
-    // no AI at all, and a local `VehicleCrew` would be a second brain steering a
-    // hull that is being posed from the wire.
-    this.crew.setMap(!this.net && !this.vehicles.empty ? map : null);
+    // The last map's fleet and its crews are already gone — `teardownMap`, at
+    // the top.
+    //
+    // **And the fleet is not this page's either**: the
+    // authority fleets its own off the same spawns, whoever hosts the
+    // match, and this one is posed off the wire (`syncNetVehicles`), the hull
+    // under a driver predicted here and reported — so it is
+    // `predicted`, refusing local damage and running neither hardstanding
+    // clock. It is still the fleet this page's rays, sweeps, decks and cameras
+    // meet.
+    this.vehicles.build(map, true);
+    // …and what it looks like: one view per hull, by hardstanding, each with
+    // its kind's model (`VehicleViews`).
+    this.vehicleViews.build(this.vehicles.hulls, map.vehicleSpawns);
+    if (this.vehicles.hulls.length > this.hullDraw.capacity) {
+      console.error(
+        `[hulls] ${this.mapDef.id}: ${this.vehicles.hulls.length} hulls, past the ${this.hullDraw.capacity} a frame draws; the rest are not drawn`,
+      );
+    }
+    // There is no crew on this page: the bots that drive are the authority's,
+    // whoever hosts the match, and a local `VehicleCrew` would
+    // be a second brain steering a hull that is being posed from elsewhere.
     // And the dust under whatever of that fleet has a rotor — after the build,
     // because it is handed the hulls themselves and there are none until the
-    // line above. It is a PICTURE and the editor gets it too: an editor build
-    // fields no fleet, so this is the empty list and every ring goes quiet,
-    // which is the same call doing the same thing rather than a second path.
+    // line above. It is a PICTURE: a map that fields no fleet hands it the
+    // empty list and every ring goes quiet.
     // The environment goes in on the same call rather than through a
     // `setEnvironment` of its own, which is the one place this differs from
     // the grenades' two lines above. A ring's colour is a GRADIENT — the fade
-    // in as well as the fade out — and a gradient may only be set before a GPU
-    // particle system's first render, so a ring is COLOURED WHEN IT IS BUILT
-    // and a map whose dust is a different colour gets new rings. See
-    // `RotorWash.paint`, which carries why that is safe here and is not safe
-    // on the clouds the blast's retired `BlastDust` held from the `Game`'s
-    // construction on.
+    // in as well as the fade out — baked once, at the ring's first ready
+    // test, so a ring is COLOURED WHEN IT IS BUILT and a map whose dust is a
+    // different colour gets new rings, which is also when their random
+    // textures are drawn and what puts them after the motes (`atmosphere.apply`,
+    // above) in `ParticleDraw`'s one list (`RotorWash.paint`).
     this.rotorWash.build(
       this.vehicles.hulls,
       map.water,
@@ -4838,33 +6266,28 @@ export class Game {
   }
 
   /**
-   * The editor's rebuild. Called on entry and again whenever it changes
-   * something the builders read — a param, a kind, an added or deleted entry.
-   *
-   * Deliberately does NOT re-point battle/conquest/minimap: `teardownMap` at
-   * the top of `installMap` has let go of the last map in battle and the
-   * minimap, and conquest keeps only its flags' definitions, none of which an
-   * editor frame steps. That is safe only because leaving the editor always
-   * runs `startRound` and hands them a fresh, properly merged build.
+   * The viewer's frame: the map editor's tail, renamed (`BABYLON_EXIT.md`
+   * X5.3b). The free camera is the shadow focus, biased ahead, and
+   * the ROUND's bodies are what the grass bends round — the pushers the last
+   * world frame filled, held with the world in the page's own match and
+   * refilled by `updateRoundBehind` in a server's — so the bodies and hulls are
+   * drawn and cast by the round's own draws. No player: no blob shadows and no
+   * carried lamp are placed (the lamp stays where it was).
    */
-  private buildEditorMap(): GameMap {
-    return this.installMap({ editor: true });
-  }
-
-  /**
-   * The editor frame. Same tail as gameplay minus the player: no aim assist,
-   * no blob shadows, no carried lamp, no grass pushers.
-   */
-  private updateEditor(dt: number): void {
-    const editor = this.editor;
-    if (!editor) return;
-    editor.update(dt);
-    // The shadow window follows the camera itself here — there is no player to
-    // centre it on, and the same forward bias keeps what's ahead covered.
+  private updateViewer(dt: number): void {
+    const viewer = this.viewer;
+    if (!viewer) return;
+    viewer.update(dt);
+    // The viewer's forward, added by its numbers.
+    const f = viewer.forward;
     this.shadowFocus
       .copyFrom(this.cameraSys.camera.position)
-      .addInPlace(editor.forward.scale(8));
-    this.updateSceneForCamera(dt, this.shadowFocus, null, EMPTY_PUSHERS);
+      .addInPlaceFromFloats(f.x * 8, f.y * 8, f.z * 8);
+    // At no time over the page's own HELD match, as the pause holds it: the
+    // wind, the water, the grass and the lamps' flicker stop with the bodies
+    // (`updateSceneForCamera`'s own reason about a canopy over a frozen
+    // field). Over a server's round the world goes on, and so do they.
+    this.updateSceneForCamera(this.worldHeld ? 0 : dt, this.shadowFocus, null, this.pushers);
   }
 
   /**
@@ -4911,7 +6334,14 @@ export class Game {
     // build that has already run is one it is safe to replace — which is what
     // an authority rotating the map under a client mid-drain asks for. `go`
     // below ends the standing wait.
-    if (this.buildPending()) return;
+    //
+    // And never once the device is lost (`deviceIsLost`): a round asked for
+    // then — a welcome, a bench — would be built on a dead device.
+    if (this.deviceIsLost || this.buildPending()) return;
+    // The round in hand is the one about to be built, which has installed
+    // nothing yet: a failure of the map still standing under the card is the
+    // old map's (`worldFailed`).
+    this.roundWorld = null;
     // A spawn held for the build this one REPLACES is a position in a world
     // that is never going to exist. Safe to drop rather than carry, because
     // both things that get here with one standing hand out a fresh body
@@ -4933,7 +6363,8 @@ export class Game {
    * What the building card says about the round it stands over — all of it
    * known before the build, which is the only kind of thing that card may
    * carry (`OverlayScreen.showBuilding`). The enemy tier is this machine's
-   * only offline: in a match the authority fields the bots.
+   * only in the page's own match: in a server's the authority fields the bots
+   * at a tier of its own.
    */
   /**
    * The round as the pause card draws it: the map, the flags the viewer's
@@ -4945,8 +6376,8 @@ export class Game {
     return {
       map: this.mapDef,
       index: MAPS.indexOf(this.mapDef),
-      solo: !this.net,
-      enemy: this.net ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
+      solo: !this.remoteRound,
+      enemy: this.remoteRound ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
       flagsMine: this.conquest.flagsHeld(us),
       board: this.scoreRows().map((r) => ({
         name: r.name,
@@ -4965,7 +6396,7 @@ export class Game {
       index: MAPS.indexOf(this.mapDef),
       weapon: this.weapon,
       sight: this.sight,
-      enemy: this.net ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
+      enemy: this.remoteRound ? null : (difficultyNames()[this.difficulty] ?? "Bots"),
     };
   }
 
@@ -4975,6 +6406,33 @@ export class Game {
    * why the two are not one method.
    */
   private async buildRound(): Promise<void> {
+    // Still wanted? `startRound` booked this two frames ago, and anything in
+    // them may have moved the page off `loading`: a server refusing the join
+    // it was booked for (`onRejected` → the menu, `this.net` gone), or an
+    // answer of the last local match's landing a death or a round's end
+    // under a Restart. Asked BEFORE the open below, or the page hosts and
+    // joins a match behind the menu that nothing plays and that turns the
+    // lobby's Join into a dead button (`joinMatch` refuses while one stands).
+    // And not after a LOST device (`deviceIsLost`): these two frames are the
+    // browser's, which `FrameLoop.stop` does not cancel, the state is still
+    // `loading`, and `deviceGone` has left the match, so the open below would
+    // start a fresh one and the build would run on the dead device.
+    if (this.deviceIsLost || this.state !== "loading") return;
+    // **The round's seed** — fresh each round unless the URL fixed it, which
+    // is how a round is played again; written where a person can read it
+    // back, since a round's seed is the only handle on a bug in it. In the
+    // page's own match it is the OWNER's, handed to the match's `begin`, which
+    // reseeds every outcome stream from it; this page's own `random` takes the
+    // same one below for the one stream it still draws (the player's cone,
+    // `STREAM.player`). In a server's match the fight is the authority's and
+    // so is its seed (the server logs it): this one draws nothing but this
+    // client's own cone, and the capture says null.
+    const seed =
+      this.overrides.seed ?? (this.bench ? CONFIG.profiling.bench.seed : freshSeed());
+    // Every round that is not a server's is the page's OWN match, opened
+    // here: before the build, so the host builds its world while this page
+    // builds the picture of it (`openLocalRound`).
+    if (!this.remoteRound) this.openLocalRound(seed);
     // The join goes out BEFORE the build, never behind it. `joinMatch` starts
     // the round and then opens the socket, and the server shuts an anonymous
     // socket after ten seconds — so a build that held the thread that long
@@ -4985,7 +6443,7 @@ export class Game {
     const net = this.net;
     if (net) {
       await net.joinSent();
-      if (this.net !== net || this.state !== "loading") return;
+      if (this.deviceIsLost || this.net !== net || this.state !== "loading") return;
     }
     // Which map, and the ground under it — in that order, and until the two
     // agree about which map they are.
@@ -5037,8 +6495,16 @@ export class Game {
         break;
       }
     }
+    // …and the fetch is a hole the ROUND can fall through as well: a refusal,
+    // a quit or the page's own match failing (`failLocalRound`) took the session
+    // and the state away while it was out, and `enterMenu` puts the map back
+    // to the same pick, so the loop above cannot see it. A build carried on
+    // behind the menu would open a deploy screen with no round under it. A
+    // device lost while it was out is the same (`deviceIsLost`).
+    if (this.deviceIsLost || this.net !== net || this.state !== "loading") return;
     // The card went up naming the map the player chose; a welcome that moved
-    // it names another. A no-op for the same map, which is every offline round.
+    // it names another. A no-op for the same map, which is every round in the
+    // page's own match.
     this.overlayScreen.showBuilding(this.buildingCard());
     // The side, resolved ONCE and before a single body is built, because it is
     // what every one of them is PAINTED from: from behind the player's own eyes
@@ -5059,82 +6525,50 @@ export class Game {
     // and the cel materials the map's meshes are created against read their
     // fog and key light off the uniforms this writes.
     const env = this.mapDef.environment;
-    applyEnvironment(this.scene, env, this.mats);
+    applyEnvironment(this.sceneFrame.clearColor, env, this.mats);
     // The ink fades over the MAP's fog band, so it owes a re-read here and at
-    // the editor's own call above — an ink that kept the previous map's band
+    // every other `applyEnvironment` (the viewer's work light) — an ink that
+    // kept the previous map's band
     // would either hang in front of the fog wall or vanish inside it.
     this.celInk.applyEnvironment();
     this.applySky();
     const map = this.installMap();
 
     // Every rig goes back to the pool restored; a corpse cannot outlive the
-    // round it fell in. FIRST of the four lines below, and no longer beside the
+    // round it fell in. FIRST of the lines below, and no longer beside the
     // two debris resets it used to sit with, because a ragdoll is the one thing
-    // in the game that holds a bot's RIG — and the next line may be about to
-    // free every rig there is.
+    // in the game that holds a bot's RIG — and the round's build may be about
+    // to free every rig there is.
     this.ragdolls.reset();
     // How many bodies a side this map fields, which is the size of the pool.
     //
-    // **It is the MAP's on both sides now** — `MapLayout.perTeam`, a statement
-    // about the density of ONE map (Sarab is 24 a side over 900 m of play;
-    // every other map says nothing and is the shipped 8) — and the two sides
-    // spend it in different pools. Offline it is the bot pool below. In a
-    // netplay round `battle` is a pool nothing steps (see `enemyTargets`) and
-    // the bodies are `NetRoster`'s, so the same number goes there instead: the
-    // authority is already fielding it, and a client drawing a different count
-    // would be numbering bodies nobody else is.
-    //
-    // The two pools deliberately do NOT both learn it. A netplay round leaves
-    // `battle` at the shipped 8 a side because nothing in it is ever built,
-    // drawn or stepped, and sizing a dead pool to a big map would be
-    // twenty-four rigs a side of pure cost.
-    //
-    // Here rather than in `installMap`, unlike the other map-derived pushes,
-    // because this is the ROUND's roster and that method's other caller is the
-    // editor, which has no round. It runs after the ragdolls above and after
-    // `installMap`'s own `crew.clear()` — the two holders of a body — and
-    // before the skill draw below, which is handed the pool it seeds.
+    // **It is the MAP's** — `MapLayout.perTeam`, a statement about the
+    // density of ONE map (Sarab is 24 a side over 900 m of play; every other
+    // map says nothing and is the shipped 8). The bodies are `NetRoster`'s,
+    // so the number goes there: the authority is already fielding it, and a
+    // client drawing a different count would be numbering bodies nobody else
+    // is. WHERE in the slot table they stand is the authority's to say (the
+    // welcome's block width, `NetRoster.setBlockWidth`): a server's table is
+    // the ceiling, the page's own match's is this same roster.
     const perTeam = perTeamOf(this.mapDef.layout);
-    this.battle.setRoster(this.net ? CONFIG.bots.perTeam : perTeam);
-    this.net?.roster.setFielded(perTeam);
-    // Re-draw skills for the chosen tier. The pool is rebuilt only when a map
-    // changes the size of the roster, so this is the only place the roster's
-    // difficulty can change.
-    this.battle.setDifficulty(this.difficulty);
-
-    this.battle.setMap(map);
-    this.battle.reset();
-    // **The round's seed**, and every outcome stream in the round rewound to
-    // it (`RoundRandom`) — here because everything that draws has now been
-    // built (the pool above, the fleet inside `installMap`) and nothing has
-    // spawned or fired yet. Fresh each round unless the URL fixed it, which is
-    // how a round is played again; written where a person can read it back,
-    // since a round's seed is the only handle on a bug in it. In a match the
-    // fight is the authority's and so is its seed (the server logs it): this
-    // one draws nothing but this client's own cone, and the capture says null.
-    const seed =
-      this.overrides.seed ?? (this.bench ? CONFIG.profiling.bench.seed : freshSeed());
+    // The flags this page DRAWS, a mirror written off the wire.
+    this.conquest.start(map);
+    // …and the rigs to that pool, painted for the viewer's side — rebuilt only
+    // when one of the two moved since the session's own pool was built (a
+    // server's session lives across rotations; the page's own match is a
+    // fresh session every round). After the ragdolls' reset above, which is
+    // the other thing that holds a rig.
+    this.net?.setFielded(perTeam);
+    // The page's own streams to the round's seed — the player's cone, drawn
+    // HERE and carried by the round as the direction it flew, the same
+    // `deriveSeed(seed, STREAM.player, 0)` it always was.
     this.random.seedRound(seed);
-    this.prof.setSeed(this.net ? null : seed);
-    if (import.meta.env.DEV && !this.net) {
+    this.prof.setSeed(this.remoteRound ? null : seed);
+    if (import.meta.env.DEV && !this.remoteRound) {
       console.info(`[round] ${this.mapDef.id} seed ${seed} (replay: ?seed=${seed})`);
     }
-    // Who is in the fight but is not a bot: the player, and every hull on the
-    // field. `setPlayer` resets that list to the player alone, which is exactly
-    // what makes this safe to run every round — last round's tanks were
-    // disposed by `installMap` and a bare `addHuman` would leave them in it.
-    //
-    // A tank is in the list for two reasons and neither is optional: bots must
-    // be able to ACQUIRE one (nothing else would make them fire at it) and
-    // `hittablesAgainst` must return one (nothing else would let a round land
-    // on it). It is deliberately NOT in `this.combatants`, which is the list
-    // `ConquestSystem` counts occupancy from — armour does not capture flags,
-    // and the crew inside it already counts for itself.
-    this.battle.setPlayer(this.player);
-    for (const tank of this.vehicles.hulls) this.battle.addHuman(tank);
     this.debris.reset();
     this.blastDebris.reset();
-    this.conquest.start(map);
     // The flags' markers read the same radius ConquestSystem tests against,
     // and lay the ring's stones on the same ground a body stands on.
     this.zones.build(
@@ -5153,40 +6587,27 @@ export class Game {
     // heard of a rocket. `fullReset` runs first, so the slot is installed with
     // a full pouch either way.
     this.player.setEquipment(this.armourOffered ? this.equipment : null);
-    // Offline the player is team 0 for the life of the process. In a netplay
-    // round the side is the authority's, and the session has it whenever the
-    // welcome beat this build; when it did not, the welcome rebuilds the round
-    // rather than repainting it. Either way it goes in through the one funnel —
+    // The side is the authority's — in the page's own match always the first
+    // side `Roster.claim` seats — and the session has it whenever the welcome
+    // beat this build; when it did not, the welcome rebuilds the round rather
+    // than repainting it. Either way it goes in through the one funnel —
     // see `applyPlayerTeam`, and `setViewerTeam` above for why the value itself
     // was resolved further up.
     this.applyPlayerTeam(team, map);
-    // …and every rig in the round to the mesh walk, which would otherwise pay
-    // for a body that is not in it. AFTER the roster lines above, which decide
-    // how many rigs there ARE, and after `applyPlayerTeam`, which is the one
-    // caller that can DISPOSE a rig and build another — the death cam's, on a
-    // change of side. Filing before it would leave the pool pointing at freed
-    // meshes for the rest of the round, and nothing in between reads the pools.
+    // …and every rig in the round to the cull and the body draw, which gate
+    // and draw THESE and no others (`drawBodies`). AFTER the roster lines
+    // above, which decide how many rigs there ARE, and after
+    // `applyPlayerTeam`, which is the one caller that can DROP a rig and build
+    // another — the death cam's, on a change of side. Filing before it would
+    // file the old stand-in, which nothing switches on again, and never the
+    // new one, so the player's own death would draw no body for the rest of
+    // the round; nothing in between reads the pools.
     this.installBodyPools();
     // …and the glass as the authority left it, for the same "either side of the
     // build" reason: a joiner mid-round has missed every break in it, and the
     // welcome may have landed before this map existed to apply them to. See
     // `NetSession.brokenPanes`, and `onSeated` for the other half.
     if (this.net?.brokenPanes.length) this.glass.catchUp(this.net.brokenPanes);
-    // …and offline they take a SLOT on that side rather than standing beside
-    // the roster: the bot in it is benched, so the fight is whatever this map
-    // fields a side with the player as one of them — eight on four of the five
-    // maps and twenty-four on Sarab. In a match the authority does this on its
-    // own roster and the local pool is not the fight — see
-    // `BattleSystem.seatPlayer`.
-    //
-    // A BENCHMARK seats nobody: its round is bot-only, every slot fielded, and
-    // the player's body stays out of it (`enterBench`).
-    if (!this.net && !this.bench) this.battle.seatPlayer(this.player.team);
-    // A new round is a new board. Sized from the pool here rather than at
-    // construction, so it is the roster that says how many rows there are —
-    // and after `seatPlayer` above, so the slot the player's own line is kept
-    // in is one this book has a row for.
-    this.scores.reset(this.battle.bots.length);
     // The card does NOT come down here, because the build is not the whole of
     // what it covers. Everything above is one synchronous turn and no frame
     // has rendered inside it, so the reflection bake `installMap` queued has
@@ -5195,20 +6616,1377 @@ export class Game {
   }
 
   /**
-   * Hands the round's pooled bodies to `WorldCulling`, which would otherwise
-   * offer every mesh of every rig to the frame's mesh walk whether that body is
-   * in the round or not.
+   * Hands our renderer this frame's BODIES (`BABYLON_EXIT.md` X4.1d): every
+   * pooled rig `WorldCulling` says is drawn this frame (`drawsBody` — switched
+   * on, and with some of it left to draw: not under the size gate nor past
+   * the end of its distance fade, measured once and dropped whole), its
+   * joints composed and its segments' matrices written as an instance of its
+   * side's kit (`SoldierModel.writeRigDrawing`) at its FADE (`bodyFade`,
+   * X4.1e) — the bodies drawn whole first and the fading ones after them,
+   * which the drawing draws behind its screen door — and their centres kept for
+   * the order and the bloom the render pulls (`bodyPull`). Once a frame, in EVERY
+   * state, after everything that poses or places a body and after the cull,
+   * immediately before the frame's render — inside the render span, where
+   * Babylon composed the rigs' meshes until X4.1a, so the profiler's
+   * attribution does not move. A body not drawn is not composed — and while
+   * the draw is not installed (the menu) none is: `commit`
+   * would take nothing, and no other reader depends on these composes, every
+   * one composing a joint FRESH (`SoldierModel`'s header).
+   */
+  private drawBodies(): void {
+    const draw = this.bodyDraw;
+    if (!draw.installed) return;
+    const rigs = this.pooledRigs;
+    const segments = draw.segments;
+    const culling = this.culling;
+    // The bodies drawn WHOLE first and the FADING ones after them
+    // (`BABYLON_EXIT.md` X4.1e): the drawing draws the second behind its
+    // screen door, at the fade `WorldCulling` measured them to. With nobody
+    // fading this is the one pass it always was, in the same order.
+    let n = 0;
+    let whole = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < rigs.length && n < draw.capacity; i++) {
+        if (!culling.drawsBody(i)) continue;
+        const fade = culling.bodyFade(i);
+        if ((fade >= 1) !== (pass === 0)) continue;
+        const rig = rigs[i];
+        writeRigDrawing(rig, draw.matrices, n * segments * 16);
+        writeRigCentres(rig, draw.matrices, n * segments * 16, this.segmentCentres, n * segments * 3);
+        draw.kits[n] = rig.kit;
+        draw.fades[n] = fade;
+        n++;
+      }
+      if (pass === 0) whole = n;
+    }
+    // The visors bloom on the glow's rules, as Babylon's mask asked them of a
+    // visor's mesh: group 0's admission (the kit screen holds the world's).
+    draw.commit(n, whole, this.glowAdmits(), this.mats.materialEpoch);
+  }
+
+  /**
+   * What our renderer PULLS inside the render (`BodyDraw`'s prepare), where
+   * the render has placed the camera — whose `globalPosition` is the
+   * inverted view matrix's translation, which the frame's render makes, not
+   * `camera.position` — for this frame's `n` drawn bodies (`drawBodies`):
+   *
+   * - each body's segments in the ORDER Babylon's queue drew a rig's meshes:
+   *   group 0's opaque sort (`setRenderingOrder`, until `BABYLON_EXIT.md`
+   *   X6.1h: nearest first by the squared distance of the bounding sphere's
+   *   centre from that eye) and,
+   *   between two at one distance, the order the meshes were made in, the
+   *   kit's — a stable sort, as `Array.prototype.sort` is. What it decides is
+   *   which of two segments wins an equal depth, the later (LEQUAL): a visor
+   *   against its face at range, an intersection's edge up close. A segment
+   *   switched off goes last, and draws nothing;
+   * - with `glowOn`, each body's visor's bloom — `GlowRules.colour` as
+   *   `GlowPass` asked it of a visor's mesh: its emissive colour faded by the
+   *   fog at its bounding sphere's centre.
+   */
+  private bodyPull(order: Uint32Array, glow: Float32Array, n: number, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.bodyDraw;
+    const segments = draw.segments;
+    const c = this.segmentCentres;
+    const keys = this.segmentKeys;
+    const visor = this.visorSegment;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 3;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
+      if (!glowOn) continue;
+      const at = (o + visor) * 3;
+      this.visorAt.set(c[at], c[at + 1], c[at + 2]);
+      const fade = 1 - fogAmountAt(Vector3.Distance(this.visorAt, eye));
+      this.bloomColour(this.visorMaterials[draw.kits[i]], fade, this.visorBloom);
+      glow[i * 4] = this.visorBloom.r;
+      glow[i * 4 + 1] = this.visorBloom.g;
+      glow[i * 4 + 2] = this.visorBloom.b;
+      glow[i * 4 + 3] = this.visorBloom.a;
+    }
+  }
+
+  /**
+   * The player's own weapon as our renderer draws it (`BABYLON_EXIT.md`
+   * X4.3c, X4.3d), built once at construction: every SEGMENT the viewmodel's
+   * tree holds (`ViewTree.segments`, the order they were made), numbered into
+   * its kit; each one's material read once — an opaque part's cel recipe, or
+   * an unlit one's colour as a slot in the weapon's emissive table; a GLASS's
+   * colour and alpha (plain data on the segment, `ViewSegment.glass`);
+   * the CARD needing none — and each lit part's and each glass's local
+   * bounding-sphere centre kept, for the bloom and the back-to-front order.
+   * Hooked for the session.
+   */
+  private buildViewDraw(): ViewDraw {
+    const segments = this.playerView.model.tree.segments();
+    const colours: Color3Like[] = [];
+    const slotOf = (c: Color3Like): number => {
+      let i = colours.findIndex((o) => o.r === c.r && o.g === c.g && o.b === c.b);
+      if (i < 0) i = colours.push(c) - 1;
+      return i + 1;
+    };
+    const cels = new Set<ReturnType<CelMaterialFactory["celRecipe"]>>();
+    this.viewCentres = new Float64Array(segments.length * 3);
+    // `BoundingSphere.reConstruct`'s centre, off the bounds Babylon held.
+    const keepCentre = (seg: ViewSegment, i: number): void => {
+      const b = segmentBounds(seg);
+      this.viewCentres[i * 3] = (b.maximum.x + b.minimum.x) * 0.5;
+      this.viewCentres[i * 3 + 1] = (b.maximum.y + b.minimum.y) * 0.5;
+      this.viewCentres[i * 3 + 2] = (b.maximum.z + b.minimum.z) * 0.5;
+    };
+    const drawn = segments.map((v, i): ViewDrawSegment => {
+      v.slot = i;
+      const seg = v.segment;
+      const g = seg.geometry;
+      const arrays = {
+        positions: g.positions,
+        normals: g.normals ?? null,
+        colors: g.colors ?? null,
+        uvs: g.uvs ?? null,
+        indices: g.indices,
+      };
+      if (seg.role === "card") return { kind: "card", slot: 0, glows: false, tint: null, ...arrays };
+      if (seg.role === "glass") {
+        const look = seg.glass;
+        if (!look) throw new Error(`buildViewDraw: the glass "${seg.name}" carries no look (ViewSegment.glass)`);
+        keepCentre(seg, i);
+        const c = look.emissive;
+        return { kind: "glass", slot: 0, glows: false, tint: [c.r, c.g, c.b, look.alpha], ...arrays };
+      }
+      const recipe = this.mats.celRecipe(seg.material);
+      if (recipe) cels.add(recipe);
+      const emissive = recipe ? null : (seg.material?.emissiveColor ?? null);
+      if (import.meta.env.DEV) {
+        // A material our renderer cannot read would draw nothing, silently.
+        if (!recipe && !emissive) {
+          throw new Error(`buildViewDraw: "${seg.name}" wears a material with neither a cel recipe nor an emissive colour`);
+        }
+        // The weapon's emissive table carries no depth bias: an unlit part
+        // biased off its surface would lose it here.
+        const units = seg.material?.zOffsetUnits ?? 0;
+        if (emissive && units !== 0) {
+          throw new Error(`buildViewDraw: "${seg.name}" is unlit at a depth bias of ${units}, which the weapon's emissive draw does not carry`);
+        }
+      }
+      const slot = emissive ? slotOf(emissive) : 0;
+      // `GlowPass.buildList`'s two tests of a mesh's own: a colour above
+      // black, and no `noGlow`.
+      const glows =
+        emissive !== null &&
+        (emissive.r > 0 || emissive.g > 0 || emissive.b > 0) &&
+        seg.metadata?.noGlow !== true;
+      if (glows) keepCentre(seg, i);
+      return { kind: emissive ? "unlit" : "cel", slot, glows, tint: null, ...arrays };
+    });
+    this.viewOrder = new Int32Array(segments.length);
+    this.viewKeys = new Float64Array(segments.length);
+    this.viewDrawn.length = segments.length;
+    this.viewGlasses.length = segments.length;
+    return new ViewDraw(
+      this.renderer,
+      drawn,
+      this.mats.viewEmissiveRecipe(colours),
+      [...cels].filter((r) => r !== null),
+      (glow, n) => this.viewPull(glow, n),
+      // No round stands at construction: a failure then is the console's.
+      (reason) => console.error(`[view] the weapon cannot be drawn — ${reason}`),
+    );
+  }
+
+  /**
+   * Hands our renderer this frame's WEAPON (`BABYLON_EXIT.md` X4.3c, X4.3d):
+   * the viewmodel's tree evaluated as the render evaluated it
+   * (`ViewModel.drawView` — every surface switched on and visible, whatever
+   * its role, the cache settled inside the render as before), and each
+   * surface it found written as one draw — its joint's world, its place in
+   * the kit, an opaque part's material's recipe — in the order the frame drew
+   * them while they were Babylon's meshes:
+   * - the kit CARD first, the last of group 0's blended queue it was, its
+   *   canvas uploaded first if it was painted since (`ViewDraw.cardPicture`);
+   * - the OPAQUE parts in BABYLON'S GROUP-1 ORDER: the opaque queue sorted by
+   *   `PainterSortCompare` (the material's `uniqueId`) over the order the
+   *   meshes were dispatched, which was the order they were MADE, a STABLE
+   *   sort as V8's is — so a tie goes to the segment made first
+   *   (`ViewMesh.slot`), never to the order the evaluation walked the joints
+   *   in, which differs where an arm's joint was made before the other arm's
+   *   segments (X4.3c's review, checked against the parent's own queue). That
+   *   order is what settles an equal depth, so a finish, which swaps a colour
+   *   group's material, re-orders the draws exactly as it re-ordered the
+   *   queue;
+   * - the GLASSES last, as group 1's blended queue drew them: back to front by
+   *   the distance from the eye to each one's bounding-sphere centre
+   *   (`defaultTransparentSortCompare`; every glass at the same `alphaIndex`),
+   *   a tie to the one made first. At most one glass is on in any frame — one
+   *   carried weapon, one worn optic — so the order is only ever stated.
+   * Allocates nothing.
+   */
+  private drawView(): void {
+    const model = this.playerView.model;
+    model.drawView();
+    const tree = model.tree;
+    const draw = this.viewDraw;
+    const list = tree.evaluated;
+    const n = Math.min(tree.evaluatedCount, draw.capacity);
+    const order = this.viewOrder;
+    const keys = this.viewKeys;
+    const glasses = this.viewGlasses;
+    const eye = this.cameraSys.camera.globalPosition;
+    const c = this.viewCentres;
+    const at = this.viewCentre;
+    let card: ViewMesh | null = null;
+    let opaque = 0;
+    let glass = 0;
+    for (let i = 0; i < n; i++) {
+      const v = list[i];
+      const segment = v.segment;
+      if (import.meta.env.DEV && v.slot < 0) {
+        throw new Error(`drawView: "${segment.name}" was hung after the weapon's kit was built — it has no slot`);
+      }
+      if (segment.role === "card") {
+        if (import.meta.env.DEV && card) throw new Error("drawView: two kit cards evaluated in one frame");
+        card = v;
+        continue;
+      }
+      if (segment.role === "glass") {
+        // Its distance, as `_RenderSorted` measured a transparent submesh's:
+        // its bounding sphere's centre in the world, to the eye.
+        const s = v.slot * 3;
+        Vector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
+        keys[i] = Vector3.Distance(at, eye);
+        // Back to front: farthest first, a tie to the one made first.
+        let r = glass;
+        while (r > 0) {
+          const o = glasses[r - 1];
+          const ko = keys[o];
+          if (ko > keys[i] || (ko === keys[i] && list[o].slot < v.slot)) break;
+          glasses[r] = o;
+          r--;
+        }
+        glasses[r] = i;
+        glass++;
+        continue;
+      }
+      const material = segment.material;
+      keys[i] = material ? material.serial : Number.POSITIVE_INFINITY;
+      // An insertion sort by the material's creation order — its key's
+      // `serial`, which keeps the order Babylon's `uniqueId` gave any two
+      // materials (`shaders/MaterialKey.ts`) — a tie going to the segment
+      // MADE first (its slot: the kit is numbered in the order made) — the
+      // order Babylon dispatched the meshes in, not the order the evaluation
+      // walked them, which follows the joints (X4.3c's review).
+      let r = opaque;
+      while (r > 0) {
+        const o = order[r - 1];
+        if (keys[o] < keys[i] || (keys[o] === keys[i] && list[o].slot < v.slot)) break;
+        order[r] = o;
+        r--;
+      }
+      order[r] = i;
+      opaque++;
+    }
+    const drawn = this.viewDrawn;
+    let k = 0;
+    if (card) {
+      drawn[k] = card;
+      draw.matrices.set(card.joint.world.m, k * 16);
+      draw.segment[k] = card.slot;
+      draw.recipes[k] = null;
+      k++;
+      const picture = model.kitCard;
+      draw.cardPicture(picture.canvas, picture.painted);
+    }
+    for (let j = 0; j < opaque; j++, k++) {
+      const v = list[order[j]];
+      drawn[k] = v;
+      draw.matrices.set(v.joint.world.m, k * 16);
+      draw.segment[k] = v.slot;
+      draw.recipes[k] = this.mats.celRecipe(v.segment.material);
+    }
+    const glassFrom = k;
+    for (let j = 0; j < glass; j++, k++) {
+      const v = list[glasses[j]];
+      drawn[k] = v;
+      draw.matrices.set(v.joint.world.m, k * 16);
+      draw.segment[k] = v.slot;
+      draw.recipes[k] = null;
+    }
+    draw.commit(k, card ? 1 : 0, glassFrom, this.mats.materialEpoch);
+  }
+
+  /**
+   * Each lit draw's bloom, pulled inside the render (`ViewDraw`'s prepare),
+   * where `globalPosition` is this frame's: `GlowRules.colour` for the mesh
+   * the segment was — its bounding sphere's centre in the world, faded by the
+   * fog at its distance from the eye, and the material's colour times that.
+   * Only an opaque part's: a glass and the card are never in the mask.
+   */
+  private viewPull(glow: Float32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const c = this.viewCentres;
+    const at = this.viewCentre;
+    for (let k = 0; k < n; k++) {
+      const v = this.viewDrawn[k];
+      if (v.segment.role !== "opaque") continue;
+      const material = v.segment.material;
+      if (!material?.emissiveColor) continue;
+      const s = v.slot * 3;
+      Vector3.TransformCoordinatesFromFloatsToRef(c[s], c[s + 1], c[s + 2], v.joint.world, at);
+      const fade = 1 - fogAmountAt(Vector3.Distance(at, eye));
+      this.bloomColour(material as { readonly emissiveColor: Color3Like; readonly alpha: number }, fade, this.viewBloom);
+      glow[k * 4] = this.viewBloom.r;
+      glow[k * 4 + 1] = this.viewBloom.g;
+      glow[k * 4 + 2] = this.viewBloom.b;
+      glow[k * 4 + 3] = this.viewBloom.a;
+    }
+  }
+
+  /**
+   * Every kit a pool draws in the world (`BABYLON_EXIT.md` X4.4b), from the
+   * views that built them: the tracer's, the case's, the frag's and the
+   * bottle's, the rocket's and the mine's — what `pieceDraw` was handed, and
+   * what each session's wire pools (`NetSession`) make their pieces of.
+   */
+  private get pieceKits(): PieceKits {
+    return {
+      tracer: this.combatFx.tracerKit,
+      casing: this.playerView.casingKit,
+      frag: this.grenadeFx.kits.frag,
+      bottle: this.grenadeFx.kits.bottle,
+      rocket: this.antiTankFx.kits.rocket,
+      mine: this.antiTankFx.kits.mine,
+    };
+  }
+
+  /**
+   * Hands our renderer this frame's PIECES (`BABYLON_EXIT.md` X4.4b): every
+   * piece a pool has switched on — the tracers in flight, the brass, the
+   * simulation's thrown bodies and the wire's, the rockets and the mines of
+   * both — composed fresh and written as an instance of its kit
+   * (`pieces.writePieceDrawing`): an unlit segment always, a CEL segment only
+   * where the size gate keeps its world sphere this frame
+   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh the segment
+   * was), and each drawn segment's sphere kept for the order and the bloom
+   * the render pulls (`piecePull`). A piece with nothing drawn is no
+   * instance.
+   *
+   * Once a frame, in EVERY state, after everything that moves a piece (the
+   * pools' own steps, `NetSession.update`, `PlayerView.stepped`) and after
+   * the cull, immediately before the frame's render — inside the render span,
+   * where Babylon composed the pools' meshes until X4.4b. While the draw is
+   * not installed (the menu) none is composed.
+   */
+  private drawPieces(): void {
+    const draw = this.pieceDraw;
+    if (!draw.installed) return;
+    let n = 0;
+    n = this.writePieces(this.combatFx.tracerPieces, n);
+    n = this.writePieces(this.playerView.casingPieces, n);
+    const bodies = this.grenadeFx.bodies;
+    for (let i = 0; i < bodies.length; i++) {
+      n = this.writePiece(bodies[i].frag, n);
+      n = this.writePiece(bodies[i].bottle, n);
+    }
+    const rockets = this.antiTankFx.rockets;
+    for (let i = 0; i < rockets.length; i++) n = this.writePiece(rockets[i].piece, n);
+    const mines = this.antiTankFx.mines;
+    for (let i = 0; i < mines.length; i++) n = this.writePiece(mines[i].piece, n);
+    const net = this.net;
+    if (net) {
+      const ghosts = net.grenades.bodies;
+      for (let i = 0; i < ghosts.length; i++) {
+        n = this.writePiece(ghosts[i].frag, n);
+        n = this.writePiece(ghosts[i].bottle, n);
+      }
+      const wireRockets = net.ordnance.rocketBodies;
+      for (let i = 0; i < wireRockets.length; i++) n = this.writePiece(wireRockets[i].piece, n);
+      const wireMines = net.ordnance.mines;
+      for (let i = 0; i < wireMines.length; i++) n = this.writePiece(wireMines[i].piece, n);
+    }
+    // The unlit parts bloom on the glow's rules, as Babylon's mask asked them
+    // of each mesh: group 0's admission (the kit screen holds the world's).
+    draw.commit(n, this.glowAdmits(), this.mats.materialEpoch);
+  }
+
+  /** `writePiece` over a list. */
+  private writePieces(pieces: readonly Piece[], n: number): number {
+    for (let i = 0; i < pieces.length; i++) n = this.writePiece(pieces[i], n);
+    return n;
+  }
+
+  /** One piece written as instance `n` if any of it is drawn; the next instance's index. */
+  private writePiece(p: Piece, n: number): number {
+    const draw = this.pieceDraw;
+    if (n >= draw.capacity || !p.enabled) return n;
+    let any = false;
+    const nodes = p.nodes;
+    for (let i = 0; i < nodes.length; i++) any ||= nodes[i].visible;
+    if (!any) return n;
+    const S = draw.segments;
+    if (!writePieceDrawing(p, draw.matrices, n * S * 16, S, this.keepsPieceSegment, this.pieceSpheres, n * S * 4)) {
+      return n;
+    }
+    // A kit `pieceDraw` was never handed has no word, and would be drawn in
+    // the tracer's: refused in a dev build rather than dressed as a streak.
+    const kit = this.pieceKitIndex.get(p.kit);
+    if (import.meta.env.DEV && kit === undefined) {
+      throw new Error(`Game.writePiece: piece kit "${p.kit.name}" was never handed to the pieces' draw`);
+    }
+    draw.kits[n] = kit ?? 0;
+    return n + 1;
+  }
+
+  /**
+   * What our renderer PULLS inside the render (`PoolDraw`'s prepare), for
+   * this frame's `n` drawn pieces (`drawPieces`), where the render has placed
+   * the camera:
+   *
+   * - each piece's segments in the ORDER Babylon's queue drew a pool's
+   *   meshes — `bodyPull`'s sort, off `globalPosition`, for its reason:
+   *   group 0's opaque sort, nearest first by the squared distance to the bounding sphere's centre and, between
+   *   two at one distance, the order the meshes were made in, the kit's,
+   *   stable. A segment not drawn goes last;
+   * - with `glowOn`, each piece's unlit segment's bloom — `GlowRules.colour`
+   *   as `GlowPass` asked it of that mesh: its `getEmissive` colour faded by
+   *   the fog at its bounding sphere's centre.
+   */
+  private piecePull(order: Uint32Array, glow: Float32Array, n: number, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.pieceDraw;
+    const segments = draw.segments;
+    const c = this.pieceSpheres;
+    const keys = this.pieceKeys;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 4;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
+      if (!glowOn) continue;
+      const kit = draw.kits[i];
+      const lit = this.pieceUnlit[kit];
+      const material = this.pieceBloomOf[kit];
+      if (lit < 0 || !material) continue;
+      const at = (o + lit) * 4;
+      if (Number.isNaN(c[at])) continue;
+      this.pieceAt.set(c[at], c[at + 1], c[at + 2]);
+      const fade = 1 - fogAmountAt(Vector3.Distance(this.pieceAt, eye));
+      this.bloomColour(material, fade, this.pieceBloom);
+      glow[i * 4] = this.pieceBloom.r;
+      glow[i * 4 + 1] = this.pieceBloom.g;
+      glow[i * 4 + 2] = this.pieceBloom.b;
+      glow[i * 4 + 3] = this.pieceBloom.a;
+    }
+  }
+
+  /** `piecePull`'s scratch: an unlit segment's centre. */
+  private readonly pieceAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's bullet MARKS (`BABYLON_EXIT.md` X4.4b):
+   * every standing slot of `BulletMarks` the size gate keeps — its frozen
+   * world sphere asked of `WorldCulling.keepsSphere`, as `offer` asked it of
+   * the mesh the slot was, a mark being cel and so never exempt — in slot
+   * order, which `markPull` sorts inside the render. Once a frame, beside
+   * `drawPieces`.
+   */
+  private drawMarks(): void {
+    const draw = this.markDraw;
+    if (!draw.installed) return;
+    const slots = this.combatFx.marks.slots;
+    const culling = this.culling;
+    let n = 0;
+    for (let i = 0; i < slots.length && n < draw.capacity; i++) {
+      const slot = slots[i];
+      if (!slot.visible) continue;
+      if (!culling.keepsSphere(slot.centre.x, slot.centre.y, slot.centre.z, slot.radius)) continue;
+      this.markDrawn[n++] = i;
+    }
+    draw.commit(n, false, this.mats.materialEpoch);
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's `n` drawn
+   * marks (`drawMarks`), where the render has placed the camera: the marks
+   * THEMSELVES in the order Babylon's queue drew their meshes — group 0's
+   * opaque sort, nearest first by the squared distance to the bounding sphere's centre off `globalPosition`, the
+   * slot order (the order the meshes were made in) breaking a tie, stable —
+   * each one's frozen world and kit word written in that order, since two
+   * marks overlapping on one wall are coplanar at one bias and the later
+   * wins an equal depth (LEQUAL). Every mark is one segment, drawn at rank 0.
+   */
+  private markPull(order: Uint32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.markDraw;
+    const slots = this.combatFx.marks.slots;
+    const drawn = this.markDrawn;
+    const keys = this.markKeys;
+    for (let k = 0; k < n; k++) {
+      const slotIndex = drawn[k];
+      const c = slots[slotIndex].centre;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a mark moves ahead only of one strictly
+      // farther.
+      let r = k;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = slotIndex;
+    }
+    const paints = MARK_PAINTS.length;
+    for (let k = 0; k < n; k++) {
+      const slot = slots[drawn[k]];
+      draw.matrices.set(slot.world.m, k * 16);
+      draw.kits[k] = slot.shape * paints + slot.paint;
+      order[k] = 0;
+    }
+  }
+
+  /**
+   * Hands our renderer this frame's blast BILLOWS (`BABYLON_EXIT.md` X4.4c):
+   * whether any batch `BlastFx` posed holds one — a batch is drawn exactly
+   * while its mesh was visible — and whether the glow may draw them, which
+   * `GlowRules.admits` asked of every mesh (`glowAdmits`; a billow is never
+   * `noGlow`). The batches themselves are read inside the render
+   * (`blastPull`), where the camera and the frustum are this frame's. Once a
+   * frame, beside `drawPieces`.
+   */
+  private drawBlasts(): void {
+    const draw = this.blastDraw;
+    if (!draw.installed) return;
+    const batches = this.grenadeFx.blasts.batches;
+    for (let i = 0; i < batches.length; i++) {
+      if (batches[i].visible) {
+        draw.commit(this.glowAdmits());
+        return;
+      }
+    }
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's billows
+   * (`drawBlasts`), where the render has placed the camera — what Babylon
+   * did with each batch's mesh, step for step: a batch is drawn when it is
+   * visible and its sphere (`BillowBatch.centre`/`radius`, the bounds it set
+   * by hand) passes the frustum test of the mesh's culling strategy, the
+   * sphere alone (`inFrustum`, off this render's planes) — a billow is emissive, so the size gate never
+   * dropped one; the main pass's draws in group 0's opaque order, nearest
+   * first by the squared distance to the bounding sphere's centre off `globalPosition`, the batches' own order
+   * (their meshes', the active list's) breaking a tie, stable; each draw its
+   * batch's instances in the order they were pushed; and, with `glowOn`, the
+   * mask's draws in the active list's order (the mask's queue sorted them by
+   * material, and they wore one) — each batch's bloom `GlowRules.colour` as
+   * `GlowPass` asked it of the mesh: the fire's body faded by the fog at its
+   * sphere's centre.
+   */
+  private blastPull(into: BlastDraw, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.sceneFrame.frustumPlanes;
+    const batches = this.grenadeFx.blasts.batches;
+    const drawn = this.blastDrawn;
+    const keys = this.blastKeys;
+    // The active list: every visible batch in the frustum, in order.
+    let n = 0;
+    for (let i = 0; i < batches.length; i++) {
+      const b = batches[i];
+      if (!b.visible || b.count === 0) continue;
+      const c = b.centre;
+      if (planes && !inFrustum(c.x, c.y, c.z, b.radius, planes)) continue;
+      into.maskOrder[n] = i;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a batch moves ahead only of one strictly
+      // farther.
+      let r = n;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = i;
+      n++;
+    }
+    let at = 0;
+    const material = this.blastBloomOf;
+    for (let d = 0; d < n; d++) {
+      const b = batches[drawn[d]];
+      const count = Math.min(b.count, into.capacity - at);
+      // Copied float for float: a `subarray` view a batch a frame would
+      // allocate.
+      const m = into.matrices;
+      const bm = b.matrices;
+      for (let k = 0, o = at * 16; k < count * 16; k++) m[o + k] = bm[k];
+      const sh = into.billows;
+      const bs = b.shapes;
+      for (let k = 0, o = at * 4; k < count * 4; k++) sh[o + k] = bs[k];
+      const w = into.warmth;
+      const bw = b.warmth;
+      for (let k = 0; k < count; k++) w[at + k] = bw[k];
+      if (glowOn && material) {
+        this.blastAt.set(b.centre.x, b.centre.y, b.centre.z);
+        const fade = 1 - fogAmountAt(Vector3.Distance(this.blastAt, eye));
+        this.bloomColour(material, fade, this.blastBloom);
+        const g = into.glow;
+        for (let k = at; k < at + count; k++) {
+          g[k * 4] = this.blastBloom.r;
+          g[k * 4 + 1] = this.blastBloom.g;
+          g[k * 4 + 2] = this.blastBloom.b;
+          g[k * 4 + 3] = this.blastBloom.a;
+        }
+      }
+      into.drawShape[d] = b.shape;
+      into.drawFirst[d] = at;
+      into.drawCount[d] = count;
+      at += count;
+    }
+    // The mask's draws, in the active list's order: each batch's draw.
+    if (glowOn) {
+      for (let k = 0; k < n; k++) {
+        const batch = into.maskOrder[k];
+        let d = 0;
+        while (drawn[d] !== batch) d++;
+        into.maskOrder[k] = d;
+      }
+      into.masks = n;
+    }
+    into.draws = n;
+    into.instances = at;
+  }
+
+  /** `blastPull`'s scratch: a batch's centre. */
+  private readonly blastAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b):
+   * a surface is drawn while its switch is on and the size gate keeps its sphere
+   * (`WorldCulling.keepsSphere`, as `offer` asked it of the mesh it was), and the
+   * rest of what Babylon did with those meshes is asked inside the render
+   * (`nearestPull`). In every state, after everything that moves the zones.
+   */
+  private drawZones(): void {
+    const draw = this.zoneDraw;
+    if (!draw.installed) return;
+    const surfaces = draw.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      s.kept = s.on && this.culling.keepsSphere(s.x, s.y, s.z, s.radius);
+    }
+    draw.commit();
+  }
+
+  /**
+   * Hands our renderer this frame's GRASS (`BABYLON_EXIT.md` X4.6c): the field is
+   * drawn while the size gate keeps its one sphere (`WorldCulling.keepsSphere`, as
+   * `offer` asked it of every patch mesh, which all held that sphere), its patches
+   * chosen by `GrassSystem.follow`. In every state.
+   */
+  private drawGrass(): void {
+    const field = this.grass.sphere;
+    if (field && this.culling.keepsSphere(field.x, field.y, field.z, field.radius)) this.grass.commit();
+  }
+
+  /**
+   * Hands our renderer this frame's WATER (`BABYLON_EXIT.md` X4.6d): each body is
+   * drawn while the size gate keeps its sphere (`WorldCulling.keepsSphere`, as `offer`
+   * asked it of the mesh it was, its grid and its quad holding one sphere), its shape
+   * chosen by `WaterSystem.follow`. In every state.
+   */
+  private drawWater(): void {
+    const surfaces = this.water.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      s.kept = this.culling.keepsSphere(s.x, s.y, s.z, s.radius);
+    }
+    this.water.commit();
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's one run (`NearestRun`,
+   * `BABYLON_EXIT.md` X4.6d), where the render has placed the camera — what Babylon
+   * did with these meshes on its opaque list, step for step: a surface is drawn when
+   * it is kept and its sphere passes the frustum test of the mesh's culling strategy,
+   * the sphere alone (`inPlanes`, off this render's planes); nearest first by the squared distance to the bounding sphere's centre off `globalPosition`, the order the
+   * meshes were made in breaking a tie (a sheet's field and band share one sphere),
+   * stable. The blades are one key, their field's centre, a patch's own frustum test
+   * being `GrassSystem.follow`'s; how an equal key falls BETWEEN the three lists is the
+   * run's.
+   */
+  private nearestPull(run: NearestRun): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const held = this.heldPlanes;
+    const clip = this.holdPlanes();
+    const zones = this.zoneDraw;
+    if (zones.drawing) {
+      const surfaces = zones.surfaces;
+      const keys = zones.keys;
+      const order = zones.order;
+      let n = 0;
+      for (let i = 0; i < surfaces.length; i++) {
+        const s = surfaces[i];
+        if (!s.kept) continue;
+        if (clip && !inPlanes(s.x, s.y, s.z, s.radius, held)) continue;
+        const dx = s.x - ex;
+        const dy = s.y - ey;
+        const dz = s.z - ez;
+        fileNearest(keys, order, n++, dx * dx + dy * dy + dz * dz, i);
+      }
+      zones.draws = n;
+    }
+    const water = this.waterDraw;
+    if (water.drawing) {
+      const surfaces = water.surfaces;
+      const keys = water.keys;
+      const order = water.order;
+      let n = 0;
+      for (let i = 0; i < surfaces.length; i++) {
+        const s = surfaces[i];
+        if (!s.kept) continue;
+        if (clip && !inPlanes(s.x, s.y, s.z, s.radius, held)) continue;
+        const dx = s.x - ex;
+        const dy = s.y - ey;
+        const dz = s.z - ez;
+        fileNearest(keys, order, n++, dx * dx + dy * dy + dz * dz, i);
+      }
+      water.draws = n;
+    }
+    const field = this.grass.sphere;
+    if (field) {
+      const fx = field.x - ex;
+      const fy = field.y - ey;
+      const fz = field.z - ez;
+      run.bladeKey = fx * fx + fy * fy + fz * fz;
+    }
+  }
+
+  /**
+   * Hands our renderer this frame's GLAZING and FADES (`BABYLON_EXIT.md` X4.6e):
+   * whether either may be drawn at all — and, for the fades, whether the glow
+   * may draw a spark's bloom, which `GlowRules.admits` asked of every mesh
+   * (`glowAdmits`). Which of them draws, and in what order, is asked inside the
+   * render (`farthestPull`). Once a frame, after the cull, in every state.
+   */
+  private drawBlended(): void {
+    if (this.glassDraw.installed) this.glassDraw.commit();
+    const fades = this.fadeDraw;
+    if (!fades.installed) return;
+    const pools = this.fadePools;
+    for (let p = 0; p < pools.length; p++) {
+      const pool = pools[p];
+      for (let i = 0; i < pool.length; i++) {
+        if (pool[i].node.visible) {
+          fades.commit(this.glowAdmits());
+          return;
+        }
+      }
+    }
+  }
+
+  /**
+   * This render's frustum planes copied to numbers (`heldPlanes`), and whether
+   * a surface is to be tested against them: a render has given planes.
+   */
+  private holdPlanes(): boolean {
+    const planes = this.sceneFrame.frustumPlanes;
+    const held = this.heldPlanes;
+    if (planes) {
+      for (let i = 0; i < 6; i++) {
+        const p = planes[i];
+        const normal = p.normal;
+        held[i * 4] = normal.x;
+        held[i * 4 + 1] = normal.y;
+        held[i * 4 + 2] = normal.z;
+        held[i * 4 + 3] = p.d;
+      }
+      this.planesHeld = true;
+    }
+    return !!planes;
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's GLAZING
+   * (`GlassDraw`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * camera — what Babylon did with each group's mesh, step for step: a pane
+   * (`GlassDraw.surfaces`, in birth order) is drawn while its block's cell is
+   * offered (`WorldCulling.offersBlock`, what its mesh was a candidate by), the
+   * size gate keeps its record's sphere (`keepsSphere`, as `offer` asked it of
+   * the filed mesh) and the sphere passes the frustum test of the mesh's
+   * culling strategy (`inPlanes`); a
+   * BACKED one into group 0's opaque order, nearest first by the squared distance to the bounding sphere's centre
+   * off `globalPosition`, stable (`fileNearest`), which `GlassDraw` draws first
+   * at `"beforeAlphaTest"`; a SEE-THROUGH one kept, with its key in the
+   * transparent order — Babylon's `_distanceToCamera`, the square root of its
+   * centre from `globalPosition` — which the run files (`farthestPull`).
+   */
+  private glassPull(glass: GlassDraw): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const held = this.heldPlanes;
+    const clip = this.holdPlanes();
+    const culling = this.culling;
+    const surfaces = glass.surfaces;
+    let backed = 0;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      const c = s.sphere;
+      if (!culling.offersBlock(s.block)) continue;
+      if (!culling.keepsSphere(c.x, c.y, c.z, c.radius)) continue;
+      if (clip && !inPlanes(c.x, c.y, c.z, c.radius, held)) continue;
+      const dx = c.x - ex;
+      const dy = c.y - ey;
+      const dz = c.z - ez;
+      const d2 = dx * dx + dy * dy + dz * dz;
+      if (s.backed) {
+        fileNearest(glass.backedKeys, glass.backedOrder, backed++, d2, i);
+      } else {
+        s.kept = true;
+        s.key = Math.sqrt(d2);
+      }
+    }
+    glass.backedDraws = backed;
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's one back-to-front
+   * run (`FarthestRun`, `BABYLON_EXIT.md` X4.6e), where the render has placed the
+   * camera — what Babylon did with the meshes on its transparent list, step for
+   * step:
+   * - a FADE is drawn while its node is switched on and its visibility is over
+   *   0, composed as `computeWorldMatrix` composed its mesh this frame
+   *   (`composeNode`), its world sphere carried from its kit's (`worldSphere`),
+   *   through the size gate — but a spark and a disc, emissive as their meshes'
+   *   materials were, which `offer` never gated (its `glows`) — on THIS frame's
+   *   sphere, the pools' rule (`docs/rendering.md`, "The pools, ours": no drop
+   *   can latch), and the frustum test; its world, look and bloom written at its
+   *   index among the drawn fades. **Babylon's gate LATCHED here and that is
+   *   dropped on purpose**, by the owner's decision of 2026-11-06 (X4.6e's
+   *   review, ported exactly the commit before): it read a scorch's or a blob's
+   *   bounds as of the last time the mesh's world was COMPUTED, only for a
+   *   candidate it kept, so one never computed was measured at the world
+   *   origin and stayed dropped while the eye was out of its reach;
+   * - a SEE-THROUGH pane as `glassPull` kept it, at its key;
+   * - and all of them into group 0's TRANSPARENT order: farthest first by
+   *   `_distanceToCamera` — the square root of the sphere's centre from
+   *   `globalPosition` — a tie in the order the meshes stood in the scene (the
+   *   sparks, the discs and the scorch, made at construction; then the blobs
+   *   made before this map was built — in an earlier round, and kept since —
+   *   then the panes, made at the build; then the rest of the blobs, made as
+   *   each body is first placed: `blobsBeforeGlass` is where the panes stand
+   *   among them), stable (`fileFarthest`). A spark's bloom is
+   *   `GlowRules.colour` as `GlowPass` asked it of the mesh: its emissive colour
+   *   faded by the fog at that same distance, its material's alpha of 1.
+   */
+  private farthestPull(run: FarthestRun): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const ex = eye.x;
+    const ey = eye.y;
+    const ez = eye.z;
+    const held = this.heldPlanes;
+    const clip = this.holdPlanes();
+    const culling = this.culling;
+    let n = 0;
+    const fades = this.fadeDraw;
+    const drawing = fades.drawing;
+    const glowOn = fades.masking;
+    const kits = this.fadeKits;
+    const pools = this.fadePools;
+    let count = 0;
+    // The panes are filed among the blobs where their meshes stood in the
+    // scene: after the ones made before this map was built, ahead of the rest.
+    const last = pools.length - 1;
+    for (let p = 0; p < pools.length; p++) {
+      const pool = pools[p];
+      const glassAt = p === last ? Math.min(this.blobsBeforeGlass, pool.length) : -1;
+      if (!drawing) {
+        if (glassAt >= 0) n = this.fileGlass(run, n);
+        continue;
+      }
+      for (let i = 0; i < pool.length; i++) {
+        if (i === glassAt) n = this.fileGlass(run, n);
+        const f = pool[i];
+        const node = f.node;
+        if (!node.visible || !(f.visibility > 0)) continue;
+        const kit = kits[f.kit];
+        composeNode(node);
+        const sphere = node.sphere;
+        worldSphere(kit.centre, kit.radius, node.world, sphere);
+        if (f.kit !== SPARK && f.kit !== DISC && !culling.keepsSphere(sphere.x, sphere.y, sphere.z, sphere.radius)) continue;
+        if (clip && !inPlanes(sphere.x, sphere.y, sphere.z, sphere.radius, held)) continue;
+        const dx = sphere.x - ex;
+        const dy = sphere.y - ey;
+        const dz = sphere.z - ez;
+        const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        fades.reserve(count + 1);
+        const at = count++;
+        fades.world.set(node.world.m, at * PLACED_WORDS);
+        const look = fades.look;
+        look[at * 4] = f.slot;
+        look[at * 4 + 1] = f.visibility;
+        fades.kit[at] = f.kit;
+        if (f.kit === SPARK && glowOn) {
+          const c = FADE_EMISSIVE[f.slot - 1];
+          const fade = 1 - fogAmountAt(d);
+          const glow = fades.glow;
+          glow[at * 4] = c.r * fade;
+          glow[at * 4 + 1] = c.g * fade;
+          glow[at * 4 + 2] = c.b * fade;
+          glow[at * 4 + 3] = 1;
+          run.masked++;
+        }
+        run.reserve(n + 1);
+        fileFarthest(run.keys, run.order, n++, d, FADE + at);
+      }
+      if (glassAt === pool.length) n = this.fileGlass(run, n);
+    }
+    if (drawing) fades.upload(count);
+    run.draws = n;
+  }
+
+  /** The see-through panes `glassPull` kept, filed into the run's order from `n`, which it hands back advanced. */
+  private fileGlass(run: FarthestRun, n: number): number {
+    const glass = this.glassDraw;
+    if (!glass.drawing) return n;
+    const surfaces = glass.surfaces;
+    for (let i = 0; i < surfaces.length; i++) {
+      const s = surfaces[i];
+      if (!s.kept) continue;
+      run.reserve(n + 1);
+      fileFarthest(run.keys, run.order, n++, s.key, i);
+    }
+    return n;
+  }
+
+  /**
+   * Hands our renderer this frame's FIRES (`BABYLON_EXIT.md` X4.4d): whether
+   * any may be drawn — a world fire on the map the handover installed, or a
+   * molotov flame switched on (`visible`, its mesh's `isVisible` until
+   * X4.4d) — and whether the glow may draw them, which `GlowRules.admits`
+   * asked of every mesh (`glowAdmits`). The fires themselves are read inside
+   * the render (`flamePull`), where the camera and the frustum are this
+   * frame's. Once a frame, after the cull (`offersBlock` is its answer this
+   * frame) and beside `drawBlasts`.
+   */
+  private drawFires(): void {
+    const draw = this.flameDraw;
+    if (!draw.installed) return;
+    if (this.handover.fires.length > 0) {
+      draw.commit(this.glowAdmits());
+      return;
+    }
+    const flames = this.grenadeFx.flames;
+    for (let i = 0; i < flames.length; i++) {
+      if (flames[i].visible) {
+        draw.commit(this.glowAdmits());
+        return;
+      }
+    }
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's fires
+   * (`drawFires`), where the render has placed the camera — what Babylon did
+   * with each fire's mesh, step for step. The active list, in SCENE order:
+   * the molotov's flames first (their meshes were made at this game's
+   * construction, ahead of any map's), each switched on (`visible`) and
+   * composed as `computeWorldMatrix` composed its mesh this frame
+   * (`composeNode`), its sphere carried from the flame's local one
+   * (`worldSphere`); then the world's fires, in birth order (the order their
+   * meshes were made in, `BlockHandover.fires`), each while its block's cell
+   * is offered (`WorldCulling.offersBlock`, what its mesh was a candidate
+   * by) at identity, its sphere its record's — each kept if its sphere passes
+   * the frustum test of the mesh's culling strategy, the sphere alone
+   * (`inFrustum`, off this render's planes). A fire is emissive, so the size gate never dropped one. The
+   * main pass's draws in group 0's opaque order, nearest first by the
+   * squared distance to the bounding sphere's centre off `globalPosition`, the active list's order breaking a
+   * tie, stable; and, with `glowOn`, the mask's draws in the active list's
+   * order (the mask's queue sorted them by material, and they wore one), a
+   * `noGlow` world fire left out — each one's bloom `GlowRules.colour` as
+   * `GlowPass` asked it of the mesh: the fire's body faded by the fog at its
+   * sphere's centre.
+   */
+  private flamePull(into: FlameDraw, glowOn: boolean): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.sceneFrame.frustumPlanes;
+    const flames = this.grenadeFx.flames;
+    const shape = this.grenadeFx.flameShape;
+    const fires = this.handover.fires;
+    const drawn = this.flameDrawn;
+    const keys = this.flameKeys;
+    const rank = this.flameRank;
+    const where = this.flameWhere;
+    const cap = Math.min(into.capacity, drawn.length);
+    // The active list, in order, each into the sort as it is met.
+    let n = 0;
+    const total = flames.length + fires.length;
+    for (let i = 0; i < total && n < cap; i++) {
+      let x: number;
+      let y: number;
+      let z: number;
+      let r: number;
+      if (i < flames.length) {
+        const node = flames[i];
+        if (!node.visible) continue;
+        composeNode(node);
+        worldSphere(shape.centre, shape.radius, node.world, node.sphere);
+        x = node.sphere.x;
+        y = node.sphere.y;
+        z = node.sphere.z;
+        r = node.sphere.radius;
+      } else {
+        const f = fires[i - flames.length];
+        if (!this.culling.offersBlock(f.block)) continue;
+        x = f.x;
+        y = f.y;
+        z = f.z;
+        r = f.radius;
+      }
+      if (planes && !inFrustum(x, y, z, r, planes)) continue;
+      const dx = x - eye.x;
+      const dy = y - eye.y;
+      const dz = z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a fire moves ahead only of one strictly
+      // farther. The reverse index follows every fire it moves: `n` is this
+      // fire's place in the active list.
+      let k = n;
+      while (k > 0 && keys[k - 1] > key) {
+        keys[k] = keys[k - 1];
+        drawn[k] = drawn[k - 1];
+        rank[k] = rank[k - 1];
+        where[rank[k]] = k;
+        k--;
+      }
+      keys[k] = key;
+      drawn[k] = i;
+      rank[k] = n;
+      where[n] = k;
+      n++;
+    }
+    const material = this.flameBloomOf;
+    const m = into.matrices;
+    for (let d = 0; d < n; d++) {
+      const i = drawn[d];
+      let cx: number;
+      let cy: number;
+      let cz: number;
+      if (i < flames.length) {
+        const node = flames[i];
+        m.set(node.world.m, d * 16);
+        into.drawShape[d] = 0;
+        cx = node.sphere.x;
+        cy = node.sphere.y;
+        cz = node.sphere.z;
+      } else {
+        const k = i - flames.length;
+        const f = fires[k];
+        // At identity, as its frozen mesh's world was.
+        m.set(IDENTITY_16, d * 16);
+        into.drawShape[d] = 1 + k;
+        cx = f.x;
+        cy = f.y;
+        cz = f.z;
+      }
+      if (glowOn && material) {
+        this.flameAt.set(cx, cy, cz);
+        const fade = 1 - fogAmountAt(Vector3.Distance(this.flameAt, eye));
+        this.bloomColour(material, fade, this.flameBloom);
+        const g = into.glow;
+        g[d * 4] = this.flameBloom.r;
+        g[d * 4 + 1] = this.flameBloom.g;
+        g[d * 4 + 2] = this.flameBloom.b;
+        g[d * 4 + 3] = this.flameBloom.a;
+      }
+    }
+    // The mask's draws, in the active list's order: each fire's draw — but a
+    // world fire marked `noGlow`, which `GlowPass` left out of its list —
+    // found through the reverse index the sort kept.
+    let masks = 0;
+    if (glowOn) {
+      for (let k = 0; k < n; k++) {
+        const d = where[k];
+        const fire = drawn[d];
+        if (fire >= flames.length && !fires[fire - flames.length].glows) continue;
+        into.maskOrder[masks++] = d;
+      }
+    }
+    into.masks = masks;
+    into.draws = n;
+  }
+
+  /** `flamePull`'s scratch: a fire's centre. */
+  private readonly flameAt = new Vector3();
+
+  /**
+   * Hands our renderer this frame's DEBRIS (`BABYLON_EXIT.md` X4.4c): every
+   * glass shard and rubble chunk switched on, its world composed off its
+   * body's pose as it stands (`poseView.writePosedDrawing`) and kept by the
+   * size gate on the world sphere it is drawn with this frame (Babylon's
+   * latch on stale bounds dropped on purpose, the owner's decision of
+   * 2026-11-01) — the shards first, then the chunks, each in its pool's
+   * order — recorded by index alone:
+   * their worlds and kits are written into the draw by `debrisPull`, once it
+   * has ordered them. Once a frame, after the cull (the gate's eye) and
+   * beside `drawPieces`.
+   */
+  private drawDebris(): void {
+    const draw = this.debrisDraw;
+    if (!draw.installed) return;
+    const pieces = this.debrisPieces;
+    let n = 0;
+    for (let i = 0; i < pieces.length && n < draw.capacity; i++) {
+      if (writePosedDrawing(pieces[i], this.keepsDebris)) this.debrisDrawn[n++] = i;
+    }
+    draw.commit(n, false, this.mats.materialEpoch);
+  }
+
+  /** Piece `i`'s kit word in `debrisDraw`: a shard's index, or a chunk's box in the paint of the surface it was thrown off. */
+  private debrisKit(i: number): number {
+    const shards = this.debris.pieces.length;
+    if (i < shards) return i;
+    const c = i - shards;
+    return shards + c * 2 + (this.blastDebris.surfaceOf(c) === "ground" ? 1 : 0);
+  }
+
+  /**
+   * What our renderer PULLS inside the render for this frame's `n` drawn
+   * pieces of debris (`drawDebris`), where the render has placed the camera:
+   * the pieces THEMSELVES in the order Babylon's queue drew their meshes —
+   * group 0's opaque sort, nearest first by the squared distance to the bounding sphere's centre off
+   * `globalPosition` and this frame's world sphere (the bounds a candidate's
+   * compute refreshed), the meshes' order — the shards', then the chunks'
+   * — breaking a tie, stable — each one's world and kit word written in that
+   * order. Every piece is one segment, drawn at rank 0.
+   */
+  private debrisPull(order: Uint32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const draw = this.debrisDraw;
+    const pieces = this.debrisPieces;
+    const drawn = this.debrisDrawn;
+    const keys = this.debrisKeys;
+    for (let k = 0; k < n; k++) {
+      const index = drawn[k];
+      const c = pieces[index].sphere;
+      const dx = c.x - eye.x;
+      const dy = c.y - eye.y;
+      const dz = c.z - eye.z;
+      const key = dx * dx + dy * dy + dz * dz;
+      // A stable insertion sort: a piece moves ahead only of one strictly
+      // farther.
+      let r = k;
+      while (r > 0 && keys[r - 1] > key) {
+        keys[r] = keys[r - 1];
+        drawn[r] = drawn[r - 1];
+        r--;
+      }
+      keys[r] = key;
+      drawn[r] = index;
+    }
+    for (let k = 0; k < n; k++) {
+      draw.matrices.set(pieces[drawn[k]].world.m, k * 16);
+      draw.kits[k] = this.debrisKit(drawn[k]);
+      order[k] = 0;
+    }
+  }
+
+  /**
+   * Hands our renderer this frame's HULLS (`BABYLON_EXIT.md` X4.2b): every
+   * view whose hull is present (`VehicleRig.enabled`, which `VehicleView`
+   * follows `Vehicle.present` with), in hardstanding order, its joints
+   * composed this frame (`fadeHulls`) and each segment's matrix written as an instance of its kind's
+   * kit (`vehicleRig.writeHullDrawing`) — a segment the size gate drops
+   * (`WorldCulling.keepsSphere`, asked of that segment's world sphere this
+   * frame, as `offer` asked it of the mesh the segment was) written as
+   * nothing, and so is every DETAIL segment of a hull whose whole measure
+   * the detail tier refuses (`WorldCulling.keepsDetail`, `BABYLON_EXIT.md`
+   * X4.2c) — with its kit word, the charred paint a bit of it, and the
+   * segments' centres kept for the order the render pulls (`hullPull`).
+   *
+   * **And at the FADE its map's draw distance gives it** (`BABYLON_EXIT.md`
+   * X4.2d), which `fadeHulls` composed every present hull for and asked,
+   * earlier in the frame — a hull faded out entirely is not drawn, and is no
+   * instance — and the hulls drawn WHOLE are handed over first, in
+   * hardstanding order, the FADING ones after them, which the drawing draws
+   * behind its screen door. With no hull fading this is the one pass it
+   * always was, in the same order. So the capacity takes the first sixteen
+   * present hulls drawn whole, then fading ones, in hardstanding order.
+   *
+   * Once a frame, in EVERY state, after everything that writes a joint and
+   * after the cull, immediately before the frame's render — inside the render
+   * span, where Babylon composed the hulls' nodes until X4.2a (the compose
+   * itself is `fadeHulls`', in the cull span, since X4.2d's post-commit
+   * review). A hull not present is not drawn, and while the draw is not
+   * installed (the menu) none is.
+   */
+  private drawHulls(): void {
+    const draw = this.hullDraw;
+    if (!draw.installed) return;
+    const views = this.vehicleViews.views;
+    const stride = draw.segments;
+    const fades = this.hullFades;
+    let n = 0;
+    let whole = 0;
+    for (let pass = 0; pass < 2; pass++) {
+      for (let i = 0; i < views.length && n < draw.capacity; i++) {
+        const rig = views[i].rig;
+        if (!rig.enabled) continue;
+        const fade = fades[i];
+        if (fade <= 0 || (fade >= 1) !== (pass === 0)) continue;
+        writeHullDrawing(
+          rig,
+          draw.matrices,
+          n * stride * 16,
+          stride,
+          this.keepsHullSegment,
+          this.keepsHullDetail,
+          this.hullSpheres,
+          n * stride * 4,
+        );
+        draw.words[n] = (this.hullKitIndex.get(rig.kit) ?? 0) | (rig.charred ? HULL_CHARRED : 0);
+        draw.fades[n] = fade;
+        n++;
+      }
+      if (pass === 0) whole = n;
+    }
+    draw.commit(n, whole, this.mats.materialEpoch);
+  }
+
+  /**
+   * Every present hull composed — its joints, FRESH (`vehicleRig.composeHull`,
+   * the one compose a hull gets a frame) — and its whole measure asked its
+   * draw-distance FADE (`WorldCulling.hullFade`, `BABYLON_EXIT.md` X4.2d),
+   * into `hullFades` by its index in the fleet. Called once a frame, in every
+   * state, from `followEye` straight after the cull (the eye the fade is
+   * asked from is `offer`'s, this frame) and before the two
+   * readers: `RotorWash.update`, which scales its emitters' rate and its
+   * ripple by the fade (the post-commit review's owner decision: a hull's
+   * wash fades with it), and `drawHulls`, which draws off the same compose.
+   * A hull not present, and every hull while the draw is not installed (the
+   * menu), is not composed and reads 1 — so the wash under
+   * it is what it always was, and nothing else reads its joints.
+   */
+  private fadeHulls(): void {
+    const views = this.vehicleViews.views;
+    if (this.hullFades.length < views.length) this.hullFades = new Float64Array(views.length);
+    const fades = this.hullFades;
+    const installed = this.hullDraw.installed;
+    const m = this.hullMeasure;
+    for (let i = 0; i < views.length; i++) {
+      const rig = views[i].rig;
+      if (!installed || !rig.enabled) {
+        fades[i] = 1;
+        continue;
+      }
+      composeHull(rig, m);
+      fades[i] = this.culling.hullFade(m.x, m.y, m.z);
+    }
+  }
+
+  /**
+   * What our renderer PULLS inside the render (`HullDraw`'s prepare), for
+   * this frame's `n` drawn hulls (`drawHulls`), where the render has placed
+   * the camera:
+   *
+   * - each segment outside the camera's FRUSTUM switched off for the frame —
+   *   its matrix zeroed in `matrices` — by Babylon's own test of a mesh
+   *   (`BoundingSphere.isInFrustum`, the default sphere-only strategy) against
+   *   the planes this render computed (`Game.frustumPlanes`);
+   * - each hull's segments in the ORDER Babylon's queue drew a hull's meshes —
+   *   `bodyPull`'s sort, off `globalPosition`, for `bodyPull`'s reason: group
+   *   0's opaque sort, nearest first by the squared distance to the bounding sphere's centre and, between two at one
+   *   distance, the order the meshes were made in, the kit's, stable. A
+   *   segment not drawn (culled, dropped by the size gate, a DETAIL segment of
+   *   a hull the detail tier refuses — `WorldCulling.keepsDetail`, X4.2c — or
+   *   past a narrower kind's own) goes last.
+   */
+  private hullPull(order: Uint32Array, matrices: Float32Array, n: number): void {
+    const eye = this.cameraSys.camera.globalPosition;
+    const planes = this.sceneFrame.frustumPlanes;
+    const segments = this.hullDraw.segments;
+    const c = this.hullSpheres;
+    const keys = this.hullKeys;
+    for (let i = 0; i < n; i++) {
+      const o = i * segments;
+      for (let s = 0; s < segments; s++) {
+        const at = (o + s) * 4;
+        const x = c[at];
+        if (Number.isNaN(x)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+        } else if (planes && !inFrustum(x, c[at + 1], c[at + 2], c[at + 3], planes)) {
+          keys[s] = Number.POSITIVE_INFINITY;
+          matrices.fill(0, (o + s) * 16, (o + s) * 16 + 16);
+        } else {
+          const dx = x - eye.x;
+          const dy = c[at + 1] - eye.y;
+          const dz = c[at + 2] - eye.z;
+          keys[s] = dx * dx + dy * dy + dz * dz;
+        }
+        // A stable insertion sort: a segment moves ahead only of one strictly
+        // farther.
+        let r = s;
+        while (r > 0 && keys[order[o + r - 1]] > keys[s]) {
+          order[o + r] = order[o + r - 1];
+          r--;
+        }
+        order[o + r] = s;
+      }
+    }
+  }
+
+  /**
+   * Hands the round's pooled bodies to `WorldCulling`, which measures and
+   * gates each once a frame (`drawsBody`), and keeps their rigs in that order
+   * for `drawBodies`, which draws THESE and no others (`BABYLON_EXIT.md`
+   * X4.1d: no rig is a Babylon mesh, so a rig not filed here is not drawn).
    *
    * **Here rather than in `installMap`, for `setRoster`'s reason**: this is the
-   * ROUND's roster, and that method's other caller is the editor, which has no
-   * round. It runs after both pools have been sized and before anything draws.
-   *
-   * **BOTH pools, every time, and neither of them is conditional.** A netplay
-   * round builds `battle`'s rigs and never enables one — sixteen bodies that
-   * are pure walk and nothing else, which is exactly the case this is for — and
-   * an offline round's `NetRoster` is empty and files nothing. Asking which one
-   * is this round's would be a second place for the answer in `buildRound` to
-   * live.
+   * ROUND's roster, and that method is about the MAP. It runs after the pool
+   * has been sized and before anything draws.
    *
    * **The GLOW is deliberately not fed from here.** A rig is occluder and
    * never emitter, and the glow's occlusion is the frame's own depth
@@ -5228,19 +8006,19 @@ export class Game {
    * not how to collect it.
    */
   private installBodyPools(): void {
-    const bodies: PooledBody[] = [];
-    for (const bot of this.battle.bots) bodies.push(bot.rig);
-    for (const soldier of this.net?.roster.soldiers ?? []) {
-      bodies.push(soldier.rig);
-    }
-    // …and the THIRD rig, which is not in either pool and is the one the
-    // player watches from four metres away. `DeathCam` builds its own
-    // stand-in, switches it by the same `root.setEnabled` the two rosters
-    // write, and is idle for all but a few seconds of a round — so it is a
+    const rigs: SoldierRig[] = [];
+    for (const soldier of this.net?.roster.soldiers ?? []) rigs.push(soldier.rig);
+    // …and the OTHER rig, which is not in the pool and is the one the player
+    // watches from four metres away. `DeathCam` builds its own stand-in,
+    // switches it by the same `rig.enabled` the roster writes, and is
+    // idle for all but a few seconds of a round — so it is a
     // pooled body by every test this makes, and was loose only because
     // nothing had handed it over. See `DeathCam.body` for what that cost.
     const corpse = this.deathCam.body;
-    if (corpse) bodies.push(corpse);
+    if (corpse) rigs.push(corpse);
+    // The drawing reads `WorldCulling`'s verdict by this order (`drawBodies`).
+    this.pooledRigs = rigs;
+    const bodies: PooledBody[] = rigs.map((rig) => pooledBody(rig));
     this.culling.setPools(bodies);
   }
 
@@ -5259,8 +8037,9 @@ export class Game {
    * the bake always took, moved from `deploy` to under the card. On the 1500 m
    * proving ground it is 47 frames, and measured either side of this change
    * they went from 44.8 seconds in the ROUND to 10.6 under the card —
-   * `ENGINE_UPGRADE.md` S0c, where the second figure is `faceOf`'s doing and the
-   * change of state is this method's.
+   * `ENGINE_UPGRADE.md` S0c, where the second figure is the per-face cull's
+   * doing and the change of state is this method's. Our renderer's bake
+   * (X3.6c, the only one since X3.7c) drains Coldharbour in five frames.
    */
   private openBakeWait(): void {
     const total = this.reflections.bakePending;
@@ -5287,85 +8066,23 @@ export class Game {
 
   /**
    * The bake is done with (drained, or given up on), and the card stays up for
-   * the warm-up instead of coming down.
-   *
-   * **The vantages are every place a life can start or be fought over** — the
-   * two home spawns and the flags — because the shadow window, the bodies' map
-   * and which lamps win a shadow tile are all chosen around the EYE, so a
-   * pipeline those passes need is only compiled by a frame whose eye is near
-   * the thing that needs it. The main pass is not: a warm frame offers it the
-   * whole map (`stageWarmFrame`). Without a map there is nothing to warm and
-   * the wait simply ends.
+   * the warm-up instead of coming down: the wait for every pipeline of ours
+   * the round can use (`PipelineWarmup`) — the round's declared list, asked
+   * once for the session, so no body, hull, weapon or pool of ours is stood
+   * up here for a pipeline to compile on (`BABYLON_EXIT.md` X4.1d, X4.4e),
+   * and the map's own, asked by its install. Nothing is drawn for a
+   * pipeline's sake: the card's frames are `loading`'s own, from the camera
+   * the build left (the vantages that stood it at every spawn and flag went
+   * at X5.4c, a log on all seven maps showing neither cache creating anything
+   * at one). Without a map there is nothing to wait for and the wait simply
+   * ends.
    */
   private beginWarmup(wait: NonNullable<Game["bakeWait"]>): void {
-    const map = this.map;
-    if (!map) {
+    if (!this.map) {
       this.finishBakeWait();
       return;
     }
-    const points: Vector3[] = [];
-    for (const sp of map.spawns) if (sp.team !== null) points.push(sp.pos);
-    for (const cp of map.controlPoints) points.push(cp.pos);
-    this.warmBodies.length = 0;
-    const body = this.deathCam.body;
-    if (body) this.warmBodies.push({ rig: body });
-    wait.warm = new PipelineWarmup(points, WebGPUCacheRenderPipeline.NumCacheMiss);
-  }
-
-  /**
-   * Stands the camera at the warm-up's vantage for this frame and draws the
-   * whole map from there: every cell and pool offered (`WorldCulling.setWarm`)
-   * and the frustum test off, so everything in the scene that is switched on
-   * reaches a draw — and through it a pipeline — whichever way the eye faces.
-   * The camera-dependent passes (the two shadow maps, the lamps' atlas, the
-   * water, the grass) are placed by the same tail the editor's free camera
-   * uses, at `dt` 0, so nothing is stepped: `loading` still simulates nothing.
-   *
-   * Returns whether it staged anything, and `unstageWarmFrame` undoes ALL of it
-   * straight after this frame's render. That is the reason nothing here may
-   * outlive its frame: a wait that `go` abandons between two frames then leaves
-   * nothing behind it — no map drawn unculled, no camera parked at a flag.
-   */
-  private stageWarmFrame(): boolean {
-    const vantage = this.bakeWait?.warm?.vantage;
-    if (!vantage) return false;
-    const camera = this.cameraSys.camera;
-    this.warmPose.pos.copyFrom(camera.position);
-    this.warmPose.rot.copyFrom(camera.rotation);
-    this.shadowFocus.copyFrom(vantage);
-    camera.position.copyFrom(vantage);
-    // …and what the map does not have standing: the pools a round draws from
-    // the moment it starts — a soldier, a shot and a blast — each of which is
-    // idle and switched off until then, and each of which used to compile on
-    // the frame it was first needed. An idle member of each, posed as it is in
-    // flight, for this frame.
-    this.deathCam.warm(vantage);
-    this.combat.warm(true);
-    this.grenades.warm(true);
-    this.blastDebris.warm(true);
-    this.shadows.warmBlob(true, this.player);
-    this.player.warmView(true);
-    this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS, this.warmBodies);
-    this.culling.setWarm(true);
-    this.scene.skipFrustumClipping = true;
-    return true;
-  }
-
-  /** Puts back everything `stageWarmFrame` changed, after the render. */
-  private unstageWarmFrame(): void {
-    this.scene.skipFrustumClipping = false;
-    this.culling.setWarm(false);
-    this.deathCam.warm(null);
-    this.combat.warm(false);
-    this.grenades.warm(false);
-    this.blastDebris.warm(false);
-    this.shadows.warmBlob(false, this.player);
-    this.player.warmView(false);
-    // Position and rotation outright rather than through `place`, whose
-    // `setTarget` would re-derive the rotation from a target the camera may
-    // never have been pointed at.
-    this.cameraSys.camera.position.copyFrom(this.warmPose.pos);
-    this.cameraSys.camera.rotation.copyFrom(this.warmPose.rot);
+    wait.warm = new PipelineWarmup(this.renderer.pipelines, this.roundPipelines);
   }
 
   /**
@@ -5386,7 +8103,7 @@ export class Game {
     const wait = this.bakeWait;
     if (!wait) return;
     if (wait.warm) {
-      if (wait.warm.afterFrame(WebGPUCacheRenderPipeline.NumCacheMiss)) {
+      if (wait.warm.afterFrame()) {
         this.finishBakeWait();
       }
       return;
@@ -5448,13 +8165,18 @@ export class Game {
   private finishBakeWait(): void {
     const warmed = this.bakeWait?.warm != null;
     this.bakeWait = null;
-    // The warm-up placed the shadow window, the bodies' map and the lamps'
-    // slots around its LAST vantage, and nothing in `deploy` places them again
-    // offline — so they are placed once more around the camera the deploy
-    // screen is actually drawn from, at `dt` 0 as the warm frames were.
+    // Nothing in `loading` places the shadow window, the bodies' map and the
+    // lamps' slots, and nothing in `deploy` does either in the page's own
+    // match — so they are placed once here, around the camera the deploy
+    // screen is drawn from, at `dt` 0, as the viewer's tail places them.
     if (warmed) {
       this.shadowFocus.copyFrom(this.cameraSys.camera.position);
-      this.updateSceneForCamera(0, this.shadowFocus, null, EMPTY_PUSHERS);
+      this.updateSceneForCamera(0, this.shadowFocus, null, NO_SOLDIERS);
+      // Every pipeline of ours the round can use is built by now — the
+      // declared list and the map's — so a compile from here to the map's
+      // teardown is one nothing asked: sealed, which a DEV build reports
+      // (but for a pixel-ratio change's glow blur widths, `applyRenderScale`).
+      this.renderer.pipelines.seal(true);
     }
     // Read and cleared BEFORE the two calls below, neither of which may find
     // it still standing: `spawnPlayer` is the answer to it, and `enterDeploy`
@@ -5471,14 +8193,14 @@ export class Game {
    * Which side the player is on, and everything already standing in its
    * colours.
    *
-   * Offline the answer is always team 0. In a netplay round it is the
-   * authority's — `Roster.claim` seats the second human on team 1 — and it
-   * arrives in the welcome, which can land on EITHER side of the local build
-   * because `joinMatch` books the round before the socket is open. `buildRound`
-   * is the ONE caller, and a welcome that turns out to disagree no longer
-   * arrives here at all: since a side is what every body in the round is
-   * PAINTED from, `NetSession.onSeated` rebuilds the round instead and comes
-   * back through this method on the way — see `setViewerTeam` in `buildRound`.
+   * The answer is the authority's, whoever hosts the match — `Roster.claim`
+   * seats the second human on team 1 — and it arrives in the welcome, which can
+   * land on EITHER side of the local build because `joinMatch` books the round
+   * before the socket is open. `buildRound` is the ONE caller, and a welcome
+   * that turns out to disagree no longer arrives here at all: since a side is
+   * what every body in the round is PAINTED from, `NetSession.onSeated`
+   * rebuilds the round instead and comes back through this method on the way —
+   * see `setViewerTeam` in `buildRound`.
    *
    * Almost everything downstream reads `player.team` live, every frame, and
    * needs nothing from this. What it collects is the things that take a COPY
@@ -5489,8 +8211,9 @@ export class Game {
    */
   private applyPlayerTeam(team: Team, map: GameMap): void {
     this.player.team = team;
-    // Built here, not at the moment of death: nine merged meshes and their GL
-    // buffers is not a cost to pay on the frame the player is killed on. A
+    // Built here, not at the moment of death: a joint tree (and, for a side's
+    // first rig, that side's kit drawing) is not a cost to pay on the frame
+    // the player is killed on. A
     // change of side is the one thing that rebuilds it, and `prepare` is the
     // one that knows how to do that safely — see there.
     this.deathCam.prepare(team);
@@ -5523,26 +8246,35 @@ export class Game {
    * between the two things this method is reached with. A point is a place —
    * the whole of a team's reinforcement wave is sent to the same one — so the
    * scatter that stops a squad arriving inside itself belongs to resolving it
-   * (`scatterSpawn`, which `spawnPointFor` and the deploy screen's offline
-   * branch both go through), not to arriving. The authority's `spawn` is the
-   * case that makes the distinction load-bearing rather than tidy: the server
-   * scatters in its own `spawnPointFor` and then TELLS us where the body is,
+   * (`scatterSpawn`, inside the authority's `SimCore.spawnPointFor`), not to
+   * arriving. The authority's `spawn` is the case that makes the distinction
+   * load-bearing rather than tidy: the simulation scatters in its own
+   * `spawnPointFor` and then TELLS us where the body is,
    * so a second helping applied here put the client's body up to a couple of
    * metres from the position the authority holds for it. `validate.ts` absorbs
    * that and the correction path would have covered the rest, but it is the
    * client having a second opinion about where somebody is, which is the one
-   * thing `onDeploy`'s netplay branch exists to prevent.
+   * thing `onDeploy`'s request exists to prevent.
    */
-  private spawnPlayer(at?: { pos: Vector3; yaw: number }): void {
+  private spawnPlayer(at?: { pos: Vector3Like; yaw: number }): void {
+    // No position: the ASK rather than the arrival. The body is the
+    // authority's to place, so this deploys "anywhere" (spawn -1, the
+    // conquest's own pick) and comes back through here with its answer. Kept
+    // for the callers that drive a round from outside it — the smoke scripts'
+    // `spawnPlayer()`. With no round there is nobody to ask, and nowhere to be.
+    if (!at) {
+      this.net?.sendDeploy(-1, this.weapon, this.equipment, this.throwable);
+      return;
+    }
     this.player.fullReset();
     // A fresh body has never been anywhere, least of all outside the map. The
     // clock is not merely stopped by a death — it has to be FORGOTTEN, or a
     // player who died out in the borderland comes back inside a flag with four
     // seconds already spent.
     this.leash.clear();
-    const spawn = at ?? this.spawnPointFor(this.player.team);
-    this.player.placeAt(spawn ? spawn.pos.clone() : new Vector3(0, 0, 0));
-    this.cameraSys.reset(spawn ? spawn.yaw : 0);
+    // Copied INTO the body (`placeAt` takes `Vector3Like`), never kept.
+    this.player.placeAt(at.pos);
+    this.cameraSys.reset(at.yaw);
     // The aim just jumped to the spawn heading. Reprojecting through that jump
     // would greet the player with one frame smeared across the whole screen.
     this.motionBlur.reset();
@@ -5581,17 +8313,6 @@ export class Game {
     if (!this.input.touchActive) this.requestLock();
   }
 
-  /**
-   * Where a combatant of `team` deploys. Home spawns only until
-   * ConquestSystem starts handing out captured flags.
-   */
-  private spawnPointFor(team: 0 | 1): { pos: Vector3; yaw: number } | null {
-    if (!this.map) return null;
-    const pick = this.conquest.spawnFor(team);
-    if (!pick) return null;
-    return scatterSpawn(pick, this.conquest.spawnRand);
-  }
-
   private updateGameplay(dt: number): void {
     // The hull the frame belongs to, read ONCE and up front.
     //
@@ -5614,14 +8335,9 @@ export class Game {
       this.prof.end(P.onFoot);
     }
 
-    // The span is closed before the early return rather than around it: a frame
-    // that ends the round still spent the time, and `world` reading as "not
-    // entered" on exactly the most interesting frame of a session would be the
-    // wrong kind of missing.
     this.prof.begin(P.world);
-    const live = this.updateWorld(dt);
+    this.updateWorld(dt);
     this.prof.end(P.world);
-    if (!live) return;
 
     this.prof.begin(P.camera);
     if (driven) this.frameVehicleCamera(dt, driven);
@@ -5652,6 +8368,9 @@ export class Game {
    */
   private updateOnFoot(dt: number): void {
     // --- player ---
+    // The page's own body, PREDICTED: its sweep, its
+    // ground, its stance and its regen for the HUD are all this page's, and
+    // the authority is told where it went at `INPUT_HZ` (`NetSession.update`).
     const ev = this.player.update(dt, this.input, this.cameraSys);
     if (ev.jumped) this.sfx.jump();
     if (ev.footstep > 0) this.sfx.step(ev.footstep);
@@ -5671,7 +8390,7 @@ export class Game {
         );
       }
     }
-    // The sound and, in a match, the announcement are `player.onReload`'s —
+    // The sound and the announcement are `player.onReload`'s —
     // wired once in `wireScreens`, because the key is only one of the two ways
     // a reload begins and the other one is inside `tryShot`.
     if (this.input.reloadPressed) this.player.startReload();
@@ -5714,23 +8433,12 @@ export class Game {
     // delay is a frame of a player walking out of the world with nothing on
     // screen to say so.
     //
-    // **The kill is offline's alone.** In a match the authority runs the same
-    // clock against the position this client reported and issues the death like
-    // any other; killing here as well would charge the round two deaths for one
-    // walk, and the local one would arrive first and be wrong about when.
-    const leash = this.leash.update(
-      this.player.position.x,
-      this.player.position.z,
-      dt,
-    );
-    if (leash === "expired" && !this.net) {
-      // Through `takeDamage` rather than by setting health to 0, because that
-      // is the one door a death goes through offline: it is what charges the
-      // ticket, files the row on the board and raises the death cam. `from` is
-      // undefined on purpose — nobody shot you, so there is no bearing for a
-      // damage arc and nothing for the flinch to lean away from.
-      this.player.takeDamage(this.player.health);
-    }
+    // **The kill is never this page's** (D3). The authority — a server's
+    // match or the page's own — runs the same clock against the
+    // position it was told and issues the death like any other; killing here
+    // as well would charge the round two deaths for one walk, and the local one
+    // would arrive first and be wrong about when. This is the countdown.
+    this.leash.update(this.player.position.x, this.player.position.z, dt);
 
     // --- shooting (hitscan from the camera down the aim axis) ---
     // Mouse fire requires pointer lock so UI clicks never discharge the gun.
@@ -5989,11 +8697,11 @@ export class Game {
   private updateDriver(dt: number, tank: Vehicle): void {
     this.player.updateVitals(dt);
     // The body rides the hull. Slaved rather than simulated: every downstream
-    // reader — the conquest occupancy count, the minimap arrow, the audio
-    // listener's fallback, the leash — asks where the player IS, and the honest
-    // answer is "in that tank". `nudgeTo` rather than `placeAt` because this is
-    // a body being carried, not one arriving: `placeAt` would zero a fall and
-    // claim the ground every frame.
+    // reader — the minimap arrow, the audio listener's fallback, the leash's
+    // countdown — asks where the player IS, and the honest answer is "in that
+    // tank". `nudgeTo` rather than `placeAt` because this is a body being
+    // carried, not one arriving: `placeAt` would zero a fall and claim the
+    // ground every frame. The hull itself moves in `updateNetWorld`.
     this.player.nudgeTo(tank.position);
 
     // The look, into the ORDERS one of the two guns walks toward. Never into
@@ -6010,6 +8718,10 @@ export class Game {
       this.drive.lift = this.input.lift;
       this.drive.aimYaw = this.vehicleCam.yaw;
       this.drive.aimPitch = this.vehicleCam.pitch;
+      // These sticks step THIS PAGE's hull — `driveFor`, in the world step —
+      // and what the authority is told is
+      // where that prediction has the hull: a `drive` at `INPUT_HZ`, validated
+      // (`localHull`'s fields, `NetSession.update`).
     } else {
       // A gunner has no sticks at all. The hull is somebody else's problem —
       // a bot's, another player's, or nobody's — and the stick axes are
@@ -6017,6 +8729,9 @@ export class Game {
       // seat whose controls half work is worse than one whose controls do not.
       this.gunOrder.aimYaw = this.vehicleCam.yaw;
       this.gunOrder.aimPitch = this.vehicleCam.pitch;
+      // The ring is laid HERE (`gunFor`) and its bearing reported, the
+      // driver's bargain for the second seat: `gunner` to the authority
+      // (`localGun`'s fields).
     }
 
     // The same three-way gate the rifle's trigger takes, and for the same
@@ -6028,6 +8743,7 @@ export class Game {
       this.input.pointerLocked ||
       this.input.gamepadConnected ||
       this.input.touchActive;
+    // The round is predicted now and reported.
     if (this.input.fire && canFire) {
       if (driving) this.fireShell(tank);
       else this.fireMg(tank);
@@ -6056,20 +8772,18 @@ export class Game {
     // …and the way ACROSS. Refused outright when the other chair is taken
     // rather than silently doing nothing: `canSwapSeat` is what the HUD draws
     // its prompt from, so the key and the caption cannot disagree.
+    // A crossing is a `mount` naming the hull the player is already in, with
+    // the other chair — to the authority, whose `seat` answer is where
+    // `swapSeat` is called.
     if (this.input.seatPressed && this.canSwapSeat(tank)) {
-      const to: CrewSeat = driving ? GUNNER : DRIVER;
-      if (this.net) this.net.sendMount(this.vehicles.hulls.indexOf(tank), to);
-      else this.swapSeat(tank, to);
+      this.net?.sendMount(this.vehicles.hulls.indexOf(tank), driving ? GUNNER : DRIVER);
     }
 
     // …and getting out is an ask too, for the reason getting in is: WHERE the
     // body lands is the authority's, exactly as a spawn is, and a client that
     // put its own feet down beside the hull would be choosing a position
     // fifteen other clients are about to be told about.
-    if (this.input.usePressed && canLeave) {
-      if (this.net) this.net.sendDismount();
-      else this.dismount();
-    }
+    if (this.input.usePressed && canLeave) this.net?.sendDismount();
 
     // --- the leash, and this is the one seat that owes it ---
     // **A driver is not leashed** — that rule is stated on both sides and its
@@ -6081,14 +8795,14 @@ export class Game {
     // flies over them, and past them there is no floor, no nav cell and no
     // terrain — so on a FLYING hull the exemption has nothing left holding the
     // other end of it, and the countdown goes back on. It is the same clock the
-    // body uses, so a pilot gets the same warning on the same HUD, and the kill
-    // is offline's alone for the reason it is below: in a match the authority
-    // runs its own against the position this client reported.
+    // body uses, so a pilot gets the same warning on the same HUD — and this
+    // one only DRAWS it: the kill is the authority's, whoever hosts the
+    // match, for the reason the body's is (D3). The authority's core
+    // puts the person out of the chair before it kills them (a seat makes a
+    // body invulnerable), so what reaches this page is a `seat` putting the
+    // player on foot and then the death, and the hull is left where it was.
     if (tank.flies) {
-      const out = this.leash.update(tank.position.x, tank.position.z, dt);
-      if (out === "expired" && !this.net) {
-        this.player.takeDamage(this.player.health);
-      }
+      this.leash.update(tank.position.x, tank.position.z, dt);
     } else {
       this.leash.clear();
     }
@@ -6096,7 +8810,7 @@ export class Game {
 
   /**
    * The primary trigger: a round down the aim axis, and everything it owes the
-   * screen, the ear, the hands and — in a match — the authority.
+   * screen, the ear, the hands and the authority.
    *
    * `fireOrdnance`'s twin, and the second half of `updateOnFoot`'s shooting
    * block for every weapon that is a gun. `Player.tryShot` has already
@@ -6109,7 +8823,20 @@ export class Game {
     // Tracers, the flash light and the noise all start at the viewmodel's
     // muzzle — about half a metre in front of the eye. That is the rifle
     // on screen, so it is the one the shot has to appear to come from.
-    const muzzle = this.player.muzzleWorld();
+    const muzzle = this.playerView.model.muzzleWorld();
+    // The round is resolved here as a PREDICTION and reported. The local
+    // resolve is what draws the tracer, flashes the hitmarker and kicks the
+    // weapon, and none of that may wait on a round trip. What it does not do
+    // is decide anything: `enemyTargets` answers with the `NetSoldier`s the
+    // roster is drawing, whose `takeDamage` returns false and changes nothing,
+    // so the hitmarker below is a PREDICTION and the authority's `hit` event
+    // is the truth — whoever hosts it, the page's own match included.
+    //
+    // `shot.dir` and not `cameraSys.forward`: the spread was rolled inside
+    // `fire`, and the authority has to re-resolve this bullet rather than a
+    // differently-jittered one. The SLOT and not a constant: the authority
+    // reads this round's damage off it, and the sidearm is not the primary —
+    // see `ShotMessage.slot`.
     const shot = this.combat.fire(
       this.cameraSys.camera.position,
       this.cameraSys.forward,
@@ -6121,29 +8848,7 @@ export class Game {
       this.player.range,
       this.player.shotOptions,
     );
-    // Networked: report the round. Everything above stays exactly as it is —
-    // the local resolve is what draws the tracer, flashes the hitmarker and
-    // kicks the weapon, and none of that may wait on a round trip. What it
-    // no longer does is decide anything: in a netplay round `enemyTargets`
-    // answers with the `NetSoldier`s the roster is drawing, whose
-    // `takeDamage` returns false and changes nothing, so the hitmarker below
-    // is a PREDICTION and the server's `hit` event is the truth.
-    //
-    // `shot.dir` and not `cameraSys.forward`: the spread was rolled inside
-    // `fire`, and the server has to re-resolve this bullet rather than a
-    // differently-jittered one.
-    // The SLOT and not a constant: the authority reads this round's damage
-    // off it, and the sidearm is not the primary — see `ShotMessage.slot`.
-    this.net?.sendShot(
-      this.cameraSys.camera.position,
-      shot.dir,
-      this.player.carriedSlot,
-    );
-
-    // Bots hear the player's rifle the same way they hear each other's. This
-    // is the only place the player's own gunfire enters the world, so it is
-    // the only place that can say so.
-    this.battle.hearGunshot(muzzle, this.player.team, shot.dir);
+    this.net?.sendShot(this.cameraSys.camera.position, shot.dir, this.player.carriedSlot);
     // Recoil: kick the aim up and off toward the weapon's own bias, softened
     // braced and stiffened on the move. It decays on its own, so the burst
     // climbs and settles.
@@ -6192,40 +8897,15 @@ export class Game {
     const haptic = CONFIG.rumble;
     this.input.rumble(haptic.shotStrong, haptic.shotWeak, haptic.shotMs);
     if (shot.target) {
-      // A BODY went down, which is what the marker and the rumble are about
-      // — the two cues that say "stop shooting". Not what the BOARD pays:
-      // that is `creditKill`'s to refuse through `paysKiller`, one door for
-      // every kill in the game, and the two questions are kept apart here
-      // for the reason `hullHitCue` gives.
-      const killedBody = shot.killed && shot.target instanceof Bot;
-      // Resolved before the marker so a kill gets the red one — the cue to
-      // stop putting rounds into a body that is already going down. A
-      // headshot is the second axis and loses to a kill on the marker,
-      // because "stop shooting" is the more urgent thing to say; it keeps
-      // its own sound either way, which is where the read actually lands.
-      this.hitCue(killedBody, shot.headshot);
-      // Netplay: this marker is a guess, and remembering that it was made is
-      // what keeps the authority's answer from repeating it a round trip
+      // The round's GUESS at what it hit. Remembering that the guess was made
+      // is what keeps the authority's answer from repeating it a round trip
       // later. See `HitCredits`.
-      if (this.net) this.hitCredits.note(shot.headshot);
-      this.input.rumble(
-        killedBody ? haptic.killStrong : haptic.hitStrong,
-        killedBody ? haptic.killWeak : haptic.hitWeak,
-        killedBody ? haptic.killMs : haptic.hitMs,
-      );
-      if (shot.killed) {
-        // Both doors, one line apart: our row, and the body's. Offline only
-        // — in a netplay round `shot.killed` is false, because the roster's
-        // bodies refuse local damage and the authority scores this round.
-        settleKill(
-          this.ledger,
-          this.player,
-          shot.target,
-          this.player.team,
-          "round",
-          shot.headshot,
-        );
-      }
+      // **A guess never says KILLED**: the bodies this page fires at are the
+      // wire's (nothing here is a `Bot`), and the kill is the authority's to
+      // say — its `hit` comes back through `HitCredits.claim`, which lets a
+      // kill through, and that is where the red marker is drawn.
+      this.roundLanded(false, shot.headshot);
+      this.hitCredits.note(shot.headshot);
     }
     // Nothing here for the reload the last round in the magazine just
     // started: `tryShot` began it, and `player.onReload` is what hears about
@@ -6233,30 +8913,46 @@ export class Game {
   }
 
   /**
+   * One of this player's ROUNDS landed on something: the marker, the note
+   * and the rumble. A BODY going down is what the marker and the rumble are
+   * about — the two cues that say "stop shooting" — and not what the BOARD
+   * pays, which is the simulation's (`paysKiller`); the two questions are kept
+   * apart for the reason `hullHitCue` gives. A kill gets the red marker, the
+   * cue to stop putting rounds into a body that is already going down; a
+   * headshot is the second axis and loses to a kill on the marker, because
+   * "stop shooting" is the more urgent thing to say, and keeps its own sound
+   * either way.
+   *
+   * Reached by this page's predicted resolve, whoever hosts the match, which
+   * never says KILLED — and by the authority's verdict on a round, which is
+   * the one that can.
+   */
+  private roundLanded(killedBody: boolean, head: boolean): void {
+    this.hitCue(killedBody, head);
+    const haptic = CONFIG.rumble;
+    this.input.rumble(
+      killedBody ? haptic.killStrong : haptic.hitStrong,
+      killedBody ? haptic.killWeak : haptic.hitWeak,
+      killedBody ? haptic.killMs : haptic.hitMs,
+    );
+  }
+
+  /**
    * The vehicle verb on foot: offered when a hull is in reach, taken when the
-   * key is pressed — an ASK in a match, a mount offline.
+   * key is pressed — an ASK of the authority, whoever hosts the match, whose
+   * `seat` answer is where `mount` is finally called.
    */
   private updateBoarding(): void {
     const seat = this.vehicles.empty ? null : this.offeredSeat();
     this.offerUse(seat ? seat.label : null);
     if (!seat || !this.input.usePressed) return;
-    // **In a match, getting in is an ASK.** Nothing local changes here: the
+    // **Getting in is an ASK.** Nothing local changes here: the
     // authority re-derives the whole offer against its own copy of the hull,
     // the team, the distance and the crew, and answers with a `seat` event —
     // which is where `mount` is finally called. Mounting locally and letting
     // the server catch up would be a client deciding it is inside a tank
     // somebody else may already be sitting in.
-    if (this.net) {
-      this.net.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
-      return;
-    }
-    // The eviction and the mount are one gesture and must land on the same
-    // frame: `mount` writes `Vehicle.seats` through `setOccupied`, and a crew
-    // taken out without somebody taking its place would leave the hull open
-    // for the boarding sweep to re-crew before the player's key is even read
-    // again.
-    if (seat.crewed) this.crew.evict(seat.tank, seat.seat);
-    this.mount(seat.tank, seat.seat);
+    this.net?.sendMount(this.vehicles.hulls.indexOf(seat.tank), seat.seat);
   }
 
   /**
@@ -6322,7 +9018,7 @@ export class Game {
     const cfg = CONFIG.equipment.rpg.rocket;
     const eye = this.cameraSys.camera.position;
     const forward = this.cameraSys.forward;
-    this.ordnanceAt.copyFrom(this.player.muzzleWorld());
+    this.ordnanceAt.copyFrom(this.playerView.model.muzzleWorld());
     const ahead =
       (this.ordnanceAt.x - eye.x) * forward.x +
       (this.ordnanceAt.y - eye.y) * forward.y +
@@ -6336,35 +9032,27 @@ export class Game {
           forward.z * cfg.launchAhead,
         );
     }
-    // The pool has the last word, and a refusal gives the rocket back — the
-    // same contract the grenade pool has with `spendGrenade`, arrived at from
-    // the other direction because the trigger and the round are one call here.
-    // It cannot happen with eight slots and five possible shooters; what
-    // matters is that it costs a cooldown rather than a rocket if it ever does.
-    if (
-      !this.antiTank.launch(
-        this.ordnanceAt,
-        forward,
-        this.player.team,
-        this.player,
-      )
-    ) {
+    // This page's pool has the first word, and a refusal gives the rocket
+    // back — the same contract the grenade pool has with `spendGrenade`,
+    // arrived at from the other direction because the trigger and the round
+    // are one call here. It cannot happen with eight slots and five possible
+    // shooters; what matters is that it costs a cooldown rather than a rocket
+    // if it ever does. The AUTHORITY has the last word, and a rocket it
+    // refuses comes back a round trip later as `refused`
+    // (`Player.returnOrdnance`).
+    if (!this.antiTank.launch(this.ordnanceAt, forward, this.player.team, this.player)) {
       this.player.returnRound();
       return;
     }
-    // **Networked: the authority fires its own rocket and owns everything it
-    // does.** The local one above still flies — it is what the shooter
-    // watches leave the tube, and a warhead that appeared six metres downrange
-    // a round trip later would read as a misfire — but it hurts nobody:
-    // `hullNear` answers with hulls that refuse local damage and the splash
-    // goes through `hittablesFor`, which is `battle`'s empty list in a match.
-    // The authority's copy comes back with our slot on it and `NetOrdnance`
-    // filters it out, exactly as it does for a thrown grenade.
+    // **The authority fires its own rocket and owns everything it does.** The
+    // local one above still flies — it is what the shooter watches leave the
+    // tube, and a warhead that appeared six metres downrange a round trip
+    // later would read as a misfire — but it hurts nobody: `hullNear` answers
+    // with hulls that refuse local damage and the splash goes through
+    // `hittablesFor`, which is empty on this page. The authority's copy comes
+    // back with our slot on it and `NetOrdnance` filters it out, exactly as
+    // it does for a thrown grenade.
     this.net?.sendOrdnance(this.ordnanceAt, forward);
-    // Bots hear a launcher the way they hear a rifle. This is the only place
-    // the player's own launcher enters the world as a noise, so it is the only
-    // place that can say so.
-    this.battle.hearGunshot(this.ordnanceAt, this.player.team, forward);
     this.sfx.launcher(this.ordnanceAt);
     // The next rocket going into the tube, laid out across the fire cooldown
     // the shot above has just set — which on a two-shot weapon IS the loader,
@@ -6406,23 +9094,18 @@ export class Game {
       (reachable ? y : this.standableAt(feet.x, feet.z, feet.y)) + MINE_LIFT,
       reachable ? z : feet.z,
     );
-    // **Networked: the mine is the authority's and there is no local copy.**
-    // This is where it differs from the rocket beside it, and the difference is
-    // what the two objects ARE: a mine is laid at the feet and never moves, so
-    // the round trip before it appears is invisible, while a second plate on
-    // the ground would be one to reconcile against the `mines` table for the
-    // rest of the round. The pouch is spent either way — the count in the hand
-    // is the client's picture of a number the server is also keeping, exactly
-    // as the grenade pouch is.
-    if (this.net) {
-      this.net.sendOrdnance(this.ordnanceAt, this.cameraSys.forward);
-      this.sfx.mineSet();
-      return;
-    }
-    if (!this.antiTank.place(this.ordnanceAt, this.player.team, this.player)) {
-      this.player.returnRound();
-      return;
-    }
+    // **The mine is the authority's and there is no local copy.** This is
+    // where it differs from the rocket beside it, and the difference is what
+    // the two objects ARE: a mine is laid at the feet and never moves, so the
+    // round trip before it appears is invisible, while a second plate on the
+    // ground would be one to reconcile against the `mines` table for the rest
+    // of the round. The pouch is spent here as a PREDICTION — the count in
+    // the hand is the client's picture of a number the authority is also
+    // keeping, exactly as the grenade pouch is — and a mine the authority
+    // refuses is given back by its `refused` (`Player.returnOrdnance`). The
+    // `standableAt` probe above is the message's input: the authority reads
+    // no ground of its own for it.
+    this.net?.sendOrdnance(this.ordnanceAt, forward);
     this.sfx.mineSet();
   }
 
@@ -6443,6 +9126,9 @@ export class Game {
    * by it is no longer `alive` and no longer in the list.
    */
   private fireShell(tank: Vehicle): void {
+    // The round is predicted here and reported (`resolveShell`); the loader's
+    // clock, the shove, the rock and the masts land on this page's hull from
+    // its own `fireGun`, on the frame the gun went off.
     if (!this.resolveShell(tank, this.player)) return;
     // Everything below this line is about the person holding the trigger, and
     // that is the whole of the split: a bot crew's round goes through the same
@@ -6478,7 +9164,9 @@ export class Game {
       this.net?.sendShell(muzzle, dir);
       this.hullHitCue(round);
     }
-    this.drawCannon(tank, muzzle);
+    // A COPY of the rule's muzzle for the light, the report and the shake
+    // (`fireAt`'s terms).
+    this.drawCannon(tank, this.shellFrom.copyFrom(muzzle));
     return true;
   }
 
@@ -6521,20 +9209,21 @@ export class Game {
 
   /**
    * The marker a hull's round owes the player who fired it — the shell's and
-   * the cupola gun's alike. The blast's victims are marked by `onBlastHit`
-   * like any other blast's, so this covers only the body the ray itself found.
+   * the cupola gun's alike, where this page fires its own hull's guns as a
+   * prediction (`resolveShell`/`resolveMg`). It covers the body the ray itself
+   * found; a blast's victims arrive as the authority's `hit`s like any other
+   * blast's.
    *
-   * What the MARKER says and what the BOARD pays are two questions, and only
-   * the second is a rule (`settleKill`, inside `hullRules`). A hull going up is
-   * not a red hitmarker — that cue means "stop putting rounds into a body that
-   * is already going down", and a burning tank is not a body. Conflating the
-   * two is what once put `instanceof Bot` on the credit and quietly took the
-   * player off the board as a victim.
+   * **A guess never says KILLED**, for the rifle's reason (`fire`): what this
+   * page shoots at are the wire's bodies, and the red marker is the
+   * authority's to draw when its `hit` comes back — with the gun's `cause`,
+   * which it sends for a kill alone, and which never meets `HitCredits`. What
+   * the MARKER says and what the BOARD pays are two questions, and only the
+   * second is a rule — the core's (`hullRules`), on the authority.
    */
   private hullHitCue(round: HullRound): void {
-    const shot = round.shot;
-    if (!shot.target) return;
-    this.hitCue(shot.killed && shot.target instanceof Bot, false);
+    if (!round.shot.target) return;
+    this.hitCue(false, false);
   }
 
   /**
@@ -6557,6 +9246,7 @@ export class Game {
    * the trigger.
    */
   private fireMg(tank: Vehicle): void {
+    // `fireShell`'s split exactly. A machine gun kicks nothing on the hull.
     if (!this.resolveMg(tank, this.player)) return;
     this.vehicleCam.addKick(tank.spec.mg.cameraKick);
     const haptic = CONFIG.rumble;
@@ -6581,18 +9271,20 @@ export class Game {
       this.net?.sendMg(muzzle, dir);
       this.hullHitCue(round);
     }
-    this.flashMuzzle(muzzle);
+    // Copied for the light and the report, `resolveShell`'s reason.
+    const at = this.shellFrom.copyFrom(muzzle);
+    this.flashMuzzle(at);
     // Placed at the muzzle rather than voiced in the ear, so it is panned like
     // every other gun in the world — but a crew riding THIS hull hears it at
     // arm's length rather than from the chase camera twelve metres back, which
     // is `Sfx.aboard`. `report` is what makes it a heavy machine gun rather
     // than a rifle — see `CONFIG…mg.report`.
-    this.sfx.botShot(muzzle, 0, tank.spec.mg.report, tank === this.driving);
+    this.sfx.botShot(at, 0, tank.spec.mg.report, tank === this.driving);
     return true;
   }
 
-  // What the TRACKS kill is `hullRules.crushSweep`, run from `updateWorld`
-  // right after the hulls move — the authority runs the same function.
+  // What the TRACKS kill is `hullRules.crushSweep`, run inside the
+  // authority's core step right after the hulls move, whoever hosts the match.
 
   /**
    * The camera half of a driver's frame, after the hull has moved.
@@ -6621,7 +9313,9 @@ export class Game {
     // is the thing the frame is about and it is already twelve metres inside
     // the window, so pushing the window further along the view would walk the
     // vehicle's own shadow out of it.
-    this.shadowFocus.copyFrom(tank.center);
+    // By its floats: the hull's centre is `src/math`'s.
+    const c = tank.center;
+    this.shadowFocus.copyFromFloats(c.x, c.y, c.z);
     // …except that on a hull which can be forty metres up, the thing the window
     // has to cover is the GROUND under it and not the vehicle. The window is
     // snapped in the light's own basis, so lifting the focus slides it along
@@ -6630,7 +9324,7 @@ export class Game {
     // shadows out from under the aircraft on exactly the map that shows them
     // best. A hull that casts no shadow of its own loses nothing by this.
     if (tank.flies) this.shadowFocus.y = tank.floorY;
-    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
     // The stick is the THROTTLE the hull is actually being given, which is this
     // player's only while they are the one holding it. A gunner pushing a
     // stick that steers nothing used to rev an engine somebody else was
@@ -6672,8 +9366,8 @@ export class Game {
    * The key is the hull's index in the fleet, which is stable for as long as a
    * map is: the stands are built once and neither added to nor reordered. A
    * map REBUILD invalidates them all, and nothing here has to know that —
-   * `installMap` runs from `loading` and from the editor, neither of which
-   * steps the fleet, so the frame that rebuilds is a frame that has already
+   * `installMap` runs from `loading`, which does not step the fleet, so the
+   * frame that rebuilds is a frame that has already
    * called `enginesOff`.
    */
   /**
@@ -6682,14 +9376,15 @@ export class Game {
    * objects by reference), the volume's sky fill, the dome and the clouds —
    * and, on the frame a strike starts, its own shadow map, drawn once.
    *
-   * The clock is the AUTHORITY's in a match (`Connection.now`), so every
-   * client flashes together; offline it is this session's own.
+   * The clock is the AUTHORITY's in a server's match (`Connection.now`), so
+   * every client flashes together; in the page's own match, and with no round
+   * at all, it is this session's own.
    */
   private pushLightning(dt: number): void {
     const strikes = this.lightning;
     const was = strikes.active;
-    // The offline clock holds with the world — see `LightningStrikes.step`.
-    strikes.step(dt, this.worldHeld, this.net ? this.net.conn.now() / 1000 : null);
+    // The page's own clock holds with the world — see `LightningStrikes.step`.
+    strikes.step(dt, this.worldHeld, this.remoteRound ? this.net!.conn.now() / 1000 : null);
     // The strike's own map, drawn once on the frame it starts. The moon's
     // maps are never touched — see `ShadowBindings.setFlash`.
     if (strikes.active && !was) this.shadows.flash(strikes.direction, this.shadowFocus);
@@ -6717,7 +9412,8 @@ export class Game {
    * `teardownMap`.)
    *
    * The pause is the one held world that reaches it, and not from here: the
-   * offline pause card suspends the audio context, which holds this graph
+   * pause card over the page's own match suspends the audio context, which
+   * holds this graph
    * exactly as it holds the tail of the last shot.
    *
    * After the listener above, so the ranking and the panners agree with the
@@ -6755,7 +9451,7 @@ export class Game {
       const [load, rev] = tank.powerplant(
         Math.min(1, tank.travel / tank.spec.drive.maxSpeed),
       );
-      this.sfx.hullEngine(i, tank.center, load, rev, tank.spec.engine);
+      this.sfx.hullEngine(i, this.engineAt.copyFrom(tank.center), load, rev, tank.spec.engine);
     }
   }
 
@@ -6769,16 +9465,14 @@ export class Game {
     this.driving = tank;
     this.drivingSeat = seat;
     this.vehicles.setOccupied(tank, seat, true);
-    // The viewmodel goes away: there is no rifle in a driver's hands, and it is
-    // parented to the camera that is now twelve metres behind a tank.
+    // The viewmodel goes away: there is no rifle in a driver's hands, and it
+    // hangs from the camera that is now twelve metres behind a tank.
     this.player.setBodyHidden(true);
-    // Nothing may hurt the body — the HULL is what is being shot at. Both of
-    // the next two lines are needed and they do different jobs: this one stops
-    // rounds landing, and the one below stops bots AIMING. A bot that could
-    // still acquire an unkillable target would stand there firing at it for the
-    // rest of the round.
+    // Nothing may hurt the body — the HULL is what is being shot at. On this
+    // page that is a flag on a body nothing here shoots: what stops rounds
+    // landing and bots AIMING is the simulation's own seat (`SimCore.seat`),
+    // on the authority.
     this.player.invulnerable = true;
-    this.battle.removeHuman(this.player);
     this.vehicleCam.take(tank);
     this.sfx.engineOn(tank.spec.engine);
     // A gunner starts the drive laying his gun exactly where the camera opened,
@@ -6792,37 +9486,6 @@ export class Game {
     // held down should not fire the main gun on the frame they arrive.
     this.input.consumeFire();
     this.offerUse(null);
-  }
-
-  /**
-   * Getting out because the player asked. The body is put down beside the hull
-   * and the camera is handed back to the head.
-   *
-   * `cameraSys.reset` rather than leaving the aim where it was: the first-person
-   * camera has not been updated for as long as the drive lasted, so its yaw is
-   * wherever the player was looking when they walked up to the tank — a snap of
-   * up to half a turn on the frame they step out. Resetting to the CHASE
-   * camera's own yaw is the only answer that keeps facing what you were facing,
-   * and it clears the recoil, punch and landing springs that have been sitting
-   * frozen the whole time as a side effect worth having.
-   */
-  private dismount(): void {
-    const tank = this.driving;
-    if (!tank) return;
-    // Guarded again, and deliberately not only at the key: this is the one door
-    // out and its two callers must not each have to remember. See
-    // `VehicleSystem.dismountable` — with no fall damage in the game, a body
-    // put down beside a hull at altitude is a free ride to any roof.
-    if (!this.vehicles.dismountable(tank)) return;
-    this.player.placeAt(this.vehicles.exitSpot(tank));
-    const yaw = this.vehicleCam.yaw;
-    this.clearVehicle();
-    this.cameraSys.reset(yaw);
-    // The aim just jumped. Reprojecting through it would greet the player with
-    // one frame smeared across the whole screen — the same reason `spawnPlayer`
-    // does this.
-    this.motionBlur.reset();
-    this.input.consumeFire();
   }
 
   /**
@@ -6840,7 +9503,6 @@ export class Game {
     this.driving = null;
     this.player.invulnerable = false;
     this.player.setBodyHidden(false);
-    this.battle.addHuman(this.player);
     this.sfx.engineOff();
     this.hud.setVehicle(null);
     this.hud.setGunMarker(null);
@@ -6854,30 +9516,25 @@ export class Game {
    * It is a seat's question because everything reading it names a chair:
    * which one a boarder is offered (`offeredSeat`, through `chooseSeat`),
    * whether this player may cross into one, and what the crew line on the HUD
-   * says about it. Offline it is `VehicleCrew`'s own pairing; in a match it is
-   * `VehicleState.by`/`by2` against the roster — **the one exception to "a
+   * says about it. It is `VehicleState.by`/`by2` against the roster, whoever
+   * hosts the match — **the one exception to "a
    * client never learns which slots are bots"**, and it is allowed because
    * what this decides is a PROMPT: a prompt offering to evict a person would
-   * be a key that does nothing. **Never `VehicleCrew.crewOf` in a match**: a
-   * client's crew table is empty there, so a full hull with a bot driving read
-   * as a person's and was offered as TAKE OVER GUN.
+   * be a key that does nothing. **Never `VehicleCrew.crewOf`**: a client
+   * holds no crew table, so a full hull with a bot driving read as a
+   * person's and was offered as TAKE OVER GUN.
    *
    * Note that the player's OWN chair comes back `"player"`, which is correct
    * for both readers: it is the one chair `canSwapSeat` is never asked about,
    * and the crew line marks it from `drivingSeat` rather than from here.
    */
   private seatHeldBy(tank: Vehicle, seat: CrewSeat): SeatHolder {
-    if (this.net) {
-      const i = this.vehicles.hulls.indexOf(tank);
-      const by =
-        seat === DRIVER
-          ? this.net.vehicles.occupant(i)
-          : this.net.vehicles.gunner(i);
-      if (by < 0) return "open";
-      return this.botSlotIn(by) ? "bot" : "player";
-    }
-    if (!tank.seats[seat]) return "open";
-    return this.crew.crewOf(tank, seat) ? "bot" : "player";
+    const net = this.net;
+    if (!net) return "open";
+    const i = this.vehicles.hulls.indexOf(tank);
+    const by = seat === DRIVER ? net.vehicles.occupant(i) : net.vehicles.gunner(i);
+    if (by < 0) return "open";
+    return this.botSlotIn(by) ? "bot" : "player";
   }
 
   /**
@@ -6963,8 +9620,9 @@ export class Game {
   }
 
   /**
-   * Crossing to the other chair, offline. The hull does not change and neither
-   * does anything `mount` set up about the BODY — it is still hidden, still
+   * Crossing to the other chair, as the simulation answered it (`seatAnswer`).
+   * The hull does not change and neither does anything `mount` set up about
+   * the BODY — it is still hidden, still
    * invulnerable, still out of every bot's target list, and the camera is
    * already where it should be.
    *
@@ -6978,16 +9636,13 @@ export class Game {
    * frame, and a throttle left at full in it would be what the next person to
    * sit down inherited.
    *
-   * **A bot in the chair being crossed into is turned out on this frame**,
-   * which is `updateOnFoot`'s eviction moved inside the hull and lands the
-   * same way for the same reason: a seat given up and not immediately taken is
-   * one the boarding sweep can re-crew before the player's key is read again.
-   * `canSwapSeat` is what proved it is a bot and not a person — this only
-   * carries the decision out.
+   * **A bot in the chair being crossed into was turned out by the
+   * simulation** on the frame it granted the crossing (`SimCore.seat`), which
+   * is the eviction a mount from the ground makes and for the same reason; this
+   * only follows the answer.
    */
   private swapSeat(tank: Vehicle, to: CrewSeat): void {
     if (to === this.drivingSeat) return;
-    if (this.crew.crewOf(tank, to)) this.crew.evict(tank, to);
     this.vehicles.setOccupied(tank, this.drivingSeat, false);
     this.vehicles.setOccupied(tank, to, true);
     this.drivingSeat = to;
@@ -7009,20 +9664,6 @@ export class Game {
     this.input.consumeFire();
   }
 
-  /**
-   * Everything in a frame that is about the FIGHT rather than about the player:
-   * the objectives, the bots, the rounds already in the air, and the bodies on
-   * the ground. Returns false when the round ended on this frame, which is the
-   * caller's cue to do nothing else with a game that is over.
-   *
-   * It is its own method because the death cam needs every line of it and not
-   * one line of what surrounds it. The whole point of watching your own body
-   * fall is that the fight carries on around it — tickets bleed, a squad takes
-   * the flag you died on, your killer walks past — and a death cam over a world
-   * that stopped is a screenshot. Splitting it here is what makes that true by
-   * construction rather than by keeping two copies of the sequence in step, the
-   * same failure `installMap` exists to prevent one layer down.
-   */
   /**
    * What the URL says about multiplayer, read once at construction.
    *
@@ -7064,9 +9705,9 @@ export class Game {
       // it. The read is milliseconds off this page's own origin in every
       // healthy case, but a deployment whose regions file does not answer holds
       // it for the full timeout — long enough for the menu to be up, its
-      // confirm gate to have opened and a player to have started an offline
-      // round. Yanking them out of one is worse than an `?mp` that lost a race
-      // it only ever loses when somebody was already playing.
+      // confirm gate to have opened and a player to have started a round of
+      // their own. Yanking them out of one is worse than an `?mp` that lost a
+      // race it only ever loses when somebody was already playing.
       if (this.state === "menu") this.joinMatch();
     });
   }
@@ -7075,7 +9716,8 @@ export class Game {
    * Joins a networked match: a specific one from the lobby, a fresh one, or
    * whatever has room when neither is asked for.
    *
-   * The map is built LOCALLY exactly as an offline round builds it — the server
+   * The map is built LOCALLY, by the same `buildRound` every round goes
+   * through — the server
    * has the same layout and the same baked colliders, so the world both sides
    * reason about is the same one without a byte of it crossing the wire. What
    * comes over the wire is only what MOVES.
@@ -7099,7 +9741,9 @@ export class Game {
   joinMatch(
     opts: { matchId?: string; create?: boolean; mapId?: string; regionId?: string } = {},
   ): void {
-    if (this.net) return;
+    // Not over a standing session, and not after a LOST device
+    // (`deviceIsLost`): a join then would connect a round to a dead device.
+    if (this.net || this.deviceIsLost) return;
     // Refused before anything is built or connected, which is the cheapest of
     // the three places this can be caught and the only one that leaves the
     // player looking at the list they picked from.
@@ -7112,7 +9756,9 @@ export class Game {
     // it awaits that read before it draws a row — and it means the same thing
     // it always did: whatever is answering `/ws` on this page's own origin.
     const region = this.regionBook.resolve(opts.regionId);
-    const net = new NetSession(this.scene, this.mats);
+    // Its rigs built to the map the join expects, which the welcome may yet
+    // move (`applyMatchMap`), and `buildRound`'s `setFielded` with it.
+    const net = new NetSession(this.pieceKits, false, perTeamOf(this.mapDef.layout));
     this.net = net;
 
     this.wireNet(net);
@@ -7151,30 +9797,92 @@ export class Game {
   }
 
   /**
+   * The page's OWN match, for the round `buildRound` is about to build:
+   * the last one closed, a fresh one opened on
+   * the map the player chose and begun on this round's seed and the player's
+   * difficulty, and this page joined to it through a session exactly as a
+   * server's match is joined — so the round is played by the same `Match`, on
+   * the same wire, against the same validation.
+   *
+   * **A fresh match every round**, a restart and the next round included,
+   * rather than a `begin` over the standing one: a begin over a round in play
+   * is a ROTATION to everyone seated (`roundstart`), which a client answers by
+   * rebuilding — the round this method is already building. Closing and
+   * opening costs nothing a begin does not: the world is built either way.
+   *
+   * **The calls are posted in the order they must RUN, and nothing else
+   * orders them.** The owner's port answers in posting order, and the
+   * person's port is handed over on that same port behind the `begin`
+   * (`LocalMatch.dial`), so the host is listening for this page's `join` only
+   * once the round stands — the order the two ports promise nothing about
+   * (`docs/multiplayer.md`, "The local transport") is never needed.
+   *
+   * A BENCHMARK joins as a WATCHER (`LocalMatch.dial`'s `watch`): a peer with
+   * no seat, which sees every body and every shared event and is never a
+   * player in the round — a seat would bench a bot and move the fight it
+   * measures.
+   */
+  private openLocalRound(seed: number): void {
+    this.leaveMatch();
+    const host = this.localOwner.match;
+    // Its rigs built to this round's own roster, so `buildRound`'s
+    // `setFielded` has nothing to rebuild unless the viewer's side moved.
+    const net = new NetSession(this.pieceKits, true, perTeamOf(this.mapDef.layout));
+    this.net = net;
+    this.wireNet(net);
+    this.localOwner.reset();
+    const failed = (err: unknown): void =>
+      this.failLocalRound(err instanceof Error ? err.message : String(err), net);
+    host.open(this.mapDef.id).catch(failed);
+    host
+      .begin({ seed, difficulty: this.difficulty })
+      .then(() => {
+        if (this.net === net) this.localOwner.began();
+      })
+      .catch(failed);
+    const watch = this.bench !== null;
+    net.connect({
+      name: this.playerName,
+      weapon: this.weapon,
+      equipment: this.equipment,
+      throwable: this.throwable,
+      dial: () => host.dial({ watch }),
+    });
+  }
+
+  /**
+   * The page's own match failed under the round `net` is playing — a step
+   * that threw, a call refused, the host's Worker dead or silent. Said, and
+   * the round left: there is no authority left to play it. A stale round's
+   * failure (one `openLocalRound` has already replaced) says nothing.
+   */
+  private failLocalRound(reason: string, net: NetSession): void {
+    if (this.net !== net) return;
+    console.error(`[local match] the round stopped: ${reason}`);
+    this.enterMenu();
+    this.hud.toast(
+      this.localOwner.state === "gone"
+        ? "the offline match has stopped — reload the page to play again"
+        : this.localOwner.state === "restarting"
+          ? "the offline match stopped — restarting it, play again in a moment"
+          : `the round stopped — ${reason}`,
+    );
+  }
+
+  /**
    * What a networked session needs from the rest of the game: where the
    * authority puts this player and their hull, which side and which map the
    * match is on, what its events and bodies do to this screen, and what a
-   * refusal or a lost socket leaves behind. `wireBattle`'s counterpart for a
-   * round whose fight is somebody else's to simulate — every line here is the
-   * screen hearing the AUTHORITY, never deciding for it.
+   * refusal or a lost connection leaves behind — every line here is the
+   * screen hearing the AUTHORITY, never deciding for it, whoever hosts it.
    */
   private wireNet(net: NetSession): void {
-    // The server placed us. This is the only thing that spawns the local body
-    // in a networked round — there is no local respawn timer, because a
+    // The authority placed us. This is the only thing that spawns the local
+    // body — the deploy screen's countdown gates the ASK, and the
     // reinforcement is the authority's to spend.
-    net.onSpawn = (pos, yaw) => {
-      // Cloned either way: the session hands this out of a scratch vector that
-      // the next message overwrites, and a held one outlives more of them.
-      const at = { pos: pos.clone(), yaw };
-      // No world to arrive in yet — held rather than applied or dropped. See
-      // `pendingSpawn`, and `NetSession.onSeated`, which defers on the same
-      // test because it is the same window.
-      if (this.buildPending()) {
-        this.pendingSpawn = at;
-        return;
-      }
-      this.spawnPlayer(at);
-    };
+    // Cloned either way: the session hands this out of a scratch vector that
+    // the next message overwrites, and a held one outlives more of them.
+    net.onSpawn = (pos, yaw) => this.playerSpawned({ pos: pos.clone(), yaw });
 
     // A rejected position. Small disagreements are eased so an occasional
     // refusal is not a visible jerk; a large one is a genuine desync and
@@ -7303,12 +10011,9 @@ export class Game {
 
     net.onEvent = (event) => this.onNetEvent(event);
 
-    // Somebody else's body went down. The same pool and the same offer every
-    // bot's corpse goes through — the only difference is that offline
-    // `registerBotKill` reaches this line having just charged a ticket and
-    // written a killfeed line, and here the authority did both before the news
-    // arrived. A callback rather than a reach into the roster for the reason
-    // every other cross-system effect in this file is one.
+    // Somebody else's body went down: offered to the ragdoll pool off the
+    // authority's word. A callback rather than a reach into the roster for
+    // the reason every other cross-system effect in this file is one.
     //
     // The one refusal left is the view distance, and a body refused there is
     // one the server's own `EntityState.dead` will hide on its clock — see
@@ -7327,14 +10032,18 @@ export class Game {
     // `bodyDrawDistance`.
     net.roster.setViewDistance(bodyDrawDistanceOf(this.mapDef.environment));
 
-    // Boots. The exact counterpart of `wireBattle`'s `onBotStepped`, down to
-    // the callback being handed the body rather than a position, and the one
-    // sound in a netplay round that crosses no wire at all: a footfall is a
+    // Boots, played at the body's own position, and the one sound in a
+    // round that crosses no wire at all: a footfall is a
     // point on the walk cycle, and that cycle is already being integrated from
     // the ground this body covers (see `NetSoldier.onStep`). It fires for all
     // fifteen of them, so nothing here may do work per step — `Sfx.botStep`
     // rejects the far ones, which is where that decision belongs.
     net.roster.onStep = (soldier) => this.sfx.botStep(soldier.position);
+
+    // Somebody else's launcher: the report where their rocket is first drawn
+    // (`NetOrdnance.onLaunch`). This player's own is heard at the trigger
+    // (`launchRocket`), off the local copy that flies out of their hands.
+    net.ordnance.onLaunch = (x, y, z) => this.sfx.launcher(this.launchHeard.set(x, y, z));
 
     // The ballot for the next map, and the countdown that goes with it. Both
     // halves land here because the card may or may not be up yet: the first
@@ -7358,15 +10067,24 @@ export class Game {
     // and refuses to run outside the menu: a rotation arrives in `roundover`,
     // so every one of them used to leave the client rebuilding the map it was
     // already on while the server moved to the next.
+    //
+    // Never in the page's own match: its rounds are begun HERE, each on a
+    // fresh match (`openLocalRound`), and the one `roundstart` an owned match
+    // sends is a begin over a round in play, which this page never makes.
     net.onRoundStart = (mapId) => {
+      if (net.local) return;
       if (this.applyMatchMap(mapId) === "unknown") {
         this.leaveUnknownMap(mapId);
         return;
       }
       this.startRound();
     };
+    // A connection that closed and was not closed from here: in the page's
+    // own match the host let it go, which leaves the round with no authority.
     net.onStateChange = (state) => {
-      if (state === "closed") this.hud.toast("disconnected");
+      if (state !== "closed") return;
+      if (net.local) this.failLocalRound("the match let this page go", net);
+      else this.hud.toast("disconnected");
     };
 
     // The handshake was refused — a match that filled or retired between the
@@ -7374,6 +10092,12 @@ export class Game {
     // The round that was optimistically started is torn down and the player is
     // put back where they chose from, with the server's own words for why.
     net.onRejected = (reason) => {
+      // The page's own match has no lobby to go back to: it is the round
+      // failing, said as such.
+      if (net.local) {
+        this.failLocalRound(reason, net);
+        return;
+      }
       // `enterMenu` drops the session and tears the round down; the lobby then
       // goes back up over it and re-fetches, so the row that refused is gone
       // from the list by the time the player reads why.
@@ -7384,12 +10108,33 @@ export class Game {
   }
 
   /**
-   * Drops the networked session, if there is one. Idempotent, and safe to call
-   * from a state that never had one — which is most of `enterMenu`'s callers.
+   * Drops the session, if there is one — and when it was the page's own
+   * match, closes that match: nothing else will, an owned match having no
+   * idle timer. Idempotent, and safe to call from a state that never had one
+   * — which is most of `enterMenu`'s callers.
+   *
+   * The field is cleared BEFORE the session is disposed: disposing closes its
+   * connection, which raises `closed`, and the handlers that hear it ask
+   * whether the session is still the round's (`failLocalRound`).
    */
   private leaveMatch(): void {
-    this.net?.dispose();
+    const net = this.net;
     this.net = null;
+    // Its bodies out of the ragdoll pool FIRST, while the roster still lists
+    // them: disposing the session drops its soldiers (no rig is disposed —
+    // a rig is joints, its drawing its side's kit), and a corpse the pool
+    // still held would go on spending a physics slot posing and sinking a
+    // rig nobody files or draws until the next round's `ragdolls.reset`.
+    // Every local restart comes through here with corpses on the ground.
+    if (net) for (const soldier of net.roster.soldiers) this.ragdolls.retire(soldier);
+    net?.dispose();
+    // …and out of the cull's pools, which were filed off those rigs
+    // (`installBodyPools`): re-filed with no session, so the pools — and
+    // `drawBodies`, which draws what they hold — hold the death cam's body
+    // alone rather than a roster that is nobody's any more, until the next
+    // round files its own.
+    if (net) this.installBodyPools();
+    if (net?.local) this.localOwner.close();
     // Nothing can claim these now, and dropping them at the boundary is what
     // stops that being a property of the window's length.
     this.hitCredits.clear();
@@ -7401,30 +10146,56 @@ export class Game {
     this.pendingSpawn = null;
   }
 
+  /**
+   * The authority put the local body in the world (`spawn`).
+   *
+   * No world to arrive in yet (a `spawn` can land while a build is pending)
+   * is held rather than applied or dropped; see
+   * `pendingSpawn`, and `NetSession.onSeated`, which defers on the same test
+   * because it is the same window.
+   */
+  private playerSpawned(at: { pos: Vector3Like; yaw: number }): void {
+    if (this.buildPending()) {
+      this.pendingSpawn = at;
+      return;
+    }
+    this.spawnPlayer(at);
+  }
+
+  /**
+   * A round cracked past us: the supersonic N-wave the player hears, and what
+   * it does to their hands.
+   */
+  private roundPassed(at: Vector3Like): void {
+    this.sfx.nearMiss(at);
+    this.player.suppress();
+  }
+
+  /**
+   * A pane the authority broke, applied to this page's glass. `applyBreak` is
+   * idempotent for the visual and reports false for a pane already gone, so a
+   * predicted break plays its shards once.
+   */
+  private breakPane(pane: number, at: Vector3Like, dir: Vector3Like): void {
+    this.glass.applyBreak(pane, at, dir, true);
+  }
+
   /** What a server event does to this client's screen. Presentation only. */
   private onNetEvent(event: ServerEvent): void {
     switch (event.e) {
       case "kill":
         this.onNetKill(event);
         break;
-      // The same pair `wireConquest` plays offline, from the authority's
-      // version of the same event: a flag taken is worth hearing and a flag
-      // lost is worth hearing more, and neither `ConquestSystem` callback fires
-      // on a client that is not stepping one.
+      // The authority's word that a flag changed hands: a flag taken is worth
+      // hearing and a flag lost is worth hearing more (`flagCaptured`).
       case "captured":
-        if (event.by === this.player.team) this.sfx.capture();
-        else this.sfx.flagLost();
-        this.hud.showMessage(
-          `${event.point.toUpperCase()} CAPTURED BY ${teamLook(event.by).name.toUpperCase()}`,
-          2.5,
-        );
+        this.flagCaptured(event.point, event.by);
         break;
       case "neutralised":
-        this.hud.toast(`${event.point} — neutralised`);
+        this.flagNeutralised(event.point);
         break;
-      // We were paid for something. Offline the same line comes off
-      // `ScoreBook.onAward`; in a match it is a receipt the authority
-      // addressed to us, and the client neither adds it up nor checks it —
+      // We were paid for something: a receipt the authority addressed to us,
+      // and the client neither adds it up nor checks it —
       // what the board shows is the `scores` table, and this is the reason.
       case "score":
         this.hud.addScore(event.kind, event.points);
@@ -7447,12 +10218,40 @@ export class Game {
       // talking to a server old enough to still broadcast the event, and a
       // hitmarker for somebody else's round is exactly the failure a version
       // check at the handshake cannot catch, since the shape did not change.
+      //
+      // The other causes are what this page predicts none of, and WHICH of
+      // them are sent is the authority's rule (`ServerEvent`'s `hit`): this
+      // arm only says how each marks, off the event's own `killed` — a blast
+      // or a burn or a hull gun's round with the marker alone (the gun's hit
+      // was predicted and marked at the trigger, so its note is not owed
+      // twice), the tracks with the marker and the note under it.
       case "hit":
-        if (
-          event.shooter === this.net?.slot &&
-          !this.hitCredits.claim(event.killed, event.headshot)
-        ) {
-          this.hitCue(event.killed, event.headshot);
+        if (event.shooter !== this.net?.slot) break;
+        switch (event.cause) {
+          case undefined: {
+            // A round's verdict. The guess drew the marker and the hit's
+            // rumble already (`fire`), so a credit it left swallows the
+            // answer — except a KILL, which no guess can say (`claim`), and
+            // which on a BODY is the red marker and the kill's rumble both:
+            // `roundLanded` with the kill the guess could not know.
+            const said = this.hitCredits.claim(event.killed, event.headshot);
+            if (event.killed && event.victim >= 0) this.roundLanded(true, event.headshot);
+            else if (!said) this.hitCue(event.killed, event.headshot);
+            break;
+          }
+          case "blast":
+          case "fire":
+          case "shell":
+          case "mg":
+            this.hud.flashHitmarker(event.killed);
+            break;
+          case "tracks":
+            this.hitCue(event.killed, false);
+            break;
+          default: {
+            const unhandled: never = event.cause;
+            void unhandled;
+          }
         }
         break;
 
@@ -7470,8 +10269,7 @@ export class Game {
 
       // Somebody is changing a magazine. Spatialised, because knowing WHICH of
       // the enemies in front of you has just gone dry is the whole point of
-      // hearing it, and it is the same `Sfx.botReload` offline hangs off
-      // `BattleSystem.onBotReloaded`.
+      // hearing it (`Sfx.botReload`).
       //
       // Our own is skipped for the reason our own fire is: `player.onReload`
       // played it locally and sent the announcement that came back as this.
@@ -7495,19 +10293,28 @@ export class Game {
       // A round cracked past us. Not a hit and not a hit sound — the supersonic
       // N-wave, which arrives before the report of the rifle that sent it and is
       // the only thing that says the fire is meant for YOU rather than merely
-      // near you. Offline it is `CombatSystem.onNearMiss` finding the player
-      // inside the target loop of somebody else's shot; here no client resolves
-      // anybody else's rounds, so the authority is the only thing that can see
-      // one happen.
+      // near you. On the authority it is `CombatSystem.onNearMiss` finding the
+      // player inside the target loop of somebody else's shot; no client
+      // resolves anybody else's rounds, so the authority is the only thing that
+      // can see one happen.
       //
-      // Both halves of the offline handler, and they are a pair: the crack is
+      // Both halves of the near miss, and they are a pair: the crack is
       // what the player hears and `suppress` is what it does to their hands.
       // Addressed to us by the server, so there is no slot to guard on — see
       // the event's own note.
       case "nearmiss":
         this.netNearPoint.set(event.at[0], event.at[1], event.at[2]);
-        this.sfx.nearMiss(this.netNearPoint);
-        this.player.suppress();
+        this.roundPassed(this.netNearPoint);
+        break;
+
+      // A throw, a rocket or a mine of ours the authority refused: the one
+      // this page booked as it asked is given back, capped at what the kit
+      // carries. Addressed to us, so there is no slot to guard on; a body
+      // that has died since is refilled by its next kit and owed nothing.
+      case "refused":
+        if (!this.player.alive) break;
+        if (event.item === "grenade") this.player.returnGrenade();
+        else this.player.returnOrdnance();
         break;
 
       // A molotov the authority lit. `drawBlast`'s twin: the flames, the
@@ -7519,8 +10326,8 @@ export class Game {
         break;
 
       // A blast the authority resolved. The light, the noise and the
-      // concussion are `onExplosion`'s, exactly as they are offline — the
-      // difference is only who decided it happened.
+      // concussion are `onExplosion`'s; what decided it happened is not this
+      // page.
       // The blast itself, and the one case where the PICTURE is raised from
       // outside `GrenadeSystem`. `drawBlast` puts the six drawn layers up and
       // hands back what the blast went off on; `onExplosion` does the rest with
@@ -7557,6 +10364,13 @@ export class Game {
         const g = tank.spec.gun;
         if (g) this.netShots.push(event.tank, 1, 0, g.range, "cannon");
         this.drawCannon(tank, tank.muzzleToRef(this.shellFrom));
+        // …and its kick on this page's posed copy of the hull: the loader's
+        // clock (a gunner's loader row, and the clock a TAKE OVER inherits),
+        // the rock and the masts (`Vehicle.mirrorShot`). Offline read it off
+        // the core's `hullKicked` until C4; a match never did, so a server's
+        // hulls fired without rocking and a driver who took one over predicted
+        // a shell its authority was still loading.
+        tank.mirrorShot();
         break;
       }
 
@@ -7576,7 +10390,7 @@ export class Game {
         this.netScratch.set(event.at[0], event.at[1], event.at[2]);
         this.netGlassDir.set(event.dir[0], event.dir[1], event.dir[2]);
         for (const pane of event.panes) {
-          this.glass.applyBreak(pane, this.netScratch, this.netGlassDir, true);
+          this.breakPane(pane, this.netScratch, this.netGlassDir);
         }
         break;
       }
@@ -7621,20 +10435,31 @@ export class Game {
    * `interpDelay` behind it, so throwing it here would throw a body that has
    * not visibly been hit yet.
    *
-   * The cue is what offline every bot death gets through `registerBotKill` —
-   * this event is the authority's version of that call, raised once per death
-   * whoever fell. Our own is the one exception, exactly as offline: a player's
-   * own death is the death cam and `playerHurt`, not somebody else falling
-   * over.
+   * The cue is raised once per death whoever fell. Our own is the one
+   * exception: a player's own death is the death cam and `playerHurt`, not
+   * somebody else falling over — and on the feed it is "YOU", the one victim
+   * this page can name, since the slot is its own.
    */
   private onNetKill(event: NetEvent<"kill">): void {
     const killer =
       event.killer >= 0 ? teamLook(event.killer as Team).name : LEASH_KILLER;
     const victimSlot = this.net?.roster.at(event.victim);
-    const victim = victimSlot ? teamLook(victimSlot.team).name : "";
-    this.hud.addKill(killer, victim, event.killer === this.player.team);
+    const victim =
+      event.victim === this.net?.slot
+        ? "YOU"
+        : victimSlot
+          ? teamLook(victimSlot.team).name
+          : "";
+    // `mine` is a kill BY this player's side or this player's OWN death — the
+    // two lines on the feed that are about them.
+    const mine = event.killer === this.player.team || event.victim === this.net?.slot;
+    this.hud.addKill(killer, victim, mine);
     if (victimSlot) {
-      victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
+      // A death nobody dealt (the leash, `killer: -1`) has no bearing, and
+      // `from` is the origin on the wire: thrown from the body's own centre,
+      // as `Bot.takeDamage` stands in for a blow with no origin, it drops.
+      if (event.killer < 0) victimSlot.deathFrom.copyFrom(victimSlot.center);
+      else victimSlot.deathFrom.set(event.from[0], event.from[1], event.from[2]);
       victimSlot.deathDamage = event.amount;
       victimSlot.deathKind = event.kind ?? "bullet";
     }
@@ -7660,59 +10485,89 @@ export class Game {
    */
   private onNetDamage(event: NetEvent<"damage">): void {
     if (event.victim !== this.net?.slot) return;
-    this.player.applyServerHealth(event.health);
-    this.netDamageFrom.set(event.from[0], event.from[1], event.from[2]);
-    this.netDamageAmount = event.amount;
-    this.netDamageKind = event.kind ?? "bullet";
-    this.onPlayerDamaged(
-      event.amount,
-      false,
-      this.netDamageFrom,
-      this.netDamageKind,
-    );
+    this.netScratch.set(event.from[0], event.from[1], event.from[2]);
+    const from = event.dealt === false ? undefined : this.netScratch;
+    this.playerHit(event.health, event.amount, from, event.kind ?? "bullet", false);
   }
 
   /**
-   * Our own death, decided elsewhere.
+   * We were hit — the authority's `damage` (`onNetDamage`), whoever hosts the
+   * match.
    *
-   * `killPlayer` is the local path and must not run here: it charges a ticket
-   * and starts a respawn clock, both of which the server already owns.
+   * Health is the simulation's, so it is ASSIGNED rather than subtracted — a
+   * page that decremented its own would drift out of step with whatever
+   * decided the hit and disagree about who is alive. `applyServerHealth` also
+   * arms the regen lock, which is the half of the hit that is never told: the
+   * simulation holds the health down for `regenDelay` and then heals it back,
+   * and this page runs the identical curve locally rather than being told
+   * about every point of it (D2).
    *
-   * What it DOES owe is the four seconds of watching, because a death cam
-   * decides nothing — it is a camera and a stand-in body, and the round carries
-   * on underneath it either way. The bearing and the size of the killing blow
-   * are the `damage` event's, which the server queues immediately ahead of this
-   * one and which is the only thing that knows them: `died` carries a slot and
-   * a clock and nothing to throw a body with. `enterDying` falls through to the
-   * deploy screen on its own if the cam cannot come up, so this is not a state
-   * that can strand a player.
+   * The bearing, the amount and the kind are kept past this call because the
+   * death that may follow carries none of them — see `playerDown`. `from` is
+   * absent for the one death nobody dealt, the leash's.
    */
-  private onNetDied(event: NetEvent<"died">): void {
-    if (event.slot !== this.net?.slot) return;
+  private playerHit(
+    health: number,
+    amount: number,
+    from: Vector3Like | undefined,
+    kind: DamageKind,
+    died: boolean,
+  ): void {
+    this.player.applyServerHealth(health);
+    this.netDamageHasFrom = from !== undefined;
+    if (from) this.netDamageFrom.set(from.x, from.y, from.z);
+    this.netDamageAmount = amount;
+    this.netDamageKind = kind;
+    this.onPlayerDamaged(amount, died, from, kind);
+  }
+
+  /**
+   * Our own death, decided elsewhere — the authority's `died` (`onNetDied`),
+   * whoever hosts the match.
+   *
+   * What it owes is the four seconds of watching, because a death cam decides
+   * nothing — it is a camera and a stand-in body, and the round carries on
+   * underneath it either way. The bearing and the size of the killing blow
+   * are `playerHit`'s, which the simulation said immediately ahead of this.
+   * `enterDying` falls through to the deploy screen on its own if the cam
+   * cannot come up, so this is not a state that can strand a player.
+   * `respawnIn` is the simulation's clock, armed by the blow.
+   */
+  private playerDown(respawnIn: number): void {
     this.player.health = 0;
     this.player.alive = false;
     if (this.state === "playing") {
       this.enterDying(
-        this.netDamageFrom,
+        this.netDamageHasFrom ? this.netDamageFrom : undefined,
         this.netDamageAmount,
         this.netDamageKind,
-        event.respawnIn,
+        respawnIn,
       );
     } else {
-      this.enterDeploy(event.respawnIn);
+      this.enterDeploy(respawnIn);
     }
+  }
+
+  /**
+   * Our own death, decided by the authority — `playerDown`. The ticket and the
+   * respawn clock are the simulation's; this page owes the watching. The bearing and
+   * the size of the blow are the `damage` event's, queued immediately ahead
+   * of this one: `died` carries a slot and a clock and nothing to throw a
+   * body with.
+   */
+  private onNetDied(event: NetEvent<"died">): void {
+    if (event.slot !== this.net?.slot) return;
+    this.playerDown(event.respawnIn);
   }
 
   /**
    * Somebody's weapon went off.
    *
-   * Worth exactly what offline's `BattleSystem.onBotFired` is worth: a report
-   * to place by ear, and — for an enemy — a couple of seconds on the minimap.
-   * Both are `wireBattle` reading a callback offline, and that callback fires
-   * on nothing here, because this client runs no AI and never hears another
-   * person's trigger. So the authority says it instead.
+   * Worth a report to place by ear, and — for an enemy — a couple of seconds
+   * on the minimap. This client runs no AI and never hears another person's
+   * trigger, so the authority says it instead.
    *
-   * The two halves differ in who they are about, exactly as offline: every shot
+   * The two halves differ in who they are about: every shot
    * in the village is audible whoever fired it, while the reveal is the enemy's
    * alone — a friendly is drawn on that map whether they are shooting or not.
    *
@@ -7722,7 +10577,7 @@ export class Game {
    * pool was built.
    *
    * The reveal is public, and it may name a body across the map behind a wall —
-   * exactly as offline, where any enemy bot firing anywhere is revealed. It
+   * any enemy firing anywhere is revealed. It
    * gives nothing away that the snapshot has not already handed over: every
    * position is in there, and what the minimap withholds it withholds by choice
    * rather than by ignorance.
@@ -7738,14 +10593,13 @@ export class Game {
     const rounds = netBurst(event.n);
     const spacing = burstSpacing(rounds);
     // Voiced by the weapon the authority says is in that slot's hands, so a
-    // match can be read by ear the way an offline round can be read by eye: a
-    // DMR two streets away is not the SMG beside you. A slot with no weapon
+    // round can be read by ear as well as by eye: a DMR two streets away is
+    // not the SMG beside you. A slot with no weapon
     // named is a bot, and a bot fires the flat round.
     const weapon = netWeapon(event.w);
     const voice = weapon?.report;
     // The eye rather than the feet: a rifle goes off at a shoulder, and this is
-    // the only height on a net body that is near one. Offline the same sound is
-    // placed at the bot's own muzzle.
+    // the only height on a net body that is near one.
     for (let i = 0; i < rounds; i++) {
       this.sfx.botShot(shooter.eyePos, i * spacing, voice);
     }
@@ -7793,10 +10647,10 @@ export class Game {
    * arriving as events of their own.
    *
    * Each round is cast from the body's EYE along the aim it is DRAWN with and
-   * flown from its MUZZLE, which is the split `BattleSystem.botFire` makes
-   * offline. Both come off the interpolated pose rather than off the event,
-   * for the reason `NetSoldier.aimYaw` gives: the event is real time and the
-   * body is drawn `interpDelay` behind it, so the authority's aim at the
+   * flown from its MUZZLE, which is the split `BattleSystem.botFire` makes on
+   * the authority. Both come off the interpolated pose rather than off the
+   * event, for the reason `NetSoldier.aimYaw` gives: the event is real time and
+   * the body is drawn `interpDelay` behind it, so the authority's aim at the
    * instant the trigger went belongs to a pose this client has not put on
    * screen yet — spent, it draws a streak leaving from beside the gun.
    *
@@ -7821,7 +10675,7 @@ export class Game {
       shooter.kick(shot.rounds, shot.spacing);
       const muzzle = this.netMuzzle.copyFrom(shooter.muzzleWorld());
       shooter.aimDirToRef(this.netShotDir);
-      this.combat.drawRounds(
+      this.combatFx.drawRounds(
         shooter.eyePos,
         this.netShotDir,
         muzzle,
@@ -7847,7 +10701,7 @@ export class Game {
    */
   private drawNetHullShot(shot: PendingShot): void {
     const tank = this.vehicles.hulls[shot.slot];
-    if (!tank || !tank.alive || !tank.body.isEnabled()) return;
+    if (!tank || !tank.alive || !tank.present) return;
     const muzzle = this.netMuzzle;
     if (shot.gun === "cannon") {
       tank.muzzleToRef(muzzle);
@@ -7856,7 +10710,7 @@ export class Game {
       tank.mgMuzzleToRef(muzzle);
       tank.mgDirToRef(this.netShotDir);
     }
-    this.combat.drawRounds(
+    this.combatFx.drawRounds(
       muzzle,
       this.netShotDir,
       muzzle,
@@ -7874,10 +10728,10 @@ export class Game {
 
   /**
    * The authority's answer to a mount or a dismount, and the ONLY thing that
-   * puts this player in a hull or takes them out of one in a match.
+   * puts this player in a hull or takes them out of one.
    *
-   * It reaches `mount`/`clearVehicle` — the same pair an offline round uses, so
-   * everything either of them owns is owned identically here. A refusal arrives
+   * It reaches `mount`/`clearVehicle` through `seatAnswer`, so everything
+   * either of them owns is owned in one place. A refusal arrives
    * as `tank: -1` on a player who is already on foot, which `clearVehicle`
    * reads as the no-op it documents itself to be.
    *
@@ -7888,61 +10742,84 @@ export class Game {
    */
   private onNetSeat(event: NetEvent<"seat">): void {
     if (event.slot !== this.net?.slot) return;
-    if (event.tank >= 0) {
-      const tank = this.vehicles.hulls[event.tank];
+    let at: Vector3Like | null = null;
+    if (event.pos) {
+      this.netScratch.set(event.pos[0], event.pos[1], event.pos[2]);
+      at = this.netScratch;
+    }
+    this.seatAnswer(event.tank, event.seat ?? DRIVER, at, event.yaw ?? null);
+  }
+
+  /**
+   * Where the simulation says this player sits — **the one door** (D12): the
+   * authority's `seat`, whoever hosts the match, the answer to a mount, a
+   * crossing or a dismount, and the hull burning under them (D14).
+   *
+   * A hull this player was not in is a MOUNT and the same hull with the other
+   * chair is the CROSSING they asked for; `-1` is on foot. Getting out puts
+   * the body where the simulation set it down — BEFORE the seat is given up,
+   * because `clearVehicle` deliberately moves nobody and the camera hand-off
+   * reads the chase yaw that is about to be gone — and resets the first-person
+   * camera to `yaw`, the chase camera's own: its yaw is wherever the player
+   * was looking when they walked up to the hull, a snap of up to half a turn
+   * otherwise, and the reset clears the springs that sat frozen the whole
+   * drive. A refusal is an answer naming where they already are, which every
+   * branch reads as nothing to do.
+   */
+  private seatAnswer(
+    tankIndex: number,
+    seatIndex: number,
+    at: Vector3Like | null,
+    yaw: number | null,
+  ): void {
+    if (tankIndex >= 0) {
+      const tank = this.vehicles.hulls[tankIndex];
       if (!tank) return;
-      const seat: CrewSeat = event.seat === GUNNER ? GUNNER : DRIVER;
+      const seat: CrewSeat = seatIndex === GUNNER ? GUNNER : DRIVER;
       if (tank !== this.driving) this.mount(tank, seat);
       else if (seat !== this.drivingSeat) this.swapSeat(tank, seat);
       return;
     }
     if (!this.driving) return;
-    // Where the body goes is the authority's, exactly as a spawn's is — and it
-    // is placed BEFORE the seat is given up for `dismount`'s reason:
-    // `clearVehicle` deliberately does not move anybody, and the camera
-    // hand-off below reads the chase yaw that is about to be gone.
-    if (event.pos) {
-      this.netScratch.set(event.pos[0], event.pos[1], event.pos[2]);
-      this.player.placeAt(this.netScratch);
-    }
-    const yaw = event.yaw ?? this.vehicleCam.yaw;
+    if (at) this.player.placeAt(at);
+    const facing = yaw ?? this.vehicleCam.yaw;
     this.clearVehicle();
-    // The aim just jumped a long way — see `dismount`, which spends the same
-    // two lines for the same reason on the offline path.
-    this.cameraSys.reset(yaw);
+    this.cameraSys.reset(facing);
+    // The aim just jumped a long way: reprojecting through it would greet the
+    // player with one frame smeared across the whole screen — the same reason
+    // `spawnPlayer` does this.
     this.motionBlur.reset();
     this.input.consumeFire();
   }
 
   /**
-   * Who the local player's own rounds may find: the bots offline, the bodies
-   * drawn from the wire in a netplay round.
+   * Who the local player's own rounds may find: the bodies drawn from the
+   * wire, and the hulls, whoever hosts the match.
    *
    * Two callers — the shot resolve and the gamepad aim assist — and the whole
    * reason this is a method is that they must never be handed different lists:
    * the assist's job is to hold an aim the rounds can use.
    *
-   * `battle` is not merely the wrong list in a netplay round, it is an EMPTY
-   * one, and empty in a way no team check reveals. `buildRound` calls
-   * `battle.reset()`, which leaves every bot in the pool dead, and `updateWorld`
-   * returns before `battle.update` is ever reached, so nothing respawns them;
-   * the only other combatant that side knows about is the local player, whom the
-   * team check drops. Reading that list there cost the shooter every local cue a
-   * hit is owed — sparks landed on the wall behind the man who was hit, no
-   * hitmarker arrived until the server's `hit` event had made the round trip,
-   * and aim assist had nothing to hold on to at all.
+   * A local roster was not merely the wrong list in a netplay round, it was an
+   * EMPTY one, and empty in a way no team check reveals: the page's old pool was
+   * reset dead and never stepped in a match. Reading that list there cost the
+   * shooter every local cue a hit is owed — sparks landed on the wall behind
+   * the man who was hit, no hitmarker arrived until the server's `hit` event
+   * had made the round trip, and aim assist had nothing to hold on to at all.
    *
-   * The result is a scratch array owned by whichever side answered. Consume it
-   * inside the call, exactly as `BattleSystem.hittablesAgainst`'s own contract
-   * requires — both callers do.
+   * The result is a scratch array (`netTargets`). Consume it inside the call,
+   * exactly as `BattleSystem.hittablesAgainst`'s own contract requires — both
+   * callers do.
    */
   private enemyTargets(): Hittable[] {
-    if (!this.net) return this.battle.hittablesAgainst(this.player.team);
+    const out = this.netTargets;
+    out.length = 0;
+    if (!this.net) return out;
     // The bodies, plus the armour. A hull is a `Hittable` on this side too and
     // has to be in the list for the local cue a hit is owed — without it a
     // round fired at a tank sparks off the collider with no hitmarker, and the
     // aim assist has nothing to hold. What it CANNOT do is damage the thing:
-    // `Vehicle.predicted` refuses every blow in a match, exactly as
+    // `Vehicle.predicted` refuses every blow, exactly as
     // `NetSoldier.takeDamage` does, so this list is a prediction and nothing
     // more.
     //
@@ -7950,8 +10827,6 @@ export class Game {
     // that array is `NetRoster`'s and is handed out again on the next call, and
     // a class that has deliberately never heard of a vehicle should not come
     // back holding two.
-    const out = this.netTargets;
-    out.length = 0;
     out.push(...this.net.roster.hittablesAgainst(this.player.team));
     for (const tank of this.vehicles.hulls) {
       if (tank.alive && tank.team !== this.player.team) out.push(tank);
@@ -7959,31 +10834,50 @@ export class Game {
     return out;
   }
 
-  /** See `enemyTargets`. Reused, so a shot in a netplay round allocates nothing. */
+  /** Where `onLaunch` heard a rocket leave, reused so a launch allocates nothing. */
+  private readonly launchHeard = new Vector3();
+
+  /** See `enemyTargets`. Reused, so a shot allocates nothing. */
   private readonly netTargets: Hittable[] = [];
 
   /**
    * Every body but the local player's, as the minimap draws them.
    *
-   * The same substitution `enemyTargets` makes, for the same reason and with
-   * the same failure behind it: in a netplay round `battle.bots` is a pool
-   * `battle.reset()` left dead and `updateWorld` never steps again, so the map
-   * drew no friendlies at all and a reveal had nobody to name. It was not a
-   * missing feature so much as a list that had quietly gone empty — the panel
-   * still drew, the flags still moved, and only the blips were gone.
+   * The roster off the wire, `enemyTargets`' source: the bodies the fight is
+   * drawn with, whoever hosts it.
    *
    * Unlike `enemyTargets` this is a plain READ — no shot is resolved against
    * it, no team is filtered out of it — so it hands back the array as it
    * stands rather than a scratch list, and both teams are in it because the
    * minimap decides for itself which half it may draw.
    *
-   * The local player's own slot IS in the netplay array, and is left dead by
+   * The local player's own slot IS in the array, and is left dead by
    * `NetRoster.applyRoster` for the life of the session (its snapshots are
    * skipped, so nothing revives it). That is what keeps a friendly blip from
-   * sitting under the arrow that already stands for the player.
+   * sitting under the arrow that already stands for the player — and a blob
+   * shadow from sitting under the player twice.
+   *
+   * The one read of the round's bodies: the minimap, the blob shadows (a
+   * living body at its feet, a corpse where its ragdoll lies,
+   * `corpseShadow`), the bodies' shadow map and the grass all take it.
    */
-  private mapBodies(): readonly Combatant[] {
-    return this.net ? this.net.roster.soldiers : this.battle.bots;
+  private mapBodies(): readonly NetSoldier[] {
+    return this.net?.roster.soldiers ?? NO_SOLDIERS;
+  }
+
+  /**
+   * `pushers`, refilled in place once a frame by `updateNetWorld`: every
+   * LIVING body, the player's included — a corpse is under Havok and bends
+   * no grass, the player's own slot in the roster is left dead, and a dead
+   * player (the death cam, a benchmark's never-placed body) is nowhere to
+   * bend it. No hull: armour captures nothing.
+   */
+  private fillPushers(): void {
+    const into = this.pushers;
+    into.length = 0;
+    if (this.player.alive) into.push(this.player);
+    const bodies = this.mapBodies();
+    for (let i = 0; i < bodies.length; i++) if (bodies[i].alive) into.push(bodies[i]);
   }
 
   /**
@@ -8035,6 +10929,13 @@ export class Game {
    * what every death on the wire was before a blast could throw a body.
    */
   private netDamageKind: DamageKind = "bullet";
+  /**
+   * …and whether that hit had a bearing at all — `playerHit` takes `from` as
+   * optional, for the one death nobody dealt, the leash's. True by default,
+   * which is what every death on the wire is read as: a `damage` always
+   * names a `from`.
+   */
+  private netDamageHasFrom = true;
 
   /** Scratch for a drawn net round's muzzle and axis. See `drawNetShots`. */
   private readonly netMuzzle = new Vector3();
@@ -8046,8 +10947,8 @@ export class Game {
    */
   private readonly netShots = new NetShotQueue();
   /**
-   * The muzzle flashes those shots are owed — `BattleSystem.muzzleFlashes` and
-   * its `flashPool` exactly, because they feed the same budget. Filled and
+   * The muzzle flashes those shots are owed, fed to the one muzzle-light
+   * budget (`spendMuzzleLightBudget`). Filled and
    * emptied inside `drawNetShots`, which is what makes the pool safe to reuse
    * from the start again.
    */
@@ -8108,37 +11009,41 @@ export class Game {
    * authority's: everybody else's bodies, and the effects nobody else advances.
    *
    * One method because it has two callers that must never drift apart —
-   * `updateWorld` for the states that are IN the round, and the deploy screen
-   * for the one state that is not. A player waiting to come back is watching a
-   * fight that has not stopped for them, and this screen is a live view of it
-   * with a top-down map of the flags over the top; left unstepped, sixteen
-   * bodies stand frozen behind the card and then snap to wherever they really
-   * are on the frame the player deploys.
+   * `updateWorld` for the states that are IN the round, and
+   * `updateNetUnderCard` for a SERVER's round carried on behind a screen that
+   * is not: the deploy screen, or a lid over the round (`updateRoundBehind`).
+   * A player waiting to come back is watching a fight that has not stopped
+   * for them, and the deploy screen is a live view of it with a top-down map
+   * of the flags over the top; left unstepped, sixteen bodies stand frozen
+   * behind the card and then snap to wherever they really are on the frame
+   * the player deploys. In the page's own match there is no such fight: the
+   * card HOLDS the match, so the second caller never runs there.
    *
    * `RagdollSystem` is in here for a reason sharper than symmetry: `updateNet`
    * is what raises an interpolated death, and a death raised while the pool is
-   * not being stepped is a corpse that takes a rig, parents its joints to
-   * proxies nothing writes, and hangs in the air for the rest of the round.
+   * not being stepped is a corpse that takes a rig, poses its joints off
+   * bodies nothing steps, and hangs in the air for the rest of the round.
    * Stepping the roster without stepping the pool is not half the feature, it
    * is a haunting.
    *
    * This is still not simulation and may never become it. Nothing here decides
    * an outcome, which is what keeps it callable from a state that owns none —
-   * and it stays out of `paused` and `menu` for the reason it belongs in
-   * `deploy`: those two are a round that is not running, and this is a round
-   * running without you.
+   * and it stays out of `menu` and every round the page holds for the reason
+   * it belongs under a server's `deploy`: those are a round that is not
+   * running, and this is a round running without you.
    */
   private updateNetWorld(dt: number): void {
-    // The same slot names the offline sequence uses, so one report reads the
-    // same way in a match as out of one — a netplay frame is `world` > `net` >
-    // these, and what is MISSING from it (the bots, the flags) is missing
-    // because the authority ran it, which is itself the fact worth seeing.
+    // A frame is `world` > `net` > these, and what is MISSING from it (the
+    // bots, the flags) is missing because the authority ran it — in its own
+    // process, or in the page's own match, whose step the profiler files as
+    // the `sim` root (`LocalOwnerHooks.fileTiming`).
     this.prof.begin(P.net);
     this.updateNet(dt);
     this.prof.end(P.net);
-    // The rounds somebody else fired, drawn here and only here: this is the
-    // netplay counterpart of the muzzle-flash budget `updateWorld` spends the
-    // moment the bots have finished pulling their triggers, and it is the one
+    // What the grass bends around, now the bodies stand where this frame
+    // draws them.
+    this.fillPushers();
+    // The rounds somebody else fired, drawn here and only here: the one
     // place in the frame where a streak spawned is a streak that will be
     // flown — `stepShots` below is what flies it.
     this.drawNetShots();
@@ -8157,11 +11062,14 @@ export class Game {
       this.prof.begin(P.vehicles);
       this.syncNetVehicles();
       this.vehicles.update(dt, this.vehicleOrders);
+      // The drawing follows the hulls: the joints written here, and composed
+      // once a frame before the render (`drawHulls`).
+      this.vehicleViews.update();
       this.prof.end(P.vehicles);
       // Posing a hull off the wire is still stepping it, and an engine heard
       // from outside is a position and a speed either way — so a match's
-      // armour is as audible as an offline bot crew's, including from behind
-      // the deploy card, where this method is the round running without you.
+      // armour is audible whoever crews it, including from behind the deploy
+      // card, where this method is the round running without you.
       this.fleetStepped = true;
     }
     // What follows the armour, and each of its three is owed to this side for
@@ -8178,7 +11086,7 @@ export class Game {
   /**
    * The three transitions a hull makes in a match, applied from the wire.
    *
-   * A hull is LIVE, a WRECK or GONE, and in a netplay round the authority owns
+   * A hull is LIVE, a WRECK or GONE, and the authority owns
    * every step between them — `VehicleSystem`'s own two clocks stand down for
    * a `predicted` fleet. So this is the whole of what a client does about
    * them, and each arm is an edge rather than a state so a snapshot restating
@@ -8187,27 +11095,33 @@ export class Game {
    *   - **gone** — dropped from the snapshot, so it is taken off the field.
    *   - **arrived** — named again after being gone, so a fresh hull is put on
    *     its hardstanding. `placeAt` is what puts the collider, the paint and
-   *     the gun's clock back, exactly as a respawn does offline.
+   *     the gun's clock back, exactly as a respawn does.
    *   - **burned** — still there and no longer alive. `Vehicle.wreck` is the same
    *     door `destroy` takes, which is what keeps the toast, the crew and the
    *     charred repaint identical on both sides of the wire.
    *
    * `occupied` is written here as well, and it has to be: it is the flag
-   * `enterable` and `occupiedNear` read, nothing local ever writes it in a
-   * match, and without it this client would offer a seat in a tank somebody
+   * `enterable` and `occupiedNear` read, nothing local ever writes it, and
+   * without it this client would offer a seat in a tank somebody
    * else is already sitting in.
    */
   private syncNetVehicles(): void {
-    const net = this.net;
-    if (!net) return;
-    for (const [i, tank] of this.vehicles.hulls.entries()) {
-      const present = net.vehicles.present(i);
+    const src = this.net?.vehicles;
+    // Before the session's first snapshot every hull reads ABSENT, and posing
+    // off that would take the whole fleet off the field and then "arrive"
+    // each hull — a pop and a READY toast at every round start.
+    if (!src || !src.synced) return;
+    // By index: `entries()` is an iterator and a pair per hull, every frame.
+    const hulls = this.vehicles.hulls;
+    for (let i = 0; i < hulls.length; i++) {
+      const tank = hulls[i];
+      const present = src.present(i);
       if (!present) {
-        if (tank.body.isEnabled()) tank.hide();
+        if (tank.present) tank.hide();
         continue;
       }
-      const state = net.vehicles.stateFor(i);
-      if (!tank.body.isEnabled()) {
+      const state = src.stateFor(i);
+      if (!tank.present) {
         // A fresh hull, and it is placed at the position that arrived rather
         // than at the hardstanding: the two are the same on a respawn, and
         // they are NOT the same for a hull this client has only just been told
@@ -8215,26 +11129,32 @@ export class Game {
         // its pad for one frame before the wire dragged it to where it is.
         if (!state) continue;
         tank.placeAt(this.hullPlace.set(state.x, state.y, state.z), state.yaw);
+        // Every hull is placed when the fleet is built, so a hull ARRIVING is
+        // one that was gone — burned and taken off, or gone already when this
+        // client joined — and is back: a respawn, whoever's eyes it is seen
+        // through, and owed the toast `VehicleSystem` would have raised.
+        this.hullReady(tank);
       }
       // What is left of it, written straight in rather than through
       // `takeDamage` — which a `predicted` hull refuses by design. This is the
       // number the driver's own armour gauge draws, and it is the authority's
-      // in a match exactly as the player's own health is.
-      tank.health = net.vehicles.health(i);
-      if (!net.vehicles.alive(i)) tank.wreck();
+      // exactly as the player's own health is.
+      tank.health = src.health(i);
+      if (!src.alive(i)) tank.wreck();
       // Both seats, and each from its own field on the wire: `by` is the
       // driver's and `by2` the gunner's, exactly as `VehicleState` states
       // them. Written straight in rather than derived, because the whole point
       // of the pair travelling is that a client never has to guess.
-      this.vehicles.setOccupied(tank, DRIVER, net.vehicles.occupant(i) >= 0);
-      this.vehicles.setOccupied(tank, GUNNER, net.vehicles.gunner(i) >= 0);
+      this.vehicles.setOccupied(tank, DRIVER, src.occupant(i) >= 0);
+      this.vehicles.setOccupied(tank, GUNNER, src.gunner(i) >= 0);
     }
   }
 
   /**
    * That same frame, plus the two gauges, for a card the round is running
-   * behind. Offline both callers are a game genuinely held; in netplay neither
-   * is, and the difference is the whole of this method.
+   * behind — a server's round, which nothing on this page holds; the page's
+   * own match is genuinely held under the same cards, and never reaches here
+   * (`updateRoundBehind`). The difference is the whole of this method.
    *
    * The two HUD pushes are `updateGameplay`'s, made here because the deploy
    * screen and the pause card are the two overlays that deliberately do NOT
@@ -8260,22 +11180,23 @@ export class Game {
   }
 
   /**
-   * True while the world on screen is genuinely stopped — an offline pause, and
-   * whatever is raised over one. It is what the HUD's own clock keys off: the
-   * killfeed and the toasts belong to the frame, so they freeze with it and fade
-   * with it, and the failure either way round is a fight fading off a still
-   * screen or a still screen catching up in one jump.
+   * True while the world on screen is genuinely stopped — a pause over the
+   * page's own match, and whatever is raised over one. It is what the HUD's own
+   * clock keys off: the killfeed and the toasts belong to the frame, so they
+   * freeze with it and fade with it, and the failure either way round is a
+   * fight fading off a still screen or a still screen catching up in one jump.
    *
-   * The session test is the whole of the online half: in a netplay round nothing
-   * on this client holds anything, because the authority never heard the key.
-   * Which screens hold the world OFFLINE is `ScreenSpec.holdsWorld`, asked of
-   * the whole stack — the deploy screen is deliberately not one of them even
-   * though it holds the world just as hard, because the gauges under it are the
-   * ones a player reads while choosing and the countdown on the card is a clock
-   * of its own.
+   * `remoteRound` is the whole of the server's half: in a server's round
+   * nothing on this client holds anything, because the authority never heard
+   * the key. Which screens hold the page's OWN match is
+   * `ScreenSpec.holdsWorld`, asked of the whole stack — the deploy screen is
+   * deliberately not one of them even though it holds the world just as hard
+   * (nothing is advanced under it, `updateWorld` being the one door), because
+   * the gauges under it are the ones a player reads while choosing and the
+   * countdown on the card is a clock of its own.
    */
   private get worldHeld(): boolean {
-    return !this.net && this.screens.holdsWorld;
+    return !this.remoteRound && this.screens.holdsWorld;
   }
 
   /**
@@ -8291,138 +11212,92 @@ export class Game {
    * the wrong one silently: the row is next to the four that are right.
    *
    * The clock is here rather than in `updateDeployScreen` because it is the
-   * ROUND's and not the screen's. The authority runs `NetPlayer.respawnT` down
+   * ROUND's and not the screen's. The authority runs `SimPlayer.respawnT` down
    * whatever this client has on top, and the local copy is a countdown drawn on
    * the card plus the gate on its own Deploy button — so a lid that stops it
    * makes a player wait out time the server has already given them back, and the
-   * number on the card is wrong the whole while. Offline that same lid genuinely
-   * holds the round and the clock is right to stop with it. Under no lid the
-   * deploy screen runs its own, which is why this asks for both.
+   * number on the card is wrong the whole while. Under no lid the deploy screen
+   * runs its own, which is why this asks for both.
+   *
+   * **Never in the page's own match**, where there is no round behind the card
+   * to carry on: the match steps only through `updateWorld`, so the deploy
+   * screen and every lid over a round HOLD it, and the clock on the card holds
+   * with it — the reinforcement is the page's to time there (the match is
+   * built holding no respawn clock of its own, `docs/multiplayer.md`). A
+   * frame drawn from snapshots that have stopped arriving would only slide
+   * every body to its newest one and freeze it.
    */
   private updateRoundBehind(dt: number): void {
-    if (!this.net || !this.screens.roundBehind) return;
+    if (!this.remoteRound || !this.screens.roundBehind) return;
     this.updateNetUnderCard(dt);
     if (!this.screens.lidUp || this.screens.under !== "deploy") return;
     this.respawnT -= dt;
     this.deployScreen.update(this.respawnT);
   }
 
-  private updateWorld(dt: number): boolean {
-    // A networked round is somebody else's simulation. Everything below this
-    // decides an outcome — who owns a flag, where a bot is going, who died —
-    // and the authority has already decided all of it, so the client draws what
-    // it was told and runs none of it. The bodies, the flags and the tickets
-    // all arrive through `NetSession`, which is stepped from `updateGameplay`
-    // where the local player's own frame is.
+  /**
+   * Everything in a frame that is about the FIGHT rather than about the player:
+   * the objectives, the bots, the rounds already in the air, and the bodies on
+   * the ground. A round that ends says so as the wire's `roundover`, which
+   * moves the state on; nothing here returns it.
+   *
+   * It is its own method because the death cam needs every line of it and not
+   * one line of what surrounds it. The whole point of watching your own body
+   * fall is that the fight carries on around it — tickets bleed, a squad takes
+   * the flag you died on, your killer walks past — and a death cam over a world
+   * that stopped is a screenshot. Splitting it here is what makes that true by
+   * construction rather than by keeping two copies of the sequence in step, the
+   * same failure `installMap` exists to prevent one layer down.
+   */
+  private updateWorld(dt: number): void {
+    // **Every round is a match, and this page's half of one is DRESSING on
+    // what it was told**. The authority has
+    // decided who owns a flag, where a bot is going and who died; the bodies,
+    // the flags and the tickets arrive through `NetSession`, and what this
+    // page still owes is the picture of them — a tracer, the impact at the
+    // end of it, the grenade the thrower watched leave their own hand —
+    // which decides nothing and is stepped by nobody else. Left out they do
+    // not merely stop moving: a tracer is spawned AT the muzzle a hundredth
+    // of a metre long and it is `update` that flies it and hides it again.
     //
-    // What it still owes is the DRESSING on what it was told, and that is a
-    // shorter list than "everything below": a tracer, the impact at the end of
-    // it and the grenade the thrower watched leave their own hand decide
-    // nothing, are owned by this client alone, and are stepped by nobody else.
-    // Left out they do not merely stop moving — a tracer is spawned AT the
-    // muzzle a hundredth of a metre long and it is `update` that flies it and
-    // hides it again, so every shot left a lit dot hanging in the air where
-    // the muzzle had been, and a thrown grenade hung at the release point with
-    // a fuse that never ran down. Nothing in here may decide an outcome; that
-    // is what keeps this from growing back into the simulation below.
+    // The bodies are drawn from here rather than from `updateGameplay` so
+    // that the DEATH CAM gets them too: every line of this method is what a
+    // death cam needs and none of what surrounds it.
     //
-    // The bodies are drawn from here rather than from `updateGameplay` so that
-    // the DEATH CAM gets them too. Every line of this method is what a death
-    // cam needs and none of what surrounds it — that is the split the header
-    // above argues — and a networked round left `updateNet` on the other side
-    // of it, so the four seconds spent watching your own body fall were four
-    // seconds during which nobody else moved. The order is unchanged: this is
-    // still the first thing after the local player has been simulated and
-    // before anything reads where anybody is.
-    if (this.net) {
-      this.updateNetWorld(dt);
-      return true;
-    }
-
-    // --- objectives ---
-    // Runs before the bots so their think tick sees this frame's ownership.
-    this.prof.begin(P.conquest);
-    this.combatants.length = 0;
-    this.combatants.push(this.player, ...this.battle.bots);
-    this.conquest.update(dt, this.combatants);
-    this.prof.end(P.conquest);
-    if (this.conquest.winner !== null) {
-      this.endRound(this.conquest.winner);
-      return false;
-    }
-
-    // --- the armour ---
-    // Before the bots, for the reason `ConquestSystem` runs before them: a
-    // bot's think tick tests line of sight against the solid world, and a hull
-    // is part of that world. Stepped after the flags and before the AI, a tank
-    // that has just pulled across a street breaks the sightline on the same
-    // frame it visibly blocked it rather than one frame late.
+    // **In the page's own match this is also where the round is STEPPED** —
+    // the one door the match's clock is advanced through, so the states that
+    // do not call this (the deploy screen, a pause) genuinely hold it. Posted
+    // and never awaited: the match answers between frames, and what it says
+    // reaches this frame or the next as the wire, exactly as a server's does.
     //
-    // It is also what MOVES the hull the camera is about to be framed against —
-    // see `VehicleCamera`'s note on why its two halves straddle this call.
-    //
-    // The bot crews go first, for the reason `updateDriver` runs before this
-    // for the player: what they write is the drive input this step consumes,
-    // so a crew stepped afterwards would be steering a hull on last frame's
-    // orders. It is also where a crew's shell is fired, which is why it lands
-    // before the bots think — a hull destroyed by one is not a target on the
-    // same frame's acquisition, exactly as a flag taken by `conquest.update`
-    // is not still contested.
-    this.prof.begin(P.vehicles);
-    this.crew.update(dt);
-    this.vehicles.update(dt, this.vehicleOrders);
-    // Immediately after the hulls have moved, and before the bots think: a
-    // body taken by the tracks is not a target on the same frame's
-    // acquisition, exactly as a hull destroyed by a crew's shell is not. It
-    // sees where the armour ENDED this frame rather than where it started,
-    // which is the whole of what running somebody over is.
-    crushSweep(this.hullRules);
-    this.prof.end(P.vehicles);
-    // The hulls have moved and the crews are aboard, which is everything
-    // `pushHullEngines` reads off them at the end of the frame.
-    this.fleetStepped = true;
-
-    // --- bots ---
-    this.prof.begin(P.bots);
-    this.battle.update(dt, this.cameraSys.camera.position);
-    this.spendMuzzleLightBudget(this.battle.muzzleFlashes);
-    this.prof.end(P.bots);
-    // After the bots, so a grenade thrown on this frame's think tick flies on
-    // this frame rather than sitting in the thrower's hand until the next one.
-    this.stepShots(dt);
-    // ...and after the grenades, because a blast kill resolves in there. The
-    // armour moved further up this method rather than just above the call, so
-    // the mine's trigger still sees where a hull IS; the ordering `stepAftermath`
-    // asks for is satisfied by both callers in different places, which is the
-    // only reason the two blocks are two.
-    this.stepAftermath(dt);
-    return true;
+    // **Only what fits under the slack is stepped** (`CONFIG.net. localSlack`):
+    // a frame posts as much of its `dt` as keeps the match's unanswered time
+    // under it, and the rest is HELD (`LocalOwner.pass`, which hands over
+    // whatever this did not step), so a device the match cannot keep up on
+    // plays the fight slower than real time rather than further and further
+    // behind its picture. Never the benchmark's, which posts one advance per
+    // step and holds nothing back.
+    if (this.localRound) this.localOwner.step(dt, this.bench !== null, this.prof.armed);
+    this.updateNetWorld(dt);
   }
 
   /**
-   * The rounds in the air and the grenades under them, stepped for both worlds.
+   * The rounds in the air and the grenades under them. Nothing here decides
+   * an outcome, which is what makes it callable from a client that owns none.
    *
-   * **One of the two blocks both world steps share, and the reason they are
-   * shared is the reason `installMap` is one funnel**: a system added to the
-   * offline sequence and forgotten in the networked one does not throw and does
-   * not log — it simply never runs in a match, and the symptom is a tracer that
-   * hangs at the muzzle or a fuse that never burns down, which reads as a bug
-   * in that system rather than as a missing line here. Nothing in either block
-   * decides an outcome, which is what makes it callable from a client that owns
-   * none.
-   *
-   * They are TWO blocks rather than one because the armour goes between them,
-   * and it goes in a different place on each side: offline the fleet is stepped
-   * before the bots think, and in a match it is posed from the wire after this.
-   * What both orders guarantee is the only thing `stepAftermath` needs — that
-   * the hulls have already moved.
+   * One of TWO blocks rather than one because the armour goes between them:
+   * the fleet is posed from the wire after this, and `stepAftermath` needs
+   * the hulls to have moved.
    */
   private stepShots(dt: number): void {
     this.prof.begin(P.combat);
-    this.combat.update(dt);
+    this.combatFx.update(dt);
     this.prof.end(P.combat);
     this.prof.begin(P.grenades);
+    // This page's grenades fly only its own prediction — the throw it watched
+    // leave the hand; everybody else's are drawn off the wire (`NetGrenades`).
     this.grenades.update(dt);
+    this.grenadeFx.update(dt);
     this.pushFires();
     this.prof.end(P.grenades);
   }
@@ -8430,41 +11305,47 @@ export class Game {
   /**
    * Every burning molotov's light and sound, eased on the fire's own swell.
    *
-   * In `stepShots`, so both worlds run it — a fire in a match is drawn off the
-   * wire and still owes its light — and straight after `grenades.update`, so a
-   * fire that went out this frame has already had `onBurntOut` take its light
-   * and is not visited. The sound is `Sfx.ambience`'s held-open graph, pushed
-   * every frame it burns exactly as `AmbienceSystem` pushes a drum's, and
-   * keyed off the drums' index space (`fireSoundKey`).
+   * In `stepShots`, so every frame that draws the round runs it — a fire is
+   * drawn off the wire and still owes its light — and straight after
+   * `grenades.update`, so a fire that went out this frame has already had
+   * `onBurntOut` take its light and is not visited. The sound is
+   * `Sfx.ambience`'s held-open graph, pushed every frame it burns exactly as
+   * `AmbienceSystem` pushes a drum's, and keyed off the drums' index space
+   * (`fireSoundKey`).
    */
   private pushFires(): void {
     this.grenades.forEachFire(this.pushFire);
   }
 
   /** `pushFires`' visitor, bound once so a frame with a fire in it mints no closure. */
-  private readonly pushFire = (id: number, at: Vector3, strength: number): void => {
+  private readonly pushFire = (id: number, at: Vector3Like, strength: number): void => {
     const light = this.fireLights.get(id);
     if (light) light.baseIntensity = CONFIG.molotov.light.intensity * strength;
-    if (strength > 0.05) this.sfx.ambience(fireSoundKey(id), at, this.fireSound);
-    else this.sfx.ambienceOff(fireSoundKey(id));
+    // A COPY of the fire's floor (`fireAt`'s terms).
+    if (strength > 0.05) {
+      this.sfx.ambience(fireSoundKey(id), this.fireAt.copyFrom(at), this.fireSound);
+    } else {
+      this.sfx.ambienceOff(fireSoundKey(id));
+    }
   };
 
   /**
    * What the frame owes once the armour has moved: the mines, the physics
    * world, and the rebuild a broken pane left behind.
    *
-   * `stepShots`'s other half, shared for the same reason, and the ordering it
-   * asks of a caller is one line long: **the hulls must already have been
-   * stepped this frame.** A mine's trigger is a distance test against where a
+   * `stepShots`'s other half, and the ordering it asks of `updateNetWorld`
+   * is one line long: **the hulls must already have been posed this
+   * frame.** A mine's trigger is a distance test against where a
    * hull IS, and running it first would arm the road a frame behind the tank.
    *
    * **The ENGINE before its three clients, always.** A corpse tested for
    * stillness or a shard aged before its own step would be reading last frame's
    * velocities. And this is now the ONE place the physics world is stepped
-   * anywhere in the client — `scene.physicsEnabled` is false precisely so that
-   * a pause, the deploy map and the menu, all of which render, cannot advance
-   * it, and a second door into the engine would be the thing that quietly
-   * reopened.
+   * anywhere in the client — no frame point steps it (there is no scene to,
+   * since `BABYLON_EXIT.md` X6.1h; `scene.physicsEnabled` was held false until
+   * then) precisely so that a pause, the deploy map and the menu, all of which
+   * render, cannot advance it, and a second door into the engine would be the
+   * thing that quietly reopened.
    *
    * **The glass owes this frame nothing, and it used to.** A broken pane left
    * seven flow fields to sweep and they were drained here one per frame, which
@@ -8475,7 +11356,9 @@ export class Game {
    */
   private stepAftermath(dt: number): void {
     this.prof.begin(P.antiTank);
+    // This page's own predicted rocket; everybody else's is the wire's.
     this.antiTank.update(dt);
+    this.antiTankFx.update();
     this.prof.end(P.antiTank);
     this.prof.begin(P.physics);
     this.physics.update(dt);
@@ -8499,7 +11382,11 @@ export class Game {
    * it did before there was anything to watch.
    */
   private updateDeathCam(dt: number): void {
-    if (!this.updateWorld(dt)) return;
+    // `updateGameplay`'s bracket: without it the match's `sim` span would be
+    // filed with no `world` around it on every death-cam frame.
+    this.prof.begin(P.world);
+    this.updateWorld(dt);
+    this.prof.end(P.world);
     this.deathCam.update(dt);
     // The one place the camera is allowed off the player's eye.
     this.cameraSys.place(this.deathCam.eye, this.deathCam.look);
@@ -8507,7 +11394,7 @@ export class Game {
     // to cover what is on screen, and what is on screen is wherever the tumble
     // ended up.
     this.shadowFocus.copyFrom(this.deathCam.look);
-    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.pushers);
     this.zones.update(
       dt,
       this.conquest.points,
@@ -8530,8 +11417,7 @@ export class Game {
   /**
    * Books the benchmark `?bench=<map>` asked for: that map, the default enemy
    * tier and the bench's fixed seed, then a round started exactly as the
-   * menu's Deploy starts one. `BABYLON_EXIT.md` X0.3, `docs/profiling.md`'s
-   * "The benchmark".
+   * menu's Deploy starts one. `docs/profiling.md`'s "The benchmark".
    *
    * **Nothing it sets is the PLAYER's choice, so none of it is remembered**:
    * the map and the tier are written to the fields and not to `prefs`, and
@@ -8558,10 +11444,20 @@ export class Game {
     this.bench = {
       kit,
       script: null,
-      fight: new kit.FightHash(),
+      steps: 0,
+      segment: -1,
       difficulty: this.difficulty,
       focus: -1,
       roundEnded: false,
+      ending: false,
+      // The `enterFullscreenOnTouch` gate: only a touch device holds.
+      hold: window.matchMedia("(pointer: coarse)").matches ? "tap" : null,
+      holdFor: 0,
+      holdStill: 0,
+      holdCanvasW: 0,
+      holdCanvasH: 0,
+      holdWindowW: 0,
+      holdWindowH: 0,
     };
     this.difficulty = CONFIG.bots.skill.defaultDifficulty;
     this.startRound();
@@ -8577,34 +11473,104 @@ export class Game {
    * before it — not the menu, not the build. The chip goes up because it is
    * the only sign the ring is recording and the only way off the device.
    *
-   * **The player is taken out of the fight by being DEAD, and that is the
-   * whole of it.** `buildRound` already seated nobody, so every slot on both
-   * sides is a fielded bot; a dead combatant is skipped by conquest's count,
-   * by acquisition and by every damage path, which is the state the death cam
-   * already runs the world in.
+   * **The player is not in the fight at all.** The page joined its own match
+   * as a WATCHER (`openLocalRound`) — a peer with no seat — so every slot on
+   * both sides is a fielded bot, and the page's own body is left dead so
+   * nothing on this side draws or offers it.
+   *
+   * **On a touch device the run HOLDS first** (`holdBench`), and everything
+   * from the ring's arming on waits for it in `startBench`.
    */
   private enterBench(): void {
     const run = this.bench;
     const map = this.map;
     if (!run || !map) return;
-    const script = new run.kit.BenchScript(this.mapDef.id, {
+    run.script = new run.kit.BenchScript(this.mapDef.id, {
       size: map.size,
       boxes: map.colliderBoxes,
       surfaceAt: (x, z) => map.terrain.surfaceAt(x, z, true),
     });
-    run.script = script;
+    this.deployScreen.hide();
+    this.player.alive = false;
+    this.cameraSys.reset(0);
+    if (run.hold !== null) this.profChip.setHold("Tap to start the benchmark");
+    else this.startBench(run);
+    this.go("bench");
+  }
+
+  /**
+   * A benchmark's first measured frame is next: the ring armed over the
+   * script and nothing before it, and the fight's zero marked. From
+   * `enterBench` on a fine pointer, and from `holdBench` once a touch
+   * device's hold is over.
+   */
+  private startBench(run: BenchRun): void {
+    const script = run.script!;
+    run.hold = null;
+    this.profChip.setHold(null);
     this.prof.disarm();
     // Two spare rows: the frame that ends the run is recorded half-way, and
     // a ring that laps by one would drop the run's first frame.
-    this.prof.arm(this.scene, this.glow, script.frames + 2);
+    this.prof.arm(this.surface, script.frames + 2);
     this.prof.setMap(this.mapDef.id);
     this.prof.setSegments(script.segments);
     this.profChip.setArmed(true);
-    this.deployScreen.hide();
     this.minimap.setVisible(true);
-    this.player.alive = false;
-    this.cameraSys.reset(0);
-    this.go("bench");
+    // The fight's zero: every award and death is stamped with the match's
+    // tick less this one (`FightHash`), folded where the match runs — no
+    // wire event carries a bot's award. Posted behind the round's `begin`,
+    // and ahead of the first fight step.
+    this.localOwner.match.markFight().catch((err: unknown) => console.error("[bench] markFight:", err));
+  }
+
+  /**
+   * A touch device's run waiting to start, which is a frame of the `bench`
+   * step with the world HELD — nothing stepped, nothing advanced, the ring
+   * not armed — so the fight it then fights is the seed's, hash for hash.
+   *
+   * **A run is a URL, and a page that was typed or refreshed is not
+   * fullscreen**: taking the screen needs a gesture, and a run measured
+   * before the gesture lands is drawn at whatever the browser's chrome left —
+   * or on a canvas that never followed the window at all (`docs/profiling.md`,
+   * report version 18). So the prompt asks for the tap (`ProfileChip.setHold`
+   * — the document's own `pointerdown` makes the fullscreen request), and the
+   * run starts once the page is fullscreen and the canvas has matched its
+   * window, unchanged, for `holdSettle`. A refusal, or a browser with no
+   * element fullscreen, starts it after `holdWait` on the same settle, and
+   * `holdCap` starts it whatever the canvas is doing: the capture's
+   * `viewport` says what it was drawn at either way.
+   */
+  private holdBench(run: BenchRun, seconds: number): void {
+    if (run.hold !== "settle") return;
+    const c = CONFIG.profiling.bench;
+    run.holdFor += seconds;
+    const cw = this.surface.getRenderWidth(true);
+    const ch = this.surface.getRenderHeight(true);
+    const ww = window.innerWidth;
+    const wh = window.innerHeight;
+    if (
+      cw !== run.holdCanvasW ||
+      ch !== run.holdCanvasH ||
+      ww !== run.holdWindowW ||
+      wh !== run.holdWindowH
+    ) {
+      run.holdCanvasW = cw;
+      run.holdCanvasH = ch;
+      run.holdWindowW = ww;
+      run.holdWindowH = wh;
+      run.holdStill = 0;
+    } else {
+      run.holdStill += seconds;
+    }
+    // What `AbstractEngine.resize` makes of the window — the test the
+    // capture's `viewport` applies (`profileReport.ts`).
+    const level = this.surface.getHardwareScalingLevel();
+    const matched =
+      Math.abs(cw - ((ww / level) | 0)) <= 1 && Math.abs(ch - ((wh / level) | 0)) <= 1;
+    const screen = document.fullscreenElement !== null || run.holdFor >= c.holdWait;
+    if ((screen && matched && run.holdStill >= c.holdSettle) || run.holdFor >= c.holdCap) {
+      this.startBench(run);
+    }
   }
 
   /**
@@ -8622,9 +11588,16 @@ export class Game {
   private updateBench(dt: number, realMs: number): void {
     const run = this.bench;
     const script = run?.script;
-    if (!run || !script) return;
+    if (!run || !script || run.ending) return;
+    // Escape before the run started measured nothing, so there is no
+    // capture to take: the run is let go with the round (`enterMenu`).
     if (this.input.pausePressed) {
-      this.endBench(false);
+      if (run.hold !== null) this.enterMenu();
+      else this.endBench(false);
+      return;
+    }
+    if (run.hold !== null) {
+      this.holdBench(run, realMs / 1000);
       return;
     }
     const cue = script.next(realMs);
@@ -8632,23 +11605,28 @@ export class Game {
       this.endBench(true);
       return;
     }
+    // The filing lags the steps by a frame (`LocalOwner.step`), so the first
+    // frame of a segment would file the last frame of the one before — a
+    // lead leg's several summed steps in a fight row whose own is one.
+    if (cue.segment !== run.segment) {
+      run.segment = cue.segment;
+      this.localOwner.dropTiming();
+    }
     this.prof.setSegment(cue.segment);
     if (cue.kind === "fight") {
+      // One `updateWorld` — so one `advance` — per STEP: `advance` is
+      // seconds, and nine steps' worth in one call steps eight and carries
+      // the ninth (`docs/multiplayer.md`), where one tick's worth is exactly
+      // one step.
       this.prof.begin(P.world);
       for (let i = 0; i < cue.steps; i++) {
-        run.fight.step++;
-        if (!this.updateWorld(dt)) {
-          run.roundEnded = true;
-          break;
-        }
+        run.steps++;
+        this.updateWorld(dt);
       }
       this.prof.end(P.world);
-      // A round that ENDED inside the run has put its card up already; the
-      // run ends with it, short, and its capture says so.
-      if (run.roundEnded) {
-        this.endBench(false);
-        return;
-      }
+      // A round that ENDS inside the run ends the run with it, off the wire's
+      // `roundover` as any match's end is heard (`endRound`). Steps posted
+      // past it are held by the match and fold nothing.
       this.prof.begin(P.camera);
       this.chaseBench(run, script, dt);
     } else {
@@ -8663,11 +11641,11 @@ export class Game {
     // carried lamp over a body nobody is standing in.
     this.shadows.updateBlobs(
       this.player,
-      this.battle.bots,
+      this.mapBodies(),
       this.cameraSys.camera.position,
       this.player.floorY,
     );
-    this.updateSceneForCamera(dt, this.shadowFocus, null, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, null, this.pushers);
     this.prof.end(P.camera);
     this.prof.begin(P.zones);
     this.zones.update(dt, this.conquest.points, this.cameraSys.camera.position);
@@ -8701,14 +11679,21 @@ export class Game {
    * fight, looking where it looks, pulled in off whatever solid is behind it
    * the way the death cam's is. Which bot that is follows from the fight, and
    * the fight follows from the seed, so the camera is the same on every run.
+   *
+   * The bodies are the WIRE's (`NetRoster`), as the watcher is drawn them:
+   * "in the fight" is alive and not inside a hull, which is how the wire
+   * states `BattleSystem.aside` (a slot the round does not field arrives
+   * dead). A picture, so it decides nothing the hash folds.
    */
   private chaseBench(run: BenchRun, script: BenchScript, dt: number): void {
-    const bots = this.battle.bots;
-    const held = run.focus >= 0 ? bots[run.focus] : null;
-    if (!held || !held.alive || this.battle.aside(held)) {
+    const net = this.net;
+    if (!net) return;
+    const bots = net.roster.soldiers;
+    const held = run.focus >= 0 ? bots[run.focus] : undefined;
+    if (!held || !held.alive || net.vehicles.riding(held.slot)) {
       run.focus = -1;
       for (let i = 0; i < bots.length; i++) {
-        if (bots[i].alive && !this.battle.aside(bots[i])) {
+        if (bots[i].alive && !net.vehicles.riding(bots[i].slot)) {
           run.focus = i;
           break;
         }
@@ -8719,7 +11704,7 @@ export class Game {
     if (run.focus < 0) return;
     const bot = bots[run.focus];
     const c = CONFIG.profiling.bench;
-    const yaw = script.bearing(run.focus, bot.lookYaw, dt);
+    const yaw = script.bearing(run.focus, bot.aimYaw, dt);
     const anchor = bot.eyePos;
     this.benchDir.set(-Math.sin(yaw) * c.chaseBack, c.chaseUp, -Math.cos(yaw) * c.chaseBack);
     const len = this.benchDir.length();
@@ -8728,29 +11713,57 @@ export class Game {
     if (this.map?.rays.castBody(anchor, this.benchDir, len, this.benchHit)) {
       reach = Math.max(0.4, this.benchHit.distance - 0.3);
     }
-    this.benchEye.copyFrom(anchor).addInPlace(this.benchDir.scaleInPlace(reach));
+    this.benchEye.copyFromFloats(anchor.x, anchor.y, anchor.z).addInPlace(this.benchDir.scaleInPlace(reach));
     // Down onto the body from over its shoulder, at a point eight metres on.
     const pitch = Math.atan2(anchor.y - 0.5 - this.benchEye.y, 8);
     this.aimBench(yaw, pitch);
-    this.shadowFocus.copyFrom(anchor);
+    this.shadowFocus.copyFromFloats(anchor.x, anchor.y, anchor.z);
   }
 
   /**
    * The end of a benchmark — its script run out, or Escape, or a round that
    * ended inside it. The ring is HALTED rather than disarmed, so the chip's
-   * `VIEW`, `SAVE` and `TRACE` all hand over the run and nothing after it; the
-   * run's facts are pushed and its capture taken and handed off; and the page
-   * goes back to its menu with the player's own map and tier.
+   * `VIEW`, `SAVE` and `TRACE` all hand over the run and nothing after it,
+   * and HERE, before the fight's hash is asked for: the frames spent waiting
+   * on the answer are not the run's.
+   *
+   * The hash is read off the match (`LocalMatch.fight`), whose answer comes
+   * after every step posted ahead of it — the owner's port answers in order,
+   * so it is a settle — and is the fold of every one of them. Then the run's
+   * facts are pushed and its capture taken and handed off (`finishBench`).
+   */
+  private endBench(completed: boolean): void {
+    const run = this.bench;
+    if (!run || run.ending) return;
+    run.ending = true;
+    this.prof.setSegment(-1);
+    this.prof.halt();
+    this.localOwner.match.fight().then(
+      (fight) => this.finishBench(run, completed, fight),
+      (err: unknown) => {
+        console.error("[bench] the fight's hash could not be read:", err);
+        this.finishBench(run, completed, null);
+      },
+    );
+  }
+
+  /**
+   * `endBench`'s second half, once the match has answered with the fight:
+   * the run's facts pushed and its capture taken and handed off, and the page
+   * back to its menu with the player's own map and tier. Nothing, when the
+   * run was already let go — a round that failed under it went to the menu,
+   * which takes a booked bench with it.
    *
    * `window.__profile.last()` is the run's capture from here, with `reason`
    * `bench` (or `bench stopped`), which is what a script waits on.
    */
-  private endBench(completed: boolean): void {
-    const run = this.bench;
-    if (!run) return;
+  private finishBench(
+    run: BenchRun,
+    completed: boolean,
+    fight: { hex: string; events: number } | null,
+  ): void {
+    if (this.bench !== run) return;
     this.bench = null;
-    this.prof.setSegment(-1);
-    this.prof.halt();
     const script = run.script;
     this.prof.setBench({
       completed,
@@ -8759,9 +11772,11 @@ export class Game {
       vantages: script ? [...script.vantages] : [],
       path: script ? { ...script.path } : { x: 0, z: 0, radius: 0 },
       fight: {
-        hash: run.fight.hex,
-        events: run.fight.events,
-        steps: run.fight.step,
+        // Empty when the match could not say — a capture that will not
+        // match any bank, which is the honest reading.
+        hash: fight?.hex ?? "",
+        events: fight?.events ?? 0,
+        steps: run.steps,
         roundEnded: run.roundEnded,
       },
     });
@@ -8794,7 +11809,7 @@ export class Game {
     const g = CONFIG.grenade;
     const eye = this.cameraSys.camera.position;
     const forward = this.cameraSys.forward;
-    this.grenadeHand.copyFrom(this.player.throwHandWorld());
+    this.grenadeHand.copyFrom(this.playerView.model.throwHandWorld());
     const ahead =
       (this.grenadeHand.x - eye.x) * forward.x +
       (this.grenadeHand.y - eye.y) * forward.y +
@@ -8807,6 +11822,8 @@ export class Game {
         forward.z * d,
       );
     }
+    // The arc flies here as the thrower's PREDICTION, and the pouch is spent
+    // only once this page's pool has agreed to carry it.
     if (
       !this.grenades.throwAlong(
         this.grenadeHand,
@@ -8819,17 +11836,17 @@ export class Game {
       return;
     }
     this.player.spendGrenade();
-    // Networked: the authority throws its own copy and owns the blast. The
+    // The authority throws its own copy and owns the blast. The
     // local one above still flies — it is what the thrower watches arc — but
-    // it hurts nobody, because `hittablesFor` is wired to `battle`, and in a
-    // netplay round that list is empty: the local bot pool is reset dead and
-    // never stepped. A bullet is given the roster's bodies instead
+    // it hurts nobody, because `hittablesFor` hands this page's grenades an
+    // empty list. A bullet is given the roster's bodies instead
     // (`enemyTargets`) because a shot owes the shooter an immediate tracer and
     // hitmarker; a blast owes nothing of the kind — its light, noise and
     // concussion all arrive on the server's `explode` event — so pointing this
     // at them would buy a line-of-sight ray per body within the radius and
-    // nothing else. The pouch is the server's count too; spending here only
-    // keeps the HUD honest.
+    // nothing else. The pouch is the authority's count too; spending here is
+    // the HUD's prediction of it, and a throw the authority refuses is given
+    // back by its `refused` (`Player.returnGrenade`).
     this.net?.sendGrenade(this.grenadeHand, this.cameraSys.forward);
     this.sfx.grenadeThrow();
     // The body's own follow-through, through the spring the landing and the
@@ -8882,44 +11899,47 @@ export class Game {
     // window covers what's ahead); outline ink thins with the same camera.
     // From the body's CENTRE, not its feet: the shadow window is placed around
     // this point and it should sit in the middle of the body it follows.
+    const centre = this.player.center;
     this.shadowFocus
-      .copyFrom(this.player.center)
+      .copyFromFloats(centre.x, centre.y, centre.z)
       .addInPlace(this.cameraSys.forwardToRef(this.shadowForward).scaleInPlace(8));
-    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.combatants);
+    this.updateSceneForCamera(dt, this.shadowFocus, this.player, this.pushers);
   }
 
   /**
    * The half of the tail that needs only a posed camera — shared with the map
-   * editor, which has no player, no bots and no aim assist but still has to
-   * keep fog, shadows, outlines, lights, water, grass and audio agreeing about
-   * where the viewer is.
+   * viewer and the building card's last frame, which have no player and no aim
+   * assist but still have to keep fog, shadows, outlines, lights, water, grass
+   * and audio agreeing about where the eye is.
    *
    * The order here is the load-bearing part of the sequence above and must not
-   * be rearranged. `player` is null in the editor: it gates exactly the two
+   * be rearranged. `player` is null in those: it gates exactly the two
    * steps that need a body — blob shadows and the carried shoulder lamp — and
-   * gating them in place is what keeps both callers on one ordering.
+   * gating them in place is what keeps every caller on one ordering.
    *
    * The shader's own eye is deliberately NOT here. It is the one thing in this
    * list a state that simulates nothing still owes, so `tick` pushes it for
-   * every state instead — see the call above `scene.render()`.
+   * every state instead — see the call above the frame's render.
    */
   private updateSceneForCamera(
     dt: number,
     shadowFocus: Vector3,
     player: Player | null,
     pushers: readonly Combatant[],
-    // The bodies the two shadow passes draw. The roster's, but for the
-    // building card's warm-up, which has no roster in the field and hands in
-    // the death cam's stand-in instead — see `stageWarmFrame`.
-    bodies: readonly ShadowBody[] = this.battle.bots,
   ): void {
+    // Any tail pays what a lowered viewer owed (`honourSceneOwed`).
+    this.sceneOwed = false;
+    // The bodies the two shadow passes draw: the roster's.
+    const bodies: readonly ShadowBody[] = this.mapBodies();
     this.shadows.update(shadowFocus, this.mats);
     // The bodies' map follows the same focus and is rebuilt from whatever is
-    // DRAWN — `rig.root.isEnabled()` inside, which is true of a living bot, of
+    // DRAWN — `rig.enabled` inside, which is true of a living bot, of
     // a corpse under Havok and of nothing in a pool nobody is wearing. So it is
     // not gated on `player`: that gate means "has a body of its own to shade",
     // which a DRIVER does not (`frameVehicleCamera` passes null) while his
     // squad outside the hull still throws shadows.
+    // The hulls are handed as THEMSELVES — the collider's own fields, never
+    // their pictures (`ShadowHull`).
     this.bodyShadows.update(
       shadowFocus,
       this.mats,
@@ -8929,7 +11949,7 @@ export class Game {
     if (player) {
       this.shadows.updateBlobs(
         player,
-        this.battle.bots,
+        this.mapBodies(),
         this.cameraSys.camera.position,
         player.floorY,
       );
@@ -8963,7 +11983,7 @@ export class Game {
     this.lighting.update(dt, this.cameraSys.camera.position, this.mats);
     // Which of this frame's winning lights cast, and what their tiles will
     // hold. After `lighting.update`, whose slots these are; the passes
-    // themselves run inside the scene's render (`LocalShadows.render`).
+    // themselves run inside the frame's render (`LocalShadows.render`).
     this.prof.begin(P.localShadows);
     this.localShadows.update(
       this.lighting.activeLights,
@@ -8979,9 +11999,8 @@ export class Game {
       this.cameraSys.camera.position,
       this.lighting.activeLights,
     );
-    // Grass reads the same camera and light set, plus the combatant list
-    // (assembled above for the conquest occupancy pass) as its pushers —
-    // that list is what bends the blades around running bodies.
+    // Grass reads the same camera and light set, plus the bodies that bend
+    // the blades around them (`pushers`, filled by `fillPushers`).
     this.grass.update(
       dt,
       this.cameraSys.camera.position,
@@ -9178,7 +12197,7 @@ export class Game {
     const cam = this.cameraSys.camera;
     // In front of the eye? `getDirection` is the camera's own forward, which
     // during a drive is whatever `place` last pointed it at.
-    const fwd = cam.getDirection(FORWARD_Z);
+    const fwd = this.cameraSys.lookDirection();
     if (
       (this.markerAt.x - cam.position.x) * fwd.x +
         (this.markerAt.y - cam.position.y) * fwd.y +
@@ -9188,14 +12207,14 @@ export class Game {
       this.hud.setGunMarker(null);
       return;
     }
-    const w = this.engine.getRenderWidth();
-    const h = this.engine.getRenderHeight();
+    const w = this.surface.getRenderWidth();
+    const h = this.surface.getRenderHeight();
     this.markerViewport.width = w;
     this.markerViewport.height = h;
     Vector3.ProjectToRef(
       this.markerAt,
       Matrix.IdentityReadOnly,
-      this.scene.getTransformMatrix(),
+      Matrix.FromArrayToRef(this.sceneFrame.getTransformMatrix().m, 0, this.markerTransform),
       this.markerViewport,
       this.markerOut,
     );
@@ -9267,7 +12286,7 @@ export class Game {
       );
     }
     this.deployScreen.update(this.respawnT);
-    // A netplay death is decided by the wire and arrives in whatever state this
+    // A death is decided by the wire and arrives in whatever state this
     // client is in — including under a lid, which is where this used to leave a
     // screen stranded over a live deploy screen. `go` takes it down.
     this.go("deploy");
@@ -9307,6 +12326,17 @@ export class Game {
   }
 
   private endRound(winner: Team): void {
+    // A benchmark's round that ended inside the run ends the run, short, and
+    // its capture says so — no card: the run goes back to the menu. Heard
+    // HERE, off the wire, because nothing else orders it: the owner's
+    // `advanced` saying the same is on another port, and the card this would
+    // otherwise raise would strand the run's capture behind it.
+    const run = this.bench;
+    if (run) {
+      run.roundEnded = true;
+      this.endBench(false);
+      return;
+    }
     // Ends under a lid for the same reason a death does: the authority's
     // `roundover` does not wait for the player to close their settings.
     this.go("roundover");
@@ -9335,7 +12365,6 @@ export class Game {
     this.hud.setFlags(this.conquest.points, this.player.team);
     this.overlayT = 0;
     this.minimap.setVisible(false);
-    this.battle.reset();
     document.exitPointerLock();
     const won = winner === this.player.team;
     // The card's two sides are `mine` and `theirs`, so the tickets go in the
@@ -9355,8 +12384,8 @@ export class Game {
       ticketsTheirs: this.conquest.tickets[them],
       flagsMine: this.conquest.flagsHeld(us),
       flagsTheirs: this.conquest.flagsHeld(them),
-      // The same rows the Tab board is drawn from — this client's ledger
-      // offline and the authority's in a match — read ONCE, because the round
+      // The same rows the Tab board is drawn from — the authority's ledger,
+      // whoever hosts the match — read ONCE, because the round
       // is over and nothing on this card is a live figure. SIDES, not teams:
       // the card draws mine and theirs, as the ticket pair above does.
       board: this.scoreRows().map((r) => ({
@@ -9367,10 +12396,11 @@ export class Game {
         score: r.score,
         you: r.you,
       })),
-      // Whether this card is a MENU or a WAIT. Offline the next round is the
-      // player's to ask for; in a match it is the authority's rotation, and
-      // the card says so instead of offering a button that must not work.
-      solo: !this.net,
+      // Whether this card is a MENU or a WAIT. In the page's own match the
+      // next round is the player's to ask for; in a server's it is the
+      // authority's rotation, and the card says so instead of offering a
+      // button that must not work.
+      solo: !this.remoteRound,
       // Read off the session rather than waited for: the authority sends the
       // ballot immediately BEFORE the `roundover` that lands here, so by the
       // time this runs it has already arrived. A match with no ballot — an
@@ -9380,11 +12410,20 @@ export class Game {
     });
   }
 
-  /** Called from `Player.takeDamage`, whoever pulled the trigger. */
+  /**
+   * What a hit on the player looks, sounds and feels like — the vignette, the
+   * arc, the flinch, the grain's flash, the hurt sound and the rumble — and,
+   * for a killing blow, NOTHING ELSE: the death is `playerDown`'s.
+   *
+   * **No rule is in here**: the ticket and the death on the board are counted
+   * where the blow landed — on the authority, whoever hosts the match —
+   * unconditionally, so no state gate here can drop either. Reached from
+   * `playerHit`, the one door a hit comes through.
+   */
   private onPlayerDamaged(
     amount: number,
     died: boolean,
-    from?: Vector3,
+    from?: Vector3Like,
     kind: DamageKind = "bullet",
   ): void {
     if (this.state !== "playing") return;
@@ -9422,33 +12461,6 @@ export class Game {
       died ? haptic.deathWeak : haptic.hurtWeak,
       died ? haptic.deathMs : haptic.hurtMs,
     );
-    if (died) {
-      this.conquest.registerDeath(this.player.team);
-      // Our own row's death, offline: the victim's door, and the bot that shot
-      // us was credited at its own by `battle.onBotKill`. The row is the SLOT
-      // we are sitting in, which is the same one the board draws us on.
-      this.scores.registerDeath(this.battle.playerSlot);
-      // Who to blame, and the test is `from`. Friendly fire is excluded by
-      // construction everywhere in this game, so the side that killed a player
-      // is always the other one — every death in the game was that until the
-      // leash, which kills with nothing behind it and passes no origin. `from`
-      // is already what says "nobody shot you" two blocks up, where it decides
-      // whether there is a damage arc to draw at all.
-      //
-      // **The leash is the ONLY death without one, and that is a thing to keep
-      // true rather than a thing that is.** Burning inside a hull passed no
-      // origin once and so announced itself here as `OUT OF BOUNDS` — a death
-      // the enemy had earned, credited to the map. `wireVehicles` hands one
-      // over now (the wreck's own centre), which is the same vector the corpse
-      // is thrown by. A new way to die owes this line an origin unless nobody
-      // caused it.
-      this.hud.addKill(
-        from ? teamLook(OTHER_TEAM[this.player.team]).name : LEASH_KILLER,
-        "YOU",
-        true,
-      );
-      this.enterDying(from, amount, kind);
-    }
   }
 
   /**
@@ -9472,7 +12484,7 @@ export class Game {
    * nothing breaks quietly on the day one of them stops.
    */
   private enterDying(
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     amount: number,
     kind: DamageKind,
     // Annotated, because `CONFIG` is `as const` and the bare default would give
@@ -9499,7 +12511,7 @@ export class Game {
       this.enterDeploy(respawnIn);
       return;
     }
-    // The weapon is parented to the camera, so it would ride the cam out of
+    // The weapon hangs from the camera, so it would ride the cam out of
     // the head and hang in front of the body — the same reason `enterDeploy`
     // puts it away, arriving one state earlier.
     this.player.setBodyHidden(true);
@@ -9509,42 +12521,6 @@ export class Game {
     this.hud.setDeathCam(true);
     this.hud.clearDamageDirections();
     this.go("dying");
-  }
-
-  /**
-   * A bot went down: the sound, the ticket, its line on the board and the
-   * killfeed.
-   *
-   * One method rather than three copies because there are now three ways to
-   * kill one — a bot's rifle, the player's rifle, and either side's grenade —
-   * and they disagree about nothing except whose name goes on the line.
-   * `byPlayer` is what separates the player's own kill from their team's, and
-   * it is the only thing the three callers pass differently.
-   *
-   * This is the VICTIM's door, so it counts the death and not the kill: the
-   * killer is credited by `creditKill` at whichever call site actually knows
-   * who they were. Every caller here raises both, one line apart.
-   *
-   * Deliberately NOT the hitmarker or the rumble: those are about the shot
-   * that landed rather than the body that fell, and they belong with whichever
-   * weapon put it there.
-   */
-  private registerBotKill(bot: Bot, killer: Team, byPlayer: boolean): void {
-    // The one place all three ways a bot can die converge, so the one place
-    // the body has to be offered to the physics pool. It needs no impact
-    // vector passed down: `Bot.takeDamage` already captured where the killing
-    // blow came from, which every damage path in the game hands it.
-    this.ragdolls.spawn(bot, this.cameraSys.camera.position);
-    this.sfx.enemyDie();
-    this.conquest.registerDeath(bot.team);
-    const slot = this.battle.bots.indexOf(bot);
-    this.scores.registerDeath(slot);
-    this.bench?.fight.death(slot);
-    this.hud.addKill(
-      byPlayer ? "YOU" : teamLook(killer).name,
-      teamLook(bot.team).name,
-      byPlayer,
-    );
   }
 
   /**
@@ -9689,8 +12665,9 @@ export class Game {
       playerTeam: this.player.team,
       // Whether there is a connection to report at all, which is a fact about
       // the ROUND rather than about the rows: the column is there for every
-      // frame of a match, dashes and all, and never offline.
-      pings: this.net !== null,
+      // frame of a server's match, dashes and all, and never in the page's
+      // own, where there is no server to be any distance from.
+      pings: this.remoteRound,
       rows,
     });
   }
@@ -9698,13 +12675,12 @@ export class Game {
   /**
    * One row per body in the round, for the scoreboard.
    *
-   * **The two sources meet HERE and nowhere else.** Offline the board is this
-   * client's own `ScoreBook`, one line per roster slot. In a match it is the
-   * authority's, read off the session: a PERSON's name from the roster, every
-   * row's points, kills and deaths from the last `scores` message indexed by
-   * slot, and the row order straight from the roster — a slot index is the same
-   * number on both sides of the wire and on both sides of this branch, which is
-   * what lets one loop read two boards.
+   * The board is the authority's, read off the session whoever hosts it: a
+   * PERSON's name from the roster ("YOU" on this player's own row — the one
+   * name this page needs no message for, and the only one a match the page
+   * hosts for itself has), every row's points, kills and deaths from the last
+   * `scores` message indexed by slot, and the row order straight from the
+   * roster.
    *
    * A bot's name is DERIVED rather than sent (`callsign`), which is what keeps
    * "a bot and a person are the same body on screen" true while still letting
@@ -9712,127 +12688,56 @@ export class Game {
    * is drawn, and the server spends no bandwidth naming bodies that already
    * have a number each.
    *
-   * **It is derived from the row's place on the BOARD and not from its slot**,
-   * which is the same number offline and is not in a match. The authority's
-   * slot table is the ceiling any map may field, so on a map fielding eight a
-   * side team 1 sits at slots 24-31 — and `callsign` laps every sixteen names,
-   * which would have put every unsuffixed name on one team and every suffixed
-   * one on the other, the exact reading that file refuses. The board is the
-   * roster in slot order and the roster is only the slots this round fields
-   * (`Roster.fielded`), so its own index is dense, team-blocked and identical
-   * to the offline one — INDIA against INDIA-2 on the same map.
+   * **It is derived from the row's place on the BOARD and not from its slot.**
+   * A server's slot table is the ceiling any map may field, so on a map
+   * fielding eight a side team 1 sits at slots 24-31 — and `callsign` laps
+   * every sixteen names, which would have put every unsuffixed name on one
+   * team and every suffixed one on the other, the exact reading that file
+   * refuses. The board is the roster in slot order and the roster is only the
+   * slots this round fields (`Roster.fielded`), so its own index is dense and
+   * team-blocked whatever the table's width — INDIA against INDIA-2 on the
+   * same map, in a server's match and the page's own alike.
    *
    * Assembled only while Tab is held, and once more when a round ends, for
    * the round-over card's own board — see the two callers.
    */
   private scoreRows(): ScoreRow[] {
     const rows: ScoreRow[] = [];
-    if (this.net) {
-      for (const slot of this.net.slots) {
-        const occupant = slot.occupant;
-        rows.push({
-          name:
-            occupant.kind === "human" ? occupant.name : callsign(rows.length),
-          team: slot.team,
-          kills: this.net.slotKills[slot.index] ?? 0,
-          deaths: this.net.slotDeaths[slot.index] ?? 0,
-          score: this.net.slotScores[slot.index] ?? 0,
-          you: slot.index === this.net.slot,
-          // The authority's own measurement of the connection to that slot,
-          // and -1 for a bot — which is also what a slot reads as before the
-          // first table has arrived. See `PingsMessage` for why this is the
-          // server's to state rather than each client's to measure.
-          ping: this.net.slotPings[slot.index] ?? -1,
-        });
-      }
-      return rows;
-    }
-    // Offline the whole board is one loop over the pool, the player's line
-    // included: they hold a slot like everybody else and the bot in it is
-    // benched for as long as they do (`BattleSystem.seatPlayer`), so the row
-    // that used to be pushed separately and then skipped in the loop is simply
-    // the row at their own slot. Drawing both would put a seventeenth body on a
-    // sixteen-slot board and count one that is not in the fight into the team
-    // totals.
-    // Every offline row's ping is -1 and the board draws no column for it:
-    // there is no server in a single-player round to be any distance from.
-    for (let i = 0; i < this.battle.bots.length; i++) {
-      const you = i === this.battle.playerSlot;
-      const row = this.scores.row(i);
+    const net = this.net;
+    if (!net) return rows;
+    for (const slot of net.slots) {
+      const occupant = slot.occupant;
+      const you = slot.index === net.slot;
       rows.push({
-        name: you ? "YOU" : callsign(i),
-        team: you ? this.player.team : this.battle.bots[i].team,
-        kills: row.kills,
-        deaths: row.deaths,
-        score: row.points,
+        name: you
+          ? "YOU"
+          : occupant.kind === "human"
+            ? occupant.name
+            : callsign(rows.length),
+        team: slot.team,
+        kills: net.slotKills[slot.index] ?? 0,
+        deaths: net.slotDeaths[slot.index] ?? 0,
+        score: net.slotScores[slot.index] ?? 0,
         you,
-        ping: -1,
+        // The authority's own measurement of the connection to that slot,
+        // and -1 for a bot — which is also what a slot reads as before the
+        // first table has arrived. See `PingsMessage` for why this is the
+        // server's to state rather than each client's to measure.
+        ping: net.slotPings[slot.index] ?? -1,
       });
     }
     return rows;
   }
 
   /**
-   * Somebody put a body down: the kill, and everything it earned, on their own
-   * row, OFFLINE.
-   *
-   * **The kill is counted at the killer's door and the death at the victim's,
-   * once each**, because the two are known in different places. Every death in
-   * the game already arrives somewhere — `registerBotKill` for a bot,
-   * `onPlayerDamaged` for the player — while who fired is known only to
-   * whatever pulled the trigger, and a single door would mean one of the two
-   * inventing the half it cannot see. It is also what lets a bot be credited
-   * for killing the PLAYER, which no bot-shaped kill callback could carry.
-   *
-   * Silent in a netplay round by the same rule that empties every other local
-   * count there: the board is the authority's, this is only ever the offline
-   * one, and a kill is credited to a bot the server is not simulating. Nothing
-   * gates it — the callers that could fire in a match are the ones whose local
-   * `takeDamage` returns false, so no kill is ever raised to be counted.
+   * What a blast went off on, COPIED for `BlastDebrisSystem` (`DebrisGround`)
+   * on `fireAt`'s terms: the simulation's ground is not handed out. One
+   * scratch, read inside the call that asked for it.
    */
-  private creditKill(
-    by: Combatant | null,
-    victim: Hittable,
-    headshot = false,
-  ): boolean {
-    // WHETHER this body pays at all is `paysKiller`'s, and it is here rather
-    // than at the five doors below for the reason that function gives at
-    // length: guarded by hand at each of them, this side reached for
-    // `instanceof Bot` where the authority reached for `!armoured`, and the
-    // two are not the same question — the first also excludes a PERSON, so a
-    // bot crew crushing or shelling the player scored in a match and scored
-    // nothing offline. Every caller inherits the rule now instead of restating
-    // it, which is what stops the sixth door drifting too.
-    if (!by || !paysKiller(victim)) return false;
-    // The flag the VICTIM fell on decides whether this was an attack or a
-    // defence, and `awardKill` is where that rule lives — shared with the
-    // authority, so the two boards pay a kill the same way. A body that fell
-    // nowhere near a ring is `null` and earns the kill alone.
-    //
-    // `eyePos` rather than a body's feet because the victim is a `Hittable`
-    // here — every path that resolves a kill has one, and only some of them
-    // have a `Combatant`. It costs nothing: `pointAt` is a radius test on x
-    // and z, and a head is directly over the feet under it.
-    awardKill(
-      this.scores,
-      this.slotOf(by),
-      by.team,
-      this.conquest.pointAt(victim.eyePos),
-      headshot,
-    );
-    return true;
-  }
-
-  /**
-   * Which roster slot a body holds, or -1 for one that holds none.
-   *
-   * The player's is `BattleSystem.seatPlayer`'s and a bot's IS its index in the
-   * pool — the same identity the authority's `HeadlessGame.slotOf` rests on,
-   * which is what lets one `ScoreBook` mean the same thing on both sides.
-   */
-  private slotOf(c: Combatant | null): number {
-    if (c === this.player) return this.battle.playerSlot;
-    return c instanceof Bot ? this.battle.bots.indexOf(c) : -1;
+  private debrisGroundOf(ground: BlastGround): DebrisGround {
+    this.debrisGround.surface = ground.surface;
+    this.debrisGround.normal.copyFrom(ground.normal);
+    return this.debrisGround;
   }
 
   /**
@@ -9860,7 +12765,12 @@ export class Game {
    * a seat in a hull gets, because the other two are `CameraSystem`'s and that
    * camera is not running while the hull's is.
    */
-  private onExplosion(at: Vector3, power: number, ground: BlastGround): void {
+  private onExplosion(point: Vector3Like, power: number, sim: BlastGround): void {
+    // The two COPIES this handler's readers are handed, on `fireAt`'s terms:
+    // the blast's point and ground normal are the simulation's
+    // (`GrenadeSystem`). The light clones what it keeps.
+    const at = this.blastPoint.copyFrom(point);
+    const ground = this.debrisGroundOf(sim);
     const lc = CONFIG.lighting;
     // The light, scaled by the same `power` the picture is: RANGE whole, the
     // INTENSITY and the LIFE only by their shares — see
@@ -9972,17 +12882,12 @@ export class Game {
       return;
     }
     const cfg = CONFIG.equipment[id];
-    // Offline the local system knows; in a match the authority does, and the
-    // count arrives on the mine table. It is the one gauge here that is not
-    // simply the slot's own magazine, and it is worth the branch: the cap
-    // retires your oldest when you lay a third, so this is what a player is
-    // deciding against.
-    const laid =
-      id !== "mine"
-        ? 0
-        : this.net
-          ? this.net.ordnance.minesFor(this.net.slot)
-          : this.antiTank.minesFor(this.player);
+    // The authority knows, and the count arrives on the mine table. It is the
+    // one gauge here that is not simply the slot's own magazine, and it is
+    // worth the read: the cap retires your oldest when you lay a third, so
+    // this is what a player is deciding against.
+    const net = this.net;
+    const laid = id === "mine" && net ? net.ordnance.minesFor(net.slot) : 0;
     this.hud.setAntiTank(
       laid > 0 ? `${cfg.short} · ${laid} SET` : cfg.short,
       // What is in the HANDS, which is not always what is carried: the slot
@@ -10014,12 +12919,10 @@ export class Game {
    * slot. Sixteen bots firing would take all sixteen and black out the
    * village's own lanterns, so only the nearest few close-range flashes get one.
    *
-   * The list is a parameter because there are two of them and never both at
-   * once: offline it is `BattleSystem.muzzleFlashes`, filled as the bots pull
-   * their triggers, and in a match it is `netFlashes`, filled by the `fire`
-   * events of a frame. One budget over either, so a match cannot spend more
-   * light than a round of bots can — which matters more there, not less, since
-   * the authority's roster is three times the size.
+   * The list is `netFlashes`, filled by the `fire` events of a frame, and it
+   * is a parameter so the budget is one rule over whatever it is handed. One
+   * budget whatever the authority fields — which matters more on a big map,
+   * not less, since its roster is three times the size.
    */
   private spendMuzzleLightBudget(flashes: Vector3[]): void {
     const lc = CONFIG.lighting;

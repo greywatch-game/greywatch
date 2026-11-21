@@ -2,12 +2,17 @@
  * RpgModel.ts — What the rocket launcher looks like, at both ends of a shot:
  * the tube on the player's shoulder and the rocket that leaves it.
  * Returns `WeaponParts` exactly as the six guns do, so `ViewModel` carries it
- * with nothing re-tuned, plus `buildRocket` for the body `AntiTankSystem`
- * flies.
+ * with nothing re-tuned, plus `rocketParts` for the body `AntiTankSystem`
+ * flies and `AntiTankFx` draws.
  * Invariants: the launcher is assembled at the origin with the root at
  * identity and merged before it is moved — `weaponKit.ts` owns that contract
  * and the primitives. The rocket is DRESSING: no `solid` flag, no `WorldBox`,
- * not pickable, exactly as a grenade is.
+ * not pickable, exactly as a grenade is. Both are built as `Part`s on
+ * `src/geometry/` buffers: the launcher's become SEGMENTS our renderer draws
+ * (`WeaponBuild.merge` and `lit`, `BABYLON_EXIT.md` X4.3c), and the rocket's
+ * head, merged tail and flame the KIT our renderer draws every rocket in
+ * flight as an instance of (`entities/pieces.ts`, X4.4b) — neither is a
+ * mesh.
  *
  * Two builders in one file for the reason `GrenadeModel` is one file: what a
  * rocket looks like and what threw it are the same object seen twice, and the
@@ -24,9 +29,11 @@
  * reticle is still the point of impact: the derivation never cared which way
  * the sight sat, only where its centre is.
  */
-import { Mesh, MeshBuilder, Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
+import { createBox, createCylinder } from "../geometry/primitives";
 import { type CelMaterialFactory } from "../shaders/CelShader";
+import { bakePartTransform, mergeParts, Part } from "../world/parts";
 import { eyeDistance, PRISM_CONE, PRISM_WALL } from "./optics";
 import {
   BODY,
@@ -38,6 +45,9 @@ import {
   type SightAssembly,
   type WeaponParts,
 } from "./weaponKit";
+import type { PiecePart } from "./pieces";
+import type { Joint } from "./rigJoints";
+import type { ViewTree } from "./viewTree";
 
 /** Outside of the launch tube. Everything else on the weapon hangs off it. */
 const TUBE_BORE = 0.105;
@@ -142,7 +152,7 @@ const SUPPORT_ELBOW = new Vector3(-0.28, -0.516, 0.497);
  * weapon that visibly LEAVES when it is fired.
  *
  * ~90 parts, merged to one mesh per colour like every other weapon here —
- * twice over, because the loaded ROUND is a node of its own so the load
+ * twice over, because the loaded ROUND is a joint of its own so the load
  * gesture can take it out of the tube and slide a fresh one back in. It
  * is 1.39 long against the rifle's 1.27 — the longest thing in the kit and
  * deliberately only just, because the hip pose frames a weapon from a fixed
@@ -151,12 +161,13 @@ const SUPPORT_ELBOW = new Vector3(-0.28, -0.516, 0.497);
  * fat head; all three have to be inside the frame at once for that.
  */
 export function buildRpg(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_rpg`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_rpg`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
 
   // --- the tube: one run from the shoulder to the muzzle, in three diameters
   // so it reads as pressed steel rather than as a length of pipe ---
@@ -225,7 +236,7 @@ export function buildRpg(
   //
   // It is the loaded rocket, so it is drawn as one — and it is the one part of
   // this weapon that visibly LEAVES when it is fired, which is what makes it a
-  // node of its own rather than more launcher. See `WeaponParts.warhead`.
+  // joint of its own rather than more launcher. See `WeaponParts.warhead`.
   //
   // **The sustainer is the half of the round that makes the load READ**, and
   // it is invisible for as long as nothing is happening to it: seated, all
@@ -239,8 +250,7 @@ export function buildRpg(
   // incapable of intruding on the optic's picture whatever the load is doing.
   // (The bore clearance measured for `buildRpgSight` is unaffected by this
   // file's ROUND for exactly that reason.)
-  const warhead = new TransformNode(`${prefix}_warhead`, scene);
-  warhead.parent = root;
+  const warhead = b.joint(`${prefix}_warhead`, root);
   b.tube("sustainer", BODY, 0.062, 0.058, 0.33, 0, 0, 0.605);
   b.tube("sustainerCap", METAL, 0.05, 0.036, 0.026, 0, 0, 0.427);
   b.tube("boom", METAL, 0.05, 0.05, 0.12, 0, 0, 0.83);
@@ -253,13 +263,13 @@ export function buildRpg(
   b.tube("headBand", METAL, 0.12, 0.12, 0.016, 0, 0, 0.95);
   b.merge("rpgRound", warhead);
   // **The round turns about the ROUND, and it takes a pivot point to say so.**
-  // The node is at the weapon's own origin, which is the venturi — half a metre
-  // BEHIND the rocket — so a tilt of the node is a tilt of a half-metre lever
+  // The joint is at the weapon's own origin, which is the venturi — half a metre
+  // BEHIND the rocket — so a tilt of the joint is a tilt of a half-metre lever
   // and the round swings through an arc rather than turning in a hand.
   // Measured before this line: the offer tilt alone moved the warhead's nose
   // 220 px, which put a round that is supposed to be out of frame in the middle
-  // of it. `setPivotPoint` leaves `position` a translation in the parent's
-  // frame and leaves the node at identity when nothing is set, so `stow()` and
+  // of it. `Joint.setPivotPoint` leaves `position` a translation in the parent's
+  // frame and leaves the joint at identity when nothing is set, so `stow()` and
   // `WeaponParts.warhead`'s "position is a pure offset from seated" both still
   // hold; only the centre of rotation moves. It is on the bore, so the index
   // roll about z is unaffected either way — this is for the two axes that are
@@ -272,15 +282,14 @@ export function buildRpg(
   const finish = b.takeFinish();
 
   const sight = buildRpgSight(b, root, prefix);
-  b.disposePivots();
 
   return {
     root,
     // The tip of the warhead. It is where the rocket leaves, so the flash and
     // the launch point are both here rather than at the tube's own mouth.
     muzzle: new Vector3(0, 0, 1.24),
-    // Nothing is ejected — see `Player.tryShot`, which does not call
-    // `ejectCasing` for an AT item. The port is the venturi so that anything
+    // Nothing is ejected — see `Player.tryShot`, which does not tell its
+    // picture `fired` for an AT item. The port is the venturi so that anything
     // that reads this landmark reads the end the gas actually leaves by.
     ejectPort: new Vector3(0, 0, -0.15),
     grip: { hand: GRIP_HAND, elbow: GRIP_ELBOW },
@@ -288,7 +297,7 @@ export function buildRpg(
     warhead,
     sights: { kind: "fixed", sight: "prism", assembly: sight },
     finish,
-    meshes: root.getChildMeshes(false) as Mesh[],
+    meshes: b.meshesOn(root, true),
   };
 }
 
@@ -307,11 +316,10 @@ export function buildRpg(
  */
 function buildRpgSight(
   b: WeaponBuild,
-  parent: TransformNode,
+  parent: Joint,
   prefix: string,
 ): SightAssembly {
-  const node = new TransformNode(`${prefix}_sight_rpg`, b.scene);
-  node.parent = parent;
+  const node = b.joint(`${prefix}_sight_rpg`, parent);
 
   /**
    * A ring on the SIGHT's axis rather than the bore's — `shell`'s `x`, which
@@ -369,11 +377,7 @@ function buildRpgSight(
   for (const side of [-1, 1] as const) {
     const a = 0.6;
     const bar = b.lit(
-      MeshBuilder.CreateBox(
-        `${prefix}_rpgChevron`,
-        { width: 0.0012, height: armLen, depth: 0.0013 },
-        b.scene,
-      ),
+      new Part(`${prefix}_rpgChevron`, createBox({ width: 0.0012, height: armLen, depth: 0.0013 })),
       node,
     );
     // Each arm is hung from the axis so its TOP end lands on it, which is what
@@ -386,27 +390,27 @@ function buildRpgSight(
     );
   }
 
-  const sightCenter = new TransformNode(`${prefix}_rpg_sightCenter`, b.scene);
-  sightCenter.parent = node;
-  sightCenter.position = new Vector3(SIGHT_X, SIGHT_Y, SIGHT_Z);
-  return { root: node, sightCenter, meshes: node.getChildMeshes(true) as Mesh[] };
+  const sightCenter = b.joint(`${prefix}_rpg_sightCenter`, node);
+  sightCenter.position.set(SIGHT_X, SIGHT_Y, SIGHT_Z);
+  return { root: node, sightCenter, meshes: b.meshesOn(node) };
 }
 
-/** One rocket's meshes. The flame is parented to the body and moves with it. */
-export interface RocketMeshes {
-  mesh: Mesh;
-  flame: Mesh;
-}
+/** The head's paint, the tail's, and the motor's (unlit). */
+const ROCKET_HEAD = "#4b4f42";
+const ROCKET_TAIL = "#2f3229";
+const ROCKET_FLAME = "#ffb046";
 
 /**
- * Builds one rocket in flight, hidden, at WORLD scale — everything above this
- * function is in the viewmodel's units and none of those numbers may be
- * carried down here.
+ * One rocket in flight, at WORLD scale — everything above this function is in
+ * the viewmodel's units and none of those numbers may be carried down here —
+ * as the three parts of its kit (`pieceKit`): the head, the merged tail hung
+ * from it, and the flame hung from it, each painted and placed as its mesh
+ * was until `BABYLON_EXIT.md` X4.4b.
  *
  * It is the same over-calibre head standing on the same thin boom, at the size
  * it actually is: a third of a metre, which is small enough that the thing a
  * player tracks across a street is the FLAME rather than the body. That is why
- * the flame is a separate mesh and emissive — it is the tell, the way the
+ * the flame is a separate part and unlit — it is the tell, the way the
  * grenade's pip is, and it has to be readable against a night village and an
  * afternoon one alike.
  *
@@ -415,76 +419,56 @@ export interface RocketMeshes {
  * one, and the only thing that stops one is the step ray `AntiTankSystem`
  * casts along its own flight.
  */
-export function buildRocket(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  name: string,
-): RocketMeshes {
+export function rocketParts(mats: CelMaterialFactory, name: string): PiecePart[] {
   const r = CONFIG.equipment.rpg.rocket.radius;
-  const head = MeshBuilder.CreateCylinder(
+  const headPart = new Part(
     name,
-    { height: r * 2.4, diameterTop: r * 0.4, diameterBottom: r * 2, tessellation: 8 },
-    scene,
+    createCylinder({ height: r * 2.4, diameterTop: r * 0.4, diameterBottom: r * 2, tessellation: 8 }),
   );
-  head.rotation.x = Math.PI / 2;
-  head.bakeCurrentTransformIntoVertices();
-  head.material = mats.get("#4b4f42");
-  head.isPickable = false;
+  headPart.rotation.x = Math.PI / 2;
+  const head = bakePartTransform(headPart);
+  head.material = mats.get(ROCKET_HEAD);
 
   // The boom and its fins, behind the head. Merged in rather than parented, so
-  // a pooled rocket is one mesh and one draw.
-  const boom = MeshBuilder.CreateCylinder(
-    `${name}Boom`,
-    { height: r * 3, diameter: r * 0.7, tessellation: 6 },
-    scene,
-  );
+  // a rocket's tail is one part and one draw.
+  const boom = new Part(`${name}Boom`, createCylinder({ height: r * 3, diameter: r * 0.7, tessellation: 6 }));
   boom.rotation.x = Math.PI / 2;
   boom.position.z = -r * 2.6;
-  const fins: Mesh[] = [boom];
+  const fins: Part[] = [boom];
   for (let i = 0; i < 4; i++) {
-    const fin = MeshBuilder.CreateBox(
-      `${name}Fin`,
-      { width: r * 1.6, height: r * 0.12, depth: r * 1.2 },
-      scene,
-    );
+    const fin = new Part(`${name}Fin`, createBox({ width: r * 1.6, height: r * 0.12, depth: r * 1.2 }));
     fin.rotation.z = (i / 4) * Math.PI * 2;
     fin.position.z = -r * 3.6;
     fins.push(fin);
   }
-  const tail = Mesh.MergeMeshes(fins, true, true);
-  if (tail) {
-    tail.parent = head;
-    tail.material = mats.get("#2f3229");
-    tail.isPickable = false;
-  }
+  // `MergeMeshes`' mesh, name and all: the boom's name and `_merged`.
+  const tail = new Part(`${boom.name}_merged`, mergeParts(fins));
+  tail.material = mats.get(ROCKET_TAIL);
 
-  // **A parked rocket is DISABLED, not invisible**, and that is the one
-  // Babylon fact this pool turns on: `isVisible` hides the mesh it is set on
-  // and nothing under it, so a pool of eight hidden rockets would leave eight
-  // sets of fins and eight motors standing at the world origin. `setEnabled`
-  // takes the whole subtree, which is what a body made of three meshes needs.
-  // `GrenadeModel` gets away with `isVisible` only because it toggles its pip
-  // by hand, for a different reason.
-  head.setEnabled(false);
+  // **A parked rocket is switched off WHOLE** (`Piece.enabled`): the head,
+  // the tail and the motor are one piece, which is what a body made of three
+  // parts needs — the root's `setEnabled` took the subtree when they were
+  // meshes.
 
   // The motor. Unlit, un-outlined and deliberately a stubby cone rather than a
   // sphere: it is what says which way the thing is pointing at the range a
   // rocket is actually read at.
-  const flame = MeshBuilder.CreateCylinder(
+  const flamePart = new Part(
     `${name}Flame`,
-    { height: r * 4, diameterTop: r * 1.5, diameterBottom: r * 0.2, tessellation: 6 },
-    scene,
+    createCylinder({ height: r * 4, diameterTop: r * 1.5, diameterBottom: r * 0.2, tessellation: 6 }),
   );
-  flame.rotation.x = -Math.PI / 2;
-  flame.bakeCurrentTransformIntoVertices();
-  flame.parent = head;
+  flamePart.rotation.x = -Math.PI / 2;
+  const flame = bakePartTransform(flamePart);
   flame.position.z = -r * 6;
-  flame.material = mats.getEmissive("#ffb046");
+  flame.material = mats.getEmissive(ROCKET_FLAME);
   flame.metadata = { noInk: true };
-  flame.isPickable = false;
 
   // Ink, or a dark warhead crossing a dark street is a hole in the picture
   // rather than a thing arriving — the same argument the grenade's outline
   // makes, against a body moving forty times faster.
-  return { mesh: head, flame };
+  return [
+    { part: head, cel: ROCKET_HEAD, unlit: null, parent: -1 },
+    { part: tail, cel: ROCKET_TAIL, unlit: null, parent: 0 },
+    { part: flame, cel: null, unlit: ROCKET_FLAME, parent: 0 },
+  ];
 }

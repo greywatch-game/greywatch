@@ -24,15 +24,17 @@
  * instead would be smoother on a clean connection and would invent motion that
  * never happened on a bad one.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Combatant, Team } from "./Combatant";
 import type { DamageKind } from "../systems/CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
+  jointPosition,
   resetSoldierPose,
+  setLauncher,
+  setRigEnabled,
   type RagdollSubject,
   type SoldierRig,
 } from "./SoldierModel";
@@ -135,10 +137,14 @@ export class NetSoldier implements Combatant, RagdollSubject {
   onStep: () => void = () => {};
 
   /**
-   * Which roster slot this draws. Fixed for the life of the pool entry — the
-   * slot's OCCUPANT changes, the slot does not.
+   * Which roster slot this draws. The slot's OCCUPANT changes and the body
+   * does not — and the slot's NUMBER moves only when a welcome names a table
+   * block width other than the one it was numbered by
+   * (`NetRoster.setBlockWidth`): the same body, re-addressed to where the
+   * authority numbers it. Written there and in the constructor and nowhere
+   * else, which is the only reason it is not `readonly`.
    */
-  readonly slot: number;
+  slot: number;
   team: Team;
 
   /** Ring of received samples, oldest first. */
@@ -150,19 +156,16 @@ export class NetSoldier implements Combatant, RagdollSubject {
   private readonly motion = new SoldierMotion();
   /** The `renderTime` of the last posed frame, or null before the first. */
   private lastRender: number | null = null;
+  /** `muzzleWorld`'s answer, reused. */
+  private readonly muzzleAt = new Vector3();
   /** False until the first sample, so the first frame reports no travel. */
   private hasPosition = false;
   private enabled = false;
 
-  constructor(
-    scene: Scene,
-    mats: CelMaterialFactory,
-    slot: number,
-    team: Team,
-  ) {
+  constructor(slot: number, team: Team) {
     this.slot = slot;
     this.team = team;
-    this.rig = buildSoldier(scene, mats, team);
+    this.rig = buildSoldier(team);
     this.setEnabled(false);
   }
 
@@ -213,15 +216,15 @@ export class NetSoldier implements Combatant, RagdollSubject {
 
     // Taken before the guard below, and deliberately: `alive` is the pool's own
     // self-defence — a slot whose subject has come back to life releases it on
-    // the next step rather than re-parenting a living body's joints for the
-    // rest of the round. Stop maintaining it here and that guard can never
+    // the next step rather than posing a living body's joints off its bodies
+    // for the rest of the round. Stop maintaining it here and that guard can never
     // fire, because the samples are the only thing that knows.
     this.alive = b.alive;
 
     // While the pool owns this rig it owns the joints AND the root, and it
-    // poses through proxy nodes the solver writes. Everything below is a second
-    // writer on the same nodes — the trap `Bot.update` stands aside from in its
-    // own dead branch, for the same reason and with the same one-line answer.
+    // poses them straight off the solver's pose arrays (`Joint.pose`).
+    // Everything below is a second writer on the same
+    // joints, so this stands aside while the pool holds it.
     //
     // `hasPosition` goes with it so the frame the rig comes back reports no
     // travel: `position` froze where the body died and the respawn is somewhere
@@ -288,7 +291,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // zone is centred on and what LOS is tested against — sit where a bot's do.
     //
     // The stance moves both, down the same half metre and off the same blend
-    // the authority derived ITS pair from (`NetPlayer.apply`), so the sphere a
+    // the authority derived ITS pair from (`SimPlayer.apply`), so the sphere a
     // shooter's own hitmarker is guessed against is the sphere the server will
     // rewind. It is the `player` numbers on both sides even though this body
     // may be a bot, and that is not an inconsistency: the crouch is one stance
@@ -297,7 +300,7 @@ export class NetSoldier implements Combatant, RagdollSubject {
     // `eyeHeight` exactly as it always has.
     //
     // The ROOT does not move. The crouch lives inside the rig — `animateSoldier`
-    // drops the body node and folds the legs under it — so the rig still hangs
+    // drops the body joint and folds the legs under it — so the rig still hangs
     // from the standing body centre and the boots stay on the ground.
     const c = this.rig.centerHeight;
     this.rig.root.position.set(x, y + c, z);
@@ -377,21 +380,34 @@ export class NetSoldier implements Combatant, RagdollSubject {
   /**
    * The rifle's muzzle in world space: where a drawn round's streak starts.
    *
-   * `Bot.muzzleWorld` to the letter, forcing included. A rig joint is only
-   * invalidated by its parent being recomputed and the render walk is what
-   * does that — so an unforced read here is LAST frame's pose, which on a body
-   * that has not been drawn yet this round is the pool's build position at the
-   * origin.
+   * Read off the RIG, composed fresh, because this body is a drawing and its
+   * streak leaves the barrel on screen: the chain from the root down, off the
+   * joints' current channels (`JointTree.computeChain` — what
+   * `computeWorldMatrix(true)` was while the joints were nodes), never a
+   * matrix left from the last frame drawn, which on a body that has not been
+   * drawn yet this round is the pool's build position at the origin.
+   * `Bot.muzzleWorld` is the same point replayed off numbers
+   * (`soldierMuzzleToRef`), because there it is an outcome.
    */
   muzzleWorld(): Vector3 {
-    this.rig.muzzle.computeWorldMatrix(true);
-    return this.rig.muzzle.getAbsolutePosition();
+    return jointPosition(this.rig, this.rig.muzzle, this.muzzleAt);
+  }
+
+  /**
+   * Whether this body carries the slung rocket launcher — the roster's word
+   * on the slot (`SlotOccupant.launcher`, `NetSession`'s `roster` arm): the
+   * tube's joint switched, and with it the segment under it, which is drawn
+   * only while its joint is on as well as the rig (`SoldierModel.setLauncher`,
+   * `writeRigDrawing`). Off on every rig until told, as `buildSoldier` leaves
+   * it.
+   */
+  setLauncher(on: boolean): void {
+    setLauncher(this.rig, on);
   }
 
   setEnabled(on: boolean): void {
     this.enabled = on;
-    this.rig.root.setEnabled(on);
-    for (const mesh of this.rig.meshes) mesh.setEnabled(on);
+    setRigEnabled(this.rig, on);
   }
 
   /**
@@ -431,16 +447,11 @@ export class NetSoldier implements Combatant, RagdollSubject {
     this.alive = false;
     this.deathDamage = 0;
     this.deathKind = "bullet";
-    // Belt to `RagdollSystem.release`'s braces, exactly as `Bot.spawn` clears
-    // it: a rig handed back late must never come up with a live body still
-    // claiming its joints.
+    // Belt to `RagdollSystem.release`'s braces: a rig handed back late must
+    // never come up with a
+    // live body still claiming its joints.
     this.ragdolling = false;
     resetSoldierPose(this.rig);
     this.setEnabled(false);
-  }
-
-  dispose(): void {
-    this.rig.root.dispose();
-    for (const mesh of this.rig.meshes) mesh.dispose();
   }
 }

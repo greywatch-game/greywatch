@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -76,9 +75,10 @@ import {
  *   climb dropped you off the end or stopped you against a wall.
  * - **The foot runs on PAST the ground** (`rampDrop`) rather than stopping
  *   level with the tower's own floor, where it left 0.31 m of end grain. The
- *   ground probe would have stepped up that happily; `moveWithCollisions` is
- *   what refuses, because the collision capsule's ellipsoid bottoms out 0.05 m
- *   above the feet and a 0.31 m face is a wall to it. Hence "I have to jump".
+ *   ground probe would have stepped up that happily; the sweep (`moveBody`) is
+ *   what refuses, because the body's ellipsoid (`Player.ellipsoid`) bottoms
+ *   out 0.05 m above the feet and a 0.31 m face is a wall to it. Hence "I
+ *   have to jump".
  *
  * The rails are `guardSpec`s — `Build.guard`'s collider without its slab —
  * which is what makes them solid and stands them off the deck and the ramp;
@@ -96,12 +96,11 @@ import {
  * is what puts `watchtower` in `CONFORMS_TO_TERRAIN`.
  */
 export function buildWatchtower(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "watchtower");
+  const b = new Build(mats, "watchtower");
   const legs = 1.9;
   const deck = 5.0;
   const deckT = 0.3;

@@ -24,9 +24,30 @@
  * Invariants: each optic is merged into its OWN meshes rather than into the
  * weapon's, which is what lets one be swapped for another without rebuilding
  * the gun under it. Emissive parts go through `build.lit`, never `collect`.
+ * Everything is built as `Part`s on `src/geometry/` buffers, as the weapon
+ * is (`weaponKit.ts`): a housing becomes SEGMENTS our renderer draws at
+ * `build.merge`, a bead or a reticle at `build.lit` (a reticle's bars merged by
+ * `mergeParts` and made one by `segmentOf` first; `BABYLON_EXIT.md` X4.3c), and
+ * the glass, the one surface drawn with a look of its own — BLENDED, a
+ * segment of role `"glass"` our renderer draws after the opaque parts (X4.3d),
+ * its colour and alpha plain data on the segment (`ViewSegment.glass`, the
+ * owner's decision of 2026-11-01: no Babylon material is made for a glass) —
+ * at `toSegment` here; each hung from its sight's JOINT (`WeaponBuild.hang`;
+ * X4.3b), which is the switch a loadout change throws.
  */
-import { MeshBuilder, Mesh, Color3, StandardMaterial, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
+import {
+  createBox,
+  createDisc,
+  createPlane,
+  createSphere,
+  createTorus,
+  DOUBLESIDE,
+} from "../geometry/primitives";
+import { mergeParts, Part, type PartNode } from "../world/parts";
+import type { Joint } from "./rigJoints";
+import { segmentOf, toSegment, type ViewGlass, type ViewSegment } from "./viewTree";
 import { SIGHT_IDS, type SightId } from "./sights";
 import {
   FACETS,
@@ -36,6 +57,22 @@ import {
   type SightAssembly,
   type WeaponBuild,
 } from "./weaponKit";
+
+/**
+ * A glass's look: `hex` as `Color3.FromHexString` read it (each channel the
+ * byte over 255, the same doubles) and its alpha — what the glass's own
+ * unlit `StandardMaterial` held until the owner's decision of 2026-11-01.
+ */
+function glassLook(hex: string, alpha: number): ViewGlass {
+  return {
+    emissive: {
+      r: parseInt(hex.substring(1, 3), 16) / 255,
+      g: parseInt(hex.substring(3, 5), 16) / 255,
+      b: parseInt(hex.substring(5, 7), 16) / 255,
+    },
+    alpha,
+  };
+}
 
 /**
  * Where a weapon offers its rail, and where along it a sight sits. Everything
@@ -594,7 +631,7 @@ export function buildOptics(
   build: WeaponBuild,
   mount: OpticMount,
   prefix: string,
-): { sights: Record<SightId, SightAssembly>; meshes: Mesh[] } {
+): { sights: Record<SightId, SightAssembly>; meshes: ViewSegment[] } {
   const b = build;
   const black = b.paint("black", OPTIC_BLACK);
   const silver = b.paint("silver", OPTIC_SILVER, true);
@@ -634,7 +671,7 @@ export function buildOptics(
    * sight centre goes — so aiming lines all three up at once and the picture
    * is right by construction.
    */
-  const buildIron = (node: TransformNode): Vector3 => {
+  const buildIron = (node: Joint): Vector3 => {
     // Both bases stand from the rail to the BORE's floor, never into it. The
     // bore's lower edge is only a few millimetres above the receiver from the
     // eye's point of view, so a base sized by hand blocks the bottom of the
@@ -683,7 +720,7 @@ export function buildOptics(
           x + (dx * len) / 2,
           y + (dy * len) / 2,
           frontZ,
-          b.root,
+          b.frame,
           -side * lean,
         );
         x += dx * len;
@@ -694,11 +731,7 @@ export function buildOptics(
     b.box("ironPost", METAL, 0.005 * k, postH, 0.007 * k, 0, floor + postH / 2, frontZ);
     b.merge("iron", node);
     const bead = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_ironBead`,
-        { diameter: 0.005 * IRON_K, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_ironBead`, createSphere({ diameter: 0.005 * IRON_K, segments: 6 })),
       node,
     );
     bead.position.set(0, ironY, mount.ironFrontZ);
@@ -718,7 +751,7 @@ export function buildOptics(
    * for a fight already inside a room, where what you can see PAST the sight
    * is worth more than what you can see through it.
    */
-  const buildReflex = (node: TransformNode): Vector3 => {
+  const buildReflex = (node: Joint): Vector3 => {
     // The rear leaf only. The window is lower than the holo's and its cone is
     // wider, so a standing front leaf sits about a millimetre inside the
     // bottom of the picture — the same call the scope makes, one size down.
@@ -785,50 +818,41 @@ export function buildOptics(
     // thing this has over the irons. Smaller than the holo's, because there is
     // no ring around it to give it a scale.
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_reflexDot`,
-        { diameter: 0.0028 * REFLEX_K, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_reflexDot`, createSphere({ diameter: 0.0028 * REFLEX_K, segments: 6 })),
       node,
     );
     dot.position.set(0, reflexY, winZ);
 
     // The lens, canted back the way a reflex's is — it is a mirror for the
-    // emitter under it, not a window. Its own material, for the same reason
-    // the holo's glass has one: an alpha leaked into the shared emissive cache
-    // would take every tracer and reticle in the game with it.
-    const glassMat = new StandardMaterial(`${prefix}_reflexGlass`, b.scene);
-    glassMat.emissiveColor = Color3.FromHexString("#3af0d6");
-    glassMat.diffuseColor = Color3.Black();
-    glassMat.specularColor = Color3.Black();
-    glassMat.disableLighting = true;
-    // Fainter than the holo's for the same reading: this window is twice the
-    // area, and a tint that sits politely in a 0.072 bore is a green filter
-    // across the whole picture at this size.
-    glassMat.alpha = 0.07;
-    const glass = MeshBuilder.CreatePlane(
-      `${prefix}_reflexGlass`,
-      {
-        width: REFLEX_WIN_W,
-        height: REFLEX_WIN_H,
-        sideOrientation: Mesh.DOUBLESIDE,
-      },
-      b.scene,
+    // emitter under it, not a window. A look of its own, for the same reason
+    // the holo's glass has one: it is the one blended, part-alpha surface of
+    // the weapon, never a slot of the shared emissive table every reticle
+    // reads. Fainter than the holo's for the same reading: this window is
+    // twice the area, and a tint that sits politely in a 0.072 bore is a
+    // green filter across the whole picture at this size.
+    const look = glassLook("#3af0d6", 0.07);
+    const glass = toSegment(
+      new Part(
+        `${prefix}_reflexGlass`,
+        createPlane({
+          width: REFLEX_WIN_W,
+          height: REFLEX_WIN_H,
+          sideOrientation: DOUBLESIDE,
+        }),
+      ),
     );
-    glass.parent = node;
+    glass.role = "glass";
+    b.hang(glass, node);
     glass.position.set(0, reflexY, winZ);
     // The cant is small enough to stay inside the frame's own depth: any more
     // and the glass corners poke out through the posts.
     glass.rotation.x = -0.12;
-    // Not optional, and the failure is not subtle: this scene has no Babylon
-    // lights at all, so a mesh left on the default material renders BLACK —
-    // which on a sight is an opaque window, not a missing tint.
-    glass.material = glassMat;
+    // Not optional: our renderer reads the glass's colour and alpha off it
+    // (`Game.buildViewDraw`), and a glass with none cannot be drawn.
+    glass.glass = look;
     // noGlow for the holo's reason — bloom on a full-window tint is a haze
     // over the one thing the sight exists to keep clear.
     glass.metadata = { noInk: true, noGlow: true };
-    glass.isPickable = false;
 
     return new Vector3(0, reflexY, winZ);
   };
@@ -840,7 +864,7 @@ export function buildOptics(
    * The mount's top face meets the housing's underside exactly, so the two
    * read as one assembly rather than a sight balanced on a block.
    */
-  const buildHolo = (node: TransformNode): Vector3 => {
+  const buildHolo = (node: Joint): Vector3 => {
     foldedIrons(true);
     // Turrets and battery cap, standing off the housing's outer radius.
     const rOut = BORE / 2 + WALL;
@@ -883,10 +907,9 @@ export function buildOptics(
     // is an angle, and one left at its old size in a smaller window would fill
     // the picture it is supposed to sit in.
     const ring = b.lit(
-      MeshBuilder.CreateTorus(
+      new Part(
         `${prefix}_reticleRing`,
-        { diameter: 0.016 * k, thickness: 0.002 * k, tessellation: 24 },
-        b.scene,
+        createTorus({ diameter: 0.016 * k, thickness: 0.002 * k, tessellation: 24 }),
       ),
       node,
     );
@@ -894,36 +917,28 @@ export function buildOptics(
     ring.position.set(0, winY, winZ - 0.003 * k);
 
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_reticleDot`,
-        { diameter: 0.0032 * k, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_reticleDot`, createSphere({ diameter: 0.0032 * k, segments: 6 })),
       node,
     );
     dot.position.set(0, winY, winZ - 0.003 * k);
 
-    // Faint holo glass filling the bore (own material — alpha must not leak
-    // into the shared emissive cache). A disc, not a quad: the corners of a
-    // square lens would poke through a round housing.
-    const glassMat = new StandardMaterial(`${prefix}_holoGlass`, b.scene);
-    glassMat.emissiveColor = Color3.FromHexString("#35f0ff");
-    glassMat.diffuseColor = Color3.Black();
-    glassMat.specularColor = Color3.Black();
-    glassMat.disableLighting = true;
-    glassMat.alpha = 0.12;
-    const glass = MeshBuilder.CreateDisc(
-      `${prefix}_holoGlass`,
-      { radius: BORE / 2, tessellation: FACETS, sideOrientation: Mesh.DOUBLESIDE },
-      b.scene,
+    // Faint holo glass filling the bore (a look of its own — its alpha is
+    // never a slot of the shared emissive table). A disc, not a quad: the
+    // corners of a square lens would poke through a round housing.
+    const look = glassLook("#35f0ff", 0.12);
+    const glass = toSegment(
+      new Part(
+        `${prefix}_holoGlass`,
+        createDisc({ radius: BORE / 2, tessellation: FACETS, sideOrientation: DOUBLESIDE }),
+      ),
     );
-    glass.parent = node;
+    glass.role = "glass";
+    b.hang(glass, node);
     glass.position.set(0, winY, winZ + 0.009 * k);
-    glass.material = glassMat;
+    glass.glass = look;
     // noGlow: the bloom would turn the faint tint into a cyan haze that
     // obscures the sight picture.
     glass.metadata = { noInk: true, noGlow: true };
-    glass.isPickable = false;
 
     return new Vector3(0, winY, winZ);
   };
@@ -945,7 +960,7 @@ export function buildOptics(
    * a line ETCHED in the glass, and it does not bloom.
    */
   const postReticle = (
-    node: TransformNode,
+    node: Joint,
     name: string,
     y0: number,
     retZ: number,
@@ -965,13 +980,9 @@ export function buildOptics(
     const armMid = (armIn + armOut) / 2;
     const t = o.line;
     const mid = Math.floor(o.hashes.length / 2);
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     const bar = (w: number, h: number, x: number, y: number): void => {
-      const m = MeshBuilder.CreateBox(
-        `${prefix}_${name}`,
-        { width: w, height: h, depth: t },
-        b.scene,
-      );
+      const m = new Part(`${prefix}_${name}`, createBox({ width: w, height: h, depth: t }));
       m.position.set(x, y0 + y, retZ);
       bars.push(m);
     };
@@ -986,19 +997,11 @@ export function buildOptics(
       });
     }
     if (o.dot) {
-      const dot = MeshBuilder.CreateSphere(
-        `${prefix}_${name}Dot`,
-        { diameter: o.dot, segments: 6 },
-        b.scene,
-      );
+      const dot = new Part(`${prefix}_${name}Dot`, createSphere({ diameter: o.dot, segments: 6 }));
       dot.position.set(0, y0, retZ);
       bars.push(dot);
     }
-    const posts = Mesh.MergeMeshes(bars, true, true);
-    if (posts) {
-      posts.name = `${prefix}_${name}`;
-      b.lit(posts, node, POSTS);
-    }
+    b.lit(segmentOf(`${prefix}_${name}`, mergeParts(bars)), node, POSTS);
   };
 
   /**
@@ -1014,7 +1017,7 @@ export function buildOptics(
    * rather than turrets — because the tube itself is as small as the picture
    * allows, and the bulk is where a 2x stops reading as a dot sight.
    */
-  const buildGreenDot = (node: TransformNode): Vector3 => {
+  const buildGreenDot = (node: Joint): Vector3 => {
     foldedIrons(false);
     const ocularZ = winZ + DOT2_OCULAR_DZ;
     const objectiveZ = winZ + DOT2_OBJECTIVE_DZ;
@@ -1142,11 +1145,7 @@ export function buildOptics(
 
     // The dot — green, on the axis, alone in the middle of the gap.
     const dot = b.lit(
-      MeshBuilder.CreateSphere(
-        `${prefix}_greenDot`,
-        { diameter: DOT2_DOT, segments: 6 },
-        b.scene,
-      ),
+      new Part(`${prefix}_greenDot`, createSphere({ diameter: DOT2_DOT, segments: 6 })),
       node,
       DOT2_COLOUR,
     );
@@ -1169,7 +1168,7 @@ export function buildOptics(
     x: number,
     y: number,
     z: number,
-  ): TransformNode => {
+  ): PartNode => {
     const p = b.pivot(name, x, y, z, 0);
     if (axis === "y") p.rotation.z = Math.PI / 2;
     else if (axis === "z") p.rotation.y = Math.PI / 2;
@@ -1217,7 +1216,7 @@ export function buildOptics(
    * OUTSIDE the cone at its own far end, so nothing on the body can reach into
    * the picture.
    */
-  const buildPrism = (node: TransformNode): Vector3 => {
+  const buildPrism = (node: Joint): Vector3 => {
     // No front leaf, for the scope's reason: this cone is wider still.
     foldedIrons(false);
     const y = prismY;
@@ -1401,17 +1400,16 @@ export function buildOptics(
     const retZ = objectiveZ - 0.03;
     const clearR = PRISM_CONE * (eyeDistance("prism") + retZ - ocularZ);
     const armLen = clearR * 0.5;
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     for (const side of [-1, 1] as const) {
       // The caret's arms: each hung from the axis so its top end lands ON it,
       // which is what makes the apex the aim point rather than something near
       // it. Babylon's rotation about z takes the bar's own +y to
       // `(-sin, cos)`, so the centre is half a length back down that vector.
       const a = 0.6;
-      const arm = MeshBuilder.CreateBox(
+      const arm = new Part(
         `${prefix}_prismRetCaret`,
-        { width: 0.0011, height: armLen, depth: 0.0012 },
-        b.scene,
+        createBox({ width: 0.0011, height: armLen, depth: 0.0012 }),
       );
       arm.rotation.z = side * a;
       arm.position.set(
@@ -1421,11 +1419,7 @@ export function buildOptics(
       );
       bars.push(arm);
     }
-    const reticle = Mesh.MergeMeshes(bars, true, true);
-    if (reticle) {
-      reticle.name = `${prefix}_prismReticle`;
-      b.lit(reticle, node);
-    }
+    b.lit(segmentOf(`${prefix}_prismReticle`, mergeParts(bars)), node);
 
     // The eye reference is the ocular rim, exactly as the scope's is: the eye
     // goes behind the glass it looks through, not behind the middle of a body.
@@ -1449,7 +1443,7 @@ export function buildOptics(
    * a glance. The narrow rib along its crown is the fibre housing that feeds
    * the reticle's illumination, standing forward of the elevation cap.
    */
-  const buildScope = (node: TransformNode): Vector3 => {
+  const buildScope = (node: Joint): Vector3 => {
     foldedIrons(false);
     const ocularZ = winZ + SCOPE_OCULAR_DZ;
     const objectiveZ = winZ + SCOPE_OBJECTIVE_DZ;
@@ -1515,7 +1509,7 @@ export function buildOptics(
         Math.sin(a) * hoodMid,
         scopeY + Math.cos(a) * hoodMid,
         objectiveZ + len / 2,
-        b.root,
+        b.frame,
         -a,
       );
     }
@@ -1607,7 +1601,7 @@ export function buildOptics(
    * than capped and forgotten. Both are sized OUTWARD from their own section's
    * outer radius, so neither can reach into the picture.
    */
-  const buildLongScope = (node: TransformNode): Vector3 => {
+  const buildLongScope = (node: Joint): Vector3 => {
     // The rear leaf only, exactly as the scope and the prism do: at this rise a
     // standing front leaf would be a pillar in the middle of the one sight
     // picture in the game that has no field to spare.
@@ -1730,19 +1724,17 @@ export function buildOptics(
     const armOut = clearR - 0.004;
     const armLen = armOut - armIn;
     const armMid = (armIn + armOut) / 2;
-    const bars: Mesh[] = [];
+    const bars: Part[] = [];
     for (const side of [-1, 1] as const) {
-      const v = MeshBuilder.CreateBox(
+      const v = new Part(
         `${prefix}_longRetV`,
-        { width: LONG_RET_ARM, height: armLen, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: LONG_RET_ARM, height: armLen, depth: LONG_RET_ARM }),
       );
       v.position.set(0, longY + side * armMid, retZ);
       bars.push(v);
-      const h = MeshBuilder.CreateBox(
+      const h = new Part(
         `${prefix}_longRetH`,
-        { width: armLen, height: LONG_RET_ARM, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: armLen, height: LONG_RET_ARM, depth: LONG_RET_ARM }),
       );
       h.position.set(side * armMid, longY, retZ);
       bars.push(h);
@@ -1752,26 +1744,17 @@ export function buildOptics(
     // caret is sized, so they keep their place against the picture if the cone
     // is ever re-solved.
     for (let i = 1; i <= 2; i++) {
-      const tick = MeshBuilder.CreateBox(
+      const tick = new Part(
         `${prefix}_longRetTick`,
-        { width: clearR * 0.13, height: LONG_RET_ARM, depth: LONG_RET_ARM },
-        b.scene,
+        createBox({ width: clearR * 0.13, height: LONG_RET_ARM, depth: LONG_RET_ARM }),
       );
       tick.position.set(0, longY - clearR * 0.3 * i, retZ);
       bars.push(tick);
     }
-    const centre = MeshBuilder.CreateSphere(
-      `${prefix}_longRetDot`,
-      { diameter: LONG_RET_DOT, segments: 6 },
-      b.scene,
-    );
+    const centre = new Part(`${prefix}_longRetDot`, createSphere({ diameter: LONG_RET_DOT, segments: 6 }));
     centre.position.set(0, longY, retZ);
     bars.push(centre);
-    const reticle = Mesh.MergeMeshes(bars, true, true);
-    if (reticle) {
-      reticle.name = `${prefix}_longReticle`;
-      b.lit(reticle, node);
-    }
+    b.lit(segmentOf(`${prefix}_longReticle`, mergeParts(bars)), node);
 
     // The ocular rim, as on the scope: a sight's eye relief is measured to the
     // glass the eye goes behind, and here it is the number the camera's near
@@ -1779,7 +1762,7 @@ export function buildOptics(
     return new Vector3(0, longY, ocularZ);
   };
 
-  const BUILDERS: Record<SightId, (node: TransformNode) => Vector3> = {
+  const BUILDERS: Record<SightId, (node: Joint) => Vector3> = {
     reflex: buildReflex,
     iron: buildIron,
     holo: buildHolo,
@@ -1790,18 +1773,16 @@ export function buildOptics(
   };
 
   const sights = {} as Record<SightId, SightAssembly>;
-  const meshes: Mesh[] = [];
+  const meshes: ViewSegment[] = [];
   for (const id of SIGHT_IDS) {
-    const node = new TransformNode(`${prefix}_sight_${id}`, b.scene);
-    node.parent = b.root;
+    const node = b.joint(`${prefix}_sight_${id}`, b.root);
     const centre = BUILDERS[id](node);
-    const sightCenter = new TransformNode(`${prefix}_${id}_sightCenter`, b.scene);
-    sightCenter.parent = node;
-    sightCenter.position = centre;
-    // The builder has already parented its merged colour groups and its
-    // reticle to `node`, so the node itself is the list — no bookkeeping to
-    // keep in step with it.
-    const own = node.getChildMeshes(true) as Mesh[];
+    const sightCenter = b.joint(`${prefix}_${id}_sightCenter`, node);
+    sightCenter.position.copyFrom(centre);
+    // The builder has already hung its merged colour groups and its reticle
+    // from `node`, so the joint itself is the list — no bookkeeping to keep in
+    // step with it.
+    const own = b.meshesOn(node);
     meshes.push(...own);
     sights[id] = { root: node, sightCenter, meshes: own };
   }

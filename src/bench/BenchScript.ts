@@ -2,12 +2,13 @@
  * bench/BenchScript.ts — What the benchmark (`?bench=<map>`) shows, frame by
  * frame: the bank's vantages turned through eight headings, one camera path
  * through the map's densest quarter, then a bot-only round from a fixed seed.
- * `BABYLON_EXIT.md` X0.3, and `docs/profiling.md`'s "The benchmark".
+ * `docs/profiling.md`'s "The benchmark".
  * Owns: the PLAN — which frames are which segment, where the camera stands on
  * each frame that is a look, how many fixed steps each frame that is the
  * fight takes — and the two pieces of arithmetic the plan implies: the
- * spectator's bearing over the bot it follows, and `FightHash`, which says
- * whether two runs fought the same fight.
+ * spectator's bearing over the bot it follows, and `FightHash`
+ * (`fightHash.ts`, re-exported here for the page's one dynamic import), which
+ * says whether two runs fought the same fight.
  * Invariants:
  *  - **Counted in FRAMES and fixed steps, never in wall clock** — see
  *    `CONFIG.profiling.bench`. `next()` is the only clock, so a phone and a
@@ -21,6 +22,14 @@
  *  - **The plan is a function of the MAP alone** — its vantage rows, its
  *    collider boxes, its floor — so it is the same plan on every run and every
  *    device, and moves only when the map or `CONFIG.profiling.bench` does.
+ *  - **Its first frame is the run's first MEASURED frame, and on a touch
+ *    device that waits for a TAP** (`Game.holdBench`, the world held and
+ *    the ring not armed): a run is a URL, a page typed or refreshed cannot
+ *    be fullscreen without a gesture, and nothing is measured until the
+ *    page is fullscreen (or refused it) and its canvas has matched its
+ *    window for `CONFIG.profiling.bench.holdSettle`. Nothing here sees the
+ *    hold: the plan starts when `next` is first asked, and a fine pointer
+ *    asks on the first frame.
  * Never: touches a system, a mesh, the camera or the scene. It answers in
  * numbers and `Game.updateBench` spends them — the shape `PipelineWarmup` has
  * with the building card. Reached only through a dynamic import behind
@@ -30,6 +39,8 @@ import { CONFIG } from "../config";
 import { MAP_SHOTS } from "../ui/mapShots";
 import type { WorldBox } from "../world/mapTypes";
 import { DIFF_VANTAGES } from "./vantages";
+
+export { FightHash } from "./fightHash";
 
 /**
  * A labelled stretch of the run. `group` is what a report rolls segments up
@@ -176,7 +187,7 @@ export class BenchScript {
     for (const v of DIFF_VANTAGES[mapId] ?? []) rows.push(v);
     // One stop per POSITION. Eight headings make a row's own target moot but
     // for its pitch, and the bank stands several rows on one spot — the post
-    // chain's six on `lanterns`, the ten viewmodel rows on the millpond — to
+    // chain's ten on `lanterns`, the viewmodel and kit rows on the millpond — to
     // vary what is IN the frame rather than where it is taken from.
     const seen = new Set<string>();
     for (const row of rows) {
@@ -353,8 +364,7 @@ export class BenchScript {
    * absorb their one jump the same way every time, agreed to 6%. So a settle
    * runs until its last `frames` frames were all quiet — none over
    * `quietFactor` times the fastest it has seen and `quietSlackMs` over it —
-   * and `settleCap` times its own length whatever. `PipelineWarmup` leaves a vantage on the
-   * same kind of rule.
+   * and `settleCap` times its own length whatever.
    *
    * It is wall clock, and it is allowed to be only because of what a settle
    * is: never measured, and the world held through it, so its length moves
@@ -508,62 +518,6 @@ export class BenchScript {
     }
     return { x: round1(cx), z: round1(cz), radius: round1(radius) };
   }
-}
-
-/**
- * A hash of the fight as it happens — every award and every death, in order,
- * stamped with the fixed step it landed on — so two runs can be compared by
- * one string. `npm run simulate`'s `fight` is the same idea on the authority;
- * the two do not print the same hash, because a client's round and the
- * authority's are fed by different hooks, and nothing compares across them.
- *
- * Two FNV-1a lanes with different bases, which is 64 bits of "same or not" for
- * a comparison between a handful of runs. Nothing here allocates: an event is
- * folded in as it is reported, a string by its char codes.
- */
-export class FightHash {
-  /** The fixed step the fight has reached, advanced by `Game` per step. */
-  step = 0;
-  /** Awards and deaths folded in. */
-  events = 0;
-  private a = 0x811c9dc5;
-  private b = 0x9e3779b9;
-
-  award(slot: number, kind: string, points: number): void {
-    this.fold(this.step);
-    this.fold(1);
-    this.fold(slot);
-    for (let i = 0; i < kind.length; i++) this.fold(kind.charCodeAt(i));
-    this.fold(points);
-    this.events++;
-  }
-
-  death(slot: number): void {
-    this.fold(this.step);
-    this.fold(2);
-    this.fold(slot);
-    this.events++;
-  }
-
-  get hex(): string {
-    return hex8(this.a) + hex8(this.b);
-  }
-
-  private fold(v: number): void {
-    // Integers in practice (a step, a slot, a char, points); a fraction is
-    // folded as its thousandths rather than dropped.
-    let x = Math.round(v * 1000) | 0;
-    for (let k = 0; k < 4; k++) {
-      const byte = x & 0xff;
-      x >>>= 8;
-      this.a = Math.imul(this.a ^ byte, 0x01000193);
-      this.b = Math.imul(this.b ^ byte, 0x01000193);
-    }
-  }
-}
-
-function hex8(v: number): string {
-  return (v >>> 0).toString(16).padStart(8, "0");
 }
 
 function round1(v: number): number {

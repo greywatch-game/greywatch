@@ -13,7 +13,9 @@
  *  - **The list is stated once and everything is derived from it** — the slot
  *    ids, the slot count, the roots. A phase added here owes a parent in
  *    `PARENT_OF` (it does not compile otherwise) and a `begin`/`end` pair in
- *    `Game`; the ring, the report and the trace follow by themselves.
+ *    `Game` — or, for a span measured where `Game` cannot stamp it (the
+ *    simulation core's, `sim`), a `FrameProfile.fileTiming` of what was measured;
+ *    the ring, the report and the trace follow by themselves.
  *  - It imports nothing, so it can never be the reason a disarmed profiler
  *    loads something.
  */
@@ -23,7 +25,7 @@
  * phase's slot id**, which is what keeps the recording loop free of strings.
  *
  * They NEST and they do not partition: `frame` contains `gameplay` contains
- * `world` contains `bots`, and what is left over inside each is the lines
+ * `world` contains `net`, and what is left over inside each is the lines
  * nobody thought worth naming. Read a report as an attribution, exactly as
  * `buildProfile`'s header says to read the build's.
  *
@@ -45,10 +47,45 @@ export const PHASES = [
   "onFoot",
   "world",
   "net",
-  "conquest",
-  /** The crews, the hulls and the tracks' sweep — one span over the armour. */
+  /**
+   * The SIMULATION's step (`SimCore.step` in the page's own local match,
+   * offline) and its five phases — the one span in this list that `Game`
+   * does not stamp. **The core times itself with a clock its host hands it**
+   * (`SimCoreOptions.timing`, switched by `SimCore.timeSteps` while this
+   * profiler is armed), the local match reports the row over its owner
+   * channel (`src/sim/stepTiming.ts`), and `Game` FILES it
+   * (`FrameProfile.fileTiming`) — so the brackets are the core's and the
+   * slots are this list's. Steps that one frame files are SUMMED — every
+   * step of one `advance` by the local match (`server/localMatch.ts`), every
+   * answer since the last filing by the page (`LocalOwner.timing`) — so a
+   * benchmark's lead, several steps a frame, reads as all of them.
+   *
+   * **It is a ROOT**: with the match in a Worker the step runs on
+   * another thread, overlapping the page's frame rather than inside it, and
+   * it is filed against a frame that takes in its answer. With the match on
+   * this thread (`MatchHost.mode`, in every capture) it runs in a message
+   * task BETWEEN frames — outside `frame` and `present` alike, in the
+   * residue — so it is a root there for the same reason, and one tree reads
+   * both.
+   *
+   * `simConquest` is the combatant list and the flags; `simVehicles` the
+   * crews, the hulls, the tracks and the riders; `simBots` the bots' think
+   * and move; `simGrenades` and `simAntiTank` what is in the air. What `sim`
+   * holds outside them is the persons' regen, leash and deploy and the
+   * rewind's record.
+   */
+  "sim",
+  "simConquest",
+  "simVehicles",
+  "simBots",
+  "simGrenades",
+  "simAntiTank",
+  /**
+   * The PAGE's armour: the fleet posed off the wire — a server's or the
+   * page's own local match's — and the player's hull predicted, plus the
+   * views.
+   */
   "vehicles",
-  "bots",
   "combat",
   "grenades",
   "antiTank",
@@ -62,42 +99,62 @@ export const PHASES = [
   "hudDraw",
   /** The post chain, the sky and the shafts. */
   "post",
-  /** The cull cells, the mote field, the rotors' dust and the shader's eye. */
+  /** The cull cells, the hulls' compose and fade (`fadeHulls`), the mote field, the rotors' dust and the shader's eye. */
   "culling",
   /**
    * `LocalShadows.update` — which lamps cast and packing their proxies. CPU
-   * only: the atlas passes are drawn inside `render`, from the scene.
+   * only: the atlas passes are drawn inside `render`, in the frame.
    */
   "localShadows",
   /**
-   * `GiVolume.update` — choosing the lights, the params upload and recording
-   * the three compute passes. The GPU's share of it is in `gpu.frame`.
+   * `GiVolume.update` — choosing the lights, the channels and the hull slots,
+   * the params upload and ARMING the dispatch. Its three compute passes are
+   * RECORDED inside `render` since `BABYLON_EXIT.md` X5.1b, by our renderer's
+   * late prepare as the main pass begins (`render/GiCompute.ts`), not here; the
+   * GPU's share is in `gpu.frame`. Same name, same parent, a smaller share, so
+   * no report version moved.
    */
   "gi",
   /** `pushHullEngines` — the fleet's voices. */
   "audio",
-  /** `scene.render()`. The big one, and see `FrameProfile`'s header on why. */
+  /**
+   * The frame's render: the bodies', hulls', weapon's and pools' handover and
+   * `SceneFrame.render` — `scene.render()` until `BABYLON_EXIT.md` X5.4f, the
+   * same steps in the same order since. The big one, and see `FrameProfile`'s
+   * header on why.
+   */
   "render",
   /**
-   * The four spans INSIDE `render`, and the only ones in this list that
-   * `Game` does not bracket — see `FrameProfile.hookRender`, which is also
-   * where the argument that they cannot overlap each other is written down.
+   * The two spans INSIDE `render`, and the only ones in this list that `Game`
+   * does not bracket: the FRAME does (`SceneFrame.render` and `timeWith`,
+   * `BABYLON_EXIT.md` X5.4g; `FrameProfile.hookRender` hung them off the
+   * frame's observables until then). `drawWorld` is the camera's draw phase
+   * up to the glow's work, `glow` that work — the mask and its blur — and the
+   * glow's work runs inside the draw phase's close, after our renderer's main
+   * pass and after `drawWorld` has closed, so the two cannot overlap.
+   * (`shadowPass`, a Babylon shadow generator's map, was the third until
+   * report version 38 retired it, nothing having opened it since
+   * `BABYLON_EXIT.md` X5.3d; `drawOverlay`, the rendering groups above 0, a
+   * fourth until X4.3d emptied them: report version 24.)
    */
-  "shadowPass",
   "glow",
   "drawWorld",
-  "drawOverlay",
   /**
-   * The engine's own END of the frame: everything `endFrame` does after `tick`
-   * has returned, which on WebGPU is closing the render pass and
-   * `queue.submit`.
+   * The frame's END, after `tick` has returned: `FrameSubmit.submit`, the
+   * span around the frame's ONE `queue.submit` — the frame's GPU timer
+   * closed, the encoder finished and submitted, then, under `?gpu`, the
+   * timer's read-back begun (its `mapAsync`), and the NEXT frame's encoder
+   * made, with the timer's opening pass when it times that frame
+   * (`core/FrameLoop.ts`, `render/FrameSubmit.ts`, `BABYLON_EXIT.md` X5.4g;
+   * Babylon's `endFrame` until then, whose `flushFramebuffer` was the same
+   * finish and submit and made its next frame's encoders inside it too).
    *
    * **It is the one phase in this list that is NOT inside `frame`**, and it is
    * here because the residue outside the tick was the whole of an unexplained
    * hitch: a real capture read 42.2 ms of wall clock against a 15.1 ms tick
    * with no collection on it, and nothing in the instrument could say which
    * side of the submit the missing 27 ms was on. See
-   * `FrameProfile.recordPresent`, and `PARENT_OF`, where being a root is
+   * `FrameProfile.presented`, and `PARENT_OF`, where being a root is
    * declared.
    *
    * What is still outside everything, after this, is the gap from the submit to
@@ -113,7 +170,7 @@ export type Phase = (typeof PHASES)[number];
 export const SLOTS = PHASES.length;
 
 /**
- * `P.bots` is the slot id for `"bots"`.
+ * `P.simBots` is the slot id for `"simBots"`.
  *
  * Derived from `PHASES` rather than written out, so the list is stated once
  * and an id cannot drift from its label. The values are plain numbers by the
@@ -137,22 +194,23 @@ export const P = Object.fromEntries(
  * every capture** (`ProfileReport.tree`) — a report states its own shape for
  * the same reason it states its own clock grain and its own overhead.
  *
- * `Exclude<Phase, "frame" | "present">` is what makes it safe: every phase but
- * the two ROOTS must name a parent, so **a phase added to `PHASES` does not
+ * `Exclude<Phase, "frame" | "present" | "sim">` is what makes it safe: every
+ * phase but the three ROOTS must name a parent, so **a phase added to `PHASES` does not
  * compile until it has said where it sits** — the arrangement `ScreenStack`'s
  * `SCREENS` uses to stop a new screen shipping without answering its four
  * questions.
  *
- * **There are two roots because the frame has two parts and only one of them
- * is the tick.** `frame` is `Game.tick`, wall to wall; `present` is what the
- * engine does after it returns. Neither contains the other, they cannot
- * overlap, and a reader that drew `present` inside `frame` would be drawing a
- * containment that does not exist — which is exactly what the fallback tree in
+ * **There are three roots because the frame has two parts and only one of
+ * them is the tick — and the simulation is no longer either.** `frame` is
+ * `Game.tick`, wall to wall; `present` is the frame's submit after it
+ * returns; `sim` is the core's step, in the local match. None
+ * contains another, and a reader that drew `present` or `sim` inside `frame`
+ * would be drawing a containment that does not exist — which is exactly what the fallback tree in
  * `public/profile_viewer.html` does to any phase it has not been told about, so
  * that copy must gain this one too.
  */
 export const PARENT_OF: Readonly<
-  Record<Exclude<Phase, "frame" | "present">, Phase>
+  Record<Exclude<Phase, "frame" | "present" | "sim">, Phase>
 > = {
   input: "frame",
   roundBehind: "frame",
@@ -161,9 +219,15 @@ export const PARENT_OF: Readonly<
   onFoot: "gameplay",
   world: "gameplay",
   net: "world",
-  conquest: "world",
+  // The core's step is a third ROOT: in a Worker it runs off this
+  // thread, so it is in the `Exclude` above and the viewer's
+  // `FALLBACK_ROOTS`, and its five children stay its own.
+  simConquest: "sim",
+  simVehicles: "sim",
+  simBots: "sim",
+  simGrenades: "sim",
+  simAntiTank: "sim",
   vehicles: "world",
-  bots: "world",
   combat: "world",
   grenades: "world",
   antiTank: "world",
@@ -179,15 +243,14 @@ export const PARENT_OF: Readonly<
   gi: "frame",
   audio: "frame",
   render: "frame",
-  shadowPass: "render",
   glow: "render",
   drawWorld: "render",
-  drawOverlay: "render",
 };
 
 /**
- * The phases nothing contains: `frame` (the tick) and `present` (what the
- * engine does after it).
+ * The phases nothing contains: `frame` (the tick), `present` (the submit
+ * after it) and `sim` (the core's step, on its own thread or
+ * between frames).
  *
  * DERIVED from the two tables above rather than written out, so it cannot go
  * stale the way a hand-kept list would, and SHIPPED in every capture — because

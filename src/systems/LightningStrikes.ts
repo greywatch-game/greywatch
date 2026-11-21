@@ -21,7 +21,7 @@
  *   every state, the ambience's rule: weather does not stop for a menu.
  * Contract: `docs/rendering.md` (lightning).
  */
-import { Color3, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3 } from "../math";
 import { mulberry32 } from "../world/rng";
 import type { LightningSpec } from "../world/environment";
 

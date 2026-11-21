@@ -3,16 +3,11 @@
  * the curtain it hangs from its crown, with the feather blade its fronds are
  * laid as. Part of the scatter set: follows the contract in `./index.ts`.
  */
-import {
-  CreateBoxVertexData,
-  CreateCylinderVertexData,
-  Mesh,
-  Scene,
-  VertexData,
-} from "@babylonjs/core";
+import { floats, GeometryBuffer } from "../../geometry/buffer";
+import { createBox, createCylinder } from "../../geometry/primitives";
 import { CONFIG } from "../../config";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
-import { partCylinder, partSurface } from "../parts";
+import { Part } from "../parts";
 import { mulberry32 } from "../rng";
 import { frondBend, marksSway, rigPhase, swayRig } from "../sway";
 import {
@@ -71,14 +66,14 @@ export interface LianaHang {
  * `data` with one sway RIG (`swayRig`) written over its filler `uv` on every
  * vertex — for a part that rides one point of a rigged frond whole.
  */
-function withRig(data: VertexData, rig: readonly [number, number]): VertexData {
+function withRig(data: GeometryBuffer, rig: readonly [number, number]): GeometryBuffer {
   const n = (data.positions?.length ?? 0) / 3;
   const uvs = new Array<number>(n * 2);
   for (let i = 0; i < n; i++) {
     uvs[i * 2] = rig[0];
     uvs[i * 2 + 1] = rig[1];
   }
-  data.uvs = uvs;
+  data.uvs = floats(uvs);
   return data;
 }
 
@@ -288,16 +283,15 @@ function featherBlade(pts: readonly V3[], frames: readonly RachisFrame[], cut: F
  * the lit sage, the shade sage and the dead fronds.
  *
  * Nothing here is scaled non-uniformly — `renderOutline` extrudes along vertex
- * normals and `VertexData.transform` does not re-normalise them, so a squashed
+ * normals and `GeometryBuffer.transform` does not re-normalise them, so a squashed
  * part grows a lopsided ink shell.
  */
 export function buildJungleTree(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number = rng,
   detail = 1,
-): Mesh {
+): Part {
   const bark = mats.get(JUNGLE_BARK);
   const vine = mats.get(VINE);
   const leaf = mats.getTranslucent(PALM_LEAF, CONFIG.graphics.translucency.canopy);
@@ -354,7 +348,7 @@ export function buildJungleTree(
   // stood through the top of its own crown: from above, a forest of green
   // plates each with a stump in the middle. The collider still runs to 11.2 —
   // in among the fronds' stalks, where nothing can tell.
-  const trunk = loft("jungle-trunk", GIRTH.map(([h]) => bole(h)), SIDES, scene, flute);
+  const trunk = loft("jungle-trunk", GIRTH.map(([h]) => bole(h)), SIDES, flute);
   trunk.position.y = -FOOT;
   trunk.material = bark;
   trunk.rotation.z = (lean - 0.5) * 0.05;
@@ -394,7 +388,6 @@ export function buildJungleTree(
         [end - 0.08, -0.6],
       ],
       [0.26, 0.26, 0.24, 0.2, 0.16, 0.12, 0.07, 0.08],
-      scene,
       // Inside the bole, inside the bole, and under the ground.
       { skip: [0, 1, 7] },
     );
@@ -428,7 +421,6 @@ export function buildJungleTree(
     "jungle-boss",
     HEAD.map(([h, r]) => ({ ...bole(h), r })),
     7,
-    scene,
     Array.from({ length: 7 }, () => (own() - 0.5) * 0.24),
   );
   boss.parent = trunk;
@@ -642,7 +634,7 @@ export function buildJungleTree(
 
   const crown = (name: string, s: Sheet, material: typeof leaf, sways: boolean): void => {
     if (!s.indices.length) return;
-    const mesh = partSurface(name, sheetData(s), scene);
+    const mesh = new Part(name, sheetData(s));
     mesh.parent = trunk;
     mesh.material = material;
     // The live crown is RIGGED rather than ramped: each frond bends from its
@@ -683,7 +675,6 @@ export function buildJungleTree(
         r: 0.045 - (0.02 * i) / (steps - 1),
       })),
       4,
-      scene,
     );
     stem.parent = trunk;
     stem.material = vine;
@@ -712,7 +703,6 @@ export function buildJungleTree(
           [-0.11 * s, -0.09 * s],
         ],
         0.03,
-        scene,
       );
       blade.parent = trunk;
       blade.position.set(at.x, at.y, at.z);
@@ -783,7 +773,7 @@ export function buildJungleTree(
         y: Math.max(-0.4, under - 4.05),
       });
     }
-    const veil = buildLianaVeil(scene, mats, sub, hangs);
+    const veil = buildLianaVeil(mats, sub, hangs);
     veil.parent = trunk;
     veil.position.y = 4.05;
   }
@@ -859,11 +849,10 @@ export function buildJungleTree(
  * `buildJungleTree` states about its fronds needing two segments.
  */
 function buildLianaVeil(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   hangs: readonly LianaHang[],
-): Mesh {
+): Part {
   const bark = mats.get(JUNGLE_BARK);
   const vineMat = mats.get(VINE);
   // What hangs in the canopy's own light gets the canopy's own translucency, so
@@ -886,10 +875,9 @@ function buildLianaVeil(
   // 0.52 there), which is what makes it a thickening on the trunk rather than
   // a band painted round it. Half of it is inside the crown and half below,
   // so it emerges from the foliage instead of sitting under it.
-  const collar = partCylinder(
+  const collar = new Part(
     "liana-collar",
-    { height: 0.55, diameterTop: 0.58, diameterBottom: 0.7, tessellation: 6 },
-    scene,
+    createCylinder({ height: 0.55, diameterTop: 0.58, diameterBottom: 0.7, tessellation: 6 }),
   );
   // **Deliberately unrotated.** A hexagon's facet alignment is invisible at
   // this size, and turning the root would turn every strand with it — off the
@@ -935,10 +923,9 @@ function buildLianaVeil(
 
     const upperLen = drop * 0.55;
     const upperAt = radial(0.28, 0.22);
-    const upper = partSurface(
+    const upper = new Part(
       "liana-strand",
-      withRig(CreateBoxVertexData({ width: 0.13, height: upperLen, depth: 0.13 }), rig),
-      scene,
+      withRig(createBox({ width: 0.13, height: upperLen, depth: 0.13 }), rig),
     );
     upper.parent = collar;
     upper.position.set(upperAt.x, top - upperLen / 2, upperAt.z);
@@ -954,10 +941,9 @@ function buildLianaVeil(
 
     const lowerLen = drop * 0.45;
     const lowerAt = radial(0.78, 0.78);
-    const lower = partSurface(
+    const lower = new Part(
       "liana-strand-low",
-      withRig(CreateBoxVertexData({ width: 0.11, height: lowerLen, depth: 0.11 }), rig),
-      scene,
+      withRig(createBox({ width: 0.11, height: lowerLen, depth: 0.11 }), rig),
     );
     lower.parent = collar;
     lower.position.set(lowerAt.x, top - upperLen - lowerLen / 2, lowerAt.z);
@@ -981,7 +967,7 @@ function buildLianaVeil(
       const t = 0.22 + (j / leaves) * 0.62;
       const at = radial(t, t);
       const s = 0.85 + rng() * 0.5;
-      const blade = partSurface(
+      const blade = new Part(
         "liana-leaf",
         withRig(
           prismData(
@@ -997,7 +983,6 @@ function buildLianaVeil(
           ),
           rig,
         ),
-        scene,
       );
       blade.parent = collar;
       blade.position.set(at.x, top - drop * t, at.z);
@@ -1013,13 +998,12 @@ function buildLianaVeil(
     // gathers where it has been hanging longest.
     if (rng() < 0.55) {
       const at = radial(1, 1);
-      const knot = partSurface(
+      const knot = new Part(
         "liana-knot",
         withRig(
-          CreateCylinderVertexData({ height: 0.4, diameterTop: 0.3, diameterBottom: 0.22, tessellation: 5 }),
+          createCylinder({ height: 0.4, diameterTop: 0.3, diameterBottom: 0.22, tessellation: 5 }),
           rig,
         ),
-        scene,
       );
       knot.parent = collar;
       knot.position.set(at.x, hem + 0.2, at.z);

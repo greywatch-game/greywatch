@@ -10,7 +10,10 @@
  * `CONFIG.net.interpDelay` behind the newest snapshot.
  * Invariants: both pools are built once, never resized, and are exactly the
  * authority's own sizes (`ROCKET_POOL`, `MINE_POOL`), so a client can never be
- * told about an object it has no mesh for.
+ * told about an object it has no body for. Every rocket and every plate is
+ * `AntiTankFx`'s own `RocketBody`/`MineBody` — a piece of `AntiTankFx`'s
+ * kits, which our renderer draws (`Game.drawPieces`, `BABYLON_EXIT.md`
+ * X4.4b) — so a remote warhead and a local one are posed by one move.
  *
  * **The two halves arrive differently, and the difference is what they ARE.**
  * A rocket is on the snapshot and interpolated, because it crosses a street in
@@ -27,10 +30,9 @@
  * never moves, so the round trip is invisible and a predicted copy would be a
  * second plate to reconcile.
  */
-import { Mesh, Scene, Vector3 } from "@babylonjs/core";
-import { buildMineBody } from "../entities/MineModel";
-import { buildRocket } from "../entities/RpgModel";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import type { PieceKits } from "../entities/pieces";
+import { Vector3 } from "../math";
+import { MineBody, RocketBody } from "../systems/AntiTankFx";
 import { MINE_POOL, ROCKET_POOL } from "../systems/AntiTankSystem";
 import type { MinesMessage, Snapshot } from "./protocol";
 
@@ -45,11 +47,10 @@ interface Sample {
 /** How many samples to keep — `NetGrenades.BUFFER`'s reasoning exactly. */
 const BUFFER = 8;
 
-/** One pool entry: the meshes, and the flight it is drawing. */
+/** One pool entry: the body, and the flight it is drawing. */
 interface Ghost {
-  readonly mesh: Mesh;
-  /** The motor, parented to the body. See `buildRocket`. */
-  readonly flame: Mesh;
+  /** The body and its motor — `AntiTankFx`'s own `RocketBody`. */
+  readonly body: RocketBody;
   /** The wire's flight id, or -1 while the slot is free. */
   id: number;
   readonly samples: Sample[];
@@ -68,6 +69,19 @@ interface Ghost {
 }
 
 export class NetOrdnance {
+  /**
+   * Wired by `Game`: somebody else's rocket has just left a tube, at the point
+   * it is first drawn — the report a launch makes.
+   *
+   * Raised off the INTERPOLATED flight rather than off the snapshot that
+   * first named it, for `NetRoster.onDeath`'s reason: the snapshot arrives in
+   * real time and the warhead is drawn `interpDelay` behind it, so a report
+   * played on arrival would be heard a tenth of a second before anybody saw
+   * the tube fire. No event says it, and none needs to: a flight appearing IS
+   * the launch, on the wire every client already reads.
+   */
+  onLaunch: (x: number, y: number, z: number) => void = () => {};
+
   private readonly rockets: Ghost[] = [];
   /** Flight id -> the ghost drawing it. Only ever holds claimed slots. */
   private readonly live = new Map<number, Ghost>();
@@ -80,26 +94,30 @@ export class NetOrdnance {
    * A plain array rather than a claim/release pool, because a mine's index on
    * the wire IS the authority's own pool slot — see `MineState.i`. So there is
    * nothing to allocate and nothing to match up: a `mines` message is applied
-   * by showing the slots it names and hiding the ones it does not.
+   * by showing the slots it names and hiding the ones it does not. Each is
+   * `AntiTankFx`'s own `MineBody`, the plate a local mine is drawn as.
    */
-  private readonly mines: { mesh: Mesh; lamp: Mesh }[] = [];
+  readonly mines: MineBody[] = [];
+  /** Every rocket ghost's body, by slot: what `Game.drawPieces` hands our renderer (the mines are `mines`). */
+  readonly rocketBodies: RocketBody[] = [];
 
   /**
    * How many mines each roster slot has on the field, as the last table said.
    *
    * Kept because the LAYER's own HUD counts them: the per-owner cap retires
    * your oldest when you lay a third, so this is a number a player is making a
-   * decision with. Offline the same figure is `AntiTankSystem.minesFor`.
+   * decision with — offline as in a match, the page being a client of its
+   * own local match.
    */
   private readonly laid = new Map<number, number>();
 
-  constructor(scene: Scene, mats: CelMaterialFactory) {
+  /** `kits`: the rocket's and the mine's, `AntiTankFx`'s own (`AntiTankFx.kits`). */
+  constructor(kits: Pick<PieceKits, "rocket" | "mine">) {
     for (let i = 0; i < ROCKET_POOL; i++) {
-      const { mesh, flame } = buildRocket(scene, mats, `netRocket${i}`);
-      mesh.setEnabled(false);
+      const body = new RocketBody(kits);
+      this.rocketBodies.push(body);
       this.rockets.push({
-        mesh,
-        flame,
+        body,
         id: -1,
         samples: [],
         dir: new Vector3(0, 0, 1),
@@ -107,10 +125,7 @@ export class NetOrdnance {
       });
     }
     for (let i = 0; i < MINE_POOL; i++) {
-      const { mesh, lamp } = buildMineBody(scene, mats, `netMine${i}`);
-      mesh.setEnabled(false);
-      lamp.isVisible = false;
-      this.mines.push({ mesh, lamp });
+      this.mines.push(new MineBody(kits));
     }
   }
 
@@ -156,24 +171,18 @@ export class NetOrdnance {
    * skill.
    */
   applyMines(msg: MinesMessage): void {
-    for (const m of this.mines) {
-      if (m.mesh.isEnabled()) m.mesh.setEnabled(false);
-      m.lamp.isVisible = false;
-    }
+    for (const m of this.mines) m.hide();
     this.laid.clear();
     for (const state of msg.mines) {
       if (state.by >= 0) this.laid.set(state.by, (this.laid.get(state.by) ?? 0) + 1);
       const mine = this.mines[state.i];
       if (!mine) continue;
-      mine.mesh.position.set(state.p[0], state.p[1], state.p[2]);
-      mine.mesh.setEnabled(true);
-      // Dark until it arms. That is the whole tell, and it is the right way
-      // round: what a driver can see is a mine that would go off.
-      mine.lamp.isVisible = state.armed;
+      // Dark until it arms — `MineBody.show`, the same tell a local mine has.
+      mine.show(state.p[0], state.p[1], state.p[2], state.armed);
     }
   }
 
-  /** How many mines `slot` has on the field. `AntiTankSystem.minesFor`'s twin. */
+  /** How many mines `slot` has on the field, as the last table said. */
   minesFor(slot: number): number {
     return this.laid.get(slot) ?? 0;
   }
@@ -192,20 +201,18 @@ export class NetOrdnance {
       const x = a.x + (b.x - a.x) * blend;
       const y = a.y + (b.y - a.y) * blend;
       const z = a.z + (b.z - a.z) * blend;
-      ghost.mesh.position.set(x, y, z);
       // Down its own flight, off the direction that arrived rather than off
-      // two positions — see `Ghost.dir`. The same `lookAt` the simulated
-      // rocket uses, so a remote one and a local one point the same way.
-      TMP.set(x + ghost.dir.x, y + ghost.dir.y, z + ghost.dir.z);
-      ghost.mesh.lookAt(TMP);
+      // two positions — see `Ghost.dir`. `RocketBody.place`, the move a
+      // simulated rocket is drawn by, so a remote one and a local one point
+      // the same way.
+      ghost.body.place(x, y, z, ghost.dir.x, ghost.dir.y, ghost.dir.z);
       // Shown on the frame it is first POSED and never on the one it was
       // claimed — `NetGrenades.Ghost.hasPosition`, and the same one-frame
       // flash across the map if it is not done this way.
       if (!ghost.hasPosition) {
         ghost.hasPosition = true;
-        // The whole body, motor and fins included, for the reason
-        // `AntiTankSystem.launch` uses `setEnabled` rather than `isVisible`.
-        ghost.mesh.setEnabled(true);
+        ghost.body.show(true);
+        this.onLaunch(x, y, z);
       }
     }
   }
@@ -217,17 +224,15 @@ export class NetOrdnance {
    */
   reset(): void {
     for (const ghost of this.rockets) this.release(ghost);
-    for (const m of this.mines) {
-      m.mesh.setEnabled(false);
-      m.lamp.isVisible = false;
-    }
+    for (const m of this.mines) m.hide();
     this.laid.clear();
   }
 
   dispose(): void {
-    for (const ghost of this.rockets) ghost.mesh.dispose();
-    for (const m of this.mines) m.mesh.dispose();
+    for (const ghost of this.rockets) ghost.body.show(false);
+    for (const m of this.mines) m.hide();
     this.rockets.length = 0;
+    this.rocketBodies.length = 0;
     this.mines.length = 0;
     this.live.clear();
   }
@@ -250,12 +255,9 @@ export class NetOrdnance {
     ghost.id = -1;
     ghost.samples.length = 0;
     ghost.hasPosition = false;
-    ghost.mesh.setEnabled(false);
+    ghost.body.show(false);
   }
 }
-
-/** Scratch for the point a rocket is faced at. Never allocated per frame. */
-const TMP = new Vector3();
 
 /** `NetGrenades.push` — see there. */
 function push(samples: Sample[], sample: Sample): void {

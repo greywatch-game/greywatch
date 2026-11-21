@@ -8,7 +8,7 @@
  * drawing; what varies is seeded off where she stands (`streetSeed`), never
  * `Math.random()`. Never imports another builder.
  */
-import { Scene, VertexData } from "@babylonjs/core";
+import { GeometryBuffer } from "../../../geometry/buffer";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -189,14 +189,9 @@ class Skin {
 
   flush(b: Build): void {
     for (const [color, set] of this.sets) {
-      const data = new VertexData();
-      data.positions = set.pos;
-      data.indices = set.idx;
       const uvs: number[] = [];
       for (let i = 0; i < set.pos.length; i += 3) uvs.push(set.pos[i], set.pos[i + 2]);
-      data.uvs = uvs;
-      data.normals = set.nrm;
-      b.surface(data, color);
+      b.surface(new GeometryBuffer({ positions: set.pos, indices: set.idx, uvs, normals: set.nrm }), color);
     }
     this.sets.clear();
   }
@@ -394,12 +389,11 @@ const PORTS = ["LH", "CH", "PD", "FR", "SH"] as const;
  * to the ground under each.
  */
 export function buildCareenedHull(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "hull");
+  const b = new Build(mats, "hull");
   const len = p.length ?? 11;
 
   // --- The colliders, exactly as the boxes-and-posts hull declared them:

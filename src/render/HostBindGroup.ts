@@ -1,0 +1,117 @@
+/**
+ * render/HostBindGroup.ts — One bind group built from a group's DECLARED
+ * entries: the uniform and storage buffers our renderer owns and the
+ * textures our renderer owns, read where they lie, every frame.
+ * Owns: `HostBindGroup` — the entries' binding numbers for one variant, what
+ * each texture resolved to last, and one `GPUBindGroup` per layout it has
+ * been asked for; `OwnTexture`, a texture of our renderer's as a group binds
+ * it.
+ * Invariants: the binding numbers are `firstBindings`', the rule the WGSL is
+ * declared by, so the group and the module are one statement; a texture is
+ * the view and sampler its owner holds (`OwnTexture` — `BABYLON_EXIT.md`
+ * rule 5: the owner reads its own; every texture a draw of ours binds is our
+ * renderer's since X5.4f, the host's own resolved through `FrameHost.bind`
+ * until then), compared every frame and never kept across a change — a group is
+ * re-made only on the frame something behind one of its handles moved, and
+ * a group with a texture missing is not made at all (null: the caller draws
+ * nothing); `refresh` allocates nothing.
+ * Never: imports Babylon; copies a texture; owns a buffer it was handed.
+ * Contract: `docs/rendering.md`, "Our renderer's frame".
+ */
+import { firstBindings, type Binding } from "./wgsl/assemble";
+import { guardHolds } from "./wgsl/layout";
+
+/** One texture entry of the group, as last resolved. */
+interface TextureSlot {
+  readonly name: string;
+  readonly sampler: number;
+  readonly view: number;
+  readonly bound: { view: GPUTextureView | null; sampler: GPUSampler | null };
+}
+
+/**
+ * A texture OUR renderer owns, as a bind group binds it: its view and its
+ * sampler, which its owner rewrites in place when it re-makes the texture,
+ * and null while it has none (`render/WorldShadows.ts`).
+ */
+export class OwnTexture {
+  view: GPUTextureView | null = null;
+  sampler: GPUSampler | null = null;
+}
+
+/** What a group's textures are looked up in: a handle per declared name, our renderer's own. */
+export type TextureHandles = { readonly [name: string]: OwnTexture | null | undefined };
+
+export class HostBindGroup {
+  private readonly buffers: GPUBindGroupEntry[] = [];
+  private readonly slots: TextureSlot[] = [];
+  private readonly made = new Map<GPUBindGroupLayout, GPUBindGroup>();
+  /** Every texture resolved to a view and a sampler at the last `refresh`. */
+  private complete = false;
+
+  constructor(
+    private readonly device: GPUDevice,
+    private readonly label: string,
+    entries: readonly Binding[],
+    defines: Iterable<string>,
+    /** The buffer behind each buffer entry the variant binds: a uniform block's by its `var`, a storage array's by its name. */
+    buffers: { readonly [variable: string]: GPUBuffer },
+  ) {
+    const variant = new Set(defines);
+    const first = firstBindings(entries);
+    entries.forEach((entry, e) => {
+      if (!guardHolds(entry.when, variant)) return;
+      if (entry.kind === "sampled") {
+        this.slots.push({
+          name: entry.name,
+          sampler: first[e],
+          view: first[e] + 1,
+          bound: { view: null, sampler: null },
+        });
+        return;
+      }
+      // A block the variant leaves empty is not declared, so not bound
+      // (`declareGroups`).
+      if (entry.kind === "uniform" && !entry.fields.some((f) => guardHolds(f.when, variant))) return;
+      const name = entry.kind === "uniform" ? entry.var : entry.name;
+      const buffer = buffers[name];
+      if (!buffer) throw new Error(`${label}: no buffer for "${name}"`);
+      this.buffers.push({ binding: first[e], resource: { buffer } });
+    });
+  }
+
+  /** Re-reads every texture where its owner holds it; call once a frame before `get`. */
+  refresh(handles: TextureHandles): void {
+    let complete = true;
+    let changed = false;
+    for (let i = 0; i < this.slots.length; i++) {
+      const slot = this.slots[i];
+      const handle = handles[slot.name];
+      const view = handle ? handle.view : null;
+      const sampler = handle ? handle.sampler : null;
+      if (!view || !sampler) complete = false;
+      if (view !== slot.bound.view || sampler !== slot.bound.sampler) {
+        slot.bound.view = view;
+        slot.bound.sampler = sampler;
+        changed = true;
+      }
+    }
+    if (changed) this.made.clear();
+    this.complete = complete;
+  }
+
+  /** The group for `layout` as last refreshed, or null while a texture is missing. */
+  get(layout: GPUBindGroupLayout): GPUBindGroup | null {
+    if (!this.complete) return null;
+    let group = this.made.get(layout);
+    if (group) return group;
+    const entries: GPUBindGroupEntry[] = [...this.buffers];
+    for (const slot of this.slots) {
+      entries.push({ binding: slot.sampler, resource: slot.bound.sampler! });
+      entries.push({ binding: slot.view, resource: slot.bound.view! });
+    }
+    group = this.device.createBindGroup({ label: this.label, layout, entries });
+    this.made.set(layout, group);
+    return group;
+  }
+}

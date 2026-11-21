@@ -74,7 +74,10 @@
  * colours, so every detail above that is in a colour the body already pays for
  * is free, and the suspension is two (its frame and its springs). It was 22
  * as an estate; the four more are the second whip's two and a colour each on
- * the suspension (the springs) and the station (the sensor head).
+ * the suspension (the springs) and the station (the sensor head). (A "mesh"
+ * here is a SEGMENT of this kind's kit since `BABYLON_EXIT.md` X4.2b, drawn by
+ * our renderer as a rank — the unit `TankModel.ts`' header restates the rule
+ * in.)
  *
  * ## The wheels are the whole difference, and there are two halves to it
  *
@@ -82,7 +85,7 @@
  * scrolling strip of links. A truck's is four discs, which CAN be one mesh
  * each — and a disc rotating about its own axis is famously indistinguishable
  * from a disc at rest, which is the argument that got the tank's road wheels
- * no nodes at all. So the tyre alone would be a wasted mesh, and what earns it
+ * no joints at all. So the tyre alone would be a wasted mesh, and what earns it
  * is what is drawn ON it: **two staggered rows of tread blocks standing proud
  * of the carcass, and a pale rim inside a dark beadlock ring with a circle of
  * bolts on it and eight studs round the hub**, which is a pattern with an
@@ -93,7 +96,7 @@
  * the frame's for exactly that reason: a third colour would be a third mesh.
  *
  * The second half is the STEER, and it is the one thing this model does that
- * the tank's cannot: the front pair are hung under a yaw node each and turned
+ * the tank's cannot: the front pair are hung under a yaw joint each and turned
  * with the stick. A tank's steer is already visible as its two tracks running
  * opposite ways; a truck that cornered at 65 km/h with its wheels pointing
  * dead ahead is a vehicle sliding sideways. That is why `VehicleRig.setRun`
@@ -109,7 +112,9 @@
  * touching, and leaving them alone is what makes this a redrawing rather than
  * a retune of the suspension, the lean and the ten ground contacts. The JLTV's
  * own tyre is 0.94 m across and this one is 0.92, which is part of why it was
- * the vehicle to draw.
+ * the vehicle to draw. They live in `truckFrame.ts` with the station's joints
+ * — the numbers the simulation reads, Babylon-free — and this file imports
+ * them and places its joints from them.
  *
  * ## What the model may not do
  *
@@ -124,11 +129,18 @@
  * posts, 1.7 m and more from the ring, which a mast bent as far as its spring
  * can reach still clears. See `ANTENNA_FEET`.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import {
+  AXLE_Z,
+  RING_R,
+  RING_Y,
+  RING_Z,
+  ROOF_Y,
+  TRACK_X,
+  TRUCK_FRAME,
+} from "./truckFrame";
 import {
   extrude,
   loftAlongZ,
@@ -144,12 +156,14 @@ import {
   type Cyl,
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   type Shape,
   type VehicleRig,
   whip,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * What one side's truck is PAINTED in — the tank kit's three-way read with
@@ -194,6 +208,16 @@ interface TruckKit {
 }
 
 /**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set,
+ * `PERF_PLAN.md` A3): the weapon station's turntable and yoke, every colour of
+ * it — drawn only while the whole truck's measure projects at or above
+ * `CONFIG.graphics.culling.hullDetail` (`vehicleRig.ts`'
+ * `HullKitSegment.detail`). The gun on it, the ring it turns on and every
+ * wheel stay.
+ */
+const DETAIL: readonly string[] = ["truck-mg-ring"];
+
+/**
  * One kit per SIDE, indexed by the VIEW and not by `Team` — see
  * `core/teamView.ts`, and `SoldierModel`'s `KITS`. Warm against cold, as the
  * tanks are.
@@ -235,40 +259,6 @@ const WHEEL_R = 0.46;
 const WHEEL_W = 0.34;
 /** Every wheel turns about this height, which is its own radius. */
 const HUB_Y = WHEEL_R;
-/**
- * Half the track — how far out from the centreline the wheels stand.
- *
- * The body is 2.36 wide over its panels and a tyre is 0.34, so the wheels are
- * proud of the sides at 1.05: a truck's wheels stick out and a tank's are
- * under its sponsons, which is one of the two silhouette cues that tell the
- * kinds apart from behind (the other is the station on the roof). The dark
- * arch lips are what make a wheel standing outside its own bodywork read as a
- * design rather than as a mistake.
- */
-const TRACK_X = 1.05;
-/**
- * How far fore and aft the axles stand — the wheelbase's half-length.
- *
- * Well inside the body's own half-length (2.7), which is what leaves an
- * overhang at each end: the nose and its bumper in front of the front wheels
- * and the cargo bed behind the back ones. A vehicle whose wheels are at its
- * corners is a go-kart.
- */
-const AXLE_Z = 1.62;
-/**
- * The gauge `Vehicle` splits one hull speed into two side speeds with. The
- * WHEEL track, because that is where the ground contacts are.
- */
-const TRACK_GAUGE = TRACK_X * 2;
-/**
- * How far fore and aft of the centre the ground contacts reach.
- *
- * The AXLES and not the bumpers: a truck touches the ground at its tyres, and
- * a contact sampled out at the tailgate is a vehicle rearing up on a kerb its
- * wheels have not reached. This is what `TRACK_REACH` is to a tank, and it is
- * shorter relative to the body for the same reason the overhangs exist.
- */
-const CONTACT_REACH = AXLE_Z;
 /** How far the front wheels turn at full lock. ~28 deg, which reads without looking broken. */
 const STEER_LOCK = 0.49;
 /**
@@ -303,8 +293,6 @@ const END_Y = 0.8;
  * is fought at.
  */
 const WAIST_Y = 1.44;
-/** The top of the cab roof. Everything above this is the weapon station. */
-const ROOF_Y = 1.96;
 /** Half the body's own width, inside the collider's 1.25 by an arch lip's thickness. */
 const BODY_HW = (CONFIG.vehicles.truck.hull.width - 0.14) / 2;
 /** Half the CAB's width: 5 cm inside the body each side, so the belt line is a ledge the ink finds. */
@@ -333,19 +321,6 @@ const CAB_TAIL_Z = -1.56;
  */
 const ARCH_TOP = 1.1;
 const ARCH_HALF = 0.53;
-
-/** The station's base ring: how big it is and how high it turns. */
-const RING_R = 0.44;
-const RING_Y = ROOF_Y + 0.04;
-/**
- * …and where it stands, which is over the second row — where the man working
- * it is sitting.
- *
- * It is also about as far back as the sweep allows: the muzzle reaches 1.46 m
- * and the cab roof runs to -1.56, so a station much further aft would swing
- * its barrel down over the cargo bed.
- */
-const RING_Z = -0.85;
 
 /**
  * The two whips' lengths in metres, the long one first — the order
@@ -377,18 +352,18 @@ const ANTENNA_FEET = [[-(BODY_HW - 0.06), POST_Z], [BODY_HW - 0.06, -2.22]] as c
 const ANTENNA_FOOT_Y = ROOF_Y;
 
 /**
- * One wheel: the yaw node that STEERS it (front only) and the node that SPINS.
+ * One wheel: the yaw joint that STEERS it (front only) and the joint that SPINS.
  *
- * Two nodes and not one, because the two rotations are about different axes in
- * different frames — a wheel that steered and rolled on one node would roll
+ * Two joints and not one, because the two rotations are about different axes in
+ * different frames — a wheel that steered and rolled on one joint would roll
  * about an axis that had been turned by the steering, which is a tyre screwing
  * itself into the road.
  */
 interface Wheel {
   /** Turns with the stick. Null on the rear pair, which do not steer. */
-  steer: TransformNode | null;
+  steer: Joint | null;
   /** Turns at `run / WHEEL_R`. */
-  spin: TransformNode;
+  spin: Joint;
 }
 
 /**
@@ -398,29 +373,26 @@ interface Wheel {
  * `buildTank` follows and for its reason. `VehicleRig.reset` is what a fresh
  * one goes through instead.
  */
-export function buildTruck(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildTruck(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
 
-  const root = new TransformNode("truck", scene);
-  const hull = new TransformNode("truck-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("truck");
+  const hull = tree.add("truck-hull", root);
   // Everything the springs carry, which is everything except the wheels and
   // the arms they hang on. See `VehicleRig.sprung`.
-  const sprung = new TransformNode("truck-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("truck-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("truck", view, DETAIL);
 
   /** A round member from `a` to `b` — an arm, a spring, a wiper, a strap, a chute. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 6, dTop = d): Shape => [
-    rodBetween("truck-rod", scene, a, b, d, tess, dTop),
+    rodBetween("truck-rod", a, b, d, tess, dTop),
     color,
   ];
   /** A side profile extruded across X — the body. */
@@ -430,13 +402,13 @@ export function buildTruck(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [extrude("truck-slab", scene, profile, width, bevel, x), color];
+  ): Shape => [extrude("truck-slab", profile, width, bevel, x), color];
   /** A convex solid between two end faces — the V under the cab. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape =>
-    [solidBetween("truck-solid", scene, from, to), color];
+    [solidBetween("truck-solid", from, to), color];
   /** A loft lying along Z — the hood, the tarp and its straps. */
   const lofted = (stations: readonly Station[], color: string): Shape =>
-    [loftAlongZ("truck-loft", scene, stations), color];
+    [loftAlongZ("truck-loft", stations), color];
 
   // ==========================================================================
   // THE WHEELS: four discs with two patterns on them
@@ -449,17 +421,15 @@ export function buildTruck(
   // on why the tank's road wheels get none of this.
   const wheels: Wheel[] = [];
   const wheel = (i: number, x: number, z: number, steers: boolean): Wheel => {
-    let steer: TransformNode | null = null;
+    let steer: Joint | null = null;
     let parent = hull;
     if (steers) {
-      steer = new TransformNode(`truck-steer${i}`, scene);
-      steer.parent = hull;
+      steer = tree.add(`truck-steer${i}`, hull);
       steer.position.set(x, HUB_Y, z);
       parent = steer;
     }
-    const spin = new TransformNode(`truck-wheel${i}`, scene);
-    spin.parent = parent;
-    // A steered wheel hangs at its steering node's own origin; an unsteered
+    const spin = tree.add(`truck-wheel${i}`, parent);
+    // A steered wheel hangs at its steering joint's own origin; an unsteered
     // one carries the position itself.
     spin.position.set(steers ? 0 : x, steers ? 0 : HUB_Y, steers ? 0 : z);
     const sign = x < 0 ? -1 : 1;
@@ -915,9 +885,11 @@ export function buildTruck(
   // on a thing that is mostly seen coming or going.
   //
   // **The door pair have to clear the door plate's INK and not merely its
-  // face.** `inkRig` gives every mesh a 2 cm outline hull, so a flash standing
-  // 2 cm off a plate is a flash drawn entirely inside that plate's own ink and
-  // the vehicle has no flank marking at all — measured on a photograph of the
+  // face.** `inkRig` gave every mesh a 2 cm outline hull (the ink was an
+  // inverted hull then; it is one screen-space pass over depth now,
+  // `shaders/CelInk.ts`), so a flash standing 2 cm off a plate was a flash
+  // drawn entirely inside that plate's own ink and the vehicle had no flank
+  // marking at all — measured on a photograph of the
   // first closed version, where the door read as a dark rectangle. They stand
   // 4 cm proud instead (1.205 to 1.245 against the plate's 1.18 to 1.205),
   // inside the collider's 1.25 and the ink's width twice over.
@@ -937,11 +909,12 @@ export function buildTruck(
   //
   // **`VehicleRig.turret` is here and is deliberately inert.** `Vehicle` keeps
   // `turretYaw` equal to the hull's own yaw on a gunless kind, so the local
-  // angle written on this node is always zero — which is exactly what a ring
+  // angle written on this joint is always zero — which is exactly what a ring
   // BOLTED to a roof should do. It exists so that the mount below has the same
   // parent it has on a tank and `aimMg` needs no branch.
-  const turret = new TransformNode("truck-ring", scene);
-  turret.parent = sprung;
+  const f = TRUCK_FRAME;
+  const turret = tree.add("truck-ring", sprung);
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
   segment("truck-ring-m", turret, [], [
     // The ring itself, and the armoured collar it is let into — which is what
     // stops a station standing on a roof reading as a thing dropped onto one.
@@ -949,7 +922,7 @@ export function buildTruck(
     [RING_R * 2 + 0.16, 0.06, 0, ROOF_Y + 0.02, RING_Z, kit.frame, "y"],
   ]);
 
-  // Two nodes, the same pair the tank's cupola gun gets and for the same
+  // Two joints, the same pair the tank's cupola gun gets and for the same
   // reason: they move differently from everything around them. The mount
   // TRAVERSES on the ring and the gun ELEVATES in it.
   //
@@ -959,9 +932,8 @@ export function buildTruck(
   // turntable, a yoke, and on the GUN's side of the trunnion a sensor head
   // with two lenses in it and an ammunition chute arching over into the feed —
   // which between them say that the thing aiming this gun is downstairs.
-  const mgMount = new TransformNode("truck-mg", scene);
-  mgMount.parent = turret;
-  mgMount.position.set(0, RING_Y + 0.06, RING_Z);
+  const mgMount = tree.add("truck-mg", turret);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment("truck-mg-ring", mgMount, [
     // The yoke arm on the right, the drive housing outboard of it, and the
     // smaller cheek on the left between the gun and the sensor head. Nothing
@@ -976,9 +948,8 @@ export function buildTruck(
     [0.66, 0.12, 0, 0, 0, kit.frame, "y"],
     [0.07, 0.62, 0.06, 0.18, 0.06, kit.metal, "x"],
   ]);
-  const mgGun = new TransformNode("truck-mg-gun", scene);
-  mgGun.parent = mgMount;
-  mgGun.position.set(0, 0.18, 0.06);
+  const mgGun = tree.add("truck-mg-gun", mgMount);
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment("truck-mg-m", mgGun, [
     // The receiver, the buffer behind it, the charging handle and the feed
     // cover — the shapes that make a heavy machine gun read as one at ten
@@ -1019,8 +990,7 @@ export function buildTruck(
     rod([0.15, 0.27, -0.08], [0.05, 0.22, -0.06], 0.06, kit.frame, 6),
     rod([0.05, 0.22, -0.06], [0.02, 0.14, -0.04], 0.06, kit.frame, 6),
   ]);
-  const mgMuzzle = new TransformNode("truck-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("truck-mg-muzzle", mgGun);
   // Just past the brake, so a flash lit here is outside the barrel and a round
   // fired from here starts outside the vehicle's own collider box.
   //
@@ -1034,7 +1004,7 @@ export function buildTruck(
   // place. **The sensor head and the chute are inside that envelope at every
   // lay**: the head's lowest corner is 9 cm over the turntable at `pitchMax`
   // and 10 cm over it at `pitchMin`.
-  mgMuzzle.position.set(0, 0.02, 1.46);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The gunner's eye, in front of the sensor head's upper lens** — the head
   // that is the only big pale thing above this roof line, and now where the
@@ -1043,11 +1013,10 @@ export function buildTruck(
   // On `mgGun` rather than on the mount (`VehicleRig.mgSight` says why), and
   // the head is on the gun too, so the eye and the lens it stands at elevate
   // together. **The `z` is the clearance that matters**: the lens bezels stand
-  // out to 0.32 on this node, and 0.4 puts the eye 8 cm clear of them, past
+  // out to 0.32 on this joint, and 0.4 puts the eye 8 cm clear of them, past
   // the near plane at every lay.
-  const mgSight = new TransformNode("truck-mg-sight", scene);
-  mgSight.parent = mgGun;
-  mgSight.position.set(-0.36, 0.12, 0.4);
+  const mgSight = tree.add("truck-mg-sight", mgGun);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // ==========================================================================
   // THE WHIPS: two, on the bed's back corners
@@ -1065,7 +1034,7 @@ export function buildTruck(
   // phases are arbitrary and exist so the one gust does not stir both in step.
   const mast = (i: number): Whip => {
     const [x, z] = ANTENNA_FEET[i];
-    return whip(scene, segment, {
+    return whip(tree, segment, {
       name: `truck-whip${i}`,
       parent: sprung,
       foot: [x, ANTENNA_FOOT_Y + 0.1, z],
@@ -1080,6 +1049,8 @@ export function buildTruck(
   const antennae: readonly [Whip, Whip] = [mast(0), mast(1)];
 
   const rig: VehicleRig = {
+    tree,
+    body: hullBody,
     root,
     hull,
     sprung,
@@ -1094,18 +1065,13 @@ export function buildTruck(
     mgMuzzle,
     mgSight,
     antennae,
-    meshes,
-    livery,
-    gauge: TRACK_GAUGE,
-    contactReach: CONTACT_REACH,
-    // The suspension's travel is bounded at the wheel STATIONS, which on this
-    // vehicle are the axles — the same place the ground contacts are, because
-    // a truck's wheels are its suspension and its contact patch at once. On a
-    // tank the two differ, which is the whole reason `VehicleRig` states both.
-    wheelReach: AXLE_Z,
+    segments,
+    kit: drawingOf(tree, root),
+    enabled: true,
+    charred: false,
     setRun: (left, right, steer, _rotor) => setWheelRun(wheels, left, right, steer),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.truck),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.truck),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }
@@ -1115,8 +1081,8 @@ export function buildTruck(
  * pair where the stick is.
  *
  * The two run figures are per SIDE, exactly as a tank's are per track: a
- * vehicle turning has one of them longer than the other, and `Vehicle` derives
- * both from one speed and one yaw rate. What is different here is that the
+ * vehicle turning has one of them longer than the other, and the hull's view
+ * (`VehicleView`) derives both from the one speed and yaw rate it is told. What is different here is that the
  * difference is spent on the STEER as well — a truck's wheels visibly point
  * into a corner, and without that a hull cornering at 65 km/h is one sliding
  * sideways on locked wheels.

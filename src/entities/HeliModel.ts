@@ -145,20 +145,22 @@
  *
  * ## The budget
  *
- * **Twenty meshes, twelve of which move** — counted off `rig.meshes` in the
+ * **Twenty meshes, twelve of which move** — counted off `rig.segments` in the
  * browser, not off the segments below. Cost is COLOURS PER SEGMENT and a part
  * in a colour its segment already carries is free, so the lofts, the wings,
  * the pylons, the nacelles, the suppressors, the sensor ball, the canopy
  * frames and the stabiliser are all free; the two meshes the Viper cost over
  * the eighteen before it are the second whip's two links, which is the one
  * thing here bought for MOVING. `ord` is the one colour on this aircraft a
- * player is meant to find, and it is spent on the rocket pods alone.
+ * player is meant to find, and it is spent on the rocket pods alone. (A
+ * "mesh" here is a SEGMENT of this kind's kit since `BABYLON_EXIT.md` X4.2b,
+ * drawn by our renderer as a rank — `TankModel.ts`' header.)
  *
- * **The inert `turret` node draws nothing at all.** `spec.gun` is null, so
- * `Vehicle` holds `turretYaw` equal to the hull's own yaw and that node is a
+ * **The inert `turret` joint draws nothing at all.** `spec.gun` is null, so
+ * `Vehicle` holds `turretYaw` equal to the hull's own yaw and that joint is a
  * permanent local zero; the barbette the chin turret turns in is therefore
  * welded to the airframe, and a part that cannot move belongs in the body
- * segment where it is free. The node still exists because `mgMount` must have
+ * segment where it is free. The joint still exists because `mgMount` must have
  * the same parent it has on a tank — see `VehicleRig.turret`.
  *
  * ## Four clearances this drawing owes
@@ -235,11 +237,15 @@
  *   windscreens and the blast barrier, the sills and the roof edges, all in
  *   the frame colour and standing proud of the glass so the ink finds them.
  */
-import { Scene, TransformNode } from "@babylonjs/core";
 import { CONFIG } from "../config";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
+import {
+  HELI_FRAME,
+  MG_Z,
+  SKID_REACH,
+  SKID_X,
+} from "./heliFrame";
 import {
   extrude,
   loftAlongZ,
@@ -255,12 +261,14 @@ import {
   type Cyl,
   paintRig,
   resetRigPose,
+  rigTree,
   segmentOf,
   type Shape,
   type VehicleRig,
   whip,
   type Whip,
 } from "./vehicleRig";
+import type { Joint } from "./rigJoints";
 
 /**
  * One team's palette.
@@ -277,6 +285,14 @@ interface HeliKit {
   ord: string;
   accent: string;
 }
+
+/**
+ * The segments that drop at RANGE (`BABYLON_EXIT.md` X4.2c, the user's set):
+ * none. Every segment of the helicopter is kept at every range, its whips,
+ * gun ring and skids among them — so its measure (`HullKit.measure`) is taken
+ * and asked as every hull's is, and changes nothing it draws.
+ */
+const DETAIL: readonly string[] = [];
 
 /**
  * The two liveries.
@@ -313,18 +329,13 @@ const KITS: readonly HeliKit[] = [
 
 // --- the airframe, in the rig's coordinates --------------------------------
 //
-// `Vehicle` parents the rig half a hull below the collider's origin, so y = 0
-// here is the BOTTOM of the box and the skids stand on it. +z is the nose and
-// +x is starboard.
+// `VehicleView` parents the rig half a hull below the collider's origin, so
+// y = 0 here is the BOTTOM of the box and the skids stand on it. +z is the nose
+// and +x is starboard. The skids' extents and the chin gun's joints — what the
+// simulation reads — are `heliFrame.ts`'s, imported above.
 
-/** How far out the two skid runners stand. The gauge, and the roll stance. */
-const SKID_X = 1.16;
-/** Half the skid's length — the contact patch, fore and aft. */
-const SKID_REACH = 1.9;
 /** Skid tube radius, and therefore how high the fuselage floats over the pad. */
 const SKID_R = 0.085;
-/** The gauge `Vehicle` splits one hull speed into two side speeds with. */
-const SKID_TRACK = SKID_X * 2;
 /** Where each cross tube meets the runners, fore and aft. */
 const SKID_STATIONS = [1.16, -0.92] as const;
 
@@ -387,17 +398,6 @@ const WING_DROP = 0.7;
 const WING_OVERHANG = 0.4;
 /** Where the rocket pod's pylon stands, and therefore the pod's centreline. */
 const PYLON_X = 1.0;
-
-/**
- * The chin turret's trunnion, and how far the muzzle reaches from it.
- *
- * `MG_REACH` is spent twice and they are the same number by construction: it is
- * where `mgMuzzle` sits, and it is therefore the RADIUS of the circle the
- * barrel sweeps under the nose. Nothing on the belly may be inside it.
- */
-const MG_Y = 0.6;
-const MG_Z = 4.75;
-const MG_REACH = 0.7;
 
 /** The two aerials' lengths, both off the boom top and both bounded by the DISC. */
 const ANTENNA_LENGTH = 0.66;
@@ -497,33 +497,30 @@ function aerofoil(c: number, t: number): [number, number][] {
  * other models follow and for their reason. `VehicleRig.reset` is what a fresh
  * one goes through instead.
  */
-export function buildHeli(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): VehicleRig {
+export function buildHeli(team: Team): VehicleRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
+  const view = viewTeam(team);
+  const kit = KITS[view];
   const t = CONFIG.vehicles.heli;
   // **The span is the collider's plus a stated overhang**, read off it rather
   // than written down. See the stub-wing note in the header: the outer
   // `WING_OVERHANG` of each wing is mass a round passes through, by decision.
   const WING_TIP_X = t.hull.width / 2 + WING_OVERHANG;
 
-  const root = new TransformNode("heli", scene);
-  const hull = new TransformNode("heli-hull", scene);
-  hull.parent = root;
+  const { tree, body: hullBody, root } = rigTree("heli");
+  const hull = tree.add("heli-hull", root);
   // Everything the springs carry, which here is everything except the skids.
-  const sprung = new TransformNode("heli-sprung", scene);
-  sprung.parent = hull;
+  const sprung = tree.add("heli-sprung", hull);
 
-  const { meshes, livery, segment } = segmentOf(scene, mats);
+  // The drawing is this model's KIT in this view's colours, built by the
+  // first rig of the pair and hung by every later one (`segmentOf`).
+  const { segments, segment, kit: drawingOf } = segmentOf("heli", view, DETAIL);
 
   /** A round member from `a` to `b`; `d` at `a` and `dTop` at `b`. */
   const rod = (a: Point3, b: Point3, d: number, color: string, tess = 8, dTop = d): Shape => [
-    rodBetween("heli-rod", scene, a, b, d, tess, dTop),
+    rodBetween("heli-rod", a, b, d, tess, dTop),
     color,
   ];
   /**
@@ -547,7 +544,7 @@ export function buildHeli(
   };
   /** A solid between two matching faces — a wing, a blade, a fin plate. */
   const solid = (from: readonly Point3[], to: readonly Point3[], color: string): Shape => [
-    solidBetween("heli-solid", scene, from, to),
+    solidBetween("heli-solid", from, to),
     color,
   ];
   /** A side profile extruded across X — the fin, a pylon, a cap. */
@@ -557,10 +554,10 @@ export function buildHeli(
     bevel: number,
     x: number,
     color: string,
-  ): Shape => [extrude("heli-slab", scene, profile, width, bevel, x), color];
+  ): Shape => [extrude("heli-slab", profile, width, bevel, x), color];
   /** A loft along Z through `stations`. */
   const body = (stations: readonly Station[], color: string): Shape => [
-    loftAlongZ("heli-loft", scene, stations),
+    loftAlongZ("heli-loft", stations),
     color,
   ];
   /**
@@ -690,7 +687,7 @@ export function buildHeli(
     [0.4, 0.05, 0.08, 0, 1.51, 5.6, kit.frame],
   );
   // The BARBETTE the chin turret turns in. Welded to the airframe, so it is
-  // drawn here rather than on the inert `turret` node — where it would have
+  // drawn here rather than on the inert `turret` joint — where it would have
   // cost a mesh of its own to do nothing.
   bodyCyls.push([0.5, 0.3, 0, 0.86, MG_Z, kit.frame, "y"]);
 
@@ -1050,13 +1047,12 @@ export function buildHeli(
 
   // --- the two discs --------------------------------------------------------
   //
-  // Everything on the head is built about the node's own origin and turned into
+  // Everything on the head is built about the joint's own origin and turned into
   // place by where its blade points, so the closure has one number to write.
-  // Blade `i` runs out along `(sin a, cos a)`, and a positive turn of the node
+  // Blade `i` runs out along `(sin a, cos a)`, and a positive turn of the joint
   // carries it toward `(cos a, -sin a)` — which is where each blade's LEADING
   // edge is drawn.
-  const mainRotor = new TransformNode("heli-rotor", scene);
-  mainRotor.parent = sprung;
+  const mainRotor = tree.add("heli-rotor", sprung);
   mainRotor.position.set(0, HUB_Y, HUB_Z);
   const rotorBoxes: Box[] = [];
   const rotorShapes: Shape[] = [];
@@ -1107,8 +1103,7 @@ export function buildHeli(
     rotorShapes,
   );
 
-  const tailRotor = new TransformNode("heli-tail-rotor", scene);
-  tailRotor.parent = sprung;
+  const tailRotor = tree.add("heli-tail-rotor", sprung);
   tailRotor.position.set(TAIL_X, TAIL_Y, TAIL_Z);
   const tailBoxes: Box[] = [];
   for (let i = 0; i < 4; i++) {
@@ -1136,14 +1131,14 @@ export function buildHeli(
   // `Vehicle` holds `turretYaw` equal to the hull's own yaw and the local angle
   // written here is a permanent zero; the barbette this turns in is therefore
   // welded to the airframe and is drawn in the body segment, where it is free.
-  // The node exists so that `mgMount` has the same parent it has on a tank and
+  // The joint exists so that `mgMount` has the same parent it has on a tank and
   // `aimMg` needs no branch of its own.
-  const turret = new TransformNode("heli-ring", scene);
-  turret.parent = sprung;
+  const f = HELI_FRAME;
+  const turret = tree.add("heli-ring", sprung);
+  turret.position.set(f.turretAt[0], f.turretAt[1], f.turretAt[2]);
 
-  const mgMount = new TransformNode("heli-mg-mount", scene);
-  mgMount.parent = turret;
-  mgMount.position.set(0, MG_Y, MG_Z);
+  const mgMount = tree.add("heli-mg-mount", turret);
+  mgMount.position.set(f.mgMountAt[0], f.mgMountAt[1], f.mgMountAt[2]);
   segment(
     "heli-mg-ring",
     mgMount,
@@ -1167,8 +1162,8 @@ export function buildHeli(
     ],
   );
 
-  const mgGun = new TransformNode("heli-mg-gun", scene);
-  mgGun.parent = mgMount;
+  const mgGun = tree.add("heli-mg-gun", mgMount);
+  mgGun.position.set(f.mgGunAt[0], f.mgGunAt[1], f.mgGunAt[2]);
   segment(
     "heli-mg",
     mgGun,
@@ -1184,7 +1179,7 @@ export function buildHeli(
       [0.16, 0.05, 0, 0, 0.62, kit.frame, "z"],
       // **THREE barrels in a cluster**, which is the one detail that says this
       // is a gunship's cannon rather than a machine gun bolted under a nose.
-      // The gun does not spin: there is no node for it, and a rotary that
+      // The gun does not spin: there is no joint for it, and a rotary that
       // turned would be a mesh bought for a thing seen from behind at fourteen
       // metres.
       [0.05, 0.46, 0, 0.048, 0.43, kit.metal, "z"],
@@ -1193,8 +1188,7 @@ export function buildHeli(
     ],
   );
 
-  const mgMuzzle = new TransformNode("heli-mg-muzzle", scene);
-  mgMuzzle.parent = mgGun;
+  const mgMuzzle = tree.add("heli-mg-muzzle", mgGun);
   // Just past the clamp, so a flash lit here is outside the barrels and a round
   // fired from here starts outside the vehicle's own collider box.
   //
@@ -1203,7 +1197,7 @@ export function buildHeli(
   // own bodywork — see the third clearance in the header. It is the same figure
   // the belly's keep-out circle is drawn with, and deliberately so: what the
   // muzzle reaches IS what the barrel sweeps.
-  mgMuzzle.position.set(0, 0, MG_REACH);
+  mgMuzzle.position.set(f.mgMuzzleAt[0], f.mgMuzzleAt[1], f.mgMuzzleAt[2]);
 
   // **The gunner's eye, at the outer face of the optic head drawn on the port
   // cheek above** — the pale metal box two segments up, which exists to tell a
@@ -1227,9 +1221,8 @@ export function buildHeli(
   //   this stands 0.460 over a pad the skids put at 0, where the muzzle beside
   //   it stands 0.074. Re-measure both if `MG_Y`, `MG_Z` or either pitch limit
   //   moves.
-  const mgSight = new TransformNode("heli-mg-sight", scene);
-  mgSight.parent = mgGun;
-  mgSight.position.set(-0.32, 0.13, 0.3);
+  const mgSight = tree.add("heli-mg-sight", mgGun);
+  mgSight.position.set(f.mgSightAt[0], f.mgSightAt[1], f.mgSightAt[2]);
 
   // --- the aerials ------------------------------------------------------------
   //
@@ -1239,7 +1232,7 @@ export function buildHeli(
   // stood 1.15 m of mast here and put its tip six centimetres through the blade
   // path. See the first clearance.
   const mast = (i: number, foot: Point3, length: number, phase: number): Whip =>
-    whip(scene, segment, {
+    whip(tree, segment, {
       name: `heli-whip${i}`,
       parent: sprung,
       foot,
@@ -1256,6 +1249,8 @@ export function buildHeli(
   ];
 
   const rig: VehicleRig = {
+    tree,
+    body: hullBody,
     root,
     hull,
     sprung,
@@ -1271,19 +1266,14 @@ export function buildHeli(
     mgMuzzle,
     mgSight,
     antennae,
-    meshes,
-    livery,
-    gauge: SKID_TRACK,
-    contactReach: SKID_REACH,
-    // The skids ARE the suspension and the contact patch at once, exactly as a
-    // truck's axles are, so the two figures `VehicleRig` insists on stating
-    // separately are the same number here — and it is stated twice rather than
-    // aliased, because the day one of them moves is the day that matters.
-    wheelReach: SKID_REACH,
+    segments,
+    kit: drawingOf(tree, root),
+    enabled: true,
+    charred: false,
     setRun: (_left, _right, _steer, rotor) =>
       setRotorRun(mainRotor, tailRotor, rotor),
-    reset: () => resetRigPose(rig, mats, CONFIG.vehicles.heli),
-    paint: (wrecked) => paintRig(meshes, livery, mats, wrecked),
+    reset: () => resetRigPose(rig, CONFIG.vehicles.heli),
+    paint: (wrecked) => paintRig(rig, wrecked),
   };
   return rig;
 }
@@ -1297,14 +1287,14 @@ export function buildHeli(
  * `VehicleRig.setRun`.
  *
  * **The gear ratio between the two is a DRAWING decision and lives here**, not
- * in the config: what `Vehicle` holds is one rotor angle, and how much faster
+ * in the config: what the hull holds is one rotor angle, and how much faster
  * the tail turns than the main is a fact about this aircraft's transmission and
  * about nothing else. The remainder is taken the long way for `setWheelRun`'s
  * reason — `%` keeps the sign of its left operand in JS.
  */
 function setRotorRun(
-  main: TransformNode,
-  tail: TransformNode,
+  main: Joint,
+  tail: Joint,
   rotor: number,
 ): void {
   const two = Math.PI * 2;

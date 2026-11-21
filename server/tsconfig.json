@@ -1,7 +1,7 @@
 {
   "extends": "../tsconfig.json",
   "compilerOptions": {
-    "types": ["node"],
+    "types": ["node", "@webgpu/types"],
     "lib": ["ES2022", "DOM"]
   },
   "include": ["../server", "../src"]

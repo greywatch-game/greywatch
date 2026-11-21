@@ -5,9 +5,12 @@
 examples; Sarab, Cinderhaven and Kurenai have their own at larger scales. A new
 one starts as a copy of the nearer of the first two and keeps its shape: the
 DESIGN is authored at the top, the TRANSCRIPTION is mechanical and CHECKED, and
-the output is ordinary `layout.ts`/`heights.ts` the editor can open. Register
-it in `package.json` (`"<map>": "node scripts/generate-<map>.mjs"`) and in
-CLAUDE.md's commands block.
+the output is ordinary `layout.ts`/`heights.ts`, of which the generator is the
+only author. Register it in `package.json` (`"<map>": "node
+scripts/generate-<map>.mjs"`), in CLAUDE.md's commands block, and in
+`scripts/collision-hash.mjs`'s `MAPS` (which `npm run maps:check` reads); it
+takes `--out <dir>` (`--out=<dir>`) and writes there and nothing in `src/`, or
+the build fails on its row.
 
 ## Its anatomy, in file order
 
@@ -41,9 +44,10 @@ CLAUDE.md's commands block.
 - **Seeded, never `Math.random()`**: one `mulberry32` stream, and re-running
   with the tree unchanged must produce the same bytes — check it (`cmp` two
   runs).
-- **Flat arrays of one-line entries** in the output, which is what the
-  editor's source scan requires; the template's prose is a JS template
-  literal.
+- **Flat arrays of one-line entries** in the output (the map editor's source
+  scan required it, and every map keeps the shape); the template's prose is a
+  JS template literal, and the emitted header says the generator is the file's
+  only author.
 - **Derive what the floor decides**: march to the shore for a boathouse, a
   jetty's root, a quay; read the creek's centreline for the mill
   (`creekX`/`creekZ`). A typed coordinate goes quietly wrong when the shore

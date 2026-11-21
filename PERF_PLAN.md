@@ -288,7 +288,20 @@ and the mask), ~2.6 ms of a 20.1 ms phone frame.
 **Verify:** frozen-frame diffs at the banked vantages on Coldharbour and
 Hollowmere at night; the census from P0; the phone's `glow` and `drawWorld`.
 
-### A3 — Vehicles get a detail tier and a draw distance (`FINDINGS.md` 39) — **S-M**
+### A3 — Vehicles get a detail tier and a draw distance (`FINDINGS.md` 39) — **S-M** — **LANDED**: the tier as `BABYLON_EXIT.md` X4.2c, the distance as X4.2d
+
+**The tier landed** in our renderer (`docs/rendering.md`, "The hulls, ours"):
+the user's set, swapped off a whole-hull measure at 32 projected px
+(`CONFIG.graphics.culling.hullDetail`), the size gate kept per segment under
+it; `BABYLON_EXIT.md` X4.2c has what it measured against the +6.5% below.
+**The distance landed** as X4.2d: a map field, `EnvironmentSpec.hullDrawDistance`
+(`docs/world.md`'s overrides), absent being NO distance (every hull at any
+range, not the fog), a hull FADING out over its last tenth by the bodies'
+screen door rather than popping, and a stated one FLOORED at a hull's gun
+reach (`hullDrawFloor`, ~419.4 m today) so no setting buys an unseen shooter —
+which makes this plan's "420 is a body's number" moot: 420 is just above the
+floor. No shipped map states one; X4.2d has what 420 buys on Cinderhaven
+against the +15.4% below. The plan below is kept as it was written.
 
 Every hull draws every part at any range. Measured: a detail tier (silhouette
 kept, running gear and fittings dropped) +6.5% at 300 m on Cinderhaven; a
@@ -304,7 +317,13 @@ vehicle draw distance of 420 m +15.4% (and 420 is a body's number — a hull is
 - The draw distance is an `EnvironmentSpec` field defaulting to "unaffected",
   like `bodyDrawDistance`, or a derived multiple of it — decide which in the step.
 
-### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M**
+### A4 — A body fades instead of popping (`FINDINGS.md` 30) — **M** — **LANDED** as `BABYLON_EXIT.md` X4.1e (53dcb34)
+
+**Landed:** a screen door at both edges, the value per instance in the
+fragment stage (`BODY_FADE`), drawn by a faded twin of each body program for
+the bodies in a band and the plain ones for the rest — `docs/rendering.md`,
+"The bodies, ours", has the design and `BABYLON_EXIT.md` X4.1e what was
+measured. The plan below is kept as it was written.
 
 Not a saving by itself; it is what makes the saving acceptable. Finding 39
 measured `bodyDrawDistance` 420 → 300 at +21.4% on Cinderhaven and left it as a
@@ -314,11 +333,16 @@ reasonable look call.
 - Two pops, one fade: `bodyDrawDistance` AND the size gate's whole-body drop
   (3 px drops a body at ~290 m on the phone's 384-tall viewport — inside
   Coldharbour's 480 m). A fade built for one misses the other.
-- A rig is fourteen meshes and two materials and must stay that way (CLAUDE.md,
-  "Bots"), and `visibility < 1` is a different, blended pipeline. So the fade
-  is a screen-door DITHER (`shaders/Dither.ts` exists) driven per rig without a
-  material per rig — how (a per-instance value the rig's two materials read, or
-  a vertex-buffer write on the 14 meshes) is the step's first question.
+- Since `BABYLON_EXIT.md` X4.1d a rig is no mesh at all: every body is an
+  INSTANCE of its side's kit, drawn by our renderer a rank at a time (at most
+  two draws a segment for the whole roster, two recipes — the matte cel and
+  the visor), and that must stay so (CLAUDE.md, "Bots"); `visibility < 1` is a
+  different, blended pipeline. So the fade is a screen-door DITHER
+  (`shaders/Dither.ts` exists) driven per INSTANCE — a per-body value the two
+  body programs read beside the matrices. The body programs' vertex stage is
+  at 8 of 8 storage arrays (WebGPU's default per-stage limit, not raised), so
+  that value rides the FRAGMENT stage or is packed into an array already
+  bound (`BABYLON_EXIT.md` X4.1d, Owed onward; the step is X4.1e).
 - The pipeline warm-up owes the dithered pose a `warm` (CLAUDE.md, "loading").
 
 ### A5 — Occlusion culling with the collider boxes (spike, then build) — **S spike, M build**
@@ -481,8 +505,9 @@ question of who calls whom.
 
 ~153 active terrain patches on Cinderhaven. Clusters, as the blocks. Last in
 Part B because the floor carries the most contracts — the road depth bias in
-the material cache key, the turf, `terrainBlock` agreeing across the three
-callers of `terrainPatches`, the collider clone (which stays as it is) — and
+the material cache key, the turf, `terrainBlock` agreeing across the two
+callers of `terrainPatches` (the server's third went at `BABYLON_EXIT.md`
+X2.3), the collider clone (which stays as it is) — and
 the gain is a third of the blocks'.
 
 ---

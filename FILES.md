@@ -6,37 +6,60 @@ subsystem contracts under [`docs/`](docs/) that it points to carry the rules
 these modules obey; this file is for finding your way to the right one.
 
 ```
-server/               # The authoritative match server. Node, NullEngine, no
-  index.ts            #   rendering and no canvas — see server/README.md.
+server/               # The authoritative match server. Node, no Babylon (the
+  index.ts            #   gate below holds it), no rendering and no canvas —
+                      #   see server/README.md.
                       #   Process entry: /health, /matches, the ws listener and
                       #   the match registry — which IS the lobby, because
                       #   matches live in this process. Routes a join (named,
-                      #   create, or wherever there is room), caps how many
-                      #   matches exist, and holds the pong deadline every
-                      #   socket in the process is swept against. Owns no
-                      #   game rules
+                      #   create, or wherever there is room) over the socket's
+                      #   PeerTransport (`wsTransport`, which tokens Match's
+                      #   pings), caps how many matches exist, and holds the
+                      #   pong deadline every socket in the process is swept
+                      #   against. Owns no game rules
   Match.ts            #   One match: fixed-step loop, snapshots, the gates on
-                      #   what a client may claim, round rotation
+                      #   what a client may claim, round rotation. Its clock
+                      #   free-runs on the server or is an OWNER's (`owned`:
+                      #   advance/hold/begin/close, its map's own roster, the
+                      #   owner's respawn clock, a deploy answered while held,
+                      #   seatless WATCHERS (`watch`), no vote, no rotation,
+                      #   no idle retire; `timing` and `hear` for the owner's
+                      #   profiler and fight fold). The welcome names the
+                      #   table's block width (`perTeam`). The core's
+                      #   HOST: VALIDATES each message, then hands what it
+                      #   accepted to `SimCore.submit` as a SimCommand; drains
+                      #   the event ring after every call and `relay`s it onto
+                      #   the wire. Holds no rule (pouches, seat policy, spawn)
+                      #   and no transport: a peer is a PeerTransport
+  localMatch.ts       #   A match the PAGE hosts (X2.5c C3): one owned Match
+                      #   at a time, the owner's calls (open, begin, advance,
+                      #   hold, settle, markFight, fight, close) answered in
+                      #   order off one port, each person admitted — or a
+                      #   watcher let in, on the owner's `connect` — off a port
+                      #   of their own (`portPeer`, which answers Match's ping
+                      #   itself) after a join read as index.ts reads one.
+                      #   Folds the bench's FightHash off `hear`. Runs in a
+                      #   Worker, on a MessageChannel in the page (reached by
+                      #   src/net/matchHost.ts's one dynamic import), or in
+                      #   corecheck. Its reach may import no Node — gated
+  localMatchWorker.ts #   The Worker it runs in: `serveLocalMatch(self)`.
+                      #   The page reaches it only as a Worker URL, which
+                      #   src/net/matchHost.ts names
   claimGates.ts       #   HOW a claimed round is gated — the RateGate bucket,
                       #   the look vector, the cone, the origin slip and the
                       #   one zero-length threshold. Match's five claim arms
                       #   all call it; the SIZE of each gate stays in Match
-  Roster.ts           #   The 48 slots, 16 seats, team balance, human<->bot handover
+  Roster.ts           #   The slot table (48 on the server, the map's own on
+                      #   an owned match), 16 seats, team balance, human<->bot
+                      #   handover
   MapVote.ts          #   The ballot for the next map: the candidates, the
                       #   per-slot tally, the tie-break. Its first candidate is
                       #   what the rotation would have picked, which is also
                       #   what an empty ballot and a tie resolve to. Owns no
                       #   transport and no timer
-  HeadlessGame.ts     #   The simulation: the server's answer to core/Game.ts,
-                      #   wired by the same rules. Owns the armour too — the
-                      #   fleet, the bot crews and the AT kit — plus `seat`,
-                      #   which is `Game.mount`/`clearVehicle` as one method
-  NetPlayer.ts        #   A connected human as the simulation sees one — the
-                      #   only position anything on the server trusts
-  world.ts            #   Rebuilds the solid world from the baked boxes: the
-                      #   collider half of MapBuilder and nothing else
-  lagComp.ts          #   Position history + the rewind around a shot. `resolve`
-                      #   takes a callback so the restore cannot be skipped
+  world.ts            #   LOADS a map's world for the authority — the collider
+                      #   bake and the floor, the two lazy imports — and hands
+                      #   them to src/sim's buildSimWorld. Nothing else
   wire.ts             #   Is a client message shaped like what it claims to be?
                       #   The one door a frame becomes a ClientMessage through,
                       #   so no handler past it re-checks a field
@@ -49,15 +72,50 @@ server/               # The authoritative match server. Node, NullEngine, no
                       #   budget this process has. Times every step, files them
                       #   by bots in contact, and names the spikes. Takes a
                       #   round SEED (4th argument) and prints `fight`, a hash
-                      #   of the kill list the same seed must reproduce
+                      #   of the kill list the same seed must reproduce —
+                      #   folded off the core's drained events, as is
+                      #   `--events`, the ordered list; `--phases` the core's
+                      #   own timing
   parity.ts           #   Fingerprint dump for `npm run parity`
+  corecheck.ts        #   `npm run corecheck`: the project's one test. Drives
+                      #   SimCore with a scripted person and no Game, asserts
+                      #   the scoring and person rules off its drained events
+                      #   (victim-keyed kill awards, capture, hull cases,
+                      #   leash, respawn clock, seat/evict, determinism,
+                      #   structuredClone), then runs the same script through
+                      #   a real Match behind a fake transport and requires the
+                      #   identical award/death list — the trusted door
+                      #   (`submit`) and the validated one agreeing — plus the
+                      #   `hostHoldsRespawn` deploy and the reported hull. Then
+                      #   an owned Match and the local transport (greyfen/
+                      #   owned, /local: the bench's hash, a person's join, a
+                      #   held deploy, a hold) and a WATCHER (greyfen/watch)
+                      #   (`drive`/`gun` pose the core's copy; the shell leaves
+                      #   the reported muzzle), and `sarab/crash`: a person's
+                      #   helicopter charged off its reports — every step, at
+                      #   INPUT_HZ with clock jitter, through Match — against
+                      #   the bot path's own charge on the same flights; and
+                      #   the X2.5a review's `sarab/leash` (a seated flier is
+                      #   leashed), `sarab/clock` (a peer's stamps bounded by
+                      #   their arrivals) and `sarab/break` (a correction
+                      #   rebases the crash series, a touchdown still pays);
+                      #   and `greyfen/owned` (X2.5c C2): the bench's round on
+                      #   a bare core (built as the offline page built one
+                      #   until X2.5c) and through an owned Match at two
+                      #   cadences is one stream and the bench's FightHash,
+                      #   plus the owned lifecycle; and `greyfen/local` (C3):
+                      #   the same round through the LOCAL TRANSPORT — the
+                      #   owner channel's fight hash, then a person through
+                      #   the page's real Connection over a port. Exits
+                      #   non-zero on a fail
 scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   never shipped. Plain .mjs outside both
                               #   tsconfigs. The game's own code is reached
                               #   through Vite (a dev server, a browser, or
                               #   ssrLoadModule), except the few .ts files
                               #   imported by name under Node's type stripping
-                              #   (roadPaths.ts, roads.ts, rng.ts), which
+                              #   (roadPaths.ts, roads.ts, rng.ts, src/math/),
+                              #   which
                               #   therefore hold only erasable syntax. Each
                               #   header carries its argument, and package.json
                               #   says which npm script runs which file
@@ -65,10 +123,49 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   collision bake is older than its layout and
                               #   heights (collision-hash.mjs's hash), the
                               #   DEV-only maps included
-  check-deep-imports.mjs      # BUILD GATE: refuses a deep static import into
-                              #   @babylonjs/core under src/ and main.ts — the
-                              #   one absolute rule tsc cannot see. server/ is
-                              #   outside it on purpose
+  check-maps.mjs              # BUILD GATE (`npm run maps:check`): re-runs
+                              #   every shipped map's generator with `--out`
+                              #   into scratch, every map in MAPS at once, and
+                              #   refuses a layout.ts or heights.ts that
+                              #   differs from the committed file by one byte
+                              #   (line endings aside), naming the map, the
+                              #   file and the first line. A map is authored in
+                              #   its generator only (BABYLON_EXIT.md X5.3), so
+                              #   a new map owes one, or the build fails
+  check-webgpu-globals.mjs    # BUILD GATE: refuses a WebGPU global (`GPU` and
+                              #   a capital) READ at a module's top level under
+                              #   src/ and main.ts, which throws before main.ts'
+                              #   WebGPU gate runs. TypeScript's parser alone;
+                              #   function bodies and instance fields exempt
+  check-babylon-free.mjs      # BUILD GATE: refuses any import of
+                              #   @babylonjs/core ANYWHERE in the tree (src/,
+                              #   server/, main.ts, scripts/, plans/,
+                              #   .claude/skills/, the Vite configs: an
+                              #   import or export, a type included, an
+                              #   import()/require()/ssrLoadModule() of it as a
+                              #   literal, a path into its node_modules) —
+                              #   the package is not a dependency since X6.1i,
+                              #   when this replaced check-deep-imports.mjs
+                              #   and the server build's no-babylon plugin.
+                              #   Walks too: any VALUE import path to it from
+                              #   src/, server/, main.ts or a simulation module
+                              #   (its SIMULATIONS list, unchanged, which a new
+                              #   simulation joins), printing the chain; and
+                              #   any path to Node (`node:*`, `ws`, a
+                              #   built-in) from the local match's two
+                              #   entries, which run in a browser. Paths on
+                              #   the command line walk from those instead.
+                              #   @babylonjs/havok is not refused
+  babylon-census.mjs          # X6.1a's CENSUS of what is left of
+                              #   @babylonjs/core: every import of it under
+                              #   src/, server/, main.ts, scripts/,
+                              #   .claude/skills/ and plans/ by name, file and
+                              #   kind (value or type), every
+                              #   ssrLoadModule of it, every page-side load of
+                              #   its chunk, and dist/'s every file raw and
+                              #   gzipped. `--against` fails if anything grew.
+                              #   Not a gate; each X6.1 sub-step recorded it,
+                              #   and since X6.1i it reads 0
   check-audio.mjs             # BUILD GATE: audio/ stale against its masters,
                               #   over its mono-seconds budget, an encoded file
                               #   samples.ts does not load (or a url it loads
@@ -97,7 +194,7 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   capture-map-shots.mjs       # `npm run shots`: photographs each map from its
                               #   ui/mapShots.ts vantage into shots/<id>.avif,
                               #   the menu's backdrop — no HUD, no bodies, the
-                              #   lamps lit, the scene READY. HEADED, and needs
+                              #   lamps lit, the page READY. HEADED, and needs
                               #   a real GPU
   dev-server.mjs              # Starts a Vite dev server for the browser-driven
                               #   scripts (and plans/webgpu-ref/) and reliably
@@ -112,18 +209,106 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
   kit-hash.mjs                # `npm run kit:hash`: fingerprints every kit
                               #   builder over every placement, and every
                               #   scatter prop over fixed seeds and foliage
-                              #   rungs, under a NullEngine — the DRAWING and
-                              #   the COLLIDERS hashed apart, so a refactor
-                              #   proves it moved nothing. `--feet` measures the
-                              #   kinds against lib/footprints.mjs. Not a gate
+                              #   rungs, with NO Babylon (X6.1a: plain named
+                              #   materials; no scene, X6.1d) — the
+                              #   DRAWING (the PARTS the merge is handed, a prop
+                              #   flattened, each hashed as what it IS: its
+                              #   arrays whole as exact doubles, its transform,
+                              #   material name and metadata; a math value by
+                              #   kind and value, whichever library made it)
+                              #   and the COLLIDERS hashed apart, so a refactor
+                              #   proves it moved nothing. Fails outright if a
+                              #   scatter kind's replay (props/sharedDraws.ts)
+                              #   takes a different count from its builder.
+                              #   `--feet` measures the
+                              #   kinds against lib/footprints.mjs. `--models`
+                              #   does the rest: weapons in every finish, the
+                              #   viewmodel in every sight, the player, the
+                              #   projectiles, the hulls, the soldiers and the
+                              #   capture rings, every surface and joint and
+                              #   every vertex as exact doubles, a surface's
+                              #   box off boundsOf, with order-only changes
+                              #   reported apart. Not a gate
   merge-hash.mjs              # `npm run merge:hash`: kit:hash's other half —
                               #   builds every map in a real browser and hashes
-                              #   every merged visual, collider and terrain
-                              #   collider plus the box lists, so a change to
+                              #   every merged visual (its record; a build
+                              #   with no mesh, X6.1g on, mesh: false
+                              #   throughout) plus the box lists, so a change to
                               #   how parts are built or merged proves it moved
-                              #   nothing; `--editor` does the editor's unmerged
-                              #   build. Same machine and Babylon only. Not a
-                              #   gate
+                              #   nothing (`--editor`, the map editor's build,
+                              #   retired with it at X5.3c and refused). Per mesh also its creation rank in the
+                              #   scene, updatable positions, vertex alpha and
+                              #   frozen matrix, and each visual's PIECE ranges
+                              #   and its RECORD's arrays, hashed through the DEV
+                              #   sink as they are released (SurfaceSink) and
+                              #   checked equal to its mesh's buffers every run,
+                              #   and its RECORD's bounds, checked bit for bit
+                              #   against its mesh's bounding info every run
+                              #   (the off-identity path is bounds-check's). One
+                              #   entry a SURFACE: one our renderer draws whole
+                              #   has no mesh (X3.7b) and is fingerprinted and
+                              #   compared off its record, the run saying how
+                              #   many (`mesh: true`/`false`, a flip a
+                              #   difference); a build that fails — a surface
+                              #   ours cannot hold, thrown in DEV at the
+                              #   install — fails the run,
+                              #   `--foliage <rung>` asking it of a crown rung;
+                              #   the panes, pane groups and the piece table
+                              #   (ItemRef); and the collider
+                              #   DATA (X5.3a), the whole of a collider since
+                              #   X5.3e retired the collider-mesh lists (a
+                              #   baseline's are said, not compared):
+                              #   boxGroups as indices, each strut group and
+                              #   floor block (terrainGeometry) hashed.
+                              #   `--profile` prints the build's phases. Same
+                              #   machine only. Not a gate
+  geometry-check.mjs          # `node scripts/geometry-check.mjs`: builds every
+                              #   generator in src/geometry/ over seeded
+                              #   options, and runs merge (with and without
+                              #   each member's matrix), transform, bake and
+                              #   computeNormals — and the three effects' own
+                              #   calls (X6.1g: the blast's icospheres, a rubble
+                              #   chunk's box, a shard's float32 normals) —
+                              #   holding every number BIT for bit to Babylon
+                              #   9.28's, RECORDED in tables/ (X6.1i); fails on
+                              #   an export no case covers. `--perturb` is its
+                              #   negative test. Not a gate
+  math-check.mjs              # `node scripts/math-check.mjs`: runs every
+                              #   method in src/math/ on seeded inputs and
+                              #   holds the answers BIT for bit to Babylon
+                              #   9.28's, RECORDED in tables/ (X6.1i); fails on
+                              #   a member no case covers, which nothing can
+                              #   record any more. `--perturb`. Not a gate
+  bounds-check.mjs            # `node scripts/bounds-check.mjs`: world/
+                              #   worldGeometry.ts' boundsOf against a Babylon
+                              #   Mesh's BoundingInfo, BIT for bit, over every
+                              #   kit and scatter kind's parts at seeded
+                              #   OFF-identity transforms — the arm no round's
+                              #   build reaches, merge:hash --editor's until
+                              #   the editor went (X5.3c) — and parts.ts'
+                              #   worldMatrixOf against TransformNode's
+                              #   computeWorldMatrix over those parts and
+                              #   seeded parent chains (`--chains`), and both
+                              #   over seeded synthetic parts no rework can
+                              #   move; Babylon's answers RECORDED in tables/
+                              #   (X6.1i), a kind reworked since read STALE.
+                              #   `--perturb` is the negative test of both.
+                              #   Not a gate
+  sweep-check.mjs             # `node scripts/sweep-check.mjs [map...]`: moves
+                              #   the player and every hull kind's ellipsoid by
+                              #   the production sweep (CollisionField over
+                              #   src/world/ellipsoidSweep.ts) from seeded
+                              #   starts on every map, and holds every answer
+                              #   BIT for bit to Babylon 9.28's
+                              #   moveWithCollisions (one mesh per box, its
+                              #   float32 start), RECORDED in tables/ (X6.1i);
+                              #   a re-laid map reads STALE, and a seeded
+                              #   `synthetic` world no map moves runs after
+                              #   them. `--tight` forces the re-gathers,
+                              #   `--perturb` is its negative test. Its
+                              #   `shipped` and `walk` modes, which measured
+                              #   against Babylon live, went with the package
+                              #   (X6.1i). Not a gate
   loc.mjs                     # `npm run loc`: how big the project is, off `git
                               #   ls-files` — hand-written code split into
                               #   code, comment and blank, apart from the map
@@ -157,10 +342,14 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   layout.ts and heights.ts — the design
                               #   authored, the transcription CHECKED (nothing
                               #   in the water, on a road or on a slope, every
-                              #   door onto somewhere). Re-running discards
-                              #   editor edits, and owes the collision rebake
+                              #   door onto somewhere). The map's only author:
+                              #   a change goes in here, and owes the collision rebake
                               #   of that map and `npm run parity`. `--probe`,
-                              #   `--refusals`, `--claims`, `--dry`
+                              #   `--refusals`, `--claims`, `--dry`. Every one
+                              #   of the seven takes `--out <dir>` (or
+                              #   `--out=<dir>`), writing the two files there
+                              #   and nothing in src/ (how check-maps.mjs
+                              #   re-runs it); a bare `--out` is refused
   generate-greyfen.mjs        # `npm run greyfen`: the same for the jungle
                               #   valley, plus `--at`/`--point` (the floor over
                               #   a box or at one spot) and `--stands` (how the
@@ -181,6 +370,20 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   `--roads`
   generate-kurenai.mjs        # `npm run kurenai`: SEEDS the temple valley,
                               #   240 m. `--probe`, `--plan`, `--refusals`
+  lib/babylonTable.mjs        # The four copy checks' recorded answers: the
+                              #   table format, a comparison's bit-exact
+                              #   encoding, one 64-bit SHA-256 digest per GROUP
+                              #   (a case over a block, a kind, a map's body),
+                              #   input digests that read a group STALE rather
+                              #   than wrong, and the verdict. Never loads
+                              #   Babylon
+  tables/                     # <check>.json: Babylon 9.28's answers to the
+                              #   four copy checks as digests, recorded once
+                              #   against the installed package at 28dc7f0
+                              #   (X6.1i, the first of its commits); a
+                              #   re-record means checking that commit's
+                              #   scripts out with the package installed.
+                              #   ~85 kB in all
   lib/mapgen.mjs              # What the seven generators share: the seeded
                               #   stream (world/rng.ts's mulberry32), the
                               #   floor's noise, the placement arithmetic, the
@@ -194,6 +397,56 @@ scripts/                      # Node tooling, run by hand or by `npm run build`,
                               #   skill. MEASURED off the builder by
                               #   `npm run kit:hash -- --feet`, and an edit
                               #   re-seeds every map it moves
+  lib/frameAdapter.mjs        # The ONE frame adapter (window.__refFrame()):
+                              #   every question a browser-driven script asks
+                              #   of the page's frame — its draws, readiness,
+                              #   camera, device, encoders — answered off
+                              #   whichever host the page has, with or
+                              #   without a scene; installFrameAdapter, the
+                              #   one door, carries REF_NO_SCENE=1 in. Here
+                              #   (X6.1a's review) so parity, shots,
+                              #   merge:hash and the skills import nothing
+                              #   from plans/; harness.mjs re-exports it. It
+                              #   READS the game and never re-derives what
+                              #   the game computes
+plans/webgpu-ref/     # The exit's probes and the reference bank, indexed by
+                      #   its own README.md rather than here, bar four:
+  drawlog.mjs         # The DRAW LOG (BABYLON_EXIT.md X5.3a): Babylon's
+                      #   `_draw`s, group-0 visits, effect compiles and
+                      #   scene.meshes by frame class, live, through the
+                      #   menu, the card, deploy, the kit and pause lids, a
+                      #   life to the death cam, the round-over card and a
+                      #   second round (the editor's step retired at X5.3c);
+                      #   the VIEWER's lid over
+                      #   deploy, the death cam and a life (X5.3b, its own
+                      #   class); per-frame count SETS, so it compares with
+                      #   itself and a parent (`--against`)
+  readers.mjs         # X4.3b's READERS' ORACLE committed (BABYLON_EXIT.md
+                      #   X5.4a): a live round RECORDED, then REPLAYED in a
+                      #   held deploy — the four render-cache readers as
+                      #   float64 bits, every evaluated joint, the submitted
+                      #   origins recomputed, every render-id change and its
+                      #   site; and `camera`, the camera's matrices, frustum
+                      #   planes and gun marker per frame through every state
+                      #   (a hull boarded as driver and gunner on a map with
+                      #   one, X6.1a, and at render scale 0.75 and after a
+                      #   resize, its review; the viewer raised and lowered,
+                      #   X6.1f) with the pose pinned; planes READ off the
+                      #   game's array, "unproven" without one
+  leaks.mjs           # The Babylon-leak probe (X5.4a): pipeline contexts
+                      #   released and cached bind groups made after the boot,
+                      #   live GPUBuffers (and their MB) and the heap, over
+                      #   --rounds rounds (two), a teardown and a map change —
+                      #   the proof that deleted webgpuLeaks.ts (X5.4b), after
+                      #   a positive control that both hooks count; the
+                      #   cache's hook RETIRED with no Babylon on the page
+                      #   (X6.1h)
+  lost.mjs            # The device destroyed on purpose at the menu, the card,
+                      #   deploy and a life, offline or in a server's match
+                      #   (--match), once or twice (--twice, --stale), and what
+                      #   follows recorded: the reload, the notice, the plate,
+                      #   a setting, the rejoin (X5.4a; graded from X5.4i)
+
 index.html          # The head, and NO interface CSS beyond the two things shown
                     #   while there IS no interface: a black background (so a
                     #   dev reload does not flash white) and the boot screen —
@@ -203,24 +456,45 @@ index.html          # The head, and NO interface CSS beyond the two things shown
                     #   are hashed, and a drawn one read as clip art).
 main.ts             # Bootstrap. Imports src/ui/base.css FIRST. Awaits the two
                     #   things the game cannot start without — the WebGPU device
-                    #   and the Havok WASM — then builds the Game, which takes
-                    #   both as arguments. Owns the boot screen: names each
+                    #   and the Havok WASM — and the page's own match's host
+                    #   (`openMatchHost`: a Worker, or the page, never a
+                    #   failure), then builds the Game, which takes them all
+                    #   as arguments. The device and the canvas's context are
+                    #   ASKED FOR and CONFIGURED here as Babylon's WebGPUEngine
+                    #   did (X5.4h: no limits, timestamp-query under ?gpu, the
+                    #   preferred format, usage 17, premultiplied); the
+                    #   frame's clock sampled where the engine's
+                    #   _initializeMainAttachments did. Owns the boot screen: names each
                     #   await on its load plate, paints before the constructor,
                     #   fades it on the first drawn frame, or fills plate and
-                    #   note with one of the four failures.
-vite.config.ts      # The client build, and the two plugins only it can hold:
-                    #   the DEV-only layout writer the editor saves through
-                    #   (WRITABLE, the literal table of files it may write —
-                    #   three per map) and the build-only service worker
+                    #   note with one of the four failures — and puts it back
+                    #   up, as "No graphics device", for a device lost twice
+                    #   inside the window (deviceLostForGood, handed to Game,
+                    #   X5.4i).
+vite.config.ts      # The client build, and the three plugins only it can hold:
+                    #   the DEV-only write endpoint the F4 mixer saves
+                    #   through (WRITABLE, the literal table of files it may
+                    #   write — one row, config/mix.ts), the build stamp in index.html (the
+                    #   commit, BUILD_COMMIT from CI or else git), and the
+                    #   build-only service worker
                     #   substitution (src/pwa/sw.js's PRECACHE, split
                     #   immutable/mutable, into dist/sw.js). Also: never
-                    #   inline a sound, and optimizeDeps.exclude for Havok.
+                    #   inline a sound, optimizeDeps.exclude for Havok, and
+                    #   the ES-module format the local match's Worker needs.
                     #   Outside tsconfig's include, so it stays thin
 vite.server.config.ts # Builds server/ into dist-server/, for
-                    #   `npm run build:server` and `simulate` — and with
+                    #   `npm run build:server`, `simulate` and `corecheck` — and with
                     #   `--mode development` into dist-server-dev/ with
                     #   import.meta.env.DEV forced true, the only way the
-                    #   authority runs the proving ground (`simulate:dev`)
+                    #   authority runs the proving ground (`simulate:dev`).
+                    #   Its no-babylon plugin went at X6.1i
+                    #   (check-babylon-free.mjs holds the whole tree)
+licenses/           # Third-party licences the tree's PORTS owe, kept in the
+  babylonjs.md      #   repository (the shipped bundle carries none: the
+                    #   owner's, X6.1i): Babylon.js 9.28.0's Apache-2.0
+                    #   licence and NOTICE, verbatim, which every file
+                    #   copying Babylon's code cites in its header — the
+                    #   list of ports is the files that cite it
 public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   (manifest.webmanifest, icons/ from `npm run icons`).
   profile_viewer.html # Where a frame-profiler capture is READ: paste or drop a
@@ -231,7 +505,9 @@ public/             # Copied to dist/ VERBATIM — unhashed URLs named by hand
                     #   no imports, no network, never typechecked — the sw.js
                     #   arrangement. It is the SECOND navigable document, so
                     #   its path is in sw.js's DOCS or it becomes the game
-                    #   offline. docs/profiling.md is the contract
+                    #   offline. Reads every report version, the fields v38
+                    #   retired drawn where a capture has them and left out
+                    #   where it does not. docs/profiling.md is the contract
   regions.json      # Which match servers this deployment offers, by host. The
                     #   one file a deployer edits on the box: adding, moving or
                     #   draining a region is not a rebuild. no-cache in nginx
@@ -245,15 +521,17 @@ src/
                     #   One module per subsystem; import `CONFIG` from "…/config"
     index.ts            # Composes CONFIG from the sections. The ONLY importer of
                         #   them. A new tunable goes in a section, not here
-    fogWall.ts          # FOG_WALL alone — bots.ts reads it, so it cannot live in
-                        #   index.ts without an import cycle. The DEFAULT view
+    fogWall.ts          # FOG_WALL alone — a constant, not a section, and a
+                        #   section reading it from index.ts would be an import
+                        #   cycle. The DEFAULT view
                         #   distance now: a map's `fogEnd`, or its
                         #   `bodyDrawDistance`, overrides it, and Game.installMap
-                        #   resolves ONE number into the three body gates
+                        #   resolves ONE number into the two body gates
+                        #   (NetRoster, RagdollSystem)
     conquest.ts         # Flags, capture meter, tickets, bleed
     score.ts            # What a kill, a bonus and a flag are worth on the
-                        #   board. Spent by both simulations, so a value here
-                        #   moves the offline round and the authority together
+                        #   board. Spent by the one core (SimCore), so a value
+                        #   here moves the offline round and the authority together
     bots.ts             # Bot AI + the nav grid (bots, nav)
     player.ts           # Movement, crouch, ground probe, vitals
     weapons.ts          # The weapon table, the round, gunfeel (weapons, combat,
@@ -314,8 +592,9 @@ src/
     gi.ts               # The irradiance volume's tiers (grid, rays, budget),
                         #   the fast layer's caps and how the traced light is
                         #   banded back into the cel shader's indirect term
-    world.ts            # Map extents, occlusion, water, grass (map, ao, water,
-                        #   grass)
+    world.ts            # Map extents, occlusion, water, grass, and how many
+                        #   variants a scatter kind is built as (map, ao,
+                        #   water, grass, scatter)
     sky.ts              # The sky (sky): the dome, the stars, the disc, and the
                         #   cloud ring's count, spread, shape and drift
     wind.ts             # The one wind: a shared bearing, and what the grass
@@ -336,20 +615,80 @@ src/
                         #   figures (the enter radius, the exit offset, the
                         #   respawn and wreck clocks, the AI crew) sit above
                         #   both
+  math/             # The game's own Vector3, Quaternion, Matrix, Color3,
+                    #   Color4, Plane and Frustum: Babylon's subset under
+                    #   Babylon's names and bit-identical answers
+                    #   (BABYLON_EXIT.md X1.1). They import nothing of
+                    #   Babylon's and name their .ts imports, so Node loads
+                    #   them; the crossing, babylon.ts, went at X6.1f
+    index.ts            # The re-exports
+    vector.ts           # Vector2, Vector3, Vector4, Quaternion, Matrix, and
+                        #   the parameter types that let a Babylon vector in
+                        #   while there was one: Vector3Like (read) and
+                        #   Vector3Ref (written through set alone). One of ours
+                        #   handed to a BABYLON method read `_x` and got NaN —
+                        #   the header says which way was safe
+    color.ts            # Color3 and Color4
+    plane.ts            # Plane and Frustum (X6.1f): the frame's six planes,
+                        #   Babylon's GetPlanesToRef bit for bit (math-check);
+                        #   near, far, left, right, top, bottom
+  geometry/         # Surfaces as typed arrays (BABYLON_EXIT.md X1.2, X1.3):
+                    #   what the world kit, the scatter props and the models
+                    #   build, Babylon's arithmetic copied bit for bit. Imports nothing but
+                    #   src/math/ and names its .ts imports, so Node loads it
+    buffer.ts           # GeometryBuffer (positions, normals, uvs, uv2,
+                        #   colours, indices — Float64Array where Babylon held
+                        #   a number[], Float32Array where it held one) and
+                        #   VertexData's merge, transform and ComputeNormals
+                        #   (into doubles, or into a Float32Array rounding
+                        #   as Babylon's does — a glass shard's, X6.1g);
+                        #   mergeTransformed (MergeMeshes' merge, each member
+                        #   under its own matrix) and bake (Mesh's
+                        #   bakeTransformIntoVertices)
+    primitives.ts       # createBox / createCylinder / createTorus /
+                        #   createIcoSphere / createSphere / createPolyhedron /
+                        #   createPlane / createDisc:
+                        #   Babylon's Create*VertexData, same vertex order,
+                        #   normals and UVs. createBox scales one cached cube
   core/
-    Game.ts             # Orchestrator + main loop + all cross-system wiring.
+    Game.ts             # Orchestrator + main loop + all the PAGE's wiring.
+                        #   Simulates no round: EVERY round is a match
+                        #   (X2.5c C4) — a server's, or the page's own
+                        #   (`localOwner`, net/LocalOwner.ts: opened per
+                        #   round by `openLocalRound`, stepped only from
+                        #   `updateWorld`, its held time handed over from
+                        #   `tick`) — joined through one NetSession
+                        #   and heard through ONE switch (`onNetEvent`). The
+                        #   player, their hull and their gun are PREDICTED
+                        #   here and reported. The authority questions are
+                        #   `remoteRound`/`localRound` (`NetSession.local`):
+                        #   restart, map, difficulty, and whether a pause or
+                        #   the deploy screen holds the world. The bench joins
+                        #   its own match as a WATCHER and reads the fight
+                        #   hash back over the owner channel.
                         #   Constructor is construction only; wiring is
-                        #   wireSystems (+ four subject methods),
+                        #   wireSystems (+ subject methods),
                         #   installDomListeners, wireScreens; tick dispatches
                         #   one method per screen. Holds ONE ScreenStack and
                         #   never assigns a state — go/raiseLid/lowerLid, and
-                        #   takeDown for what a screen means on screen
+                        #   takeDown for what a screen means on screen. A LOST
+                        #   device is deviceLost (X5.4i): the teardown, then the
+                        #   page reloaded to the menu, or the boot's plate;
+                        #   no build or match opened after it (deviceIsLost)
+    deviceLoss.ts       # What a lost graphics device leaves the page
+                        #   (X5.4i): the last loss in sessionStorage (its
+                        #   time and the menu's notice), the loop guard —
+                        #   answerLoss: a reload, or the boot's "No graphics
+                        #   device" plate for a second loss inside
+                        #   CONFIG.graphics.deviceLossWindow — and the notice
+                        #   read once after the reload (takeLossNotice)
     ScreenStack.ts      # The state machine's shape as data: GameState, the
                         #   SCREENS table (what a lid covers, what holds the
-                        #   world offline, what owes the netplay frame, what is
-                        #   owed the scoreboard), and the raised-lid stack. A
+                        #   page's own match, what owes a server's frame, what
+                        #   is owed the scoreboard), and the raised-lid stack. A
                         #   new state does not compile without a row. `bench`
-                        #   is the benchmark's step, outside the cycle
+                        #   is the benchmark's step, outside the cycle; `viewer`
+                        #   the dev map viewer's lid, the pause's row (X5.3b)
     InputManager.ts     # Keyboard/mouse + gamepad + TOUCH state, and rumble.
                         #   Three sources, one composition, one set of fields —
                         #   and the clock that says which device is in hand.
@@ -360,7 +699,17 @@ src/
                         #   gravity estimate. Reports the sensor's real state
                         #   for the settings row; applies nothing
     CameraSystem.ts     # First-person cam at the eye; ADS zooms and slows by
-                        #   the fitted optic, at the weapon's own rate
+                        #   the fitted optic, at the weapon's own rate. Owns
+                        #   the frame's camera (FreeCamera.ts) and makes it
+                        #   the frame's activeCamera
+    FreeCamera.ts       # THE camera (X6.1f): Babylon 9.28's FreeCamera,
+                        #   TargetCamera and Camera PORTED as written onto
+                        #   src/math — setTarget, the view with the roll's up
+                        #   vector, WebGPU's projection at the surface's
+                        #   aspect, the world matrix and globalPosition, and
+                        #   the CACHES that decide when each is recomputed;
+                        #   what this game never reached (inputs, inertia,
+                        #   rigs, ortho) named in its header and not ported
     cameraShake.ts      # The concussion rattle: a two-pole envelope over
                         #   smooth noise, three COSMETIC angles. One each in
                         #   CameraSystem and VehicleCamera; Game.shakeFrom
@@ -423,25 +772,91 @@ src/
                         #   in; the `forced` list a capture files. Also the
                         #   URL-flag reader (?profile, ?gpu), and ?seed= — the
                         #   round seed every round of the session plays from —
-                        #   and ?bench=, the benchmark's map. Applies nothing
+                        #   and ?bench=, the benchmark's map; the renderer's
+                        #   A/B switches (?nocull ?nofrustum ?cullcheck;
+                        #   ?babylonworld went at X3.7b, tag
+                        #   exit-babylonworld). Applies nothing
     shadowWindow.ts     # Where a directional shadow camera STANDS, and the
                         #   texel snap that stops its edges crawling. Both maps
                         #   place themselves with it — ShadowSystem's and
                         #   BodyShadows' — which is the point: two copies would
                         #   be two windows off one focus. One instance each,
                         #   never shared, since the snap is in ITS map's texels.
-                        #   Also the 1x1 LIT texture a shadow map switched OFF
-                        #   is bound as (a declared sampler must be bound)
+                        #   Also the light's view-projection as Babylon's
+                        #   generator composed it (lightTransformToRef, the one
+                        #   copy both read; ShadowLight, what a light is to
+                        #   both: a plain pair, no Babylon light since
+                        #   X5.3d) at WebGPU's depth range (HALF_Z_RANGE, a
+                        #   constant since X6.1h: the scene engine's
+                        #   isNDCHalfZRange before). (The 1x1 LIT texture a map
+                        #   switched OFF is bound as went to render/TextureMaker
+                        #   at X5.4d)
     proxyBoxes.ts       # What a soldier and a hull ARE to a shadow: boxes,
-                        #   packed as thin-instance matrices. RAGDOLL_BONES and
-                        #   the collider, shared by BodyShadows and LocalShadows
-                        #   so a body throws one silhouette under every light
-    webgpuLeaks.ts      # What Babylon's WebGPU arm never gives back of a map:
-                        #   a released effect's uniform-buffer pools (patched
-                        #   onto the engine once, in main.ts) and the bind-group
-                        #   cache (flushed by Game.teardownMap). ~30 MB heap +
-                        #   ~28 MB GPU a Coldharbour build, kept for the life
-                        #   of the tab before these
+                        #   packed as instance matrices. RAGDOLL_BONES and the
+                        #   collider — a hull's off its OWN fields (pos, yaw,
+                        #   present; hullBodyToRef), never its mesh — shared by
+                        #   BodyShadows and LocalShadows so a body throws one
+                        #   silhouette under every light. No Babylon (a root
+                        #   of check-babylon-free)
+    renderId.ts         # The RENDER ID as a counter of ours with Babylon's
+                        #   meaning (X5.4b): what the viewmodel's RenderCache
+                        #   is keyed on, moved at the two points a frame
+                        #   scene.render moved Babylon's and settled at its
+                        #   evaluation — by our frame since X5.4f
+                        #   (SceneFrame; off the scene's public observables,
+                        #   with a DEV shadow against Babylon's id, before)
+    SceneFrame.ts       # THE FRAME, ours (X5.4f): what scene.render() did for
+                        #   this game, in its order — the frame id, the
+                        #   animation ratio (Scene.animate's arithmetic over
+                        #   the loop's delta since X5.4g), the camera's
+                        #   update, the render id's two advances,
+                        #   updateTransformMatrix (scene.updateTransformMatrix
+                        #   ported at X6.1f: the frame's camera, activeCamera,
+                        #   its view and projection held, their product and
+                        #   the six frustum planes), the evaluation, the draw phase, the
+                        #   post chain — called from Game.tick in its place;
+                        #   there is no scene (X6.1h). Its points are
+                        #   Observables of its own (core/Observable.ts) named
+                        #   for the scene's they replace; it holds the frame's
+                        #   clear colour (clearColor, the environment's) and
+                        #   the constant-delta switch, Scene.MinDeltaTime /
+                        #   MaxDeltaTime and renderTargetsEnabled as constants;
+                        #   its host is our renderer's FrameHost (the game's
+                        #   device, the loop's encoder and end of frame, the
+                        #   frame's matrix and its clear colour). Brackets the
+                        #   profiler's drawWorld and glow (timeWith, X5.4g)
+    Observable.ts       # Babylon 9.28's Observable, Observer and EventState
+                        #   PORTED as written (X6.1h): add / addOnce /
+                        #   insertFirst, removal DEFERRED to a setTimeout and
+                        #   skipped by a notification in progress, the mask,
+                        #   notifyIfTriggered. Every observable in the game —
+                        #   the frame's points, the loop's, the glow's two —
+                        #   and what the frame adapter and the probes hang on
+    CanvasSurface.ts    # THE CANVAS, ours (X5.4h): its WebGPU context and
+                        #   format (configured by main.ts), its backing
+                        #   store's size and scaling level — Babylon's
+                        #   resize/setSize PORTED (clientWidth or the bounding
+                        #   rect over the level, | 0), setHardwareScalingLevel
+                        #   (applyRenderScale's setter), the render size and
+                        #   aspect ratio every reader asks — onSized (where
+                        #   _initializeMainAttachments ran: the clock's
+                        #   sample), and adoptInput (what Babylon's scene
+                        #   input manager did to the canvas element: tab
+                        #   index, press/release default-prevented and
+                        #   focusing, pointer capture, and the release it
+                        #   made on a blur or a cancel with a press held)
+    FrameLoop.ts        # THE LOOP, ours (X5.4g): what runRenderLoop,
+                        #   beginFrame and endFrame did — the
+                        #   requestAnimationFrame chain FrameCap admits, the
+                        #   clock (FrameClock: Babylon's getDeltaTime and getFps,
+                        #   its performance monitor's arithmetic ported), the
+                        #   frame's begin and end as Observables of its own
+                        #   (core/Observable.ts),
+                        #   the frame id, the ONE submit (FrameSubmit) and the
+                        #   profiler's present around it; stop(),
+                        #   stopRenderLoop's port, the first step of a lost
+                        #   device's teardown (Game.deviceLost, X5.4i; no hold
+                        #   any more — no frame is drawn after a loss)
     teamView.ts         # Which side the player is LOOKING from: the one remap
                         #   between the authority's team INDEX and the team a
                         #   body is DRAWN and NAMED as, so every player sees
@@ -456,29 +871,65 @@ src/
                         #   armed by a setting or ?profile, and costs nothing
                         #   at all while it is off. Allocates nothing while
                         #   recording (GC is what it exists to catch). Game
-                        #   brackets the phases it already sequences; no system
-                        #   has heard of it. Handle: `window.__profile`.
+                        #   brackets the phases it already sequences, and
+                        #   files the core's own step timing, as the page's
+                        #   local match reports it, under `sim`, a root
+                        #   (`fileTiming`, one call); no
+                        #   system has heard of it. Handle: `window.__profile`.
                         #   The RECORDER only: lends the ring to profileReport
                         #   at a capture. A benchmark's ring is sized to its
                         #   script, labelled by segment, and HALTED at its end
-                        #   rather than disarmed, so it can still be read
+                        #   rather than disarmed, so it can still be read.
+                        #   Hooks the device and the window, nothing of a
+                        #   frame's: the frame brackets drawWorld and glow,
+                        #   the loop closes present (presented), both GPU
+                        #   timers are ours (FrameTimer, PassTimer) — X5.4g
     profilePhases.ts    # The profiler's phase list (PHASES, the slot ids P
                         #   and SLOTS) and the tree it nests in (PARENT_OF,
-                        #   ROOTS). Both halves read it, which is why it is
+                        #   ROOTS) — `sim` a third root beside `frame` and
+                        #   `present`, with the core's five children; two
+                        #   spans inside render (shadowPass retired at v38). Both halves read it, which is why it is
                         #   neither's — kept in either, they would be a cycle
     profileReport.ts    # What a capture SAYS: the ProfileReport shape (the
-                        #   JSON the viewer reads), buildReport, buildTrace and
+                        #   JSON the viewer reads; v14 adds SegmentStat.sim,
+                        #   v16 drops the old host's hop, v17 adds blocks —
+                        #   our renderer's take, read at the capture — v18
+                        #   gpu.cull, our culls' GPU time off PassTimer, and
+                        #   viewport, the size every frame was drawn at; v19
+                        #   reads a halted ring's blocks at the halt; v20
+                        #   drops blocks.handedBack, nothing going back since
+                        #   X3.7b; v21 adds bodies, our body draws, which
+                        #   no Babylon counter sees since X4.1d; v22 hulls,
+                        #   our hull draws, the same since X4.2b; v23 view,
+                        #   the weapon's, since X4.3c; v24 retires
+                        #   drawOverlay, its groups empty since X4.3d; v38
+                        #   retires Babylon's instruments — counters,
+                        #   gpu.mainPass, pipelines.named, shadowPass — and
+                        #   gpu.frame is our FrameTimer's, X5.4g),
+                        #   buildReport, buildTrace and
                         #   the stats. Allocates freely and never writes the
                         #   ProfileRing it is lent
-    PipelineWarmup.ts   # Where the building card stands the camera while the
-                        #   round's render pipelines are compiled, and when it
-                        #   may stop: the vantages (home spawns and flags), the
-                        #   quiet-frame count off Babylon's pipeline-cache miss
-                        #   counter, and the cap. Decides WHEN; Game stages
-                        #   each frame (WorldCulling.setWarm, the pools' warm)
-    FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the engine's
-                        #   frame REQUESTER, refusing a refresh before the
-                        #   next frame is DUE. A deadline, not Babylon's
+    PendingData.ts      # The page's READINESS (X6.1h): the scene's pending-
+                        #   data list ported (addPendingData,
+                        #   removePendingData, getWaitingItemsCount,
+                        #   isLoading) and isReady, what scene.isReady()
+                        #   answered — the list empty. The water's foam is
+                        #   its one holder while it decodes; Game.pending,
+                        #   read by the instruments alone (the frame
+                        #   adapter's ready), proven equal to the scene's
+                        #   on every frame at its hook's commit
+    PipelineWarmup.ts   # When the building card may come down: the wait
+                        #   for OUR renderer's pipelines — the round's
+                        #   DECLARED list (DeclaredPipelines,
+                        #   Game.roundPipelines: bodies, hulls, weapon, every
+                        #   pool of ours) by name, and the map's
+                        #   (PipelineCache's CompileProgress) — under
+                        #   oursCapMs. Decides WHEN and draws nothing; the
+                        #   vantages it stood the camera at went at X5.4c
+    FrameCap.ts         # The frame-rate cap (Settings.fpsCap): the ADMITTER
+                        #   our loop asks of every refresh (FrameLoop, X5.4g;
+                        #   the engine's frame requester before), refusing a
+                        #   refresh before the next frame is DUE. A deadline, not Babylon's
                         #   maxFPS accumulator, which turns a 30 cap into 20
                         #   on a panel a hair over 60 Hz. Rate 0 admits every
                         #   refresh. Also the SIMULATION's clock: `elapsed` is
@@ -511,15 +962,38 @@ src/
                         #   and no random draws — Player holds the string and
                         #   draws, and Player.recoilKick is still the one door
   entities/
-    Player.ts           # Movement, sprint, crouch, jump, weapon state
+    Player.ts           # Movement, sprint, crouch, jump, weapon state — the
+                        #   local player as a PREDICTION, offline as in a match
+                        #   (the core holds the real one, a SimPlayer); the
+                        #   body is fields (mid, ellipsoid) the sweep moves as
+                        #   a SweepBody; draws nothing and imports no Babylon,
+                        #   telling its PlayerPicture what happened
+    PlayerView.ts       # The player's PICTURE: the ViewModel on the camera,
+                        #   the muzzle flash star (segments of the weapon's
+                        #   tree, X4.3c) and the brass pool (pieces of the
+                        #   casing's kit, which it builds — X4.4b). Client
+                        #   only; told by Player (fired/stepped/cleared/stowed)
+    fades.ts            # The FADING pools as data (X4.6e): the four kits (a
+                        #   spark, a dust disc, a scorch, a blob) and a fade —
+                        #   its mesh's node, its visibility, its paint's slot.
+                        #   No Babylon
+    pieces.ts           # The effect pools' PIECES as data (X4.4b): a kit a
+                        #   kind (its segments — arrays, paint, local sphere,
+                        #   the transform its mesh was dressed with, its
+                        #   parent), a piece a node a segment composed as the
+                        #   mesh was, bit for bit, and writePieceDrawing — the
+                        #   cel parts gated on THIS frame's sphere, as a
+                        #   hull's segments are; worldSphere, shared with the
+                        #   posed debris (poseView), and composeNode, with the
+                        #   molotov's flames (X4.4d). No Babylon
     HealthRegen.ts      # A person's regen: the lock after a hit and the curve
                         #   back to full. One held by Player (predicting) and
-                        #   one by server/NetPlayer (authoritative), so the two
+                        #   one by src/sim/SimPlayer (authoritative), so the two
                         #   heal to the same cap at the same rate
     stance.ts           # The crouch's geometry: the eye and the hit sphere's
                         #   centre above the feet for a blend, and the blend's
                         #   easing. One copy for all five bodies that crouch
-                        #   (Player, Bot, NetSoldier, server/NetPlayer, the
+                        #   (Player, Bot, NetSoldier, src/sim/SimPlayer, the
                         #   death cam's corpse), so the eye and the sphere
                         #   cannot come down apart
     ViewModel.ts        # The first-person weapon: carried gun + gloved arms
@@ -527,13 +1001,29 @@ src/
                         #   bob, and
                         #   the kit turntable with the dark card behind it,
                         #   fitted to the BAY the kit screen reports.
-                        #   Builds every weapon, enables one
+                        #   Builds every weapon, enables one. Its tree is
+                        #   joints (viewTree.ts), read as Babylon read nodes,
+                        #   and every part a segment our renderer draws
+                        #   (X4.3c; the glasses and the card, painted from a
+                        #   canvas of its own, X4.3d)
+    viewTree.ts         # The viewmodel as JOINTS (X4.3b): the JointTree whose
+                        #   root is the camera's stand-in, every SURFACE and
+                        #   the joint it is drawn at — a ViewSegment our
+                        #   renderer draws (X4.3c: a Part, the mesh's two
+                        #   flags and its role — opaque, glass or the kit
+                        #   card, X4.3d; toSegment, segmentOf, segmentBounds),
+                        #   none parented and none a Babylon mesh — the
+                        #   per-frame evaluation (syncSwitches, draw: every
+                        #   surface on and visible, the segments it found
+                        #   handed out) and the readers, out of rigJoints'
+                        #   RenderCache, keyed on the RenderId it is handed
+                        #   (X5.4b)
     ReloadGesture.ts    # The reload decided, not drawn: a pure function of
                         #   phase, seconds and dry/tactical giving the weapon's
                         #   curve and its impact rings, both hands, both
                         #   magazines (the spent one a clone), the bolt or
                         #   slide, and the head looking down at the work.
-                        #   ViewModel draws it on a BODY node that takes
+                        #   ViewModel draws it on a BODY joint that takes
                         #   the inverse of that look
     weaponKit.ts        # The build accumulator every weapon model is written
                         #   in + WeaponParts and WeaponSights (rail, or fixed),
@@ -541,7 +1031,13 @@ src/
                         #   catch/handle/bolt/slide a dry reload closes),
                         #   and the five colour groups a weapon merges into —
                         #   which are also what a finish repaints — and the
-                        #   primitives: box, slab, upright, picatinny, shell
+                        #   primitives: box, slab, upright, picatinny, shell,
+                        #   built as Parts on src/geometry/ buffers under a
+                        #   build-time frame; `merge` (and `lit`, for a
+                        #   reticle) is where they become SEGMENTS our
+                        #   renderer draws (X4.3c), hung from the viewmodel's
+                        #   joints (a weapon's live parts are joints of its
+                        #   ViewTree)
     RifleModel.ts       # Low-poly SCAR-H battle rifle — the first
                         #   weapon SCULPTED rather than stacked: bevelled
                         #   profile slabs and contoured lofts, the design
@@ -566,7 +1062,7 @@ src/
                         #   AXMC drawn from photos in the rifle's design
                         #   language — an action wrapped around the BORE, a
                         #   drilled forend, a triangulated folding stock, and
-                        #   the BOLT in a node of its own so the cycle works it
+                        #   the BOLT in a joint of its own so the cycle works it
     LmgModel.ts         # Belt-fed light machine gun, an FN M249 / Minimi
                         #   drawn from photos in the rifle's design language —
                         #   stamped riveted receiver, feed cover and split
@@ -576,12 +1072,15 @@ src/
                         #   photos in the rifle's design language — the one
                         #   weapon that does not call optics.ts: its notch and
                         #   blade are its own and are all it ever wears, on a
-                        #   slide that is a node of its own so a dry reload
+                        #   slide that is a joint of its own so a dry reload
                         #   can hold it back on the stop
     optics.ts           # Every optic assembly, built onto whichever weapon's
-                        #   OpticMount asked for them. Past ~4x the cone is
-                        #   bounded by the SCREEN rather than by the rail, which
-                        #   inverts how a new one is solved
+                        #   OpticMount asked for them — segments our renderer
+                        #   draws, the two glasses among them (X4.3d: role
+                        #   "glass", their colour and alpha plain data on the
+                        #   segment, no material made). Past ~4x the
+                        #   cone is bounded by the SCREEN rather than by the
+                        #   rail, which inverts how a new one is solved
     weapons.ts          # WeaponId + WeaponSetup + FireMode (the fire selector
                         #   resolved), + SIDEARM/PRIMARY_WEAPON_IDS
     sights.ts           # SightId + magnification -> FOV, sensitivity, zoomComp
@@ -590,7 +1089,7 @@ src/
                         #   reload, `magSize` IS a life's ammunition) and into
                         #   the OrdnanceEffect a detonation is spent through —
                         #   and `resolveOrdnance`, the one place it is spent,
-                        #   called by both simulations
+                        #   called by the core alone (a client predicts no blast)
     throwables.ts       # ThrowableId (frag | molotov), the kit order, and the
                         #   pouch size every side asks — the throwable slot's
                         #   `equipment.ts`, with no WeaponSetup behind it
@@ -599,37 +1098,72 @@ src/
                         #   its colour groups. The one kit table that decides
                         #   nothing
     Combatant.ts        # Team + the shared shootable/shooter interface
-    Vehicle.ts          # ONE hull of any KIND: the collider (the only MOVING
-                        #   `solid` mesh in the game, and invisible to the nav
-                        #   graph for the reason a corpse is), the drive, the
+    Vehicle.ts          # ONE hull of any KIND: the collider box as fields —
+                        #   `pos`, `yaw`, `present` (the only MOVING solid
+                        #   thing in the game, and invisible to the nav graph
+                        #   for the reason a corpse is) — the drive, the
                         #   ten GROUND CONTACTS it stands on and the
                         #   rate-limited climb that rides it over a car, the
                         #   leading-end collision sphere, the turret's slew,
                         #   BOTH guns' clocks and angles (the second seat's gun
                         #   holds a WORLD bearing exactly as the turret does,
                         #   which is what lets the two seats aim
-                        #   independently), which of its two SEATS are filled
-                        #   and `chooseSeat` (which one a person gets — the
-                        #   driver's first, one rule for both processes),
+                        #   independently), which of its two SEATS are filled,
                         #   the ground half of its lean, `rideableAt` (the
                         #   climb band spent on
                         #   where the hull is ABOUT to be, which is the whole
                         #   of an AI driver's road graph), and what a hull
                         #   feels of each DamageKind. Takes a `VehicleSpec` and
-                        #   a rig BUILDER and knows no kinds; `armed` and
+                        #   a `HullFrame` and knows no kinds; `armed` and
                         #   `flies` are the only two questions anything asks
                         #   about one. It also FLIES, on a hull that states a
                         #   `flight` block — and `standOnGround` has never heard
                         #   of that: what a rotor does to the ground model is
                         #   `lift`, an addend that is 0 on anything else, so a
                         #   hover is an equality and the plank is a landing
-                        #   floor. Knows nothing about a player
-    HullFlex.ts         # What a hull's own mass does to its DRAWING: the
-                        #   sprung body's pitch, roll and heave springs on one
-                        #   travel budget, the rate the mast feet turn at, and
-                        #   the two whips in the wind. Writes `rig.sprung` and
-                        #   the antennae and nothing else; handed the drive's
-                        #   acceleration, the ground's jolt and the gear's load
+                        #   floor. Its three muzzles are ARITHMETIC off those
+                        #   fields and the drawn pose (`hullFrame.ts`).
+                        #   SIMULATION only — src/math, no mesh, no rig, no
+                        #   scene; what it looks like is `VehicleView`, told
+                        #   through one `HullPicture` the five things a picture
+                        #   cannot poll. Knows nothing about a player
+    VehicleView.ts      # One hull's PICTURE: the rig its kind's model builds
+                        #   (its body joint stood where the collider box
+                        #   stands; not what a shadow draws), the belts' run,
+                        #   the whips and the paint. Copies `Vehicle.pose`
+                        #   onto the joints, follows `present`, chars on the
+                        #   `wrecked` it is told (a flag the drawing reads);
+                        #   Game.drawHulls draws it once a frame before the
+                        #   render, an instance of its kind's kit (X4.2b);
+                        #   reads its hull and never writes it. Client only
+    hullFrame.ts        # Where a hull's guns and sight ARE, no Babylon:
+                        #   `HullFrame` (a kind's joint offsets and the three
+                        #   extents the drive reads off the drawing, stated by
+                        #   each kind's frame file, which its model imports and
+                        #   places its joints from),
+                        #   `HullPose` (what those joints hold AS DRAWN) and
+                        #   `hullPointToRef`, the float32 joint chain replayed
+                        #   bit for bit; and `hullBodyToRef`, its first link —
+                        #   the collider box's frame, which both shadow maps
+                        #   draw a hull's box off
+    hullSeats.ts        # The two chairs in a hull (`CrewSeat`: `DRIVER`,
+                        #   `GUNNER`), the order they fill in (`SEATS`), and
+                        #   `chooseSeat` (which one a person gets — the
+                        #   driver's first, one rule for both processes).
+                        #   Imports nothing, so the authority's roster names a
+                        #   seat without pulling in a hull
+    HullSprings.ts      # What a hull's own mass does to its sprung body: the
+                        #   pitch, roll and heave springs on one travel budget.
+                        #   Writes the pose's `sprung` channels behind the
+                        #   guards the node had (a muzzle rides them, so they
+                        #   are simulated on both sides) and nothing else;
+                        #   handed the drive's acceleration, the ground's jolt
+                        #   and the gear's load. No Babylon
+    HullWhips.ts        # The whip antennae bending in the drive, the
+                        #   mast feet's rotation and the wind — the one part of
+                        #   a hull's picture with springs of its own. Told each
+                        #   step by `VehicleView`; nothing reads it back.
+                        #   Client only
     FlightModel.ts      # The rotor, for a hull whose spec states `flight`:
                         #   the spool, the disc's commanded attitude, the
                         #   cyclic, thrust and collective, and the attitude a
@@ -637,13 +1171,33 @@ src/
                         #   its motion. Owns no position or velocity — those
                         #   stay `Vehicle`'s and are handed in
     vehicleKinds.ts     # The list of kinds that exist, and the ONE place a
-                        #   kind becomes a name, a spec and a model. A map's
-                        #   `VehicleSpawnDef.kind` is resolved here, and the
-                        #   default (a tank) is written down once
-    vehicleRig.ts       # What every vehicle's MESH is: the joints `Vehicle`
-                        #   writes, the three extents the physics needs off the
-                        #   drawing (gauge, contact reach, wheel reach), and
-                        #   the three CLOSURES a model hands back — `setRun`,
+                        #   kind becomes a name, a spec and a frame — no Babylon,
+                        #   the authority builds from it. A map's
+                        #   `VehicleSpawnDef.kind` is resolved here
+                        #   (`resolveKind`), and the default (a tank) is written
+                        #   down once. Plus `HULL_REACH` (X4.2d), read over the
+                        #   whole table: how far a hull's fire lands from a
+                        #   muzzle and how far a viewer's eye stands from what
+                        #   of him it can hit — the hull draw distance's floor
+    vehicleModels.ts    # What each kind LOOKS like: `Record<VehicleKind,
+                        #   VehicleModel>`, the client's twin of `VEHICLE_KINDS`
+                        #   keyed by the same union, so a kind cannot have a
+                        #   row in one and not the other; and `hullKits`,
+                        #   every kind's drawing in both views' colours, which
+                        #   our renderer draws hulls as (X4.2b) — in a DEV build
+                        #   with every kind's muzzles and sight swept against
+                        #   the gun-reach floor's measured term, a throw past it
+                        #   (`checkMuzzleReach`, X4.2d's review). Client only
+    tankFrame.ts        # The tank's joints and running-gear extents as
+                        #   numbers (`TANK_FRAME` and the constants it is
+                        #   derived from) — no Babylon; `TankModel` imports them
+                        #   and places its nodes from them
+    truckFrame.ts       # The truck's (`TRUCK_FRAME`): the wheels' extents and
+                        #   the roof station's joints. `tankFrame.ts`'s rule
+    heliFrame.ts        # The helicopter's (`HELI_FRAME`): the skids' extents
+                        #   and the chin gun's joints. `tankFrame.ts`'s rule
+    vehicleRig.ts       # What every vehicle's DRAWING is: the joints a hull's view
+                        #   writes and the three CLOSURES a model hands back — `setRun`,
                         #   `reset`, `paint`. `setRun`'s FOURTH argument is the
                         #   rotor, for the reason its third is the steer: a
                         #   tracked hull's powerplant is already in the first
@@ -651,7 +1205,26 @@ src/
                         #   the per-colour merge and the outline pass every
                         #   model draws with, the one whip builder (`whip`)
                         #   and the one `reset` (`resetRigPose`) all three
-                        #   kinds share. No geometry and no numbers
+                        #   kinds share. A hull is `Part`s until `segment`
+                        #   merges it (`mergeParts`) into SEGMENTS, one a
+                        #   colour a call, in the scene order the old meshes
+                        #   had — its kind's KIT, built once a model and a view
+                        #   (`segmentOf`; X4.2b: no hull is a mesh)
+                        #   — and one palette over every kit (`hullPalette`).
+                        #   The joints are OURS (a `JointTree`, its first joint
+                        #   the collider box's frame; BABYLON_EXIT.md X4.2a),
+                        #   the drawing composed and written for our renderer
+                        #   once a frame (`composeHull` from Game.fadeHulls,
+                        #   `writeHullDrawing` from Game.drawHulls,
+                        #   each segment size-gated),
+                        #   switched as one (`setHullRigEnabled`) and painted
+                        #   charred by a flag (`paintRig`). A kit carries the
+                        #   hull's one whole-hull MEASURE (`HullMeasure`,
+                        #   `measureHull`) and flags the segments its model's
+                        #   DETAIL list names, which a far hull draws without
+                        #   (X4.2c, the detail tier; the size gate stays per
+                        #   segment under it) — the measure the draw
+                        #   distance's fade is asked of too (X4.2d). No numbers
     TankModel.ts        # ~180 boxes and cylinders merged to twenty-five, with
                         #   a SPRUNG body over running gear that is not, a
                         #   turret and a gun that turn, a CUPOLA gun on a ring
@@ -659,7 +1232,10 @@ src/
                         #   and a toothed sprocket a side that RUN, two whip
                         #   antennae that BOW, and the charred repaint a wreck
                         #   takes.
-                        #   Art only — the extents that are RULES are CONFIG's
+                        #   Art only — the extents that are RULES are CONFIG's,
+                        #   and the joints the simulation reads `tankFrame.ts`'s.
+                        #   Its DETAIL list (X4.2c): the link strips, the road
+                        #   wheels and the cupola gun's ring drop at range
     TruckModel.ts       # The gun truck: a CLOSED armoured 4x4 drawn off the
                         #   Oshkosh JLTV — arches cut out of an extruded body,
                         #   a clamshell hood, a V belly over four independent
@@ -673,7 +1249,9 @@ src/
                         #   station's sweep; the muzzle clears it by 6.7 cm at
                         #   full depression.
                         #   NO main gun — `VehicleRig.gun`/`muzzle` are null,
-                        #   which is what `Vehicle.armed` reads. Art only
+                        #   which is what `Vehicle.armed` reads. Its DETAIL
+                        #   list (X4.2c): the weapon station's yoke drops at
+                        #   range. Art only
     HeliModel.ts        # The helicopter: a tandem attack helicopter on skids
                         #   drawn off the AH-1Z Viper — a lofted fuselage, a
                         #   framed stepped canopy, the nose sensor ball, the
@@ -682,26 +1260,56 @@ src/
                         #   a CHIN turret rather than a door gun (the truck's
                         #   rule — nothing may promise a body standing at it).
                         #   Two whips on the boom are its one non-rigid part.
-                        #   `gun`/`muzzle` null and `turret` an INERT node,
+                        #   `gun`/`muzzle` null and `turret` an INERT joint,
                         #   so `aimMg` needs no branch. Both discs turn off
                         #   `setRun`'s FOURTH argument, and the transmission's
                         #   gear ratio lives here because it is a drawing
                         #   decision. No tip-path ring: `inkRig` makes anything
                         #   that thin nearly all ink, and a hoop round a parked
-                        #   aircraft reads as a cage. Art only
+                        #   aircraft reads as a cage. Its DETAIL list (X4.2c)
+                        #   is empty: every part is kept at every range. Art
+                        #   only
     callsigns.ts        # What to call an AI on the scoreboard: roster index ->
                         #   phonetic name, derived on both sides, never sent
     Bot.ts              # Bot FSM (advance/hunt/engage/takeCover/suppressed/
-                        #   retreat/capture) + movement, aim, magazine, peek
-    BotMemory.ts        # One bot's decaying picture of the fight
+                        #   retreat/capture) + movement, aim, magazine, peek.
+                        #   Simulation only: src/math, no rig, no Babylon;
+                        #   `shown` says whether the body is in the world
+    BotMemory.ts        # One bot's decaying picture of the fight (src/math)
     SquadRadio.ts       # One TEAM's board: its squads' contact calls and the
                         #   marks its own deaths leave. Cues, never targets
     BotSkill.ts         # skill scalar -> BotProfile; difficulty tiers
-    SoldierModel.ts     # Merged bot rig + the per-team kit it is painted and
-                        #   shaped in + the procedural poser (a SoldierPose:
-                        #   gait any way, aim, twist, crouch, the rifle's kick,
-                        #   carry and reload, arms IK'd onto it), and the
-                        #   RagdollSubject interface
+    SoldierModel.ts     # The bot rig — joints and fifteen segments — + the
+                        #   per-side KIT it is painted and shaped in, built ONCE
+                        #   a side as segment geometry (soldierKits, never a
+                        #   Babylon mesh) + the poser that writes a solved pose
+                        #   onto the joints (arms IK'd onto the rifle), and the
+                        #   RagdollSubject interface. writeRigDrawing writes a
+                        #   body's segment matrices and writeRigCentres their
+                        #   bounding centres, which our renderer draws it off
+                        #   (render/BodyDraw, BABYLON_EXIT.md X4.1d)
+    rigJoints.ts        # A rig's joints as OUR hierarchy, no Babylon — a
+                        #   soldier's, (X4.2a) a hull's and (X4.3b) the
+                        #   viewmodel's: local channels (and the viewmodel's
+                        #   quaternion, pivot and camera root), float32 world
+                        #   matrices the rig owns (bit for bit the
+                        #   TransformNodes'), a fresh chain, a joint POSED off a
+                        #   ragdoll's pose array (Joint.pose), the body's one
+                        #   measure (the root capsule's sphere), and
+                        #   RenderCache, Babylon's render-id cache reproduced
+                        #   for the viewmodel's readers (on our render id,
+                        #   core/renderId.ts, since X5.4b)
+    soldierBones.ts     # The ragdoll's bone table, no Babylon: BoneJoint,
+                        #   BoneSpec and RAGDOLL_BONES (each bone's box and
+                        #   mass in its joint's frame), measured off
+                        #   SoldierModel's box lists. RagdollSystem's bodies
+                        #   and proxyBoxes' shadow boxes are read off it
+    soldierPose.ts      # What a pose IS, as numbers, no Babylon: SoldierPose
+                        #   and REST_POSE (gait any way, aim, twist, crouch,
+                        #   the rifle's kick, carry and reload), solveSoldier
+                        #   to the joint channels, the skeleton's measures the
+                        #   rig is built from, and the bot's MUZZLE replayed
+                        #   off them in src/math, bit for bit the node chain
     SoldierMotion.ts    # One body's motion turned into a SoldierPose: gait
                         #   phase and stepLength, velocity in the feet's frame,
                         #   kick, reload, ready. Bot and NetSoldier drive the
@@ -711,89 +1319,181 @@ src/
                         #   bevelled SLAB (a side profile extruded, concave
                         #   allowed), the convex SOLID between two faces and a
                         #   ROD laid at any angle, all shaded flat and merged
-                        #   beside boxes. The soldier and its rifle are cut
+                        #   beside boxes; each a Part on a GeometryBuffer, no
+                        #   scene and no Babylon import. The soldier and its rifle are cut
                         #   from the loft, the first-person rifle from both;
                         #   the slung launcher is still boxes
     NetSoldier.ts       # Somebody else, drawn from the wire: one rig, the
                         #   interpolation buffer behind it, the gait its boots
-                        #   are heard off, no behaviour at all
+                        #   are heard off, the slung launcher the roster says
+                        #   it carries (`setLauncher`), no behaviour at all
     GrenadeModel.ts     # What a grenade looks like — body, fuse pip, and the
-                        #   blink that reads the fuse. Built by the system that
-                        #   simulates them and by the one that only draws them
+                        #   blink that reads the fuse. The frag's kit's parts
+                        #   (`grenadeParts`), built once by GrenadeFx, whose
+                        #   `GrenadeBody` the wire's ghosts reuse
     MolotovModel.ts     # What a molotov looks like — bottle, neck, and the lit
-                        #   rag that is its tell. Built three ways: the pool, the
-                        #   wire's ghosts, and the viewmodel's fist
+                        #   rag that is its tell. One statement of the parts,
+                        #   made twice: the bottle's kit for GrenadeFx's
+                        #   `GrenadeBody` (the pool's and the wire's ghosts,
+                        #   X4.4b) and segments for the viewmodel's fist (X4.3c)
     RpgModel.ts         # The launcher on the shoulder and the rocket that
-                        #   leaves it. Built from its VENTURI, not its middle,
-                        #   the one weapon with a `hipYaw` of its own, and the
-                        #   one whose loaded ROUND is a node that comes out
-    MineModel.ts        # The mine in the hands and the plate in the road. The
+                        #   leaves it (`rocketParts`, the rocket's kit, X4.4b).
+                        #   Built from its VENTURI, not its middle, the one
+                        #   weapon with a `hipYaw` of its own, and the one
+                        #   whose loaded ROUND is a node that comes out
+    MineModel.ts        # The mine in the hands and the plate in the road
+                        #   (`minePieceParts`, the laid mine's kit, X4.4b). The
                         #   one thing in the kit that is not a weapon at all
   systems/
-    BattleSystem.ts     # Bot pool, AI scheduling, LOS, distance LOD
+    BattleSystem.ts     # Bot pool, AI scheduling, LOS, squads, the bench.
+                        #   The core's alone (the page builds none).
+                        #   Simulation only: src/math, no scene, no camera
+    VehicleViews.ts     # The fleet's PICTURE: one VehicleView per hull, by
+                        #   hardstanding, each with its kind's model; built by
+                        #   `installMap`, stepped after every
+                        #   `VehicleSystem.update`, drawn by Game.drawHulls
+                        #   once a frame before the render (X4.2b), taken down
+                        #   by `teardownMap`. Client only
     ConquestSystem.ts   # Flags, meters, tickets, bleed, spawns, planSquads,
                         #   what a bot's flag means to it (`zoneFor`), and
-                        #   `scatterSpawn` — both simulations ask all three
+                        #   `scatterSpawn` — the core asks all three.
+                        #   Babylon-free; a scattered spawn is `src/math`'s
     ScoreBook.ts        # The round's board: points, kills and deaths, one row
                         #   per roster SLOT. A ledger, not a system — no update,
-                        #   reaches nothing. One per simulation (Game offline,
-                        #   HeadlessGame on the authority), and `awardKill` and
-                        #   `awardZone` are the one place each that a payout's
-                        #   shape is decided — both sides call the same two
+                        #   reaches nothing. ONE, held by SimCore offline and
+                        #   on the authority alike, and `awardKill`, `awardZone`
+                        #   and `paysKiller` are the one place each that a
+                        #   payout's shape is decided — called by that one core
     RoundRandom.ts      # The ROUND's seed and every outcome stream drawn from
                         #   it (the cones, the spawns, a crew's lay), one per
-                        #   shooter, reseeded in place once a round by each
-                        #   simulation. Not a system — reaches nothing. Also
+                        #   shooter, reseeded in place once a round by the
+                        #   core; the page keeps its own for STREAM.player (its
+                        #   cone) alone. Not a system — reaches nothing. Also
                         #   `freshSeed`, `parseSeed` and `UNDRAWN`
     killRules.ts        # `settleKill`: the killer's row, then the victim's door
-                        #   if a bot fell. Every door onto a kill, both sides,
-                        #   goes through it, against each side's `KillLedger`.
-                        #   Also `DeathCause`, the vocabulary simulate files
-    hullRules.ts        # What a hull does, once for both simulations: the main
+                        #   if a bot fell. Every door onto a kill in the core
+                        #   goes through it, against SimCore's `KillLedger` (a
+                        #   match client's predicted round hands NO_LEDGER).
+                        #   Also `DeathCause`, the vocabulary simulate files,
+                        #   and the person's AUDIT door (`personDown`) SimCore
+                        #   files a person's death under
+    hullRules.ts        # What a hull does, stated once, for the core: the main
                         #   gun, the cupola gun, the tracks (`crushSweep`), the
                         #   driver a crush is credited to, and a crew's death.
                         #   No picture — Game draws off what the guns return;
-                        #   each side hands in a `HullRules` context
-    CaptureZoneSystem.ts# Flags drawn in the world: ring, skirt, flag on its pole
-    FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind
-    BulletMarks.ts      # The holes a round leaves behind: a ring of pooled decal
-                        #   quads, cel-lit so a mark belongs to the wall on
-                        #   every map, and stood on the STATIC world only
-    CombatSystem.ts     # Hitscan, fall-off, the head zone; pooled tracers, sparks, impacts
+                        #   SimCore hands in a `HullRules` context, and Game a
+                        #   second only for a match client's PREDICTED round
+    CaptureZoneSystem.ts# Flags drawn in the world: a ring of stones and paint, a
+                        #   flag on its pole; every surface render/ZoneDraw.ts's,
+                        #   no mesh (X4.6b)
+    FlagCloth.ts        # One flag: the pole and a Verlet cloth flown in the wind,
+                        #   its vertices written into ZoneDraw's buffer as it moves
+    BulletMarks.ts      # The holes a round leaves behind: a ring of pooled
+                        #   SLOTS, each a frozen world and sphere, cel-lit so a
+                        #   mark belongs to the wall on every map, and stood
+                        #   on the STATIC world only (`CombatFx`'s fourth
+                        #   pool); its shapes, paints and depth bias, drawn by
+                        #   our renderer (Game.drawMarks, X4.4b). No Babylon
+    CombatFx.ts         # A round's PICTURE: pooled tracers, sparks, dust discs
+                        #   and the marks, fed by `CombatSystem.onRound` and
+                        #   `drawRounds`; the impact (and its sound) on the
+                        #   tracer's arrival clock. The tracers (pieces of the
+                        #   kit it builds) and the marks are our renderer's
+                        #   (X4.4b), the sparks and discs too since X4.6e (fades
+                        #   of the two kits it builds); nothing is posed for the
+                        #   warm-up. Client only
+    CombatSystem.ts     # Hitscan, fall-off, the head zone, the cone; raises
+                        #   `onNearMiss`, `onRound`, `onShotPath`. Babylon-free
     GrenadeSystem.ts    # The one thing that isn't hitscan: the flight, the
                         #   fuse, the molotov's fire, and the ground probe
                         #   under a blast. `blastAt` is the one blast in the
                         #   game and `drawBlast` the one place one is drawn
+                        #   (it raises `onBlast`). Babylon-free; positions are
+                        #   plain `pos`/`at` fields
+    GrenadeFx.ts        # The grenades' PICTURE: a `GrenadeBody` per slot
+                        #   (tumble, pip — two pieces of the frag's and the
+                        #   bottle's kits, which it builds, drawn by our
+                        #   renderer, X4.4b), a fire's flames on their own
+                        #   floor probe (a PieceNode each of one flame shape,
+                        #   drawn by render/FlameDraw.ts, X4.4d — no mesh),
+                        #   and the BlastFx. Reads
+                        #   `flights`/`fireSlots`, fed
+                        #   `onBlast`/`onIgnited`/`onBurntOut`. Client only
     BlastFx.ts          # Six of a blast's eight layers, DRAWN: flash,
                         #   fireball, surge, sparks, burning trails and column,
-                        #   every one a billow in BlastShader. One thin-instanced
-                        #   mesh per blast, motion in closed form. Client only
+                        #   every one a billow in BlastShader. One BATCH per
+                        #   blast (and one for sparks and trails), its sphere
+                        #   set by hand; motion in closed form; no mesh —
+                        #   render/BlastDraw.ts draws the batches (X4.4c),
+                        #   its two icospheres src/geometry/'s (X6.1g).
+                        #   Client only
     AntiTankSystem.ts   # The AT kit in the world: the rocket pool (the SECOND
                         #   thing that isn't hitscan), the mine pool, the arm
                         #   clocks and the hull trigger. Owns no blast and has
                         #   never heard of a tank — it asks `hullNear` and
                         #   announces `onDetonated`, and Game spends both.
-                        #   `launchToward` is a bot's rocket at a POINT
+                        #   `launchToward` is a bot's rocket at a POINT.
+                        #   Babylon-free; positions are plain `pos` fields
+    AntiTankFx.ts       # The AT kit's PICTURE: a `RocketBody` per rocket slot
+                        #   (faced down its flight, motor guttering off metres
+                        #   flown) and a `MineBody` per mine (lamp off the arm
+                        #   clock), posed off `rocketSlots`/`mineSlots` — each a
+                        #   piece of the kits it builds, drawn by our renderer
+                        #   (X4.4b). Client only
     GlassSystem.ts      # Breakable panes: the segment sweep and the break —
-                        #   the visual, the collider, and the nav graph with
-                        #   the fields over it, all on the frame it happens.
-                        #   The one mutable thing in the world, monotonically
-                        #   so, and every CLEARED pane comes out of the list
-                        #   `openBox` re-severs against or a second break puts
-                        #   the first one's wall back
-    PhysicsWorld.ts     # The ONLY Havok in the game: the plugin, the map as
+                        #   the box out of the queries and the push-out, and
+                        #   the nav graph with the fields over it, all on the
+                        #   frame it happens. The one mutable thing in the
+                        #   world, monotonically so, and every CLEARED pane
+                        #   comes out of the list `openBox` re-severs against
+                        #   or a second break puts the first one's wall back.
+                        #   Raises `onBreak`/`onBroken`.
+                        #   Babylon-free
+    GlassFx.ts          # A break's PICTURE: the pane's vertex range collapsed
+                        #   in its merged glazing (`onBroken`: our renderer's
+                        #   buffer). No collider is a mesh (X5.3e), so the
+                        #   picture is all it writes.
+                        #   Client only
+    PhysicsWorld.ts     # The ONLY Havok in the game: the engine, the map as
                         #   one static body per 48 m block (a single compound is
-                        #   quadratic in its shapes), and the fixed-step clock.
-                        #   Owns no bodies — its three clients do. Exports
+                        #   quadratic in its shapes) built on the raw API — the
+                        #   floor from GameMap.terrainGeometry — and the
+                        #   fixed-step clock, whose substep teleports and syncs
+                        #   the clients' raw bodies (`WorldBody`) in the
+                        #   plugin's order. A body's pose is seven numbers in an
+                        #   array; it reaches no node, mesh or scene (Babylon-
+                        #   free, held by check-babylon-free). Owns no bodies
+                        #   but the world's — its three clients do. Exports
                         #   loadHavok(), which main.ts awaits before there is a
                         #   Game
+    havok.ts            # Havok's raw HP_* API in one dialect: the world
+                        #   (created with its gravity — there is no plugin), the
+                        #   handle types, [Result, value] unwrapped, the enums,
+                        #   and each call spelled as Babylon's HavokPlugin
+                        #   spelled it (reads and 6-DoF constraints included),
+                        #   so the port off the plugin is bit-for-bit.
+                        #   Babylon-free; imports @babylonjs/havok as a type only
+    poseView.ts         # Where a body's pose array meets what it is DRAWN as
+                        #   (X4.4c: no node any more): PosedPiece and
+                        #   writePosedDrawing (a shard's or chunk's world
+                        #   composed off its pose, gated on this frame's
+                        #   sphere — Babylon's latch dropped), the
+                        #   creation park (parkedPose), placing a body
+                        #   (storePose) and a debris park (parkPose).
+                        #   Babylon-free
     RagdollSystem.ts    # Corpses under that engine. One refusal left (past the
                         #   fog wall); a full pool evicts its oldest. Cannot
-                        #   tell a dead bot from the player's stand-in
+                        #   tell a dead bot from the player's stand-in. No
+                        #   node: each rig joint is posed off its bone's pose
+                        #   array (Joint.pose), a frozen corpse off the slot's
+                        #   copy, which the sink lowers
     DebrisSystem.ts     # Glass shards under it. A burst is CUT from the pane's
                         #   own face along the cracks a round put in it; refuses
                         #   past its own apparent-size gate, and evicts only a
-                        #   burst that has already landed
+                        #   burst that has already landed. No mesh: each shard
+                        #   a PosedPiece our renderer draws, its vertices
+                        #   handed over on every cut (onCut, X4.4c), its
+                        #   normals src/geometry/'s computeNormalsInto (X6.1g)
     BlastDebrisSystem.ts# The two blast layers that outlive the fire, and the
                         #   THIRD Havok client: the rubble a detonation throws —
                         #   keyed on what it went off ON, so a crater turns up
@@ -801,17 +1501,24 @@ src/
                         #   scorch it leaves, a decal that MULTIPLIES the ground
                         #   rather than painting a colour onto it. A chunk's
                         #   size and shape are decided at construction, so a
-                        #   burst never touches the WASM heap
+                        #   burst never touches the WASM heap. No chunk mesh
+                        #   (a PosedPiece our renderer draws, X4.4c, its box
+                        #   src/geometry/'s createBox since X6.1g); no scorch
+                        #   mesh either since X4.6e (a fade of its kit, its map
+                        #   a canvas painted here, ours since X5.4d)
     glassFracture.ts    # The crack pattern itself: radials out of the hole,
                         #   concentrics across them, clipped to the frame. Pure
                         #   arithmetic — no Babylon, no state
     puffTexture.ts      # The one puff in the game, drawn at runtime: three
-                        #   overlapping gradients, no image file. The rotor's
+                        #   overlapping gradients, no image file, made our
+                        #   texture (TextureMaker.picture, X5.4d). The rotor's
                         #   ring is its one user now the blast is billows.
                         #   Needs a canvas, so nothing on the server reaches it
     RotorWash.ts        # What a helicopter does to the surface when it comes
                         #   down: TWO standing GPU emitters per rotor on the
-                        #   field — dust and SPRAY — with `emitRate` driven off
+                        #   field — dust and SPRAY, ring ParticleFields of ours
+                        #   it DECIDES and render/ParticleDraw.ts steps and
+                        #   draws (X4.7d) — with `emitRate` driven off
                         #   `Vehicle.washTo`, the disc's power against its skid
                         #   clearance, and 0 for anything that does not fly.
                         #   BlastDust's fountain twin: nothing is spawned,
@@ -823,14 +1530,19 @@ src/
                         #   under a machine over a bay is the bed. It also
                         #   publishes the wash SITES the water's own shader
                         #   draws the hole and the rings from. A puff fades IN
-                        #   as well as out, which is a colour GRADIENT and is
-                        #   why a ring is coloured when it is BUILT — see
-                        #   `paint` for the before-the-first-render rule that
-                        #   makes that safe here and not in BlastDust, and for
+                        #   as well as out, which is a colour GRADIENT, baked
+                        #   once at a ring's first update, and is why a ring is
+                        #   coloured when it is BUILT and a new palette is new
+                        #   rings — see `paint`, and for
                         #   why the spray's pair is LIT on the way in and the
-                        #   dust's is not. Client only
-    DeathCam.ts         # The player's own death; the only occlusion pick
-                        #   outside combat
+                        #   dust's is not. FADES with its hull at a map's hull
+                        #   draw distance: handed each hull's fade by Game
+                        #   (`fadeHulls`), spent on the rate and the ripple,
+                        #   1 — unchanged — where a map states none (X4.2d's
+                        #   review). Client only
+    DeathCam.ts         # The player's own death — a stand-in rig, filed and
+                        #   drawn as any body; the only occlusion pick outside
+                        #   combat
     VehicleSystem.ts    # The armour on the field: one hull per hardstanding, the
                         #   wreck clock and the respawn clock (two, so a side can
                         #   never field both), which hull a boarder may get
@@ -838,9 +1550,10 @@ src/
                         #   no player and no AI — `update` asks a `VehicleOrders`
                         #   four questions per hull: who is at the sticks, who
                         #   is on the cupola gun, and which of the two somebody
-                        #   ELSE is deciding. `Game`/`HeadlessGame` are
+                        #   ELSE is deciding. `Game`/`SimCore` are
                         #   the only things that can answer. A `predicted` fleet
-                        #   is a netplay client's: both clocks stand down
+                        #   is a netplay client's: both clocks stand down.
+                        #   Simulation only: src/math, no scene, no materials
     VehicleCamera.ts    # The view from twelve metres behind a hull: its own yaw
                         #   and pitch, its occlusion pull-in, and the gun's kick.
                         #   `DeathCam`'s shape — it produces an eye and a look
@@ -872,10 +1585,16 @@ src/
     GiVolume.ts         # The irradiance volume: bounce light, sky occlusion
                         #   and lamps that stop at walls. A camera-centred,
                         #   toroidally scrolled window of probes traced in
-                        #   compute against the colliders; seven 3D textures
-                        #   every cel material binds, always. No draw calls.
+                        #   compute against the colliders; its GPU half's
+                        #   seven 3D textures our frame binds, always (none
+                        #   in a Babylon material). No draw calls.
                         #   Same ray set every update, so a still scene
-                        #   converges to a fixed point instead of crawling
+                        #   converges to a fixed point instead of crawling.
+                        #   Its CPU HALF (the window, the lights, the channels,
+                        #   the hull slots, the params, the schedule): `update`
+                        #   ARMS a dispatch its GPU half, render/GiCompute.ts,
+                        #   records (X5.1b). Babylon's materials' GI-off set
+                        #   (the map editor's) draws nothing since X5.3c
     AmbienceSystem.ts   # Where the world makes a noise on its own: the emitter
                         #   registry MapBuilder fills, and the nearest-first
                         #   ranking that spends CONFIG.audio.ambience.maxVoices
@@ -885,18 +1604,27 @@ src/
                         #   and a shore is a line — and its INDEX is the key
                         #   Sfx holds a graph on, so add()/addRun() only append
                         #   and clear() is the only thing that renumbers
-    ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows. The STATIC
+    ShadowSystem.ts     # Moon shadow maps (stepped) + blob shadows (fades our
+                        #   renderer draws since X4.6e, no mesh). The STATIC
                         #   world's casters in two cascades (near + far),
-                        #   re-rendered only when the snapped focus moves
+                        #   re-rendered only when the snapped focus moves;
+                        #   the four world maps OUR renderer's
+                        #   (render/WorldShadows) in every state, on every
+                        #   rung, the lit 1x1 until the first map hands them
+                        #   their casters. No Babylon light or generator since
+                        #   X5.3d: a map's light is a plain pair (MapLight)
     BodyShadows.ts      # The BODIES' shadow map: soldiers and hulls and nothing
                         #   static, re-rendered every frame, its own tighter
                         #   window (4.7 cm texels against the world's 5.4).
-                        #   Every proxy is a thin instance of ONE unit box — a
+                        #   Every proxy is an instance of ONE unit box — a
                         #   soldier is RAGDOLL_BONES, a hull is its collider —
                         #   so the pass is one draw whatever the roster. Back
                         #   faces only, or a body is drawn inside its own
                         #   caster. Read by celShadow and by the volumetric
-                        #   march, which is what makes a soldier cut a beam
+                        #   march, which is what makes a soldier cut a beam.
+                        #   Decides everything and draws nothing: the map is
+                        #   OUR renderer's in every state (render/BodyShadowMap,
+                        #   X4.1c), no Babylon light, generator or mesh
     LocalShadows.ts     # The LAMPS' shadows: one depth atlas, six cube-face
                         #   tiles per point light and one per spot, reached by
                         #   every cel/grass/water material through ONE binding.
@@ -904,7 +1632,12 @@ src/
                         #   static tile; bodies, hulls and every MOVING light's
                         #   colliders are box proxies redrawn each frame in one
                         #   draw. The vertex stage maps each face into its own
-                        #   tile, so one pass fills many
+                        #   tile, so one pass fills many. Decides everything
+                        #   and draws nothing: the atlas is OUR renderer's
+                        #   (render/LampAtlas), handed the frame's AtlasWork,
+                        #   none until the first map hands it its casters
+                        #   (Babylon's render target, programs and proxy mesh
+                        #   went at X5.3d)
     LightningStrikes.ts # When lightning strikes, from where, how bright: a
                         #   seeded SCHEDULE read off a clock (the authority's
                         #   in a match; offline its own, which holds with the
@@ -914,20 +1647,35 @@ src/
                         #   strike), the sky and the volume's sky fill; onStrike
                         #   is the thunder
     ReflectionSystem.ts # The world as glass sees it: one cube per GLAZED
-                        #   BLOCK, baked from the map's own geometry per
-                        #   install with whatever encloses the probe left out,
+                        #   BLOCK (one per water body too), baked from the map's
+                        #   own geometry per install with the blocks it serves
+                        #   left out (exclusionOf, as numbers for the cull),
                         #   and the box the shader parallax-corrects the
-                        #   mirrored ray against. The only render target here
-                        #   besides the shadow map. The bake is spent a budget
-                        #   of draws per FRAME, under the loading card, and
-                        #   each face draws only what that face can SEE
-    Atmosphere.ts       # Ash field on the GPU, simulated by a compute shader.
-                        #   No CPU fallback — WebGPU is a hard requirement and
-                        #   guarantees it
+                        #   mirrored ray against. Decides every probe; OUR
+                        #   renderer draws the bake (render/ProbeBake, its own
+                        #   queue, a budget of PROBES a frame, spent under the
+                        #   loading card) — the only bake since X3.7c, which
+                        #   deleted Babylon's ReflectionProbes. Owns the
+                        #   DEFAULT cube, one of ours nothing bakes, bound at a
+                        #   strength of 0 (no wrapped view of it since X5.3d);
+                        #   a round whose world failed bakes nothing. Points a
+                        #   round's glazing at its probe's recipe and cube
+                        #   (X4.6e)
+    Atmosphere.ts       # The ash field: DECIDES its box, colours, rate, lives
+                        #   and blend on a ParticleField of ours, rebuilt to the
+                        #   capacity the map's density needs; the mote texture
+                        #   (a canvas, ours since X5.4d). render/ParticleDraw.ts
+                        #   steps and draws it (X4.7c). No CPU fallback
     Sky.ts              # Generated dome, textured moon, and the cloud RING —
-                        #   one merged mesh of faceted masses standing in the
+                        #   one soup of faceted masses standing in the
                         #   world over the map, drawn back to front at one
-                        #   shared depth 7 km out (the disc stands at 9 km)
+                        #   shared depth 7 km out (the disc stands at 9 km). The
+                        #   paint, where dome and disc stand, the ring's turn,
+                        #   clock, order and shadow are here; render/SkyDraw.ts
+                        #   and render/CloudDraw.ts draw them (X4.5b, X4.5c): no
+                        #   sky mesh and no sky material; the dome's and the
+                        #   disc's canvases and the shadow field our textures
+                        #   (TextureMaker, X5.4d)
     cloudMasses.ts      # The cloud ring's SHAPE: cumulus heaps, banks and
                         #   puffs of round lobes on flat bellies, buried facets
                         #   dropped, as one triangle soup carrying the facet
@@ -937,26 +1685,98 @@ src/
                         #   the key onto one plane in KEY space, written as a
                         #   field a slice at a time for Sky to crossfade and
                         #   celCloud to cut. Pure arithmetic — no Babylon
-    WorldCulling.ts     # How much of the map the frame's own mesh walk is
-                        #   offered. Replaces scene.getActiveMeshCandidates and
-                        #   writes NOTHING onto a mesh, which is what leaves
+    WorldCulling.ts     # How much of the map the frame's own mesh walk was
+                        #   offered, and what our renderer's culls are handed
+                        #   in its place. Replaced scene.getActiveMeshCandidates
+                        #   until the scene stopped rendering (X5.4f: the
+                        #   candidate list retired) and writes NOTHING onto a mesh, which is what leaves
                         #   every ray, the shadow map, every cube probe and
-                        #   moveWithCollisions unable to tell it ran. A collider
-                        #   is never a candidate, a mesh carrying metadata.block
+                        #   every sweep unable to tell it ran. No collider
+                        #   is a mesh (X5.3e), a mesh carrying metadata.block
                         #   is one inside the map's fogEnd, everything else
-                        #   always is
+                        #   always is; what our renderer draws is no mesh
+                        #   (X3.7b; nothing is since X6.1g, and nothing is
+                        #   filed), and a world FIRE is drawn while its
+                        #   block's cell is offered (offersBlock, snapshotted
+                        #   where the list is built, X4.4d). A cell's box is grown from every RECORD
+                        #   filed under its block
+                        #   (SurfaceRecord.bounds, X3.7a), a filed surface's size
+                        #   gate reads its record's sphere; reachGate states
+                        #   the reach and the size gate as numbers for the GPU
+                        #   cull, reachBoxOf the box by the BLOCK (the
+                        #   landform's NO_REACH, null for a block no cell grew
+                        #   for; the handover fails the world on it — setMap's
+                        #   own refusal of meshes and records that disagree
+                        #   went with the meshes, X6.1g). A pooled BODY is no mesh
+                        #   (X4.1d): measured once a frame and answered by
+                        #   index (drawsBody), which the drawing reads, and
+                        #   with how much of it is drawn (bodyFade, X4.1e):
+                        #   the lesser of a ramp short of bodyDrawDistance
+                        #   (setBodyDrawDistance) and one above the size gate.
+                        #   A HULL's segment (X4.2b) is asked the size gate
+                        #   alone, one by one (keepsSphere), and a hull's whole
+                        #   measure the detail tier's swap (keepsDetail,
+                        #   X4.2c) and how much of it is drawn (hullFade,
+                        #   X4.2d: a ramp over the last tenth of the map's
+                        #   hullDrawDistance, setHullDrawDistance), all off for
+                        #   the warm-up
+    BlockHandover.ts    # The map's world as OUR renderer draws it, in every
+                        #   pass of every build, with NO
+                        #   fallback (BABYLON_EXIT.md X3.3-X3.7b): every block
+                        #   surface, the landform (WorldSurface.landform) and
+                        #   the emissive palette are OURS at the build
+                        #   (BuildOptions.onSurface answers true: none of
+                        #   them is made a mesh), on a verdict asked of the
+                        #   surface's RECORD (X3.7a), handed to
+                        #   render/WorldBlocks and cut at install against the
+                        #   cells by their blocks; every FIRE (X4.4d) taken
+                        #   for render/FlameDraw.ts, refused if not block
+                        #   merged at identity or if it casts, handed over at
+                        #   install in birth order with its record's block and
+                        #   sphere (fires). Every CASTER held — ours in its
+                        #   group, the palette in its own (the held-caster
+                        #   layer went at X4.4d, reached by no build) — and
+                        #   handed to the world's maps and the lamps' atlas together on
+                        #   every rung; the world to the bake (PASS_PROBE,
+                        #   fires left out); the palette's main pass ours
+                        #   whenever there is one and its mask to WorldGlow,
+                        #   noGlow read PER SURFACE (a group of its own,
+                        #   LIGHT_SOURCE kept). Each pass is handed its world
+                        #   WITH the install's failure (failFor), which it
+                        #   tells of whatever it cannot draw — no pass latches
+                        #   a loss (X3.7c).
+                        #   A surface it cannot hold is REFUSED at the
+                        #   install (and thrown after it in DEV) — no mesh is
+                        #   made of it instead (X6.1g) — and every
+                        #   former handback — a block no cell grew for, a
+                        #   failed group or cull, a cut past the limits, a
+                        #   refused pass, a pass of ours that cannot draw what
+                        #   it was handed — fails the world once
+                        #   (Game.worldFailed), with the install's
+                        #   WorldOwner (latched at install: a stale one is
+                        #   ignored). The
+                        #   scatter's field (BuildOptions.onScatter) added as
+                        #   instances at install, its pieces cut out of the
+                        #   blocks (X3.4b). Reads no node per frame
     WaterSystem.ts      # Water surfaces from map WaterRects; bakes their bed depth
                         #   and stands the one wave GRID under the eye (`follow`,
                         #   pushed from `tick` in every state). `setWash` is the
                         #   rotor sites, pushed from `tick` and not from the
-                        #   camera tail — see it for why
+                        #   camera tail — see it for why. Hands its mirrors'
+                        #   sites to the reflection bake, once a build, and hands
+                        #   each body the cube it is handed back. Its PICTURE is
+                        #   render/WaterDraw.ts (X4.6d): no mesh, no material,
+                        #   and the values plain arrays; the foam mask ours
+                        #   (TextureMaker.image, X5.4d), the page's pending
+                        #   data (Game.pending, X6.1h) while it decodes
     GrassSystem.ts      # The grass field stood around the EYE: patches of
                         #   blade seeds chosen per frame in view (`follow`,
                         #   pushed from `tick` in every state), each drawn from
-                        #   the smallest prefix mesh that holds the blades it
+                        #   the smallest prefix run that holds the blades it
                         #   keeps, and the TURF sheet under them. Cost is what
-                        #   is in view, never the map's grass area
-  dev/                  # Dev-only tools that are not the editor. Same rule:
+                        #   is in view, never the map's grass area. Plain arrays:
+                        #   render/GrassDraw.ts draws them (X4.6c)
+  dev/                  # Dev-only tools that are not the viewer. Same rule:
     mixer/              #   dynamically imported, never on the static graph
       index.ts          #   The F4 audio mixer: a slider per family and per
                         #     sound, live, over a round that carries on
@@ -967,48 +1787,49 @@ src/
                         #     value lines inside each table's own block, posts
                         #     it back. Refuses rather than writing partially
       mixer.css         #   Imported by index.ts so it rides the same chunk
-  editor/               # Dev-only map editor (F2). Dynamically imported —
-    index.ts            #   never statically imported from anywhere, or it
-    EditorCamera.ts     #   lands in the production bundle
-    EditorPanel.ts
-    panel.css           #   Imported by EditorPanel so it rides the dynamic
+  viewer/               # Dev-only MAP VIEWER (F2, BABYLON_EXIT.md X5.3b): a LID
+                        #   over a round. Dynamically imported (Game.toggleViewer,
+                        #   the mixer's gate) — never statically imported from
+                        #   anywhere
+    index.ts            #   The session: what it borrows (the round's camera and
+                        #   map), the findings, the toggles, and putting back the
+                        #   camera's pose and the map's own environment
+    ViewerCamera.ts     #   Free-fly drive of CameraSystem's camera (ours,
+                        #     X6.1f): the map editor's camera on src/math vectors
+    ViewerPanel.ts      #   The panel: readout, plan, toggles, findings, help
+    viewer.css          #   Imported by ViewerPanel so it rides the dynamic
                         #   chunk. Never link it from HTML
-    workLight.ts        #   Brightened EnvironmentSpec for authoring
-    selection.ts        #   SelectionRef, predicate pick, highlight
-    proxies.ts          #   Stand-ins for flags/spawns/scatter/water/grass
-    gizmos.ts           #   Move + Y-rotate handles, snapping
-    pathHandles.ts      #   A path road's point/insert/extend handles and the
-                        #     bendPath preview a point drag reads against
-    mutate.ts           #   Layout writes: transform, fields, add/delete, and a
-                        #     path road's points (move/insert/delete/recentre)
-    fields.ts           #   FieldSpec + the key conventions inspect, the panel
-                        #   and mutate all have to agree on
-    inspect.ts/params.ts#   Inspector read model + per-kind param table
-    sourceScan.ts       #   layout.ts as text: regions, entries, tokens
-    validate.ts         #   Pre-save checks against the layout being emitted
-    navOverlay.ts       #   Draws the nav graph over the scene for authoring
-    terrainBrush.ts     #   Terrain mode: hover highlight + sculpt stroke
-    serialize.ts/save.ts#   Minimal-diff emit + POST to the dev server
-    saveEnvironment.ts  #   environment.ts patched one top-level KEY at a time
-                        #     — what the floor picker writes
+    ViewerPlan.ts       #   The overlays as a 2D PLAN: planFromWorld + paintPlan,
+                        #     the nav buckets at a pixel a cell, the marks and
+                        #     the camera; a click warps it. No draw, no pipeline
+    navPlan.ts          #   navOverlay's classification without its draw (per
+                        #     surface, per cell by layer) and the flow fields it
+                        #     sweeps on the standing graph on demand
+    marks.ts            #   The proxies' shapes without their meshes: flags at
+                        #     their true radius, spawns, water/grass, scatter
+    validate.ts         #   The map editor's checks, moved (src/math's
+                        #     Vector3): docs/world.md, "Looking at a map"
+    workLight.ts        #   Brightened EnvironmentSpec for looking at a night map
     tuning.ts           #   Tool constants (NOT src/config/ — not gameplay)
   world/
     layout.ts           # Placement/ScatterSpec/Heightfield/MapLayout — the
                         #   map-data vocabulary, map-agnostic. The floor is
                         #   NOT a field on MapLayout: see MapDef.heights
     TerrainField.ts     # The floor's height and the ONLY place that knows it:
-                        #   heightAt() + per-block VertexData + terrainSlab(),
+                        #   heightAt() + per-block GeometryBuffer + terrainSlab(),
                         #   terrainRibbon()/terrainFan() for a PATH road's strip
                         #   and junction patch, and the BORDERLAND past the
                         #   authored grid on a map whose boundary is open
     Ridge.ts            # The valley rim, in two forms — an escarpment and the
                         #   downs — and, on a `rolling` downs, the summits,
-                        #   knolls and the woods sown on it. Shape only: no
-                        #   collider, nothing inside the boundary it is handed
+                        #   knolls and the woods sown on it. Shape only, as
+                        #   GeometryBuffers: no collider, no Babylon, nothing
+                        #   inside the boundary it is handed
     leash.ts            # What stops a player leaving a map that has no wall:
                         #   one clock per body, and the verdict it reaches.
-                        #   Pure — the caller does the killing, and offline that
-                        #   is Game while in a match it is HeadlessGame
+                        #   Pure — the caller does the killing, which is
+                        #   SimCore offline and in a match; the page only runs
+                        #   the clock to draw the countdown
     roads.ts            # The road FOOTPRINT — rectangles, plus the convex
                         #   pieces a path resolves to — and the two questions
                         #   it answers: is this ground PAVED, and where two
@@ -1033,56 +1854,118 @@ src/
                         #   ground, water makes reeds) and the
                         #   field's frayed EDGE, and the per-patch summary the
                         #   GrassSystem culls with. Pure — no scene
+    scatterVariants.ts  # ScatterVariants — each scatter kind built 16 times a
+                        #   build off streams of its own, in the prop's own
+                        #   frame; which one a placement wears (a hash, never
+                        #   a draw); a placement's parts cloned off it, and its
+                        #   matrix and its region's origin recorded; the FIELD
+                        #   our renderer draws the scatter from, a set of
+                        #   instances per worn variant, each placement with the
+                        #   block its copy is merged into (ScatterSet.blocks,
+                        #   its REGION's, on merge.ts' lattice)
     rng.ts              # mulberry32 — the seeded PRNG world-building uses,
                         #   and the map generators' too: Node loads it by type
                         #   stripping through scripts/lib/mapgen.mjs, the
                         #   helpers the seven generate-<map>.mjs share
-    MapBuilder.ts       # Builds the map; merges visuals, emits colliders.
-                        #   build() is a list of phases, one method each
+    MapBuilder.ts       # Builds the map; merges visuals, records colliders as
+                        #   DATA (colliderBoxes, rayGroups, boxGroups,
+                        #   terrainGeometry; no collider mesh since X5.3e).
+                        #   build() is a list of phases, one method each. The
+                        #   floor, the rim and every part are WorldSurfaces;
+                        #   the merges and the vertex bake run on those, and
+                        #   bake() hands each to our renderer once
+                        #   (worldRecords, BuildOptions.onSurface; no mesh of
+                        #   any since X6.1g) and keeps the record of every one
+                        #   as GameMap.world
     mapTypes.ts         # GameMap, WorldBox, WorldPane, PaneGroup, the layout's
-                        #   flag/spawn/water/grass shapes and the editor index.
-                        #   Types only; MapBuilder re-exports every one
-    merge.ts            # The visual merges: mergeByMaterial, then BlockMerge
-                        #   and PaneBlocks per map block (one key, one
-                        #   metadata.block), flatten, tag, BLOCK_SIZE
-    solid.ts            # SOLID_ONLY — the one mesh pick predicate left, and the
-                        #   editor's alone. The three-way table of what a
-                        #   collider answers a body and a round is still here
+                        #   flag/spawn/water/grass shapes and ItemRef (a piece's
+                        #   layout item).
+                        #   Types only, and no Babylon type (no mesh field
+                        #   since X6.1g); MapBuilder re-exports every one
+    merge.ts            # The visual merges, on WorldSurfaces: mergeByMaterial,
+                        #   then BlockMerge and PaneBlocks per map block (one
+                        #   key, one metadata.block — blockOf, on the lattice
+                        #   blockCell states, which the scatter's field files
+                        #   placements under too); the palette slot through
+                        #   CelShader's writePaletteIndex; mergeSurfaces, the one
+                        #   2+ merge, carrying the piece ranges. Nothing in it
+                        #   touches the device
+    blocks.ts           # BLOCK_SIZE, and nothing else: the merge block of a map
+                        #   that states none, and the fixed LOCALITY unit of the
+                        #   physics buckets and the pane index. Imports
+                        #   nothing, so the server reads it without MapBuilder
+    worldGeometry.ts    # The world's geometry as a record: WorldSurface (a
+                        #   Part, its block, whether it is the LANDFORM our
+                        #   renderer draws ahead of the alpha-tested list, its
+                        #   piece ranges, whether its positions stay writable,
+                        #   and its BIRTH — the scene order its mesh was made
+                        #   in),
+                        #   PaneSurfaceGroup, SurfaceRecord / WorldGeometry
+                        #   (GameMap.world: everything kept but the arrays,
+                        #   which releaseArrays drops at upload — through the
+                        #   DEV SurfaceSink merge:hash reads them by — since
+                        #   X3.7a the world BOUNDS, boundsOf, Babylon's
+                        #   bounding info step for step; `visual`, its mesh
+                        #   in GameMap.visuals, X3.7b to X6.1g), and admission
+                        #   (admitStructure / admitProp), the one door a part
+                        #   enters the merge by, refusing a shared array in DEV.
+                        #   The PIECE id (a layout item) and its ranges'
+                        #   arithmetic: concatPieces, assertPieces (DEV)
     RayWorld.ts         # The segment query every ray in the game asks, off the
                         #   collider boxes, the strut groups and the terrain
                         #   rather than off scene.meshes. castBody / castRound /
-                        #   blocked, the grid behind them, and the hulls, which
+                        #   blocked, bodyNear (a body sweep's candidates,
+                        #   ranked from boxGroups on both sides — the client's
+                        #   collider-mesh order while they were meshes — hulls
+                        #   last), the grid behind them, and the hulls, which
                         #   are the one solid thing that moves. It is what
                         #   retired scene.pickWithRay at all eight sites
-    CollisionField.ts   # RayWorld's counterpart for the one whole-scene walk a
-                        #   ray query could not replace: the collider MESHES
-                        #   bucketed, so moveWithCollisions is handed a street
-                        #   through Babylon's own surroundingMeshes instead of
-                        #   walking the map. `narrowedMove` is the whole of how
-                        #   a body sweeps — a hull's and the player's, the only
-                        #   two in the game, and it forces the mover's world
-                        #   matrix because the AUTHORITY never renders one.
-                        #   Superset or nothing — read it
+    ellipsoidSweep.ts   # The swept ellipsoid every body moves by: Babylon's
+                        #   moveWithCollisions (collider + retry loop) ported
+                        #   operation for operation, against each WorldBox's
+                        #   twelve triangles instead of a mesh's. Back faces
+                        #   tested, ties to the first found. Bit-identical to
+                        #   Babylon (scripts/sweep-check.mjs). Apache-2.0 notice
+    CollisionField.ts   # How a body MOVES: the one sweep the player, a driven
+                        #   hull and a coasting wreck go through, on both sides.
+                        #   move / moveBody (null-safe) / sweepFrom (oracle)
+                        #   gather RayWorld.bodyNear, run ellipsoidSweep, CHECK
+                        #   the list against the path the centre took
+                        #   (re-gather, then the whole map), and keep Babylon's
+                        #   1 mm write-back. No geometry, no index, no mesh;
+                        #   hulls and broken glass arrive through RayWorld
     vertexShading.ts    # The world's baked vertex-colour buffer, written after
-                        #   every merge: AO in the ALPHA, the world mark in the
-                        #   GREEN, the wind's sway weight in the RED
+                        #   every merge and before the upload: AO in the ALPHA,
+                        #   the world mark in the GREEN, the wind's sway weight
+                        #   in the RED, the wear ramp in the BLUE. A pure core
+                        #   over one surface's arrays (shadeVertices) and the
+                        #   walk over the record's parts (bakeVertexShading)
     sway.ts             # Which foliage the wind moves and how much of it moves
-                        #   at a given height. Marks, layers, the weight ramp.
-                        #   A marked group leaves Babylon's outline pass and
-                        #   gets an ink twin (MapBuilder.inkTwin) instead
+                        #   at a given height. Marks, layers, the weight ramp
     flame.ts            # An open fire's geometry — outer tongues wound inside
-                        #   out, a core, embers, a bounds marker — in one vertex
-                        #   block whose UVs FlameShader decodes. flamePart for
-                        #   the kit's Build.flame
-    parts.ts            # A structure's PART meshes, built without ever reaching
-                        #   the GPU: uploading geometry that a merge throws away
-                        #   was half of a 1500 m build. partBox / partCylinder /
-                        #   partSurface, and uploadPart, which every path out of
-                        #   a merge owes. Colliders are NOT parts — a part has no
-                        #   submeshes and would stop nothing
+                        #   out, a core, embers, a bounds marker — in one
+                        #   GeometryBuffer whose UVs FlameShader decodes.
+                        #   flamePart for the kit's Build.flame
+    parts.ts            # Part — what the kit, the props and the models
+                        #   build: a GeometryBuffer, a transform, a material,
+                        #   metadata, a parent (a Part or a PartNode, a build
+                        #   frame that draws nothing) — flattenParts (the links
+                        #   composed at emit time, Babylon's setParent(null)
+                        #   step for step: detachPart), mergeParts and
+                        #   bakePartTransform (MergeMeshes and
+                        #   bakeCurrentTransformIntoVertices, for the models),
+                        #   worldRecords for the world's surfaces (walked in
+                        #   BIRTH order, each handed to our renderer through
+                        #   onSurface — false is a refusal — its record taken
+                        #   and its arrays released; no mesh: drawnMesh,
+                        #   vertexDataOf and the adapter went at X6.1g) and
+                        #   plainGeometryOf (the floor's positions and indices
+                        #   for PhysicsWorld). No Babylon. Colliders are NOT
+                        #   parts, nor meshes
     BuildingKit.ts      # Facade: shared types + BUILDERS registry
     kit/core.ts         #   Build accumulator (box/wall/guard/flight/...),
-                        #   palette, builder contract, and the forest's
+                        #   palette, builder contract (handed the factory
+                        #   and no scene, X6.1d), and the forest's
                         #   drawing words (limb/rope/slab/fern/curtain) the
                         #   jungle ruin, the temple and the manor grow from;
                         #   `StoneBatch` and `Mesher`, one surface per colour
@@ -1245,7 +2128,12 @@ src/
                         #   end of, and it samples `BuildCtx.terrain` for the
                         #   far end's height
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
-    CoverMap.ts         # Baked per-surface directional cover masks
+                        #   (the offline page's build has the graph and NO
+                        #   fields — `BuildOptions.navFields`; the core's world
+                        #   steers its bots)
+    CoverMap.ts         # Baked per-surface directional cover masks — baked
+                        #   only where an AI runs (buildSimWorld); the page's
+                        #   build carries none (`GameMap.cover` null)
     boxGeometry.ts      # Analytic WorldBox primitives, shared by NavGrid /
                         #   ObstacleField / CoverMap
     ObstacleField.ts    # Sub-cell collision push-out for thin props, and two
@@ -1293,16 +2181,30 @@ src/
                         #   gravestone, lantern, fungus, log, bramble, rubble
       junk.ts           #   The city's own dressing: skip, bins, pallets, cone,
                         #   litter
+      sharedDraws.ts    #   SHARED_DRAWS — what each builder takes from the
+                        #   build's shared scatter stream, replayed without
+                        #   building it, so a placement wearing a variant
+                        #   spends exactly what its builder would have.
+                        #   `kit:hash` fails if a replay and its builder differ
     textures.ts         # Generated canvas textures: the cobbles, and the floor
                         #   surfaces — noise fields posterized onto a ramp of
-                        #   the map's floorColor, albedo and height in one pass
+                        #   the map's floorColor, albedo and height in one pass;
+                        #   handed out as Pictures, the factory making each our
+                        #   texture (X5.4d) and keying their cache (X6.1d,
+                        #   where the scene did) — this file never touches a GPU
     floorSurfaces.ts    # What the valley floor is MADE of: the surface roster
                         #   and the ONE place a floor material is built
-    environment.ts      # EnvironmentSpec + applyEnvironment, and
+    environment.ts      # EnvironmentSpec + applyEnvironment, applyClearColor
+                        #   (the one write of the frame's clear colour,
+                        #   SceneFrame.clearColor; the boot's too), and
                         #   bodyDrawDistanceOf — the one reader of a map's body
-                        #   draw distance, capped at its own fogEnd
+                        #   draw distance, capped at its own fogEnd — and
+                        #   hullDrawDistanceOf, the hull's (X4.2d): absent is
+                        #   NO distance, a stated one capped at fogEnd and
+                        #   RAISED to hullDrawFloor (a hull's gun reach, so no
+                        #   setting buys an unseen shooter)
     maps.ts             # MapDef + the MAPS registry. The only EXISTING file a
-                        #   new map has to touch (plus vite.config's WRITABLE).
+                        #   new map has to touch (plus collision-hash's MAPS).
                         #   `MAPS` is an `import.meta.env.DEV` ternary and must
                         #   stay one — that fold is what keeps the proving
                         #   ground out of both bundles. Also loadHeights/
@@ -1319,11 +2221,13 @@ src/
                         #   server is no longer its only reader — the menu's
                         #   schematic draws a map nothing has built yet, and
                         #   this is the only description of its buildings that
-                        #   exists outside a built world
+                        #   exists outside a built world. The page's own match
+                        #   loads this committed bake as the server does
+                        #   (`loadSimWorld`)
     fingerprint.ts      # A comparable summary of a built world — the nav graph,
                         #   not the boxes. What `npm run parity` diffs
     hollowmere/layout.ts      # A MAP — every placement, flag and spawn
-    hollowmere/heights.ts     # GENERATED floor heights (editor terrain mode).
+    hollowmere/heights.ts     # GENERATED floor heights (`npm run hollowmere`).
                               #   Reached via MapDef.heights, a LAZY import —
                               #   a map's grid is not in the main bundle
     hollowmere/environment.ts # Palette, fog, mist, particles — night
@@ -1333,8 +2237,8 @@ src/
                               #   stilt village, the ferry, the temple on its
                               #   hill, a dug-in camp, and the landing, the
                               #   sawmill and the old city between them.
-                              #   SEEDED by `npm run greyfen` and owned by the
-                              #   editor after
+                              #   GENERATED by `npm run greyfen`, its only
+                              #   author
     greyfen/heights.ts        # GENERATED floor heights (`npm run greyfen`) —
                               #   a Y-shaped river wadeable everywhere, the
                               #   temple's hill, the spine, the old city's
@@ -1356,8 +2260,8 @@ src/
                               #   vale (`size: 400`) — a green with the church
                               #   and the inn, five flags in rolling, hedged
                               #   country, and the second map with armour.
-                              #   SEEDED by `npm run harrowmead` and owned by
-                              #   the editor after
+                              #   GENERATED by `npm run harrowmead`, its only
+                              #   author
     harrowmead/heights.ts     # GENERATED floor heights (`npm run harrowmead`)
                               #   — rolling hills, level plots and a brook cut
                               #   to a constant wadeable bed. LAZY
@@ -1366,9 +2270,9 @@ src/
     harrowmead/collision.ts   # GENERATED collider boxes (`npm run collision`)
     sarab/layout.ts           # The fifth map, and the one ENGINE_UPGRADE.md
                               #   exists for: a desert town, 900 m of play
-                              #   inside 1500 m of ground. SEEDED by
-                              #   `npm run sarab` and owned by the editor after
-                              #   that — its header carries the argument. The
+                              #   inside 1500 m of ground. GENERATED by
+                              #   `npm run sarab`, its only author — its header
+                              #   carries the argument. The
                               #   first map to state `blockSize`/`terrainBlock`
                               #   and the first whose `fogEnd` is inside its own
                               #   diagonal
@@ -1571,7 +2475,12 @@ src/
                         #   bindings for the device in hand. Laid over the
                         #   scene: #hud.setting hides every other screen.
                         #   Owns no setting: picks leave through onChange and
-                        #   return as setValues
+                        #   return as setValues. Prints the build stamp small
+                        #   in its bottom corner
+    buildStamp.ts       # Which build this page is: the commit and day
+                        #   vite.config.ts stamps into index.html's
+                        #   <meta name="greywatch-build">, read off the
+                        #   document the worker served, never the bundle
     LobbyScreen.ts      # The match browser, a TITLE SCREEN for the match the
       lobby.css         #   cursor is on: its map's name over its photograph
                         #   (the menu's MenuBackdrop, handed in), two pages
@@ -1597,6 +2506,9 @@ src/
                         #   the plate's translucency is one alpha on that BLIT.
                         #   The one canvas that RESIZES itself: the box is
                         #   --hud-map and the backing store follows it
+    CullCheckPanel.ts   # ?cullcheck's readings on the glass, for a phone with
+      cullcheck.css     #   no console. A DEVICE on #hud like ProfileChip; built
+                        #   only under the flag
     ProfileChip.ts      # The frame profiler's corner of the HUD: what the ring
       profile.css       #   is holding, and the four buttons that get a capture
                         #   off the device or into the reader. A DEVICE on #hud
@@ -1612,6 +2524,8 @@ src/
                         #   the ring is never reached for. benchDone writes a
                         #   finished benchmark to the hand-off key with no tab
                         #   (no gesture to open one) and keeps a line up
+                        #   — and setHold raises #prof-hold, the TAP a
+                        #   touch device's benchmark waits for (Game.holdBench)
     TouchControls.ts    # The on-screen controls a phone plays with: a FLOATING
       touch.css         #   (or, by setting, FIXED) movement stick in the left
                         #   zone, a look DRAG in the right one, and the button
@@ -1633,21 +2547,126 @@ src/
                         #   band, shared by the scoreboard's column and the
                         #   lobby's reading so the two cannot disagree. No
                         #   markup and no stylesheet of its own
-  net/                # Multiplayer, client side. Nothing here is constructed
-    protocol.ts       #   in an offline round.
-                      #   The wire format — the ONLY module the server also
-                      #   imports. Pure types + the rates both ends must agree
-                      #   on. No Babylon, no DOM, no CONFIG
-    Connection.ts     #   Socket lifetime, reconnect, and the server-clock
-                      #   offset every interpolated body is drawn against
-    NetSession.ts     #   One networked round: the seam between Game and the
-                      #   wire. Game gains a field and a branch, not a protocol
+  sim/                # The simulation core (BABYLON_EXIT.md X2.5a): moved out
+                      #   of server/ because it is not the server's. Reads no
+                      #   clock and draws no seed — the HOST hands it both — and
+                      #   imports nothing from server/. Every file is a root of
+                      #   check-babylon-free.mjs
+    SimCore.ts        #   The simulation, on every host: `Match` (a remote
+                      #   authority, or the page's own local match offline),
+                      #   `simulate` and corecheck — no page holds one. The one
+                      #   place the simulation's systems meet, wired once here
+                      #   by callbacks (systems never import each other). Owns
+                      #   the armour too — the fleet, the bot crews and the AT
+                      #   kit — plus `seat`, the one writer of a chair (the
+                      #   page's `mount`/`clearVehicle` are only its picture
+                      #   half). Builds the SIMULATIONS only, never a view, and
+                      #   has no engine and no scene. `startRound(RoundSpec)` is
+                      #   synchronous (`pool` + `fielded`); `anchor`/`drop` are
+                      #   the host's clock; `SimCoreOptions` (rewind,
+                      #   hostHoldsRespawn, timing, reportGap) are the hosts'
+                      #   roles and change no rule. A person
+                      #   reaches it through `submit` alone (commands.ts), and
+                      #   the rules a command meets — pouches, seat policy,
+                      #   `deployPerson` — are here once. No outward callback:
+                      #   it SAYS everything through events.ts, and the host
+                      #   `drain`s after every call. Publishes no copy of its
+                      #   state; `timing` is the last timed step's row
+    stepTiming.ts     #   SIM_PHASES (the step's five timed phases, in order)
+                      #   and StepTiming, the row `SimCore.timing` holds, and
+                      #   how rows SUM (`addStepTiming`) — the local match
+                      #   sums an advance's steps, the page every answer a
+                      #   frame files. Measurement only, filed by the page's
+                      #   profiler and printed by `simulate --phases`
+    commands.ts       #   The SimCommand vocabulary `SimCore.submit` takes:
+                      #   the gameplay ClientMessages after validation, with
+                      #   host-resolved data (ShotWeapon's five numbers, kit
+                      #   pouch sizes).
+                      #   A person's hull is REPORTED (drive/gun), never
+                      #   steered — no command carries a stick. Plain data only
+    events.ts         #   The event ring: the vocabulary (EV), each kind's
+                      #   payload layout, the writers SimCore calls, the
+                      #   EventCursor a drain swaps into, and decode/toObjects.
+                      #   Every number captured at emission; kind byte + tick +
+                      #   12 float64s a record, an int side array for pane
+                      #   lists. Allocation-free to write
+    SimPlayer.ts      #   A person as the simulation sees one — a match's
+                      #   peer or the offline page's player — driven by
+                      #   commands; the only position the core trusts
+    simWorld.ts       #   buildSimWorld: the solid world rebuilt from the baked
+                      #   boxes and the floor as DATA (queries, nav, cover — no
+                      #   mesh): the collider half of MapBuilder and nothing
+                      #   else. Loads nothing; the host does
+    LagComp.ts        #   Position history + the rewind around a shot, kept
+                      #   only under `SimCoreOptions.rewind` (every Match's,
+                      #   the page's own local match included).
+                      #   `resolve` takes a callback so the restore cannot be
+                      #   skipped
+    reportedLanding.ts #  The crash of a hull a PERSON flies (FINDINGS 60):
+                      #   `Vehicle.update`'s jolt asked of the accepted `drive`
+                      #   reports (plank via `Vehicle.restAt`, the reporter's
+                      #   clock — Match's BOUNDED one on the authority), cost
+                      #   owed until SimCore spends it; a correction's
+                      #   `resync` rebases, a touchdown after one still pays
+  net/                # Multiplayer, client side — and from X2.5c C4 every
+    protocol.ts       #   round's: offline is a session on a local match.
+                      #   The wire format — with localWire.ts, the only
+                      #   modules here the server imports. Pure types + the
+                      #   rates both ends must agree on. No Babylon, no DOM,
+                      #   no CONFIG
+    localWire.ts      #   protocol.ts's twin for a match the page hosts: the
+                      #   owner channel's calls and replies, OwnerPort, and
+                      #   PORT_CLOSE. Pure types and one constant, loaded by
+                      #   the page, the Worker and Node alike
+    Connection.ts     #   Connection lifetime, reconnect, and the server-clock
+                      #   offset every interpolated body is drawn against.
+                      #   Dials a ClientTransport: a WebSocket to `url`, or
+                      #   `JoinOptions.dial`'s (a local match's port). A
+                      #   silence timer retries a socket that has said
+                      #   nothing for `CONFIG.net.silenceTimeout`
+    transport.ts      #   ClientTransport and its two kinds: socketTransport
+                      #   and portTransport (protocol text both ways, and
+                      #   PORT_CLOSE, the one word a port cannot say itself).
+                      #   `watched`: whether silence means the far end is gone
+    LocalMatch.ts     #   The OWNER's client to a match the page hosts
+                      #   (server/localMatch.ts): calls awaited in order, so
+                      #   any is a settle (`settle` is the bare one); `advance`
+                      #   and `hold` posted every frame; `dial`, a person's
+                      #   port in (or a watcher's); a stall watchdog
+                      #   (standing down until the host first answers, then
+                      #   a heartbeat whenever nothing is owed), so a dead
+                      #   host is said (`onLost`);
+                      #   `behind`, the owner's back-pressure (seconds). Not a
+                      #   ClientMessage: no remote client can say it
+    LocalOwner.ts     #   The page's OWNERSHIP of its own match: the host
+                      #   (replaced when lost, up to CONFIG.net.localRehosts),
+                      #   the begun line, `step` (the one door the clock is
+                      #   advanced through, under the slack) and `pass` (the
+                      #   rest of the frame as HELD), the summed step timing
+                      #   and its skip count. Answers Game through four hooks;
+                      #   imports no core/ module
+    matchHost.ts      #   Where the page's own match runs: `openMatchHost`,
+                      #   the boot's choice — a Worker proved up by a settle,
+                      #   or (?simpage, or a Worker that did not come up)
+                      #   this thread on a MessageChannel, through the one
+                      #   value import of server/ in src/, a dynamic one.
+                      #   The Worker's onerror is a log line: silence, the
+                      #   watchdog's, is what calls a host lost, and
+                      #   `MatchHost.replace` opens its successor
+    NetSession.ts     #   One networked round — every round, from X2.5c C4:
+                      #   the seam between Game and the wire. `local` says
+                      #   whether the page OWNS the match, the one authority
+                      #   question. A watcher's session is seated at slot -1
     NetRoster.ts      #   The pool of NetSoldiers + mirrored flags/tickets.
                       #   The client's stand-in for BattleSystem: same job on
-                      #   screen, none of the job underneath
+                      #   screen, none of the job underneath. Numbers its
+                      #   bodies by the match's table width (`setBlockWidth`,
+                      #   off the welcome), re-addressing, never rebuilding
     NetGrenades.ts    #   Everybody else's grenades in the air, interpolated on
-                      #   the same clock as the bodies. The thrower's own is
-                      #   skipped — they are watching their local copy
+                      #   the same clock as the bodies, drawn by GrenadeFx's
+                      #   own `GrenadeBody` off its kits (X4.4b). The
+                      #   thrower's own is skipped — they are watching their
+                      #   local copy
     NetVehicles.ts    #   Somebody else's armour: one interpolation buffer per
                       #   HARDSTANDING, feeding Vehicle.updateRemote. Owns no hull
                       #   — the fleet is VehicleSystem's on both sides — and the
@@ -1655,7 +2674,9 @@ src/
                       #   they are simulating it
     NetOrdnance.ts    #   The AT kit off the wire: rockets interpolated like
                       #   grenades, mines applied whole from the versioned
-                      #   `mines` table. The shooter's own rocket is skipped;
+                      #   `mines` table, drawn by AntiTankFx's `RocketBody` and
+                      #   `MineBody` off its kits (X4.4b). The shooter's own
+                      #   rocket is skipped;
                       #   their own mine is NOT, because it is never predicted
     lobby.ts          #   GET /matches for ONE region. The only part of
                       #   multiplayer that is not the WebSocket. Times its own
@@ -1690,8 +2711,12 @@ src/
                         #   the most built ground, the seeded bot-only round at
                         #   a fixed step. Counted in FRAMES, never wall clock,
                         #   and allocation-free per frame. Also the spectator's
-                        #   bearing and FightHash, one hash over every award and
-                        #   death. Answers in numbers; Game.updateBench spends
+                        #   bearing, and re-exports FightHash. Answers in
+                        #   numbers; Game.updateBench spends
+    fightHash.ts        # FightHash: one hash over every award and death of
+                        #   the bench's round, with the step it landed on.
+                        #   Imports nothing, so corecheck folds a local Match's
+                        #   round with it too
     vantages.ts         # The reference bank's pose table (DIFF_VANTAGES),
                         #   moved here so the bank and the benchmark stand at
                         #   one set of poses; plans/webgpu-ref/vantages.mjs
@@ -1700,101 +2725,868 @@ src/
   pwa/
     register.ts         # SW registration, the update check that is the only
                         #   thing that ever looks for a new build, and the
-                        #   touch fullscreen gesture.
+                        #   touch fullscreen gesture and the wake lock.
                         #   Knows nothing about the game
     sw.js               # The service worker, as a TEMPLATE — not typechecked,
                         #   never imported; vite.config.ts emits dist/sw.js.
                         #   Network-first for the navigation, cache-first for
                         #   the content-hashed rest
   shaders/
-    CelShader.ts        # Custom cel ShaderMaterial. Both stages WGSL; six
-                        #   defines, six UBO layouts
+    CelShader.ts        # CelMaterialFactory: every lit material, as a KEY of
+                        #   ours (MaterialKey.ts, X6.1c) and the RECIPE it is
+                        #   drawn with (celRecipe); the program's body is
+                        #   wgsl/celVertex.ts and wgsl/celSurface.ts, its
+                        #   declarations src/render/'s. Every per-material
+                        #   value is written through own() into the recipe;
+                        #   nothing is pushed onto a material. The palette
+                        #   material's recipe is emissiveRecipe
+                        #   (emissiveMaterialOf the other way, for the glow's
+                        #   rules); fillFrame and fillFrameTextures are the
+                        #   frame's pulls off the factory's fields,
+                        #   fillBakeFrame a reflection bake's frame (the
+                        #   clouds held off, alpha 1, the probe's eye). writePaletteIndex stamps
+                        #   a part's palette slot into its buffer's uv2 for
+                        #   both palette merges (the map's, the soldier's)
     ShadowBindings.ts   # Every shadow a lit material samples (world, bodies,
-                        #   lamps' atlas, lightning, clouds, foliage) bound
-                        #   onto the factory's cache and the grass/water
-                        #   consumers. `mats.shadows`; GI stays in the factory
+                        #   lamps' atlas, lightning, clouds, foliage), held and
+                        #   PULLED into the frame (no material walked since
+                        #   X6.1c). `mats.shadows`; GI stays in the factory.
+                        #   Every texture our frame binds of it is ours: a map's
+                        #   own, the lit texel where it is off, the clouds'
+                        #   field (X5.4d)
     CelInk.ts           # THE INK: one full-screen edge over the depth the
                         #   frame already wrote. Replaced Babylon's outline
                         #   hull AND MapBuilder's ink twins — Coldharbour
-                        #   +32%, Harrowmead +51%. Only ever DARKENS
-    GlowPass.ts         # THE BLOOM, owned end to end: an emissive-only mask
-                        #   drawn against the FRAME's depth (shared, sized in
-                        #   the same function that draws it), Babylon's kernel
-                        #   blur at half and quarter resolution (quarter and
-                        #   eighth off a box downsample on the Glow setting's
-                        #   `low`), and an additive
-                        #   compose the ink runs as its last line (a WGSL
-                        #   snippet, not a pass). Public API only;
-                        #   `Game` supplies the rules (what blooms, how bright)
-    Fxaa.ts             # FXAA's fragment shader, registered under the name
-                        #   Babylon's pass looks up so it runs this text: the
-                        #   same shader with CONFIG.graphics.fxaa's three
-                        #   constants (sub-pixel blend 0.25 where Babylon's 1.0
-                        #   blurred the frame). Owns no pass
-    FrameDepth.ts       # The frame's own depth attachment, captured once and
-                        #   wrapped for the two passes that sample it (the ink's
-                        #   edges, the blur's weapon mask). Renders and copies
-                        #   nothing; owns no pass
-    EmissiveFog.ts      # The same fog as a material plugin on every unlit
-                        #   emissive material — windows, flames, tracers. WGSL
-                        #   only, which is what isCompatible states
+                        #   +32%, Harrowmead +51%. Only ever DARKENS. The CPU
+                        #   half (the fog band) and `stage`, the post chain's
+                        #   FIRST stage, our renderer's draw since X5.2d
+                        #   (wgsl/celInk.ts; the glow's compose its last
+                        #   line); the source's notes kept verbatim
+    GlowPass.ts         # THE BLOOM'S RULES, owned end to end: an
+                        #   emissive-only mask drawn against the FRAME's depth
+                        #   (sized in the same function that asks for it),
+                        #   Babylon's kernel blur at half and quarter
+                        #   resolution (quarter and eighth off a box downsample
+                        #   on the Glow setting's `low`), and an additive
+                        #   compose the ink runs as its last line (no pass:
+                        #   its text the ink's compiled module's glowAt,
+                        #   composeIntensity, X5.2d) — WHEN, at what sizes and
+                        #   with which kernel (glowKernels, every rung at every
+                        #   render scale, for its declared pipelines). Since
+                        #   X5.4e no target and no pass: the mask, the blur's
+                        #   five and their passes are OUR renderer's
+                        #   (FrameTargets, Renderer.recordGlowMask, GlowBlur),
+                        #   asked through GlowDraws, handed in. Public API only
+    Fxaa.ts             # FXAA's CPU half (the switch) and `stage`, the post
+                        #   chain's stage our renderer draws it as since X5.2c2
+                        #   (wgsl/fxaa.ts): Babylon's shader with
+                        #   CONFIG.graphics.fxaa's three constants (sub-pixel
+                        #   blend 0.25 where Babylon's 1.0 blurred the frame)
+    MaterialKey.ts      # What a MATERIAL is: a key of ours (X6.1c), minted by
+                        #   the factory for every variant, carrying only what
+                        #   a reader asks (name, emissiveColor, alpha,
+                        #   zOffsetUnits, blended) and a
+                        #   creation `serial` over keys alone (the weapon's
+                        #   opaque sort, was Babylon's uniqueId); isCelMaterial
+                        #   is the vertex bake's question. Babylon-free
     EmissiveWorld.ts    # THE EMISSIVE PALETTE: the one material a map's merged
                         #   windows, lenses and embers wear, the colour a slot
-                        #   in uv2.x (getEmissive + EmissiveFog to the same
-                        #   pixel), and a glow-mask twin that fades the bloom
-                        #   per PIXEL. Two per factory, by over-glass offset.
-                        #   WGSL
+                        #   in uv2.x — since X3.7c a material KEY and no
+                        #   program (a MaterialKey since X6.1c: the merge keys
+                        #   on it, the factory hangs its recipe off it,
+                        #   GlowRules reads its white emissiveColor). Our renderer draws
+                        #   the palette in every pass; no Babylon draw of it
+                        #   is left, and
+                        #   no mesh is made of it (none of anything since
+                        #   X6.1g; one would have drawn nothing and bloomed
+                        #   white in GlowPass).
+                        #   Two per factory, by over-glass offset
     Dither.ts           # One LSB of triangular noise, in the three surface
                         #   shaders. Fixes 8-bit banding in the fog. Owns the
-                        #   ARGUMENT and the WGSL; wgsl/includes.ts registers
-                        #   it as celDither
+                        #   ARGUMENT and the WGSL; wgsl/chunks.ts files it as
+                        #   celDither
     wgsl/
-      includes.ts       # The shader text every surface shares, as Babylon WGSL
-                        #   includes: celBand, celShadow, celGi, celProbe,
-                        #   celProbeBox, celDither and our own celInstances
-                        #   pair. Registered
-                        #   at import, so a consumer imports it for the side
-                        #   effect
+      chunks.ts         # The WGSL BODIES every surface shares, Babylon-free:
+                        #   celBand, celCloud, celShadow, celGi, celProbe,
+                        #   celProbeBox, celDither, celSurface, celVertex, as
+                        #   WGSL_CHUNKS —
+                        #   the one table our renderer includes from. A body
+                        #   declares NOTHING; the program states its own
+      celSurface.ts     # The cel fragment's BODY as one function,
+                        #   celSurface(): every term the cel material lights a
+                        #   pixel with. Babylon-free; included by
+                        #   src/render/. MAX_POINT_LIGHTS and MAX_PALETTE
+      celVertex.ts      # The cel VERTEX stage's body, celVertex(): the world
+                        #   transform, the wind's ramp and rigged layers, the
+                        #   varyings. Babylon-free; included by
+                        #   src/render/; no y flip (the program's main owns it)
+      fade.ts           # THE FADES as plain strings (X4.6e): an unlit
+                        #   StandardMaterial's pixel read off its compiled
+                        #   effect — the slot's colour, the opacity map, the
+                        #   visibility last, EmissiveFog's fade — and the
+                        #   spark's mask twin. Babylon-free: render/fadeProgram.ts
+                        #   assembles it
+      water.ts          # THE WATER as plain strings (X4.6d): analytic wave trains
+                        #   DISPLACING the grid and lighting it from one function,
+                        #   Fresnel mirror, light cut hard on the waves, the hole a
+                        #   rotor tears in it, waveTrains. Babylon-free:
+                        #   render/waterProgram.ts assembles it
+      grass.ts          # THE GRASS as plain strings (X4.6c): blades BUILT in the
+                        #   vertex stage off the mask (the keep threshold over
+                        #   rank, the lean, the gusts carried downwind, bodies
+                        #   pushing through) and the turf, a density RAMP blended
+                        #   over the floor, its patches stitched edge to edge
+                        #   (`TURF_LODS`). One lighting function for both.
+                        #   Babylon-free: render/grassProgram.ts assembles it
+      flame.ts          # The FIRE as plain strings our renderer assembles
+                        #   (X4.4d): the noise and drawn clock, the vertex
+                        #   stage (tongue, ember, bounds marker) and the
+                        #   banded pixel, its bloom under GLOW_MASK (off the
+                        #   instance). Babylon-free: render/flameProgram.ts
+                        #   declares them (FlameShader's Babylon stages did
+                        #   too, until X5.3d; their arm went at X6.1c)
+      blast.ts          # The blast's BILLOW as plain strings (X4.4c): the
+                        #   noise, the lumped vertex stage and the pixel — fire,
+                        #   lit smoke, dissolve — and its bloom under GLOW_MASK,
+                        #   one vertex text for both. Babylon-free:
+                        #   render/blastProgram.ts declares them
+      sky.ts            # The dome and the moon as plain strings (X4.5c): what
+                        #   StandardMaterial compiled for them (the clamped sum
+                        #   of the emissive colour and the texture) and the mask
+                        #   material's bloom. Babylon-free: render/skyProgram.ts
+                        #   declares them
+      particles.ts      # Every particle field's WHOLE modules: Babylon's
+                        #   gpuUpdateParticles and gpuRenderParticles AS
+                        #   COMPILED for the ash's box feature set (X4.7c) and
+                        #   the rotor wash's ring set (X4.7d: cylinder emitter,
+                        #   colour, size and velocity gradients), read off the
+                        #   parent's device and copied, only the bindings and
+                        #   the attribute fetch (pulled out of storage)
+                        #   changed; PARTICLE_STRIDE, PARTICLE_RING_STRIDE.
+                        #   Babylon-free: render/particleProgram.ts builds them
+      cloud.ts          # The cloud masses as plain strings (X4.5b): the vertex
+                        #   stage pinned short of the far plane and the pixel in
+                        #   cel TONES — lit mostly off the lump's smooth normal so
+                        #   a terminator is one cut line, shade pulled toward the
+                        #   dome's gradient behind it, a highlight cut, a belly, a
+                        #   rim-only lining, the dome's haze — writing the depth
+                        #   of a point 7 km out along its own ray. Babylon-free:
+                        #   render/cloudProgram.ts declares them
+      emissiveWorld.ts  # The emissive palette's two BODIES (its vertex, its
+                        #   pixel and the glow mask's) and MAX_EMISSIVE_PALETTE,
+                        #   Babylon-free: render/emissiveWorld.ts declares
+                        #   them for the main pass, a probe's bake and the
+                        #   glow's mask — one vertex text (the mask's LEQUAL
+                        #   tie); Babylon's declarations went at X3.7c
       giTrace.ts        # The irradiance volume's three COMPUTE passes (trace,
                         #   compose, vis) and the params layout they share
                         #   with GiVolume. RayWorld's box and floor queries,
                         #   ported: the volume traces the COLLIDERS, never a
                         #   mesh
-    WaterShader.ts      # Water ShaderMaterial: analytic wave trains DISPLACING
-                        #   the grid and lighting it from one function, Fresnel
-                        #   mirror, light cut hard on the waves, and the hole a
-                        #   rotor tears in it. WGSL
-    GrassShader.ts      # Blades BUILT in the vertex stage off the mask: the
-                        #   keep threshold over rank, the lean, the gusts carried
-                        #   downwind, bodies pushing through; and the turf's
-                        #   material — a density RAMP blended over the floor,
-                        #   its patches stitched edge to edge (`TURF_LODS`).
-                        #   One lighting function for both. WGSL
+      glowBlur.ts       # The glow's blur and box filter AS COMPILED (X5.2b):
+                        #   the box filter's two modules copied off the parent's
+                        #   device, and the blur's GENERATED, its text being the
+                        #   kernel's — Babylon's _nearestBestKernel, Gaussian,
+                        #   linear pairs, toFixed(8) constants and the tap split
+                        #   on maxInterStageShaderVariables, then its processor's
+                        #   output character for character (all ten kernels the
+                        #   parent compiled reproduced). Babylon-free:
+                        #   render/GlowBlur.ts draws them
+      paperGrain.ts     # The GRADE's two modules AS COMPILED (X5.2c1): the
+                        #   postprocess vertex stage with the grade's whole
+                        #   LeftOver and the grade's fragment, the parent's
+                        #   device text character for character with CONFIG's
+                        #   constants where they were; the bindings, the
+                        #   lattice constants and the 496-byte block's layout.
+                        #   Babylon-free: PaperGrain.stage declares them
+      celInk.ts         # The INK's two modules AS COMPILED (X5.2d): the
+                        #   postprocess vertex stage with the ink's whole
+                        #   LeftOver and the ink's fragment with the glow's
+                        #   compose (glowAt) ahead of it, the parent's device
+                        #   text character for character; the bindings and
+                        #   the 112-byte block. Babylon-free: CelInk.stage
+      fxaa.ts           # FXAA's two modules AS COMPILED (X5.2c2): Babylon's
+                        #   own fxaa vertex stage (no scale multiply, the eight
+                        #   sample coordinates) and the fragment with CONFIG's
+                        #   three constants, the parent's device text character
+                        #   for character (no Mali arm: it never ran under
+                        #   WebGPU); the bindings and the 16-byte block.
+                        #   Babylon-free: Fxaa.stage declares them
+      motionBlur.ts     # The BLUR's two modules AS COMPILED (X5.2c2): the
+                        #   postprocess vertex stage with the blur's LeftOver
+                        #   and the smear's fragment, the parent's device text
+                        #   character for character (SAMPLES off CONFIG); the
+                        #   bindings and the 112-byte block (the mat3x3f as
+                        #   three vec4 columns). Babylon-free: MotionBlur.stage
+      volumetrics.ts    # The SHAFTS' modules AS COMPILED (X5.2c2): one
+                        #   vertex text for every rung and the march's fragment
+                        #   a rung (celCloud expanded; the rung, SAMPLES and
+                        #   EDGE_FADE off CONFIG), the parent's device text
+                        #   character for character; VolumetricRung, the
+                        #   bindings and the 320-byte block. Babylon-free:
+                        #   volumetricStages declares them
     FlameShader.ts      # THE FIRE: every open flame's one material. Tongues
                         #   that boil on twos in hard bands, embers on the
-                        #   smooth clock, and the glow-mask TWIN that runs the
-                        #   same vertex stage so the bloom ties its depth. WGSL
-    BlastShader.ts      # A BLAST's billow: lumpy (billow noise) sphere that is
-                        #   fire in the flame's inks while hot, eaten from its
-                        #   rim by LIT smoke as it cools, dissolved into wisps
-                        #   at the end. Opaque, so the ink draws between
-                        #   billows; thin-instanced; own glow-mask twin. WGSL
+                        #   smooth clock. A recipe key (a MaterialKey since
+                        #   X6.1c; no Babylon stage since X5.3d): its `values` are what
+                        #   our renderer draws every fire with
+                        #   (render/FlameDraw.ts, its bloom too), the bodies
+                        #   shaders/wgsl/flame.ts. The inks
+    BlastShader.ts      # A BLAST's billow, what it is drawn WITH: BlastPaint (a MaterialKey),
+                        #   the drawing, the flame's inks, the soot and the
+                        #   dust, and the clock (no material since X4.4c: our
+                        #   renderer draws every billow, render/BlastDraw.ts;
+                        #   the WGSL is shaders/wgsl/blast.ts). Opaque, so the
+                        #   ink draws between billows
     Volumetrics.ts      # Light shafts: raymarched through the shadow volume,
                         #   capped at the light's colour and SCREENED onto the
-                        #   frame so a thick map's glare stays gold. WGSL
-    CloudShader.ts      # The cloud masses in cel TONES: lit mostly off the
-                        #   lump's smooth normal so a terminator is one cut
-                        #   line, shade pulled toward the dome's gradient behind
-                        #   it, a highlight cut, a belly, a rim-only lining and
-                        #   the dome's haze. WGSL
+                        #   frame so a thick map's glare stays gold. The CPU
+                        #   half (rung, basis, maps as Babylon and our renderer
+                        #   hold them, air) and volumetricStages, one post chain
+                        #   stage a RUNG, all declared (X5.2c2; modules
+                        #   wgsl/volumetrics.ts)
+    CloudShader.ts      # What the cloud masses are drawn WITH, as plain data
+                        #   since X4.5b (CloudLook, CloudPaint): the map's look,
+                        #   and the world, eye, depth line and flash Sky writes
+                        #   into it every frame. The argument for the cel TONES;
+                        #   the WGSL is shaders/wgsl/cloud.ts
     MotionBlur.ts       # Camera-rotation smear, reprojected from the aim
                         #   angles. The viewmodel is held out of it by DEPTH —
                         #   masked shift AND weighted taps — because a gun
-                        #   parented to the camera never moves in screen space.
-                        #   WGSL
-    PaperGrain.ts       # Vignette / aberration / damage flash, and a PAPER
-                        #   grain pinned to the world through the frame's
-                        #   depth: octaves fixed in world space, weighted by
-                        #   distance. The player's setting is still stored as
-                        #   `filmGrain`, which is what it used to be. WGSL
+                        #   hung from the camera never moves in screen space.
+                        #   The CPU half (the previous basis, strength, cap)
+                        #   and `stage`, the post chain's stage our renderer
+                        #   draws it as since X5.2c2 (wgsl/motionBlur.ts)
+    PaperGrain.ts       # The GRADE's CPU half — vignette / aberration /
+                        #   damage flash, and a PAPER grain pinned to the world
+                        #   through the frame's depth: octaves fixed in world
+                        #   space, weighted by distance — and `stage`, the
+                        #   post chain's stage our renderer draws it as since
+                        #   X5.2c1 (render/PostChain.ts; its modules
+                        #   wgsl/paperGrain.ts). The player's setting is still
+                        #   stored as `filmGrain`, which is what it used to be
+  render/               # OUR renderer (BABYLON_EXIT.md Phase 3). Never imports
+                        #   Babylon — the build gate walks every file in it
+    FrameSubmit.ts      # THE FRAME'S ONE ENCODER AND ONE SUBMIT (X5.4g):
+                        #   made at construction and after every submit, as
+                        #   Babylon's flushFramebuffer made its next; every
+                        #   pass of the frame recorded into it (prepareEncoder),
+                        #   finished and handed over in one queue.submit; the
+                        #   frame's GPU timer under ?gpu; dispose the teardown
+                        #   path, a lost device's (X5.4i), the encoder after
+                        #   the last submit abandoned
+    FrameTimer.ts       # ?gpu's whole-frame timer (gpu.frame, X5.4g): two
+                        #   EMPTY compute passes of its own, the frame's
+                        #   encoder's first and last commands, stamping its
+                        #   start and end; one reading in flight, mapped after
+                        #   the submit that carries it; timing says the
+                        #   encoder being recorded is the one timed (what
+                        #   claims a profiler row). Needs no browser flag
+    frameHost.ts        # FrameHost (what the renderer needs from whoever owns
+                        #   the frame — the game's frame since X5.4f,
+                        #   core/SceneFrame.ts: the game's device (X5.4h, the
+                        #   seam, babylonSeam.ts, deleted with Babylon's
+                        #   engine), the draw phase's
+                        #   two ends (onDrawPhase, X5.4e), the camera's matrix,
+                        #   the frame's clear colour, the encoder every pass of
+                        #   the frame is recorded into and a call after every
+                        #   frame's submit — afterSubmit, X5.1b — both the
+                        #   game's loop's since X5.4g),
+                        #   DrawPhaseHooks, PassTargets
+    FrameTargets.ts     # THE FRAME'S OWN TARGETS (X5.4e): the frame and its
+                        #   depth, the glow's mask and its blur's five, each
+                        #   made as Babylon's render target was (one level,
+                        #   usage 23, viewed whole, zeros when made) from the
+                        #   targets its pipelines are built against, and
+                        #   remade where Babylon's was resized; the glow's
+                        #   sampler; the frame's pass label. Records nothing
+    ChainPasses.ts      # THE POST CHAIN'S PASS OWNER, ours (X5.4f; Babylon's
+                        #   shaders/PostPasses.ts with public API from X5.2c1):
+                        #   sizes the frame as the frame starts and names it
+                        #   for its reader; the POOL (one target a pass
+                        #   position, made as Babylon's RenderTargetTexture
+                        #   was, rgba8unorm, usage 23, remade with the render
+                        #   size) and its passes, cleared to the frame's
+                        #   colour; the CANVAS's pass (Babylon's main pass: the
+                        #   swap chain's texture, a depth32float of its own,
+                        #   both loaded), begun exactly once a frame — by the
+                        #   last stage, or empty at the frame's end
+                        #   (finishFrame) — all into the prepare encoder
+    Renderer.ts         # Renderer: the frame's uniforms, textures and their
+                        #   group 0, the pipeline cache, the TextureMaker
+                        #   (the textures the game paints, X5.4d), the frame's
+                        #   targets and its own PASSES (X5.4e: the opening
+                        #   clear and the main pass at the draw phase's end,
+                        #   the mask, the blur's, into the prepare encoder
+                        #   after the prepares, with Babylon's load ops and
+                        #   clear values), the FrameDraws it
+                        #   records at seven points of the MAIN pass — first,
+                        #   ahead of everything Babylon drew (X4.5a; the dome,
+                        #   X4.5c), and of group 0, needing nothing in it:
+                        #   before its alpha-tested meshes (the palette FIRST
+                        #   in that draw, X3.6e), after every opaque surface
+                        #   (afterSurfaces; the clouds, X4.5b), where its
+                        #   opaque and alpha-tested meshes end, right behind
+                        #   that (particles; every particle field, X4.7c and
+                        #   X4.7d), past where its particles were and ahead of
+                        #   its blended list
+                        #   (beforeBlended; the moon, X4.5c), and after it —
+                        #   and the
+                        #   FramePrepares run as it begins (a compute cull),
+                        #   the LATE ones after the rest (a probe's bake, which
+                        #   samples what the others draw), recorded into the
+                        #   host's prepareEncoder, never submitted, and timed
+                        #   under ?gpu (its PassTimer, gpu.cull); a frame whose
+                        #   targets are not made yet draws nothing, and tells
+                        #   onRefused listeners. And the GLOW MASK's draws
+                        #   (addGlowMask, X3.6d, and behind those
+                        #   addGlowMaskBlended, the moon's bloom, X4.5c, and
+                        #   addGlowMaskLate, the weapon's): FIRST and LAST in
+                        #   the mask's pass (recordGlowMask), off the main
+                        #   pass's frame (onGlowMaskRefused); a GLOW BLUR
+                        #   draw in a pass begun around it (glowBlurPass,
+                        #   X5.2b, X5.4e); a prepare is handed the FrameContext
+                        #   (group 0) as a draw is. (A POST CHAIN stage's draw
+                        #   was QUEUED into the host's pass, postStageOpened,
+                        #   from X5.2c1 until X5.4f: its passes are
+                        #   ChainPasses')
+    targets.ts          # FRAME_TARGETS, stated once: rgba8unorm, depth32float,
+                        #   1 sample, flipY (the frame FrameTargets makes, as
+                        #   CelInk's input was; not the canvas);
+                        #   GLOW_TARGETS, the glow mask's: the same values for
+                        #   its own reason (an rgba8unorm target, the frame's
+                        #   borrowed depth); GLOW_BLUR_TARGETS, a glow blur
+                        #   pass's: rgba16float, no depth, 1 sample, flipY
+                        #   (X5.2b); POST_TARGETS, a post chain pool pass's:
+                        #   rgba8unorm, no depth, flipY, and canvasTargets(
+                        #   format), the canvas's: the swap chain's format,
+                        #   its own depth32float (the ENGINE's until X5.4f),
+                        #   not flipped (X5.2c1);
+                        #   SHADOW_TARGETS, a world shadow
+                        #   map's: r16float, depth32float, 1 sample, flipY
+    frame.ts            # FRAME_BLOCK (group 0, binding 0 of every program:
+                        #   camera, environment, wind, lights, shadows, GI,
+                        #   palette LAST) and FrameUniforms, the plain struct
+                        #   CelMaterialFactory.fillFrame fills; FRAME_TEXTURES,
+                        #   the rest of group 0, and FrameTextures
+    celMaterial.ts      # A cel material as WE draw one: its own block and
+                        #   textures (group 1; a body's own kit palette under
+                        #   CEL_OWN_PALETTE), the draw's world (group 2), and
+                        #   CelRecipe — what the factory kept at its birth
+    UniformBlockBuffer.ts # One uniform block's GPU buffer and the copy plan
+                        #   from its values by the computed layout
+    FrameUniformBuffer.ts # The frame block's UniformBlockBuffer, laid out for
+                        #   the palette's variant; one buffer per pass
+    HostBindGroup.ts    # A bind group from a group's DECLARED entries: our
+                        #   buffers and our textures (OwnTexture; the host's
+                        #   too until X5.4f), re-read every frame and re-made
+                        #   only when a view moved
+    PipelineCache.ts    # Shader modules, explicit bind-group layouts and
+                        #   createRenderPipelineAsync pipelines, keyed on
+                        #   variant, vertex layout, targets and state; the
+                        #   front face by Babylon's rule; compute pipelines on
+                        #   "auto" layouts unless the asker states one (the
+                        #   rotor wash's, X4.7d), cached across maps; the compile
+                        #   counts the warm-up waits on (CompileProgress); and
+                        #   the SEAL a round is played under (a compile in
+                        #   play is a DEV warning naming it, but for an ask the
+                        #   asker says the seal allows: the glow blur on a DPR
+                        #   change, X5.2b); vertex buffers only for a stage
+                        #   ported off Babylon's quad (the glow's blur, the
+                        #   post chain); a texture_depth binding laid out as
+                        #   "depth" (X5.2c1)
+    celFragment.ts      # The cel fragment as WE declare it: frame (group 0)
+                        #   and material (group 1) uniforms and textures, the
+                        #   inputs (CEL_VARYINGS), over the shared celSurface
+                        #   body
+    celVertex.ts        # The cel vertex stage as WE declare it, PULLED: the
+                        #   attributes read out of storage arrays (group 2,
+                        #   CEL_GEOMETRY) at the vertex the index names,
+                        #   world identity or the instance's transform, over
+                        #   the shared celVertex body — one stage for blocks
+                        #   and scatter (X3.5b), and its PLACED twin, a whole
+                        #   matrix at the draw's instance (the glazing, X4.6e);
+                        #   a ZERO list entry draws
+                        #   nothing (the corner clipped before any read), in
+                        #   every stage sharing the decode. Every variant compiled by
+                        #   plans/webgpu-ref/shaders.mjs
+    celDepth.ts         # The world's DEPTH program (X3.6a): Babylon's
+                        #   shadowMap shader as this game's generators compile
+                        #   it — the light's clip z, no sway — pulled as the
+                        #   cel stage is (pulledWorld), and its scatter twin;
+                        #   its bodies are the bodies' map's too (bodyDepth)
+    WorldDepth.ts       # The static world as a shadow pass records it: a
+                        #   second VIEW of each of the map's culls (a slot a
+                        #   pass a submit, a pass mask), the depth pipelines
+                        #   by kind (a directional map's back or front faces,
+                        #   a lamp's face), a pass's culls (cull) and its
+                        #   draws into the caller's pass (draw) — a plain
+                        #   draw a group, and a plain draw its scatter to the
+                        #   shadow view's bound (InstanceCull.drawRange)
+    bodyDepth.ts        # The bodies' DEPTH program (X4.1c): the directional
+                        #   depth program's own bodies (celDepth) over the
+                        #   instances of the unit box, a matrix each as
+                        #   Babylon's thin instances laid it out
+    bodyProgram.ts      # The BODIES' programs (X4.1d): the cel stage over a
+                        #   kit's matte segments, the emissive palette's over
+                        #   the visor, the visor's mask twin — a draw one RANK
+                        #   of every body, an instance a body, a vertex pulled
+                        #   through the body's order and its kit's ranges, its
+                        #   world the body's segment matrix read whole; and
+                        #   the three again behind a SCREEN DOOR (X4.1e), a
+                        #   4x4 Bayer rank of the pixel against the body's
+                        #   fade, read in the fragment stage (BODY_FADE) — that
+                        #   faded cel pixel the one a fading hull is drawn with
+                        #   too (fadedCelFragment, X4.2d). The effect pools'
+                        #   draws run its plain three, labelled `pool` (X4.4b)
+    BodyDraw.ts         # Every BODY as OUR renderer draws it (X4.1d): the
+                        #   kits on the GPU once, each frame's bodies as
+                        #   instances — a rank's matte segments one draw, its
+                        #   visors another, the visors again into the glow's
+                        #   mask — off what Game.drawBodies commits and the
+                        #   order and bloom the prepare pulls; a FADING body
+                        #   (X4.1e) drawn after the whole ones by the faded
+                        #   twin of each program, at its fade; pipelines asked
+                        #   once a session, a failure (or a refused pass) the
+                        #   round's (Game.worldFailed); installed for a round
+    hullProgram.ts      # The HULLS' program (X4.2b): the cel stage over every
+                        #   segment of a kind's kit, the kit palette its own —
+                        #   X4.1d's body decode (a draw one RANK of every hull,
+                        #   an instance a hull) with no visor, and a CHARRED
+                        #   bit in the hull's kit word that reads the charred
+                        #   slot in place of every segment's own; and its faded
+                        #   TWIN (X4.2d), the vertex stage handing the pixel its
+                        #   instance and the bodies' faded cel pixel behind the
+                        #   screen door
+    HullDraw.ts         # Every HULL as OUR renderer draws it (X4.2b): the
+                        #   kits on the GPU once (a narrower kind padded to
+                        #   the widest), each frame's hulls as instances, a
+                        #   rank one draw (a size-gated or detail-dropped
+                        #   segment a zero matrix), off what Game.drawHulls commits and
+                        #   the order (and the segments the frustum culls) the
+                        #   prepare pulls (Game.hullPull); a FADING hull
+                        #   (X4.2d) drawn after the whole ones by the twin, at
+                        #   its fade, each group's draw a rank its own span and
+                        #   none where it has nothing, a frame with none fading
+                        #   the draws it was;
+                        #   installed AHEAD of the bodies, as Babylon's queue
+                        #   drew the hulls; its two pipelines asked once a session,
+                        #   a failure (or a refused pass) the round's
+                        #   (Game.worldFailed); installed for a round
+    BlastDraw.ts        # The blast's BILLOWS as OUR renderer draws them
+                        #   (X4.4c): the two icospheres on the GPU once, each
+                        #   frame's billows as instances, a batch one draw in
+                        #   the order Game.blastPull hands (Babylon's frustum
+                        #   test of its hand-set sphere, group 0's front to
+                        #   back) and again into the glow's mask after the
+                        #   pieces'; installed AHEAD of the pieces; its two
+                        #   pipelines asked once a session, a failure the
+                        #   round's; installed for a round
+    FlameDraw.ts        # The FIRES as OUR renderer draws them (X4.4d): the
+                        #   molotov's one flame and each map's world fires
+                        #   on the GPU (setWorld/clearWorld), a fire one draw
+                        #   of one instance in the order Game.flamePull hands
+                        #   (the cell offered, Babylon's sphere frustum test,
+                        #   group 0's front to back, scene order the
+                        #   tie-break) and again into the glow's mask after
+                        #   the billows'; installed FIRST of all ours at
+                        #   beforeAlphaTest; its two pipelines asked once a
+                        #   session, a failure the round's; installed for a
+                        #   round; in no bake
+    flameProgram.ts     # The fire's program (X4.4d): its block, its geometry
+                        #   (every fire surface's arrays, each draw's matrix
+                        #   and bloom), FlameRecipe, and the main pass's and
+                        #   the mask's modules — one vertex module for both
+                        #   (the LEQUAL tie); the frame's eye, wind, fog and
+                        #   opaque alpha, the rest the block's
+    blastProgram.ts     # The billow's program (X4.4c): its block, its
+                        #   geometry (icosphere arrays, each instance's
+                        #   matrix, billow, warmth and bloom), BlastRecipe, and
+                        #   the main pass's and the mask's modules — one vertex
+                        #   module for both (the LEQUAL tie); the frame's
+                        #   light, eye and fog, the rest the block's
+    ZoneDraw.ts         # The capture ZONES as OUR renderer draws them (X4.6b):
+                        #   the session's pipelines and a block a recipe worn; a
+                        #   round's arrays (static and cloth) and indices from
+                        #   finish to clear, the cloth's rewrite, one draw a
+                        #   surface; the gate, the frustum and the nearest-first
+                        #   order Game's, their place among the rest NearestRun's
+    GrassDraw.ts        # THE GRASS as OUR renderer draws it (X4.6c): a blade
+                        #   or turf mesh a run of one index
+                        #   buffer, instanced, a patch an instance; the mask and
+                        #   the block, the patches' buffers, the turf at "opaque"
+                        #   and the blades where NearestRun has them fall; what is
+                        #   in view is GrassSystem's
+    WaterDraw.ts        # THE WATER as OUR renderer draws it (X4.6d): a body
+                        #   its grid or its far quad, a range of
+                        #   one index buffer; the shared block, a group 0 of its own
+                        #   (the six shadow maps), each body's block, bed-depth
+                        #   texture and group 1, the two samplers; the foam ours
+                        #   (TextureMaker, X5.4d), a cube is read where it lies
+    waterProgram.ts     # Its program (X4.6d): WATER_SHARED, WATER_BODY, the three
+                        #   textures, the frame's block with the water's own names
+                        #   renamed out of it, the prefix of the frame's textures
+    NearestRun.ts       # THE ONE RUN (X4.6d): the zones, the blades and the water
+                        #   in Babylon's one nearest-first order, at one point,
+                        #   first of ours at "beforeAlphaTest" but the backed
+                        #   panes; three lists merged, a tie to the mesh made
+                        #   first; the keys Game.nearestPull's
+    GlassDraw.ts        # A ROUND'S GLAZING as OUR renderer draws it (X4.6e): a
+                        #   draw a pane group under its own world matrix, the
+                        #   backed ones nearest first ahead of everything of ours
+                        #   at "beforeAlphaTest", the see-through ones in the
+                        #   back-to-front run; a probe's recipe and its cube read
+                        #   where the bake left it; a break's collapse written
+                        #   into its buffer.
+    GiCompute.ts        # THE IRRADIANCE VOLUME'S GPU HALF as OUR renderer's
+                        #   (X5.1b), Babylon's ComputeShader/StorageBuffer/
+                        #   RawTexture3D ported exactly but for the readiness
+                        #   gate (the pipelines only; Babylon's also waited for
+                        #   the bound cloud field, ready at creation today):
+                        #   five pipelines asked at
+                        #   construction ("the irradiance volume" on
+                        #   Game.roundPipelines), six buffers, seven 3D textures
+                        #   (OwnTextures the frame binds) and their sampler, the
+                        #   bind groups, the history's clears, the dispatch
+                        #   GiVolume ARMS recorded by a LATE prepare pushed after
+                        #   ProbeBake's (registration order is the whole of the
+                        #   bake-before-dispatch order), an armed frame with no
+                        #   prepare dropped and thrown in DEV (logged once in
+                        #   production), every retired resource destroyed
+                        #   after the submit (FrameHost.afterSubmit). The cloud
+                        #   field the host's, with the host's sampler
+    GlowBlur.ts         # THE GLOW'S BLUR AND BOX FILTER as OUR draws (X5.2b),
+                        #   each in a pass of our own on the glow's targets
+                        #   (Renderer.glowBlurPass, FrameTargets, X5.4e):
+                        #   a pipeline a compiled kernel width (declared at
+                        #   construction, "the glow's blur" on
+                        #   Game.roundPipelines; a DPR change's new widths the
+                        #   one exception to the seal, the blur skipped — no
+                        #   bloom — ~3 frames while they compile, where Babylon
+                        #   drew it: a live difference the owner accepted),
+                        #   Babylon's quad as a vertex and an index buffer,
+                        #   Internals and a LeftOver block a pass, the source
+                        #   read through its own view and the glow's sampler. Babylon's pipeline state field for field
+    PostChain.ts        # THE POST CHAIN'S HOST (X5.2c1): an ordered list of
+                        #   DECLARED stages (PostStage: program as compiled,
+                        #   block and fill, extra bindings, the input's sampler,
+                        #   active(), point-wise or neighbourhood) — the
+                        #   WHOLE chain since X5.2d: the ink, FXAA, the shafts
+                        #   (a stage a rung), the blur and the grade — routed
+                        #   a pass per active stage in list order, the first
+                        #   reading the frame, the last given the canvas
+                        #   (canvasTargets) and any other a pool target
+                        #   (POST_TARGETS), begun by a PostPassOwner
+                        #   (render/ChainPasses.ts, X5.4f) and ended here;
+                        #   Babylon's quad, Internals,
+                        #   each stage's block, sampler, pipelines and groups;
+                        #   "the post chain" on Game.roundPipelines
+    ParticleDraw.ts     # EVERY PARTICLE FIELD as OUR renderer runs it (X4.7c
+                        #   the ash, X4.7d the rotor wash): one list in creation
+                        #   order, Babylon's GPUParticleSystem ported exactly —
+                        #   random textures at create, a ring's gradient
+                        #   textures baked at its first ready test, seeds at
+                        #   the first update, the ready gate, the clock (the
+                        #   scene's animation ratio), the update dispatched
+                        #   into the prepare encoder (no pass split), the draw
+                        #   reading the buffer the update READ, at "particles";
+                        #   enabled, scene.particlesEnabled's twin; the
+                        #   harness's preWarmStep
+    ParticleField.ts    # One field's CPU half (X4.7c, X4.7d): its feature set,
+                        #   its settings under Babylon's names and defaults (a
+                        #   box or a cylinder, a ring's gradients),
+                        #   start/stop/reset, animate and the emit-rate-
+                        #   controlled emission, line for line, and the
+                        #   gradients' bakes; no GPU, no random
+    particleProgram.ts  # Its programs (X4.7c, X4.7d): the two feature sets'
+                        #   groups (Babylon's LeftOver and Internals, the
+                        #   particle and sprite buffers, the texture, a ring's
+                        #   colour gradient), the blends, SimParams' offsets,
+                        #   the ring's explicit update layout and its two
+                        #   samplers, particlePipelines (the box's update and
+                        #   both blends, the ring's update and STANDARD draw)
+    FadeDraw.ts         # The FADING pools as OUR renderer draws them (X4.6e):
+                        #   every spark, dust disc, scorch and blob shadow, a
+                        #   draw an instance of its kit, and a spark's bloom in
+                        #   the glow's mask; each material's state, and the
+                        #   two opacity maps, ours since X5.4d (TextureMaker's)
+    fadeProgram.ts      # Its program (X4.6e): FADE_BLOCK (the colours and the
+                        #   fog band), the opacity map, the geometry and each
+                        #   drawn fade's world, look and bloom; four variants
+    FarthestRun.ts      # THE BACK-TO-FRONT RUN (X4.6e): the see-through panes
+                        #   and the fades in Babylon's one transparent order, at
+                        #   "beforeBlended" behind the moon, and the sparks'
+                        #   blooms in the mask; the order Game.farthestPull's
+    grassProgram.ts     # Its program (X4.6c): the field's block and mask (one
+                        #   group 1), the two geometries, the frame's block with
+                        #   the field's own names renamed out of it, the blades'
+                        #   and the turf's state, TURF_BLEND
+    SkyDraw.ts          # The sky's DOME and MOON as OUR renderer draws them
+                        #   (X4.5c): the session's three pipelines, each piece's
+                        #   arrays and block from setSky to clearSky, the dome at
+                        #   "first", the disc at "beforeBlended", its bloom behind
+                        #   every other draw of ours at the mask's open; every
+                        #   value and the textures Sky's, the bloom's admission
+                        #   Game's; a failure (or a refused pass) the round's
+    skyProgram.ts       # Their program (X4.5c): the block, the texture, the
+                        #   geometry and the index it pulls through, SkyRecipe,
+                        #   the blend, one vertex module and three fragments
+    CloudDraw.ts        # The sky's cloud RING as OUR renderer draws it (X4.5b):
+                        #   the session's pipeline and block, a ring's soup and
+                        #   index on the GPU from setRing to clearRing, the
+                        #   sort's partial rewrite (writeIndices), one draw at
+                        #   "afterSurfaces", every value Sky's; a failure (or a
+                        #   refused pass) the round's (Game.worldFailed)
+    cloudProgram.ts     # The ring's program (X4.5b): its block, its geometry
+                        #   (the soup and the index it pulls through), CloudRecipe,
+                        #   and both modules; the frame's camera, the rest the
+                        #   block's; a fragment that writes its own depth
+    PoolDraw.ts         # The effect POOLS' pieces as OUR renderer draws them
+                        #   (X4.4b), one draw-set of these for the tracers,
+                        #   brass and thrown and laid bodies, one for the
+                        #   bullet marks, and (X4.4c) one for the DEBRIS —
+                        #   every glass shard (its kit's vertices rewritten on
+                        #   every cut, `rewrite`) and rubble chunk: the kits on the GPU once (padded to
+                        #   the widest), each frame's pieces as instances by
+                        #   the bodies' plain programs — a rank's cel segments
+                        #   one draw, its unlit ones another, those again into
+                        #   the glow's mask after the visors — off what
+                        #   Game.drawPieces/drawMarks commit and the order and
+                        #   bloom the prepare pulls (the marks' instances
+                        #   themselves sorted, Game.markPull); the cel
+                        #   pipeline at the recipe's depth bias (the marks');
+                        #   installed AHEAD of the hulls, as Babylon's queue
+                        #   drew the pools; pipelines asked once a session, a
+                        #   failure the round's; installed for a round
+    viewProgram.ts      # The WEAPON's programs (X4.3c): the cel stage and the
+                        #   emissive palette's over a viewmodel segment — a
+                        #   draw ONE segment, an instance the draw, its matrix
+                        #   read whole — the emissive stage's twin in the
+                        #   glow's mask, one vertex module for both, and the
+                        #   two blended ones (X4.3d): the glass's pixel over
+                        #   that vertex module, and the kit card's stage over
+                        #   its texture
+    ViewDraw.ts         # The player's own WEAPON as OUR renderer draws it
+                        #   (X4.3c, X4.3d): every viewmodel segment on the GPU
+                        #   once, a draw a segment in the order Game.drawView
+                        #   hands over, at group 0's "afterGroup": the kit
+                        #   card first (ALPHA_REPLACE_COLOR's factors, depth
+                        #   always and written, its canvas uploaded once a
+                        #   paint), the opaque parts in Babylon's group-1 sort,
+                        #   the glasses last (ALPHA_COMBINE, no depth written,
+                        #   back to front); a block and group a cel recipe, the
+                        #   weapon's emissive table, the glass table, the lit
+                        #   ones into the glow's mask at the bloom the prepare
+                        #   pulls; installed for the SESSION (the kit screen
+                        #   covers the menu), a failure the round's while one
+                        #   stands
+    BodyShadowMap.ts    # The moon's BODY map as OUR texture (X4.1c): made
+                        #   cleared to lit, drawn whole from the proxies
+                        #   BodyShadows hands it each frame it updates
+                        #   (recorded ahead of the frame's passes), cleared on
+                        #   the same next frame by an update holding none (at
+                        #   once, into the host's encoder, in a state that
+                        #   prepares nothing); OwnTexture for our
+                        #   frame (Babylon's wrap went at X5.4h); its pipeline
+                        #   asked once a session, a failure told to the
+                        #   round's failure (Game.worldFailed)
+    lampDepth.ts        # The lamps' DEPTH program (X3.6b): LocalShadows'
+                        #   localShadowDepth (Babylon's, deleted at X5.3d)
+                        #   ported — a face's perspective offset
+                        #   into its tile, the radial distance, the off-face
+                        #   discard — as a static face over the world's
+                        #   arrays (and its scatter twin) and as the proxy
+                        #   box; MAX_TILES; faceInputs, a face as the
+                        #   view-projection its casters are culled with
+    LampAtlas.ts        # The lamps' atlas as OUR texture (X3.6b): made at
+                        #   the far value, and each frame LocalShadows hands
+                        #   it (AtlasWork) recorded ahead of the frame's passes
+                        #   — tiles cleared by a copy, a pass a static face
+                        #   off WorldDepth at a cull slot of its own, one
+                        #   instanced proxy pass; OwnTexture for our frame
+                        #   (Babylon's wrap went at X5.4h); casters it cannot draw
+                        #   (their build, or the proxies' pipeline, asked once
+                        #   a session) tell the failure handed with them (the
+                        #   handover fails the world)
+    emissiveWorld.ts    # The emissive palette as WE draw it into the main
+                        #   pass (X3.6e) and a probe's faces (X3.6c), one
+                        #   program, and the glow's mask (X3.6d, the
+                        #   GLOW_MASK fragment): its block (palette, fog band,
+                        #   glowColor LAST — one buffer serves both), its
+                        #   geometry (positions, slots), EmissiveRecipe and the
+                        #   program, the palette's one body — its only draw
+                        #   since X3.7c
+    cubeMips.ts         # A cube's MIP CHAIN as WE make it (X3.6c): each level
+                        #   of each face from the one above, Babylon's
+                        #   generateCubeMipmaps filter for filter; a pass and
+                        #   bind group per face per level, kept with the cube.
+                        #   A 2D texture's chain too, its one layer the one
+                        #   face (TextureMaker, X5.4d)
+    TextureMaker.ts     # THE TEXTURES THE GAME MAKES FOR ITSELF as OURS
+                        #   (X5.4d), each as Babylon made it, read off the
+                        #   device: a painted canvas (Picture — the grounds,
+                        #   the sky's dome and moon, the motes, the puff, the
+                        #   scorch, the blob), raw texels (the cloud field, the
+                        #   no-cloud texel, the lit texel) and the foam decoded;
+                        #   rgba8unorm/rg8unorm, usage 23, Babylon's flips, mip
+                        #   filter (CubeMips; a mipped texture has no view until
+                        #   its chain is recorded) and samplers (SAMPLING,
+                        #   anisotropic); a picture made once; a released
+                        #   texture destroyed after the frame's submit, and
+                        #   every texture it made (held weakly) at once by
+                        #   dispose, a lost device's teardown (X5.4i)
+    ProbeBake.ts        # The reflection bake as OURS (X3.6c): the cube pool
+                        #   (never destroyed, COPY_SRC; each a ProbeCube that
+                        #   ReflectionSystem indexes), each released probe's six
+                        #   faces — Babylon's looks and projection, the probe's
+                        #   eye PASSED in the bake's own frame, a slot each in a
+                        #   probe VIEW of the main pass's culls (PASS_PROBE,
+                        #   sphere reach, own blocks left out) — then its mips,
+                        #   recorded late in prepareEncoder, perFrame a frame;
+                        #   decides nothing; a world it cannot draw (its
+                        #   view, or the mips' pipeline, asked once a session)
+                        #   tells the failure handed with it (the handover
+                        #   fails the world). The only bake since X3.7c
+    WorldGlow.ts        # The emissive palette's share of the glow's MASK as
+                        #   OURS (X3.6d): drawn FIRST in the glow's mask pass
+                        #   (Renderer.addGlowMask), from the main view's culls
+                        #   (WorldBlocks.glowView), a pipeline a bias, no depth
+                        #   written, LEQUAL against OUR main pass's palette
+                        #   (X3.6e); this frame's verdict (drawing), made in a
+                        #   prepare off Game's rules (GlowWorldRules, pulled) —
+                        #   a frame not ours has no palette bloom, never
+                        #   Babylon's; the bloom colour written when it moves;
+                        #   decides nothing about what blooms, owns no mask;
+                        #   a world it cannot draw (no view, a failed mask
+                        #   pipeline, a refused mask pass) tells the failure
+                        #   handed with it (the handover fails the world)
+    WorldShadows.ts     # The world's four directional maps as OUR textures
+                        #   (far, near, foliage, flash): made cleared to lit,
+                        #   drawn when ShadowSystem asks, recorded ahead of
+                        #   the frame's passes; OwnTexture for our frame
+                        #   (Babylon's wrap went at X5.4h); casters whose build
+                        #   fails tell the failure handed with them (the
+                        #   handover fails the world); held on every rung
+    scatterList.ts      # The scatter's draw (X3.5b): a survivor's 16-byte
+                        #   ENTRY, an index = top bit + slot * stride +
+                        #   corner (listStride: a cluster's most indices),
+                        #   the 16-bit source and its read, as WGSL; a zero
+                        #   entry draws nothing
+    scatterCut.ts       # The scatter's half of WorldBlocks' cut: the
+                        #   instance cull's tables built group by group
+                        #   (ScatterTables — clusters, records, ranges, the
+                        #   16-bit source, each instance's sphere), the
+                        #   instances' transforms, and the budget a cut is
+                        #   held to (partRecords, listPast, sourcePast)
+    WorldBlocks.ts      # The map's block, landform and scatter drawn by US:
+                        #   one GROUP per recipe a layer (its scatter parts'
+                        #   arrays first, then its surfaces'; one material, one
+                        #   pipeline), the map cut once (finish), ONE plain
+                        #   drawIndexed a group and ONE plain draw of its
+                        #   scatter to the CPU's bound (none at 0), ahead of
+                        #   group 0's alpha-tested meshes —
+                        #   the palette (whenever there is one), blocks,
+                        #   scatter, landform — the scatter's pieces cut out
+                        #   of the blocks; what it will never draw (a failed
+                        #   pipeline, a part it cannot draw, past the list's
+                        #   budget) goes to onFailed as it lands, a group
+                        #   whole; stop() for good. The PALETTE layer
+                        #   (addEmissive, a group a material: the main pass
+                        #   by the bake's pipelines, mainPalette, asked once
+                        #   at the cut, whose failure fails no group but
+                        #   tells onPaletteFailed; the probes' bake; the
+                        #   glow's mask, which draws only the groups that
+                        #   glow — a noGlow surface's group apart),
+                        #   cut last, inside the main view's count (the HELD
+                        #   casters' layer went at X4.4d, reached by no
+                        #   build); each surface and part carries its passes
+                        #   (and its block), finish builds the map's
+                        #   WorldDepth when asked, probeView a probe bake's
+                        #   view of the culls and glowView the glow mask's
+                        #   (the main view itself), drawn by the same code
+                        #   (DrawView, groupsFor, drawPalette, drawableIn by
+                        #   pass bit)
+    clusters.ts         # cutClusters: a surface cut into short runs of
+                        #   one piece's triangles, each with its box and how
+                        #   the wind can move it (BABYLON_EXIT.md X3.3b) — an
+                        #   unpieced surface (the landform) as one NO_PIECE
+                        #   span; withoutPieces, a surface with pieces cut out
+    InstanceCull.ts     # The scatter's GPU cull, beside ClusterCull and on
+                        #   its terms (X3.4b): reach, size gate, frustum per
+                        #   instance sphere, then each kept instance's clusters
+                        #   against the frustum (X3.5b); the kept (instance,
+                        #   cluster) records scanned NEAR-FIRST into each
+                        #   group's run of one LIST of 16-byte entries,
+                        #   cleared ahead of each dispatch; each range's BOUND
+                        #   on its survivors computed on the CPU off the same
+                        #   uniform words (the instance test replayed, widened,
+                        #   over a set's runs), and its ONE plain draw to it
+                        #   (drawRange, empty) — never fewer than the GPU
+                        #   keeps; the last pass dispatched direct, its threads
+                        #   past the work list's length returning at once.
+                        #   Nothing drawn or dispatched indirect
+    ClusterCull.ts      # The GPU cull, a VIEW of a map's tables (the main
+                        #   pass's uploads them; a shadow map's and a probe
+                        #   bake's read them), recorded into the host's encoder
+                        #   ahead of the draws (inside gpu.frame; pipelines from
+                        #   PipelineCache) — pass mask, reach, size gate,
+                        #   frustum, and a probe view's two tests (the reach to
+                        #   a surface's sphere, its own blocks left out by the
+                        #   blockKey a cluster carries), as CullInputs — the
+                        #   size gate never drops a PASS_GLOW cluster;
+                        #   survivors scanned NEAR-FIRST (by surface) into the
+                        #   index buffer, cleared first so the rest of each
+                        #   group's range is triangles of no area (never
+                        #   indirect). ReachGate, BlockBox, CullMode and
+                        #   CullDiagnostics (?nocull, ?nofrustum, ?cullcheck);
+                        #   CullUniform, a slot a dispatch in one submit
+    PassTimer.ts        # ?gpu's timer of our compute passes (gpu.cull):
+                        #   timestamp writes on each cull's pass, summed, one
+                        #   reading in flight, mapped the frame after its
+                        #   submit; handed to the prepares as PassTiming
+    CullCheck.ts        # ?cullcheck: a cull's verdicts and the uniform block
+                        #   the GPU read, copied out about once a second and
+                        #   replayed on the CPU; the probe's read forms counted
+                        #   against it, its echoes and the record table
+                        #   compared, and a SEND line to read down a phone.
+                        #   For a device nobody here owns; reports through
+                        #   CullReport
+    wgsl/
+      preprocess.ts     # #include and the #ifdef family over a define set —
+                        #   the subset a shared body may use; anything else is
+                        #   REFUSED by name. stripComments, which runs first
+                        #   (includes.ts ran it over Babylon's, until X6.1c)
+      assemble.ts       # Declarations as DATA, and assembleFragment and
+                        #   assembleVertex: plain WGSL with explicit
+                        #   @group/@binding, uniforms.<name> routed to its
+                        #   block, strided arrays read via .el, and Babylon's y
+                        #   flip for the kind of pass; a PULLED vertex stage's
+                        #   attribute reads out of storage, its instance index
+                        #   where it is drawn instanced, and a FLAT varying.
+                        #   firstBindings, the one numbering rule a bind group
+                        #   is built by
+      layout.ts         # blockLayout: a uniform block's byte offsets and
+                        #   strides by WGSL's rules, from the same data; the
+                        #   guard rule assemble.ts shares
+      clusterCull.ts    # The cull's WGSL — cullClusters, prefix, scatter —
+                        #   and the record layouts ClusterCull uploads;
+                        #   CULL_DECLARATIONS, the uniform as words and the
+                        #   records as whole vec4s, both culls' and the probe's;
+                        #   writeCluster, the cluster record as both hosts
+                        #   write it; the pass bits and LIGHT_SOURCE (the
+                        #   palette's, never size-gated, in the main pass and
+                        #   the mask; it was PASS_GLOW's until X3.7b);
+                        #   blockKey and the ONE
+                        #   parse of a "bx,bz" key (blockCoordsOf,
+                        #   blockKeyOf) the probe view's exclusion reads
+      instanceCull.ts   # The instance cull's WGSL — cullInstances,
+                        #   cullRecords, prefix, expand — and the record
+                        #   layouts InstanceCull uploads; the plane slack the
+                        #   CPU's bound reads too, and expand's workgroup its
+                        #   direct dispatch is sized by
+      cullProbe.ts      # ?cullcheck's probes: each cull's test re-run with
+                        #   its inputs read each way they have been declared,
+                        #   one bit a form, over the cull's own buffers (the
+                        #   size gate skipping PASS_GLOW, as the cull does),
+                        #   and what the shader read echoed out
 ```

@@ -2,12 +2,20 @@
  * DebrisSystem.ts — The glass a broken pane throws: a pool of thin rigid
  * bodies under `PhysicsWorld`, cut from the pane they came out of along the
  * cracks a round would have put in it.
- * Owns: the shard pool, its bodies and meshes, the per-size collision shapes,
- * and the burst's own clock. The crack pattern itself is
- * [`glassFracture.ts`](glassFracture.ts).
+ * Owns: the shard pool — its bodies, each shard's vertex arrays and its
+ * drawing (`PosedPiece`) — the per-size collision shapes, the one index list
+ * every shard shares (`indices`), and the burst's own clock. The crack
+ * pattern itself is [`glassFracture.ts`](glassFracture.ts).
  * Invariants: it is the second `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a shard
  * is dressing, exactly as a corpse is, and rounds and bodies pass through it.
+ * A shard's place is its body's `pose`: a burst
+ * writes it, the step moves it, the sink lowers it — and our renderer draws
+ * it straight off that pose (`BABYLON_EXIT.md` X4.4c: `Game.drawDebris`,
+ * `poseView.writePosedDrawing`), as Babylon drew the mesh the view wrote it
+ * onto until then. No shard is a mesh: a shard's vertices are its
+ * own arrays, handed to our renderer on every cut (`onCut`), and its switch
+ * and its bounds are its `PosedPiece`'s.
  *
  * ## A shard is a fraction of its pane, not a fixed chip
  *
@@ -47,7 +55,7 @@
  * **The topology is fixed even though the outline is not**, which is what keeps
  * that affordable: every shard mesh is an eight-cornered prism built once, and
  * a piece with fewer corners repeats its last one so the spare triangles come
- * out degenerate — the same trick `GlassSystem.collapse` breaks a pane with. A
+ * out degenerate — the same trick `GlassFx.collapse` breaks a pane with. A
  * burst rewrites 48 vertices per shard into a buffer it already owns; it never
  * builds a mesh, an index buffer or a geometry.
  *
@@ -72,8 +80,9 @@
  *
  * **The POOL** is `glass.maxConcurrent` bursts of `glass.shards` bodies, built
  * once in the constructor and never rebuilt. At four and twelve that is 48
- * bodies, about five corpses — against eight corpses (80 bodies) measured at
- * 0.121 ms/frame, with the whole roster's AI at 0.39–0.42 ms in the same run.
+ * bodies, four corpses' worth at twelve bones each — against eight corpses
+ * measured at 0.121 ms/frame (on the six-bone body; 96 bodies today), with the
+ * whole roster's AI at 0.39–0.42 ms in the same run.
  * The two are one budget and want raising together or not at all.
  *
  * **The DISTANCE** is `glass.shardDistance` and is deliberately not the fog wall
@@ -98,31 +107,29 @@
  * carrying a second integrator and a terrain pointer for a fall nobody had
  * seen since the engine started shipping with the build.
  */
-import {
-  Mesh,
-  PhysicsBody,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
-  Quaternion,
-  Scene,
-  Vector3,
-  VertexBuffer,
-  VertexData,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
+import { computeNormalsInto } from "../geometry/buffer";
+import { Quaternion, Vector3, type Vector3Like } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { WorldPane } from "../world/MapBuilder";
-import { DEBRIS_GROUP, WORLD_GROUP, type PhysicsClient, type PhysicsWorld } from "./PhysicsWorld";
+import type { ShapeId } from "./havok";
+import {
+  DEBRIS_GROUP,
+  WORLD_GROUP,
+  type PhysicsClient,
+  type PhysicsWorld,
+  type WorldBody,
+} from "./PhysicsWorld";
 import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFracture";
+import { parkPose, parkedPose, PosedPiece, storePose } from "./poseView";
 
 /**
  * The glazing's own colour, and it is the kit's `GLASS` restated rather than
  * imported: `src/world/kit/core.ts` is the world layer's palette and a system
  * may not reach into it. If the two ever disagree the shards are the wrong
  * colour and nothing else breaks, which is the right failure for a duplicated
- * art constant — see `CombatSystem`, whose spark colours are literals for the
+ * art constant — see `CombatFx`, whose spark colours are literals for the
  * same reason.
  *
  * **A shard is drawn OPAQUE in it, unlike the pane it came out of.** That is
@@ -130,11 +137,12 @@ import { MAX_CORNERS, fracture, makePieces, type ShardPiece } from "./glassFract
  * colour and reads as glass because it is a sheet with a sky in it, and a piece
  * of it in mid-air has neither — transparent, it is very nearly invisible, and
  * forty-eight of them would be forty-eight sorted draws for the privilege.
- * `mats.get` is the matte variant. It is also what makes the moment of the
+ * `mats.get` is the matte variant — and since `BABYLON_EXIT.md` X4.4c a slot of
+ * the debris draw's palette (`Game`, `CelMaterialFactory.poolCelRecipe`). It is also what makes the moment of the
  * break read: shattering glass goes opaque as it crazes, so a plane of matte
  * panels appearing where a clear sheet stood is the right first frame.
  */
-const SHARD_COLOR = "#2a333b";
+export const SHARD_COLOR = "#2a333b";
 
 /** Where a body waits between bursts, well under any map. */
 const PARKED_Y = -1000;
@@ -195,15 +203,26 @@ const LEAN = 0.05;
 /** Vertices in one shard mesh: a corner front, back, and twice per side quad. */
 const SHARD_VERTS = MAX_CORNERS * 6;
 
-/** One piece of glass: its mesh, the body that moves it, and the outline both wear. */
+/** One piece of glass: its drawing, the body that moves it, and the outline both wear. */
 interface Shard {
-  mesh: Mesh;
-  body: PhysicsBody;
-  /** The mesh's own vertex buffers, rewritten per burst and never reallocated. */
-  pos: Float32Array;
-  nrm: Float32Array;
+  /** The shard as drawn, from `body.pose` — see the header. */
+  readonly piece: PosedPiece;
+  /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
+  body: WorldBody;
+  /** Its own vertex arrays, rewritten per burst and never reallocated. */
+  pos: Float32Array<ArrayBuffer>;
+  nrm: Float32Array<ArrayBuffer>;
   /** Which collision shape this body currently holds, by `shapeKey`. */
   key: number;
+  /** Its index in `DebrisSystem.pieces`: burst-major. */
+  readonly index: number;
+  /**
+   * The mass last set on this body. A new shape rebuilds the mass properties
+   * and lays THIS over them before `cut` sets the new piece's — the plugin
+   * remembered a body's user mass and re-applied it on every shape change, and
+   * the port makes the same two calls.
+   */
+  mass: number;
 }
 
 /** One pane's worth of shards, reused for the life of the process. */
@@ -218,23 +237,35 @@ interface Burst {
 export class DebrisSystem implements PhysicsClient {
   private bursts: Burst[] = [];
   /**
-   * Collision shapes by rounded size, shared by every body of that size and
-   * never disposed until this system is. A shape is a WASM allocation and the
-   * frame a window breaks on is the worst one available to spend it, so the
-   * first burst that wants a given size pays for it and no later one does.
+   * Every shard's drawing, burst-major — the order their meshes were made in
+   * until `BABYLON_EXIT.md` X4.4c, which is the tie-break of the order our
+   * renderer draws them in (`Game.debrisPull`) — and what `Game.drawDebris`
+   * hands it.
    */
-  private shapes = new Map<number, PhysicsShape>();
+  readonly pieces: readonly PosedPiece[];
+  /**
+   * Told every cut: a shard's index in `pieces` and the vertex arrays it was
+   * just cut into, for our renderer's copy (`Game`, `PoolDraw.rewrite`) — the
+   * write `updateVerticesData` made onto its mesh until X4.4c.
+   */
+  onCut: ((shard: number, positions: Float32Array<ArrayBuffer>, normals: Float32Array<ArrayBuffer>) => void) | null = null;
+  /** Every shard's triangles: the fixed topology, shared (see `shardIndices`). */
+  readonly shardIndices: readonly number[] = shardIndices();
+  /** Vertices in one shard: what each of its arrays holds three floats of. */
+  readonly shardVertices = SHARD_VERTS;
+  /**
+   * Collision shapes by rounded size, shared by every body of that size and
+   * never released: like the pool, they live as long as the page. A shape is
+   * a WASM allocation and the frame a window breaks on is the worst one
+   * available to spend it, so the first burst that wants a given size pays
+   * for it and no later one does.
+   */
+  private shapes = new Map<number, ShapeId>();
   /**
    * The pieces the current burst is cut into, refilled in place. One buffer,
    * because a burst is resolved before the next one can start.
    */
-  private readonly pieces = makePieces(CONFIG.glass.shards);
-  /**
-   * Every shard's index buffer, and there is only one: the topology is fixed
-   * (see the header) so this is built once and shared by all 48 meshes. It is
-   * declared before the constructor runs `buildPool`, which needs it.
-   */
-  private readonly indices = shardIndices();
+  private readonly cuts = makePieces(CONFIG.glass.shards);
   /**
    * The burst's own jitter stream, re-seeded by `reset` — so per round, and
    * per map with it.
@@ -252,14 +283,17 @@ export class DebrisSystem implements PhysicsClient {
   // straight to the body and never read back.
   private readonly vel = new Vector3();
   private readonly spin = new Vector3();
+  /** A piece's place and turn, built here and copied into its pose. */
+  private readonly place = new Vector3();
+  private readonly turn = new Quaternion();
 
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
     private physics: PhysicsWorld,
   ) {
     physics.register(this);
     this.buildPool();
+    this.pieces = this.bursts.flatMap((b) => b.shards.map((s) => s.piece));
   }
 
   /** How many bursts are live. Test hook. */
@@ -277,7 +311,7 @@ export class DebrisSystem implements PhysicsClient {
   afterFirstStep(): void {
     for (const burst of this.bursts) {
       if (burst.t < 0) continue;
-      for (const s of burst.shards) s.body.disablePreStep = true;
+      for (const s of burst.shards) s.body.teleport = false;
     }
   }
 
@@ -296,7 +330,7 @@ export class DebrisSystem implements PhysicsClient {
    * pane is still gone, because the break is the world changing and this is
    * only what it looked like.
    */
-  burst(geom: WorldPane, at: Vector3, dir: Vector3, camPos: Vector3): boolean {
+  burst(geom: WorldPane, at: Vector3, dir: Vector3, camPos: Vector3Like): boolean {
     if (this.bursts.length === 0) return false;
     const g = CONFIG.glass;
 
@@ -358,7 +392,7 @@ export class DebrisSystem implements PhysicsClient {
     // pool. `take` evicts, and evicting for a burst that is then not drawn is
     // the one way this could take glass off the street for nothing.
     const count = fracture(
-      this.pieces,
+      this.cuts,
       faceW,
       faceH,
       du,
@@ -373,6 +407,7 @@ export class DebrisSystem implements PhysicsClient {
     if (!slot) return false;
     slot.t = 0;
     slot.live = count;
+    const hp = this.physics.havok;
 
     // --- which way it leaves ------------------------------------------------
     //
@@ -390,7 +425,7 @@ export class DebrisSystem implements PhysicsClient {
     const yaw = Math.atan2(nx, nz);
 
     for (let k = 0; k < count; k++) {
-      const piece = this.pieces[k];
+      const piece = this.cuts[k];
       const shard = slot.shards[k];
       this.cut(shard, piece);
 
@@ -400,7 +435,7 @@ export class DebrisSystem implements PhysicsClient {
       // is still standing until the authority says otherwise. `LEAN` is the
       // last term of it: what the tilt below is allowed to add.
       const standoff = side * (thick / 2 + g.shardCollide / 2 + LEAN + 0.02);
-      shard.mesh.position.set(
+      this.place.set(
         geom.cx + piece.u * ux + standoff * nx,
         geom.cy + piece.v,
         geom.cz + piece.u * uz + standoff * nz,
@@ -415,9 +450,13 @@ export class DebrisSystem implements PhysicsClient {
         yaw + (rand() - 0.5) * swing,
         (rand() - 0.5) * swing,
         (rand() - 0.5) * ROLL,
-        shard.mesh.rotationQuaternion!,
+        this.turn,
       );
-      shard.mesh.setEnabled(true);
+      storePose(shard.body.pose, this.place, this.turn);
+      // Drawn where it was placed from now — a burst on a frame that takes
+      // no substep is a pane of pieces standing in the frame until the next
+      // one — because the drawing reads the pose itself.
+      shard.piece.enabled = true;
 
       // **What the round did, and what gravity is about to do.** A piece at the
       // hole is blown out of the frame and carried along the round's own path;
@@ -439,12 +478,12 @@ export class DebrisSystem implements PhysicsClient {
         (rand() - 0.5) * spin,
       );
 
-      shard.body.setMotionType(PhysicsMotionType.DYNAMIC);
+      this.physics.setMotion(shard.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones take: one step reads
-      // the node into the sim, and `afterFirstStep` hands ownership over.
-      shard.body.disablePreStep = false;
-      shard.body.setLinearVelocity(this.vel);
-      shard.body.setAngularVelocity(this.spin);
+      // the pose into the sim, and `afterFirstStep` hands ownership over.
+      shard.body.teleport = true;
+      hp.setLinearVelocity(shard.body.id, [this.vel.x, this.vel.y, this.vel.z]);
+      hp.setAngularVelocity(shard.body.id, [this.spin.x, this.spin.y, this.spin.z]);
     }
     return true;
   }
@@ -467,10 +506,16 @@ export class DebrisSystem implements PhysicsClient {
       // shared by everything of that colour, so a fade here would dim every
       // shard in the pool at once rather than the burst that is expiring. A
       // shard goes down through the floor instead.
+      //
+      // It lowers the POSE, which the next substep's sync writes back over
+      // while the body is still live — so a shard sinks only by this frame's
+      // drop and the few centimetres it comes to are all the sink there is.
+      // That is how it always behaved (the drop was written on the mesh, which
+      // the sync overwrote just the same); it is kept, not endorsed.
       const sinking = burst.t - g.shardLife;
       if (sinking > 0) {
         const drop = (sinking / g.shardSink) * 0.5;
-        for (let i = 0; i < burst.live; i++) burst.shards[i].mesh.position.y -= drop * dt * 8;
+        for (let i = 0; i < burst.live; i++) burst.shards[i].body.pose[1] -= drop * dt * 8;
       }
       if (burst.t > g.shardLife + g.shardSink) this.release(burst);
     }
@@ -497,9 +542,10 @@ export class DebrisSystem implements PhysicsClient {
    * collision box cut to the same extents.
    *
    * **The outline is in the VERTICES, and nothing here scales anything.** It
-   * was a unit box with `mesh.scaling` for a size, which Havok's transform sync
-   * makes safe — it writes position and orientation onto an unparented node and
-   * leaves scaling alone — but a scaling cannot express a polygon. So the piece
+   * was a unit box with `mesh.scaling` for a size, which the plugin's transform
+   * sync made safe — it wrote position and orientation onto an unparented node
+   * and left scaling alone, as the drawing (`poseView.writePosedDrawing`, a
+   * shard's scale 1) does now — but a scaling cannot express a polygon. So the piece
    * is written flat into the buffer this shard already owns, in its own local
    * frame, and the body is sized by its shape as before. The two are cut from
    * the same numbers here and nowhere else; a mismatch shows as a piece resting
@@ -550,41 +596,45 @@ export class DebrisSystem implements PhysicsClient {
     }
     // Computed rather than written out: a degenerate face contributes a zero
     // normal and no more, which is what makes the pad invisible here too.
-    VertexData.ComputeNormals(pos, this.indices, shard.nrm);
-    // `true` is the extents: the bounding box is what the frustum test reads,
-    // and a shard that kept the last piece's would be culled by the outline of
-    // a piece that is no longer there.
-    shard.mesh.updateVerticesData(VertexBuffer.PositionKind, pos, true);
-    shard.mesh.updateVerticesData(VertexBuffer.NormalKind, shard.nrm);
+    // `VertexData.ComputeNormals` into the shard's float32 array, summing in
+    // float32 as Babylon's did into the same array — `src/geometry/`'s copy
+    // since `BABYLON_EXIT.md` X6.1g, held to it by `geometry-check`.
+    computeNormalsInto(pos, this.shardIndices, shard.nrm);
+    // The bounds come off the new vertices, as `updateVerticesData(…, true)`
+    // rebuilt a mesh's: a shard that kept the last piece's would be measured
+    // by the outline of a piece that is no longer there.
+    shard.piece.setLocal(pos);
+    this.onCut?.(shard.index, pos, shard.nrm);
 
+    const hp = this.physics.havok;
     const key = shapeKey(piece.hw * 2, piece.hh * 2);
     if (key !== shard.key) {
       shard.key = key;
-      shard.body.shape = this.shapeFor(key);
+      // The shape is found (or built) first, then set — and setting it lays
+      // the PREVIOUS piece's mass over the rebuilt properties. See `mass`.
+      const shape = this.shapeFor(key);
+      hp.setShape(shard.body.id, shape, shard.mass);
     }
     // After the shape, which recomputes the mass properties from it.
-    shard.body.setMassProperties({ mass: massFor(piece.area) });
+    shard.mass = massFor(piece.area);
+    hp.setMass(shard.body.id, shard.mass);
   }
 
   /** The shared collision shape for a piece of this rounded size, built once. */
-  private shapeFor(key: number): PhysicsShape {
+  private shapeFor(key: number): ShapeId {
     const found = this.shapes.get(key);
     if (found) return found;
+    const hp = this.physics.havok;
     const d = CONFIG.bots.death;
-    const shape = new PhysicsShapeBox(
-      Vector3.Zero(),
-      Quaternion.Identity(),
-      new Vector3(
-        Math.floor(key / 1000) * SIZE_STEP,
-        (key % 1000) * SIZE_STEP,
-        CONFIG.glass.shardCollide,
-      ),
-      this.scene,
+    const shape = hp.box(
+      [0, 0, 0],
+      [0, 0, 0, 1],
+      [Math.floor(key / 1000) * SIZE_STEP, (key % 1000) * SIZE_STEP, CONFIG.glass.shardCollide],
     );
-    shape.material = { friction: d.friction, restitution: 0.12 };
-    shape.filterMembershipMask = DEBRIS_GROUP;
+    hp.setMaterial(shape, d.friction, 0.12);
+    hp.setFilterMembership(shape, DEBRIS_GROUP);
     // The world and nothing else — see `DEBRIS_GROUP`.
-    shape.filterCollideMask = WORLD_GROUP;
+    hp.setFilterCollide(shape, WORLD_GROUP);
     this.shapes.set(key, shape);
     return shape;
   }
@@ -593,25 +643,26 @@ export class DebrisSystem implements PhysicsClient {
   private release(burst: Burst): void {
     burst.t = -1;
     burst.live = 0;
+    const hp = this.physics.havok;
     for (const s of burst.shards) {
-      s.mesh.setEnabled(false);
-      s.body.setLinearVelocity(Vector3.ZeroReadOnly);
-      s.body.setAngularVelocity(Vector3.ZeroReadOnly);
-      s.body.setMotionType(PhysicsMotionType.STATIC);
-      // Parked THROUGH the plugin, not just by moving the node. A static body
+      s.piece.enabled = false;
+      hp.setLinearVelocity(s.body.id, [0, 0, 0]);
+      hp.setAngularVelocity(s.body.id, [0, 0, 0]);
+      this.physics.setMotion(s.body, "static");
+      // Parked THROUGH the engine, not just by moving the node. A static body
       // whose transform was only written on the mesh leaves its collision
       // proxy where it stopped — an invisible box lying in the street that
       // rounds and bodies stop on. `RagdollSystem.park` carries the measurement
-      // that found it.
-      s.mesh.position.set(0, PARKED_Y, 0);
-      s.body.disablePreStep = false;
-      this.physics.plugin.setPhysicsBodyTransformation(s.body, s.mesh);
-      s.body.disablePreStep = true;
+      // that found it. The orientation is whatever the shard last wore, as it
+      // always was: only the position is reset.
+      parkPose(s.body.pose, PARKED_Y);
+      this.physics.park(s.body);
     }
   }
 
   /**
-   * The whole pool — meshes and bodies together — built once at construction.
+   * The whole pool — vertex arrays and bodies together — built once at
+   * construction.
    *
    * It was two methods, and the split was the fallback's: the meshes were made
    * here and the bodies hung on them later, from a `physicsStarted` callback,
@@ -619,71 +670,59 @@ export class DebrisSystem implements PhysicsClient {
    * arc. The engine is up before this system is constructed now, so there is
    * one phase and a shard has a body from the moment it exists.
    *
-   * It is still not built on the frame a window breaks: 48 meshes, their GL
-   * buffers and their shapes are not a cost to pay on the frame somebody pulled
-   * a trigger — `DeathCam`'s stand-in rig is built at `startRound` for the same
-   * reason. What a burst DOES pay for on that frame is a `cut` per piece: a
-   * rewrite of vertices the mesh already has, and never a geometry, an index
-   * buffer or — once a size has been seen — a shape.
+   * It is still not built on the frame a window breaks: 48 shards' arrays, our
+   * renderer's copy of them and their shapes are not a cost to pay on the frame
+   * somebody pulled a trigger — `DeathCam`'s stand-in rig is built at
+   * `startRound` for the same reason. What a burst DOES pay for on that frame
+   * is a `cut` per piece: a rewrite of vertices the shard already has, and
+   * never a geometry, an index buffer or — once a size has been seen — a
+   * shape.
    *
-   * **A shard's body is on the MESH, with no proxy node**, which is the one way
-   * this is simpler than a corpse. A ragdoll needs proxies because Havok's sync
-   * force-creates a `rotationQuaternion` on any node with a parent and the rig
-   * is posed through Euler channels — but a shard is parented to nothing, is
-   * posed by nobody, and is handed back to nothing. The quaternion Havok writes
-   * is the only thing that ever orients it.
+   * **A shard is drawn straight off its body's pose, with no node at all**
+   * (`BABYLON_EXIT.md` X4.4c; until then onto its mesh, with no proxy). A
+   * ragdoll needed proxies while its joints were Babylon nodes posed through
+   * Euler channels; since X4.1b its joints are posed off the bodies' pose
+   * arrays themselves (`Joint.pose`, `WorldBody.pose`), and a shard's drawing
+   * is the same pose composed (`poseView.writePosedDrawing`), so the
+   * quaternion in the pose is the only thing that ever orients it.
    */
   private buildPool(): void {
     const g = CONFIG.glass;
     const d = CONFIG.bots.death;
-    const material = this.mats.get(SHARD_COLOR);
+    this.mats.get(SHARD_COLOR);
     // A middle size, so the pool starts consistent and no shape is built on a
     // frame that matters unless the cut asks for one this is not.
     const w0 = (g.shardMin + g.shardMax) / 2;
     const key0 = shapeKey(w0, w0);
     const shape = this.shapeFor(key0);
+    const hp = this.physics.havok;
     for (let i = 0; i < g.maxConcurrent; i++) {
       const shards: Shard[] = [];
       for (let j = 0; j < g.shards; j++) {
         // An eight-cornered prism of nothing: the vertices are the burst's to
         // write (see `cut`), and the indices over them never change. Its own
-        // buffers rather than one shared pair, because Babylon keeps the array
-        // it was handed as the mesh's CPU-side copy — one scratch buffer would
-        // leave every shard reading the last one cut.
+        // arrays rather than one shared pair, so each shard keeps the piece it
+        // was cut into (our renderer is handed them on every cut).
         const pos = new Float32Array(SHARD_VERTS * 3);
         const nrm = new Float32Array(SHARD_VERTS * 3);
-        const mesh = new Mesh(`shard${i}-${j}`, this.scene);
-        const data = new VertexData();
-        data.positions = pos;
-        data.normals = nrm;
-        data.indices = this.indices;
-        data.applyToMesh(mesh, true);
-        mesh.material = material;
-        mesh.position.y = PARKED_Y;
-        mesh.rotationQuaternion = Quaternion.Identity();
-        mesh.isPickable = false;
-        mesh.checkCollisions = false;
-        mesh.setEnabled(false);
-        // No outline and no glow. An ink shell around a piece of glass is most
-        // of the pixels it covers, and 48 outlined meshes is 96 draws for
-        // something on screen for a second and a half. `noGlow` is what makes
-        // the second half true and is NOT inert: this pool exists by the time
-        // `Game`'s construction-time exclusion scan runs, because `Game` builds
-        // this system before it builds the glow layer's exclusions.
-        mesh.metadata = { noGlow: true };
+        // No glow: a piece of glass is matte cel (`mats.get`), and the
+        // material is still asked of the factory here, where the mesh that
+        // wore it was made until X4.4c, so the factory's order is unmoved.
 
-        const body = new PhysicsBody(
-          mesh,
-          PhysicsMotionType.STATIC,
-          false,
-          this.scene,
-        );
-        body.shape = shape;
-        body.setMassProperties({ mass: massFor(w0 * w0) });
-        body.setLinearDamping(d.linearDamping);
-        body.setAngularDamping(d.angularDamping);
+        // Created parked, static, then shaped, weighed and damped: the
+        // plugin's calls in its order (`PhysicsWorld.addBody`).
+        const at = parkedPose(PARKED_Y);
+        const body = this.physics.addBody("static", at);
+        const piece = new PosedPiece(body);
+        // The bounds of nothing, until its first cut (`poseView`).
+        piece.setLocal(pos);
+        const mass = massFor(w0 * w0);
+        hp.setShape(body.id, shape);
+        hp.setMass(body.id, mass);
+        hp.setLinearDamping(body.id, d.linearDamping);
+        hp.setAngularDamping(body.id, d.angularDamping);
 
-        shards.push({ mesh, body, pos, nrm, key: key0 });
+        shards.push({ piece, body, pos, nrm, key: key0, mass, index: i * g.shards + j });
       }
       this.bursts.push({ shards, t: -1, live: 0 });
     }
@@ -693,19 +732,6 @@ export class DebrisSystem implements PhysicsClient {
   reset(): void {
     for (const burst of this.bursts) if (burst.t >= 0) this.release(burst);
     this.seed = 0x91a5;
-  }
-
-  dispose(): void {
-    this.reset();
-    for (const burst of this.bursts) {
-      for (const s of burst.shards) {
-        s.body.dispose();
-        s.mesh.dispose();
-      }
-    }
-    this.bursts = [];
-    for (const s of this.shapes.values()) s.dispose();
-    this.shapes.clear();
   }
 }
 

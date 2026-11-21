@@ -5,7 +5,6 @@
  * set: follows the contract in kit/core.ts and the set's rules in
  * `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -93,11 +92,10 @@ const MULLION_PITCH = 2.6;
  * a ledge.
  */
 export function buildOffice(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "office");
+  const b = new Build(mats, "office");
   const w = p.width ?? 22;
   const d = p.depth ?? 18;
   const floors = Math.max(2, p.floors ?? 3);

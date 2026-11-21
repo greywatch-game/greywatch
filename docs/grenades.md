@@ -5,7 +5,24 @@ the other — see [`antitank.md`](antitank.md)), and everything that follows fro
 that: the pool, the bounce, the blast, the dust, the throw gesture, the bots'
 range band, and the molotov that shares all of it but the ending. Split out of
 [`CLAUDE.md`](../CLAUDE.md), which keeps the summary; this file is the contract
-for `GrenadeSystem` and both throwers.
+for `GrenadeSystem`, its picture `GrenadeFx`, and both throwers.
+
+**The pool is a SIMULATION and its picture is another module** (`BABYLON_EXIT.md`
+X2.2 C3, the `CombatSystem`/`CombatFx` split one system over).
+`GrenadeSystem` imports nothing from Babylon: a flight's position is its own
+`pos` field and a fire's floor its `at`, both `src/math`, and every rule below
+lives there — the authority runs it whole and builds nothing else.
+`GrenadeFx` is everything a GPU is needed for — a `GrenadeBody` per slot, a
+fire's flames, the `BlastFx` — and it READS the simulation and never writes
+it (a `GrenadeBody` is two PIECES of the frag's and the bottle's kits, which
+OUR renderer draws since `BABYLON_EXIT.md` X4.4b — `docs/rendering.md`,
+"The pools, ours" — and neither is a mesh; the flames and the
+billows were Babylon's until X4.4d and X4.4c): the pools through `flights` and `fireSlots` (read-only by type) after each
+`update`, and the rest as calls `Game` makes from the events — `onBlast` (the
+billows), `onIgnited` (the flames and the ignition, ahead of the light and the
+noise, where they always were) and `onBurntOut`. A new flight in a slot is
+told by its `id` changing, and gets its own random tumble start there — a
+picture, so the simulation draws no random at all.
 
 Everyone carries two and there is no resupply, so the pouch is refilled by death
 and nothing else (`Player.fullReset`, `Bot.spawn`). Two a life makes each throw a
@@ -16,11 +33,14 @@ anti-tank rocket is the other, and it lives in `AntiTankSystem` because it
 shares nothing with a grenade but the fact of flying (no fuse, no bounce, no
 rest, no tumble). What it DOES share is the first two rules below, copied
 deliberately: they are the two things about flying through this world that were
-got wrong first. Everything about `src/systems/GrenadeSystem.ts` follows from
-being a thrown thing with a clock in it:
+got wrong first. Both fly, both cost one collision ray a frame, and both are
+arguments about giving a player time to react rather than oversights.
+Everything about `src/systems/GrenadeSystem.ts` follows from being a thrown
+thing with a clock in it:
 
 - **ONE ray per grenade per frame**, cast along the step and a radius past it so a
-  fast grenade cannot tunnel between frames, filtered on `metadata.solid === true`.
+  fast grenade cannot tunnel between frames, answered by `RayWorld.castRound` off the
+  collider boxes.
   Affordable only because there are at most a handful in the air. A reported normal
   facing *away* from the grenade is flipped before the bounce: a collider's back face
   is what a grenade thrown from inside a doorway finds, and bouncing off one drives
@@ -72,7 +92,7 @@ second thing says only how it differs. A tank shell is
 declares nothing else about its own explosion — no second fireball, no second
 dust cloud, no second set of numbers to keep in step. `CONFIG.grenade`'s "The
 blast, as a picture" is the table; six of the layers are drawn by `BlastFx`
-(owned by `GrenadeSystem`) and two by `BlastDebrisSystem`.
+(owned by `GrenadeFx`) and two by `BlastDebrisSystem`.
 
 **The SOUND makes the same bargain, and one recording is every explosion in the
 game.** `Sfx.explosion` plays `audio/grenade.webm` — a grenade going off, so
@@ -121,8 +141,9 @@ wrong first:
   and is told it is over level earth, which is the right answer for every
   consumer.
 - **`drawBlast` is public, because there are two ways a blast can happen and
-  only one of them is a rule.** Offline `blastAt` resolves the damage and then
-  draws. In a netplay round the damage is the authority's and arrives as an
+  only one of them is a rule.** It probes the ground and raises `onBlast`, the
+  one event the billows start on, so it stays the one place a blast is drawn.
+  Offline `blastAt` resolves the damage and then draws. In a netplay round the damage is the authority's and arrives as an
   `explode` event with nothing but a position on it, so `Game` calls `drawBlast`
   directly — which is also what put a fireball on somebody ELSE's grenade, an
   event that used to arrive as a light and a bang with nothing burning in the
@@ -131,17 +152,23 @@ wrong first:
 ### The blast is DRAWN: billows in one material
 
 **Every shape a detonation puts in the air is a BILLOW** — a unit icosphere,
-lumped in its vertex stage, in `BlastShader` — and a billow is fire while it is
-hot and smoke once it is not. It replaced five flat emissive spheres stepping a
+lumped in its vertex stage, painted as `BlastShader` states it — and a billow is
+fire while it is hot and smoke once it is not. **Our renderer draws every one**
+(`render/BlastDraw.ts`, its program `render/blastProgram.ts`, its WGSL
+`shaders/wgsl/blast.ts`) since `BABYLON_EXIT.md` X4.4c, and there is no
+blast mesh and no blast material: what Babylon drew through a `ShaderMaterial` and a
+mask twin until then, over the same arithmetic, statement for statement. It replaced five flat emissive spheres stepping a
 four-rung colour ladder, a glowing torus, and two pools of soft gradient
 sprites: a photograph's smoke in a frame of flat fills and ink, the mismatch
 the water was once reworked for. `systems/BlastFx.ts` owns the six layers and
-their motion; `GrenadeSystem` owns the rules and calls it, and **the authority
-never builds one** (`GrenadeOptions.dust`), because nothing in it is a rule.
+their motion; `GrenadeFx` owns it and calls it off `onBlast` and `onIgnited`,
+and **the authority never builds one**, because nothing in it is a rule. Its
+points and normals are `Vector3Like` and read through their fields.
 
 - **A billow is four numbers the shader reads** — heat, dissolve, a seed, and
   how much of it is dust rather than soot — plus the WARMTH of the fire under
-  it, as two thin-instance attributes. **The HEAT of a pixel** is the billow's,
+  it, two per-instance values beside its matrix (a thin instance's two
+  attributes until X4.4c). **The HEAT of a pixel** is the billow's,
   weighted up where the surface faces the eye and down at its outline, broken
   by a climbing noise field: at full heat a billow is fire to its rim with a
   white heart, and as it cools the smoke closes over it FROM THE OUTLINE
@@ -154,9 +181,10 @@ never builds one** (`GrenadeOptions.dust`), because nothing in it is a rule.
   caster.
 - **It is LIT, which is why it works where the flame's soot plume did not.**
   That plume was opaque and unlit, and read as floating leather; a billow of
-  smoke takes the map's own key, ambient, sky fill and mist, pushed by
-  `CelMaterialFactory` beside the cel materials' own, in two tones and a thin
-  third — so its top catches the moon, its underside is dark, and while the fire
+  smoke takes the map's own key, ambient, sky fill and mist — the FRAME's
+  (`render/frame.ts`), the very fields `CelMaterialFactory` pushed onto the
+  billow's material beside the cel materials' own until X4.4c — in two tones
+  and a thin third — so its top catches the moon, its underside is dark, and while the fire
   is still under it that underside glows (`warmth`). **The terminator is taken
   off a normal part way between the round billow and its lumps**: shaded off
   the lumps alone, every lump cast its own blotch and a cloud was mottled like
@@ -179,14 +207,21 @@ never builds one** (`GrenadeOptions.dust`), because nothing in it is a rule.
   exactly as the ground under it is, so a night map's dust is as dark as its
   street without being told. Smoke is soot on every map.
 
-**A slot is ONE MESH** — the icosphere thin-instanced once per billow, so a
-blast is one draw call (and one glow-mask draw) however many billows it holds,
-where the old slot was seven meshes and each ember one more. It has to be one
-mesh PER BLAST rather than one for all of them, because the glow fades a mesh's
-bloom with the distance to its bounding sphere's centre (`GlowRules.colour`);
-the bounds are therefore set by hand each frame from the billows drawn
-(`doNotSyncBoundingInfo`). The sparks and the trails share one more mesh across
-every blast. **A slot is claimed by AGE and never refused**, and **a new blast
+**A slot is ONE BATCH, and one draw** — its billows instances of the icosphere
+(`BillowBatch`), so a blast is one draw call (and one glow-mask draw) however
+many billows it holds, where the old slot was seven meshes and each ember one
+more. It has to be one batch PER BLAST rather than one for all of them, because
+the glow fades a batch's bloom with the distance to its bounding sphere's centre
+(`GlowRules.colour`); the bounds are therefore set by hand each frame from the
+billows drawn — the sphere `BoundingInfo.reConstruct` made of them for the
+batch's mesh until X4.4c — and that one sphere is everything our renderer asks
+of a batch (`Game.blastPull`): Babylon's frustum test under the mesh's culling
+strategy (the sphere alone), group 0's front-to-back order (nearest centre
+first, the batches' own order breaking a tie), and the bloom's fade. A billow
+is EMISSIVE, so the size gate never dropped one and does not now; the mask
+draws the batches in their own order, as the active list held their meshes.
+The sparks and the trails share one more batch across every blast, on a
+coarser icosphere (4 subdivisions to the slots' 8). **A slot is claimed by AGE and never refused**, and **a new blast
 is posed on the frame it is raised** — a reused slot left alone holds whatever
 its last blast ended on.
 
@@ -212,7 +247,7 @@ grenade. It is now a timeline (`CONFIG.viewmodel.throw`) owned as a clock by
 `Player`, counting up from the button:
 
 - The **off hand comes into frame holding the frag** — the throwing arm is
-  `ViewModel`'s, one rig shared by every weapon, parented to the camera (the weapon
+  `ViewModel`'s, one rig shared by every weapon, hung from the camera (the weapon
   is tipping out of the way at the time) and disabled whenever no throw is in flight.
   Seeing what is about to be thrown is the whole job of the wind-up.
 - The **support hand goes with it** — it is the same hand, so leaving it on the
@@ -264,21 +299,30 @@ dip of its own would be a second integrator writing the same offset — the RATT
 on top of it (`core/cameraShake.ts`, `CONFIG.camera.shake`) writes only angles,
 reaches further than the dip, and is the one half a hull's crew gets, through
 `Game.shakeFrom` picking whichever camera is running; and **a
-blast kills through `Game.registerBotKill`**, the one place a bot's death reaches
-the scoreboard, tickets and killfeed from all three causes (the hitmarker and rumble
-stay with the weapon, being about the shot that landed rather than the body).
+blast kills through the one ledger** (`settleKill`, in the simulation core —
+offline as on the authority since `BABYLON_EXIT.md` X2.5a C4a), the one place a
+bot's death reaches the scoreboard and tickets from every cause, and the page draws
+the corpse off the body's death arriving on the wire (`NetRoster.onDeath`) and the
+killfeed line off the authority's `kill` event (`Game.onNetEvent`) — offline as in a
+match since X2.5c C4, the page having drawn both off its own core's `botDown`
+before that (the hitmarker and rumble stay with the weapon's own `hit`, being about
+the shot that landed rather than the body).
 
 **What a grenade LOOKS like is `entities/GrenadeModel.ts` and not this system**,
-for the reason the bot rig is `SoldierModel`: two things build one now. This
-system builds the pool it simulates, and `net/NetGrenades` builds the ones a
-client only draws, from positions the multiplayer authority sent. Both the
-meshes and the pip's blink live there — the blink because it is the only warning
+for the reason the bot rig is `SoldierModel`: two things draw one, both
+through `GrenadeFx`'s `GrenadeBody` (the moves — show, place, tumble, the pip —
+as well as the pieces). `GrenadeFx` builds the pool the local simulation is
+drawn in, and `net/NetGrenades` builds the ones a client only draws, from
+positions the multiplayer authority sent — both off ONE kit, built once by
+`GrenadeFx` (`grenadeParts`, `GrenadeFx.kits`) and drawn by our renderer
+(`Game.drawPieces`, `BABYLON_EXIT.md` X4.4b). Both the
+parts and the pip's blink live there — the blink because it is the only warning
 a grenade gives and it must read the same whoever threw it, so both sides run
 `pipLit` over the same remaining fraction rather than each describing the
-pattern. Three things about the meshes are load-bearing and stay in that file:
+pattern. Three things about the parts are load-bearing and stay in that file:
 the pip must stand proud of the body's outline shell or the ink swallows it, the
 body is inked at all because a dark green sphere at night is invisible against
-the ground it is rolling across, and neither mesh is a collider — no `solid`, no
+the ground it is rolling across, and neither part is a collider — no `solid`, no
 `WorldBox`, not pickable. A grenade is dressing with a timer.
 
 **A grenade in the air is replicated as STATE in a networked round**, on the
@@ -389,16 +433,25 @@ burn-out take the new fire's light away.
 ### What it looks like, sounds like and lights
 
 - **The flames are the world's one fire material** (`FlameMaterial` over
-  `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, cloned off one
-  geometry and spread over the disc on the golden angle at construction — no
-  random in a constructor the server also runs. They grow out of the ground
+  `world/flame.ts`), `CONFIG.molotov.flames` of them per fire, instances of
+  one geometry spread over the disc on the golden angle at construction, keyed
+  on the fire SLOT, so a slot's fire is the same shape every time. **Each is a
+  NODE (`GrenadeFx.flames`, a `PieceNode`: the mesh it was until
+  `BABYLON_EXIT.md` X4.4d, channel for channel) and our renderer draws it**
+  (`render/FlameDraw.ts`, a draw a flame, beside the world's fires, front to
+  back as Babylon's queue drew them, `docs/rendering.md`'s "The fires") —
+  none is a mesh. They grow
+  out of the ground
   wider-first and sink back into it (`fireStrength`, one curve that the flames,
   the light and the sound all ride), because the material is hard-banded and
   has no alpha to fade. **Ten, not seven**: photographed from twenty metres,
   seven drew a cluster in the middle and not the rim — and the rim is what
-  tells a player where they may walk. **They are built only where something
-  draws** (`dust !== false`): the authority has no device to compile the WGSL
-  on, and the fire's SLOTS, which are rules, exist on both sides.
+  tells a player where they may walk. **They are `GrenadeFx`'s**, so they exist
+  only where something draws: the authority has no device to compile the WGSL
+  on, and the fire's SLOTS, which are rules, are the simulation's on both
+  sides. **Each flame is stood on its floor by its OWN probe** — `floorUnder`,
+  a pure function the simulation's broken bottle uses too, run with the
+  view's own ray buffer and scratch, at `onIgnited` and never again.
 - **The ignition is the one blast's own flash and fireball** at
   `molotov.ignition` of a frag, with its sparks and a column at
   `molotov.smoke` — and no surge and no burning fragments, because petrol going
@@ -465,8 +518,8 @@ figure to re-measure if the burn numbers move.
 
 A bottle in the air is a `GrenadeState` with `k: "molotov"` (absent is a frag,
 which is what every grenade on the wire was before), drawn by the same
-`NetGrenades` ghost with a bottle in place of the frag. **The fire is the
-AUTHORITY's**: `HeadlessGame` raises `onBlaze` from `onIgnited`, `Match` queues
+`NetGrenades` ghost (a `GrenadeBody`) with a bottle in place of the frag. **The fire is the
+AUTHORITY's**: `SimCore` raises `onBlaze` from `onIgnited`, `Match` queues
 a `blaze` event with a position and nothing else, and every client — the
 thrower included — draws it through `drawFire`, a fire with no rules. The
 thrower's own local bottle still flies (it is what they watched leave their

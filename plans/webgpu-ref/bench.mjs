@@ -3,8 +3,19 @@
  * browser and reports what the runs agree on (`BABYLON_EXIT.md` X0.3).
  *
  *   node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--headed]
- *        [--gpu] [--size 3440x1440] [--url http://host:port] [--out f.json]
- *        [--against f.json]
+ *        [--gpu] [--max] [--size 3440x1440] [--url http://host:port]
+ *        [--query simpage] [--out f.json] [--against f.json]
+ *
+ * **`--query` is appended to every run's URL** after the `?bench=<map>` —
+ * the page's own switches, such as `simpage` (the local match in the page's
+ * own thread rather than its Worker, whose fight must hash the same).
+ *
+ * **`--max` is every graphics setting at its top rung** (`MAX_SETTINGS`),
+ * written into the page's settings store before it boots, which is the
+ * desktop's half of `BABYLON_EXIT.md` X0.4's "before". Without it a run gets
+ * a fresh context's DEFAULTS, which are chosen per device and are not the
+ * top of any ladder. Either way the capture states what was in force
+ * (`graphics`), and that is what to quote.
  *
  * **The benchmark is the PAGE's, and this file only drives it from outside.**
  * Everything a run is — the vantages, the path, the seeded fight at a fixed
@@ -23,6 +34,22 @@
  * - The FIGHT's hash on every run, and a run whose hash differs from the
  *   first is a failure, not noise: it fought a different fight, and its
  *   `fight` segment measured a different workload.
+ * - The simulation core's own timing of its step in each group (`sim`,
+ *   report version 14) and, for the fight, its phases. Each run's line says
+ *   which thread the page's local match stepped on (`sim worker` or
+ *   `sim page`, `BABYLON_EXIT.md` X2.5b, X2.5c); `--query simpage` asks for
+ *   the page.
+ * - With `--gpu`, the GPU per group: `gpu.frame`'s mean over its sampled
+ *   rows and `gpu.cull`'s — our culls' compute passes, report version 18 —
+ *   medians over the runs, the cull's as a share of the frame, and each
+ *   one's samples. The two are sampled on different rows, so the share is a
+ *   ratio of means. Neither needs a browser flag from report version 38
+ *   (`BABYLON_EXIT.md` X5.4g: `frame` is our timer's, pass descriptors'
+ *   stamps; measured at X5.4g's review, a capture in a Chromium without the
+ *   flag reading `gpu.frame` on 4,443 rows — `VERIFYING.md`); before it
+ *   `frame` was Babylon's `writeTimestamp`, and read 0 in a browser without
+ *   `--enable-unsafe-webgpu`. Babylon's draw count, a
+ *   column of the medians, is "-" from v38, which retired it.
  * - `install`, from the URL to the first bench frame — `VERIFYING.md`'s free
  *   control: when the installs differ, the frame rates are not comparable.
  * - `--against f.json` (a previous `--out`): each group's median mean as a
@@ -36,7 +63,10 @@
  * size at which the runs AGREE: at the bank's 1920x1080 a frame here is ~2.5 ms,
  * the browser's pacing jitter is a tenth of it, and one vantage's hold moved
  * 23% between three runs while every segment at 3440x1440 stayed within 4%.
- * A run says its size in every capture (`device.backingStore`).
+ * A run says the size its frames were drawn at (`viewport`, report version
+ * 18): each run's line prints each group's backing store, and a group that
+ * was resized under it (`sizes` over 1) or drew a canvas that did not follow
+ * its window (`staleFrames`) is WARNED about — it measured another workload.
  *
  * **Uncapped by default**, the opposite of `gate.mjs`, because a benchmark
  * that the display's rate holds at a ceiling reports the ceiling: every run
@@ -45,7 +75,7 @@
  * GC figure out of an uncapped run.
  */
 import { readFileSync, writeFileSync } from "node:fs";
-import { MAP_IDS, launchClient, root, startDevServer } from "./harness.mjs";
+import { MAP_IDS, launchClient, root, startDevServer, watchDevice } from "./harness.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => args.includes(name);
@@ -56,12 +86,37 @@ const value = (name, fallback) => {
 const HEADED = flag("--headed");
 const CAPPED = flag("--capped");
 const GPU = flag("--gpu");
+const MAX = flag("--max");
+/**
+ * `--max`: the top rung of every ladder in `src/core/settings.ts`, keyed as
+ * that file stores them (`greywatch.setting.` plus the field, or its
+ * `STORED_AS` alias — `paperGrain` is `filmGrain`) and written as its codecs
+ * write them. A key or a value the build does not know is silently the
+ * default there, which is why every run checks `graphics` against this.
+ * `fpsCap` 0 is uncapped, which `--capped` still limits at the browser.
+ */
+const MAX_SETTINGS = {
+  renderScale: 1,
+  fpsCap: 0,
+  volumetrics: "high",
+  gi: "high",
+  shadows: "high",
+  grass: "high",
+  foliage: "high",
+  glow: "high",
+  groundRelief: true,
+  motionBlur: true,
+  paperGrain: true,
+  fxaa: true,
+};
+const STORED_AS = { paperGrain: "filmGrain" };
 const RUNS = Math.max(1, Number(value("--runs", "3")));
 const URL_ARG = value("--url", null);
 const OUT = value("--out", null);
 const [VW, VH] = value("--size", "3440x1440").split("x").map(Number);
 const AGAINST = value("--against", null);
-const valued = new Set(["--runs", "--url", "--out", "--against", "--size"]);
+const QUERY = value("--query", null);
+const valued = new Set(["--runs", "--url", "--out", "--against", "--size", "--query"]);
 const maps = args.filter((a, i) => !a.startsWith("--") && !valued.has(args[i - 1]));
 const targets = maps.length ? maps : MAP_IDS;
 /** A run that has not ended in this long is stuck, not slow. */
@@ -84,11 +139,13 @@ const browser = CAPPED
     });
 console.log(
   `bench: ${HEADED ? "headed" : "headless"}, ${CAPPED ? "capped" : "uncapped"}` +
-    `${GPU ? ", ?gpu" : ""}, ${VW}x${VH} @ ${url} — ${RUNS} run${RUNS > 1 ? "s" : ""} a map\n`,
+    `${GPU ? ", ?gpu" : ""}${MAX ? ", max settings" : ", default settings"}, ${VW}x${VH} @ ${url} — ${RUNS} run${RUNS > 1 ? "s" : ""} a map\n`,
 );
 
 const results = {};
 const failures = [];
+/** What a run measured that it should not have, short of a failure — the size. */
+const warnings = [];
 for (const id of targets) {
   const runs = [];
   for (let r = 0; r < RUNS; r++) {
@@ -101,15 +158,27 @@ for (const id of targets) {
           g[k] ? `${k} ${g[k].fps.toFixed(1)} fps p95 ${g[k].p95.toFixed(1)}` : `${k} -`,
         ).join("  ") +
         `  fight ${run.bench?.fight.hash ?? "?"}` +
+        `  sim ${run.simMode ?? "?"}` +
+        `  size ${GROUPS.map((k) => g[k]?.backingStore ?? "?").join("/")}` +
         (run.errors.length ? `  ! ${run.errors.length} errors` : ""),
     );
     for (const e of run.errors.slice(0, 3)) console.log(`   ! ${e.slice(0, 200)}`);
+    // The size every frame was drawn at (report version 18); an older
+    // capture has no `sizes` and says nothing.
+    for (const k of GROUPS) {
+      const s = g[k];
+      if (!s || s.sizes === undefined) continue;
+      if (s.sizes > 1) warnings.push(`${id} run ${r + 1} ${k}: resized under it (${s.sizes} sizes)`);
+      if (s.staleFrames > 0) {
+        warnings.push(`${id} run ${r + 1} ${k}: ${s.staleFrames} frames on a canvas that did not follow its window`);
+      }
+    }
   }
   results[id] = summarise(id, runs);
 }
 
 console.log("\nmedians over the runs (mean / p95 / 1% low in ms, spread of the mean)");
-console.log("map           group      frames    mean     p95  1%low   tick  draws  spread");
+console.log("map           group      frames    mean     p95  1%low   tick    sim  draws  spread");
 for (const id of targets) {
   const s = results[id];
   for (const k of GROUPS) {
@@ -119,8 +188,45 @@ for (const id of targets) {
       `${id.padEnd(13)} ${k.padEnd(9)} ${String(g.frames).padStart(7)} ` +
         `${g.mean.toFixed(2).padStart(7)} ${g.p95.toFixed(2).padStart(7)} ` +
         `${g.onePercentLow.toFixed(1).padStart(6)} ${g.tick.toFixed(2).padStart(6)} ` +
-        `${String(g.drawCalls).padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
+        `${(g.sim === null ? "-" : g.sim.toFixed(2)).padStart(6)} ` +
+        `${String(g.drawCalls ?? "-").padStart(6)}  ${(g.spread * 100).toFixed(1).padStart(5)}%` +
         (g.spread > SPREAD_FLAG ? "  OVER 8%" : ""),
+    );
+  }
+}
+
+// The GPU per group (`?gpu`): the whole frame and our culls inside it.
+if (GPU) {
+  console.log("\nthe GPU per group (median of the runs' means over their sampled rows, ms)");
+  console.log("map           group        frame  samples      cull  samples  cull/frame");
+  for (const id of targets) {
+    for (const k of GROUPS) {
+      const g = results[id].groups[k];
+      if (!g) continue;
+      console.log(
+        `${id.padEnd(13)} ${k.padEnd(9)} ${g.gpuFrame.toFixed(3).padStart(8)} ${String(Math.round(g.gpuSamples)).padStart(8)} ` +
+          `${g.gpuCull.toFixed(4).padStart(9)} ${String(Math.round(g.gpuCullSamples)).padStart(8)} ` +
+          `${(g.gpuFrame > 0 ? ((g.gpuCull / g.gpuFrame) * 100).toFixed(1) + "%" : "-").padStart(11)}`,
+      );
+    }
+  }
+}
+
+// The simulation core's own timing of its step (report version 14, the
+// `sim` span and its children), over the fight's stepped frames — medians
+// over the runs, in ms per frame. A capture older than v14 has none.
+const simRows = targets.filter((id) => results[id].groups.fight?.simPhases);
+if (simRows.length) {
+  const kids = Object.keys(results[simRows[0]].groups.fight.simPhases);
+  console.log("\nthe core's step in the fight (median ms per stepped frame)");
+  console.log(
+    `map              sim ${kids.map((k) => k.replace(/^sim/, "").padStart(10)).join("")}`,
+  );
+  for (const id of simRows) {
+    const f = results[id].groups.fight;
+    console.log(
+      `${id.padEnd(13)} ${f.sim.toFixed(3).padStart(6)} ` +
+        kids.map((k) => (f.simPhases[k] ?? 0).toFixed(3).padStart(10)).join(""),
     );
   }
 }
@@ -164,6 +270,11 @@ if (OUT) {
 await browser.close();
 vite?.stop();
 
+if (warnings.length) {
+  console.log(`\n${warnings.length} size warning(s) — those groups measured another workload:`);
+  for (const w of warnings) console.log(`  ${w}`);
+}
+
 if (failures.length) {
   console.log(`\n${failures.length} failure(s):`);
   for (const f of failures) console.log(`  ${f}`);
@@ -177,14 +288,24 @@ console.log("\nall runs completed, every map fought one fight");
  * stored settings or the hand-off key.
  */
 async function benchOnce(id) {
-  const page = await browser.newPage({ viewport: { width: VW, height: VH } });
+  // A lost device ends the whole run at once, rather than after `RUN_TIMEOUT_MS`.
+  const page = watchDevice(await browser.newPage({ viewport: { width: VW, height: VH } }));
   const errors = [];
   page.on("pageerror", (e) => errors.push(e.message));
   page.on("console", (m) => {
     if (m.type() === "error") errors.push(m.text());
   });
+  if (MAX) {
+    const stored = Object.entries(MAX_SETTINGS).map(([k, v]) => [
+      `greywatch.setting.${STORED_AS[k] ?? k}`,
+      typeof v === "boolean" ? (v ? "1" : "0") : String(v),
+    ]);
+    await page.addInitScript((rows) => {
+      for (const [k, v] of rows) window.localStorage.setItem(k, v);
+    }, stored);
+  }
   const t0 = Date.now();
-  await page.goto(`${url}/?bench=${id}${GPU ? "&gpu" : ""}`);
+  await page.goto(`${url}/?bench=${id}${GPU ? "&gpu" : ""}${QUERY ? `&${QUERY}` : ""}`);
   await page.waitForFunction(() => window.__celshock?.state === "bench", null, {
     timeout: RUN_TIMEOUT_MS,
   });
@@ -202,9 +323,11 @@ async function benchOnce(id) {
       reason: r.reason,
       version: r.version,
       seed: r.seed,
+      simMode: r.simMode ?? null,
       bench: r.bench,
       device: r.device,
       graphics: r.graphics,
+      viewport: r.viewport ?? null,
       window: r.window,
       frame: r.frame,
       gpu: r.gpu,
@@ -227,6 +350,12 @@ function summarise(id, runs) {
       failures.push(`${id} run ${i + 1}: ended as "${r.reason}"`);
     }
     if (r.errors.length) failures.push(`${id} run ${i + 1}: ${r.errors.length} page/console errors`);
+    if (MAX) {
+      const off = Object.entries(MAX_SETTINGS)
+        .filter(([k, v]) => r.graphics?.[k] !== v)
+        .map(([k, v]) => `${k} ${r.graphics?.[k]} (asked ${v})`);
+      if (off.length) failures.push(`${id} run ${i + 1}: not at max — ${off.join(", ")}`);
+    }
   });
   const groups = {};
   for (const k of GROUPS) {
@@ -242,8 +371,22 @@ function summarise(id, runs) {
       fps: med((g) => g.fps),
       tick: med((g) => g.tick),
       render: med((g) => g.render),
-      drawCalls: Math.round(med((g) => g.drawCalls)),
+      // Babylon's draw count (to report version 37); null from v38, which
+      // retired it with the rest of Babylon's counters (`BABYLON_EXIT.md` X5.4g).
+      drawCalls: per.every((g) => g.drawCalls !== undefined) ? Math.round(med((g) => g.drawCalls)) : null,
       gpuFrame: med((g) => g.gpuFrame),
+      gpuSamples: med((g) => g.gpuSamples),
+      // Our culls' GPU time (report version 18); 0 on an older capture.
+      gpuCull: med((g) => g.gpuCull ?? 0),
+      gpuCullSamples: med((g) => g.gpuCullSamples ?? 0),
+      // The core's step (report version 14): null on a group that stepped
+      // nothing, and on a capture from before the field.
+      sim: per.every((g) => g.sim) ? med((g) => g.sim.mean) : null,
+      simPhases: per.every((g) => g.sim)
+        ? Object.fromEntries(
+            Object.keys(per[0].sim.phases).map((k) => [k, med((g) => g.sim.phases[k] ?? 0)]),
+          )
+        : null,
       spread: (Math.max(...means) - Math.min(...means)) / median(means),
       runs: means,
     };

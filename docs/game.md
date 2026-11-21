@@ -8,19 +8,202 @@ end-of-frame order; this file is the contract for `src/core/Game.ts` and for
 anything proposing to make it smaller.
 
 The rule this file exists under is in the spine and is not repeated here:
-**systems never import each other; `Game` wires them with callbacks.** Everything
+**systems never import each other, and they meet in exactly two places** — the
+systems that DECIDE a round in `src/sim/SimCore.ts`, wired once there for every
+host, and the VIEWS in `Game`, wired to what the authority SAYS. Everything
 below is a consequence of that, including the reasons a refactor keeps wanting
-to undo it.
+to undo it. **No system that decides a round is wired here, and no core is
+held here either**: `BABYLON_EXIT.md` X2.5a C4a took the deciding systems out
+of `Game`, and X2.5c C4 took the core out of the page — every round is a
+`Match`'s, a server's or the page's own, and the page hears it as the wire.
+See "Offline, the round is the page's own match" below. The core's own wiring
+keeps the one injection the spine names — `BattleSystem` takes `CombatSystem`
+in its constructor and calls `combat.fire` for a bot's shot. A callback would
+not do — the shot has to resolve synchronously inside the bot's think tick so
+the result is available to the same frame's kill handling.
+
+## Offline, the round is the page's own match
+
+**Every round is a MATCH, and the page is a client of it whoever hosts it**
+(`BABYLON_EXIT.md` X2.5c C4). A round that is not a server's is played by a
+`Match` (`server/Match.ts`) the page HOSTS and OWNS — the same class, running
+the same `SimCore`, that a match server runs — and the page joins it through
+the same `NetSession` and `Connection` a remote match is joined through, over a
+port rather than a socket (`src/net/transport.ts`'s `portTransport`). So there
+is one client model: one prediction, one wire, one validation — every act the
+offline player makes is a CLAIM that `server/wire.ts`, the rate bucket,
+`validateMove` and `validateDrive` check exactly as they check a remote
+player's — and one event switch, **`Game.onNetEvent`**, which ends in the
+presentation methods for the player (`playerHit`, `playerDown`, `seatAnswer`,
+`playerSpawned`). There is nothing left to drift. `docs/multiplayer.md` ("A
+match its OWNER drives", "Holding the world", "The local transport") is the
+contract for the match's side and the ports; this section is the page's half.
+
+**Where the host runs is the boot's choice, and nothing below asks it.**
+`main.ts` awaits `openMatchHost` (`src/net/matchHost.ts`) beside the engine and
+Havok and injects the `MatchHost` as the constructor's fourth argument: a
+Worker (`server/localMatchWorker.ts`), proved up by answering a `settle`, or —
+under `?simpage`, or when the Worker does not come up — a `MessageChannel` in
+the page's own thread, reached through the one dynamic `import()` of
+`server/localMatch.ts` in `src/`. The boot's console line says which and why,
+and `prof.setSimMode` puts it in every capture. `Game` hands the host to
+`net/LocalOwner.ts`, which holds everything OWNING it means — the begun line,
+the clock's `step` and `pass`, the step timing waiting to be filed, a lost
+host replaced — and answers `Game` through four hooks (a timing to file, a
+round failed, the host lost, its replacement up). `Game` reads the
+`LocalMatch` off `localOwner.match` every time it asks rather than holding
+one, because the host can be REPLACED (below).
+
+**The OWNER's channel is what owning buys, and it is not a `ClientMessage`**
+(`src/net/LocalMatch.ts`, the words in `src/net/localWire.ts`). Per round,
+`openLocalRound` — called from `buildRound` BEFORE the build, so the host
+builds its world while the page builds the picture — closes the last match
+(`leaveMatch`), posts `open` on the chosen map and `begin` on the round's seed
+and the player's difficulty, and connects a fresh `NetSession` (`local` true)
+whose port is `dial`led on the owner channel BEHIND the `begin`. The owner's
+port answers in posting order, so the host is listening for this page's `join`
+only once the round stands, and the order the two ports do not promise each
+other is never needed. **A fresh match every round**, a restart included: a
+`begin` over a round in play is a ROTATION to everyone seated, which a client
+answers by rebuilding — the round `buildRound` is already building. A
+benchmark dials a WATCHER (`dial({ watch: true })`), a connection with no seat,
+so no person in a slot moves the fight it measures; `markFight` and `fight`
+fold its hash where the match runs, since no wire event carries a bot's award.
+
+**The match steps only when the page hands it time, and `updateWorld` is the
+one door.** In the states that step the world (`playing`, `dying`, a
+benchmark's FIGHT frames) `updateWorld` posts `advance` and then runs
+`updateNetWorld`, the frame a server's round is drawn with. The advance is
+posted and never awaited: the match answers between frames, and what it decided
+reaches this frame or the next as the wire, exactly as a server's does.
+**Only what fits under the slack is stepped**: a frame advances
+`min(dt, CONFIG.net.localSlack - LocalMatch.behind)`, `behind` being the
+SECONDS the unanswered advances still carry, so a device the host cannot keep
+up on plays the fight slower than real time rather than ever further behind its
+picture. The benchmark posts one advance per STEP and holds nothing back
+(`advance` is seconds, and one tick's worth is exactly one step).
+
+**Everything a frame did not step is handed over as HELD.** After the state's
+arm, `tick` calls `LocalOwner.pass`, which posts `hold` for the frame's real
+time less what `updateWorld` advanced — a pause, the deploy screen, the slack's
+remainder, what `MAX_FRAME_DT` cut off a long frame, a benchmark's LOOK — so the
+match's clock passes with nothing stepped and its snapshot stamps stay on the
+wall clock the client's offset is sampled against (`Match.hold`'s argument).
+Only once the session is seated: before the welcome there is no round on the
+host to hold. A frame that did not run `updateWorld` also drops the step timing
+waiting to be filed and counts off the answers still owed for advances posted
+before it (`LocalOwner.timingSkip`, through `LocalOwner.dropTiming`), so the
+profiler never charges a resumed frame with steps taken seconds earlier — and a
+benchmark segment's first frame does the same, so a segment never files the last
+one's steps; otherwise every answer's timing is SUMMED into one row
+(`LocalOwner.timing`) and filed as the `sim` root by the next frame that steps
+(`LocalOwner.step`, `docs/profiling.md`).
+
+**WHO HOSTS is asked as two getters, and only about AUTHORITY.**
+`remoteRound` (a session that is not `local`) and `localRound` (one that is) —
+never `!this.net`, which is true of no round any more. They answer who may
+restart a round and choose the map and the difficulty (the round-over card's
+Another round plate and the pause menu's Restart, both DRAWN and so absent in a
+server's match rather than dimmed, and the round-over card's confirm KEY, which
+is a guard — `updateMenuCard`'s `!this.remoteRound`; `docs/states.md`), whether a lid or the deploy screen holds the world (`worldHeld`,
+`updateRoundBehind`, `docs/states.md`), and the facts that follow from there
+being a server at all: the clouds' turn and the storm on the authority's
+clock, the ping column, whose seed a capture names, and the flow fields
+(`BuildOptions.navFields`, baked on the page only for a server's match, whose
+netplay smoke steers by them). **Never what the page
+PREDICTS** — a fork on who hosts that changes a prediction is offline getting
+a different game from online, which is what X2.5c exists to rule out.
+
+**What the page still simulates is a match client's PREDICTION, identical
+offline and online.** Its own `Player` — the sweep, the ground, the stance,
+regen for the HUD, the camera — reported as a `move` each frame it is alive in
+`playing`, and keeping its `SIMULATIONS` entry (`docs/build.md`) because it
+sweeps; its health is ASSIGNED from the authority's `damage`
+(`applyServerHealth`), and its death and its body are the authority's (`died`,
+`spawn`). The hull under a driver (`driveFor`, reported as `drive`, a refusal
+answered by `hullcorrect` and `Vehicle.correctTo`) and the ring a gunner lays
+(`gunFor`, reported as `gun`). And the prediction systems that answer its own
+acts before the authority does — `combat` (the tracer, and the hitmarker as a
+GUESS, `net/HitCredits.ts`), `grenades`, `antiTank` and `glass` — a refused
+throw given back by the addressed `refused` (`Player.returnGrenade`,
+`Player.returnOrdnance`). A person's round is rewound to the frame it was drawn
+at, as every peer's is, and the page draws the round `CONFIG.net.interpDelay`
+behind its snapshots in its own match as in a server's. **There is no
+`SimCore`, `BattleSystem`, `VehicleCrew` or `ScoreBook` on the page**:
+`conquest` is a copy written off the wire, the bodies are `net.roster`'s
+`NetSoldier`s (read through `mapBodies`), and the posed fleet is
+`syncNetVehicles`'. Nor the AI's map data: the page's build always returns
+`cover: null` (`MapBuilder.build`), skips the flow fields wherever nothing on
+the page steers by them (`BuildOptions.navFields`, set only for a server's
+match), and keeps the nav GRAPH for `standableAt` and the viewer.
+
+**The match's world is the map's committed BAKE, not the page's build**
+(found at X2.5c C4). The old in-page core was handed `collisionOf(map)` off the
+map the page had just built; a `Match` reads `MapDef.collision` through
+`loadSimWorld`, as a server's does — so a change to a generator plays against
+stale colliders on the authority's side until `npm run collision` re-bakes it
+(`npm run build` refuses a bake older than its layout). The same rule a server
+match always had, now met in the dev loop. **An owned
+match has no idle timer, so nothing closes it but the page**: `leaveMatch`
+does, from `enterMenu` and at the top of every `openLocalRound`, so the menu
+and a server's match hold no second world.
+
+**A host that dies is SAID, and REPLACED.** A port into a dead Worker says
+nothing, so `LocalMatch`'s watchdog calls the host lost on SILENCE
+(`docs/multiplayer.md`, "The local transport"). `LocalOwner.wire`, wired once
+per HOST because a host outlives every round on it, hears three things: a step's
+report (`onAdvanced`, gated on `LocalOwner.begun` so the last match's late
+answers are not this round's), a posted call that failed (`onFailed`) and the
+host gone (`onLost`). A failure under the round standing — or the local
+session's port closing, or its join refused — ends that round through
+`failLocalRound`, which leaves for the menu with a toast: there is no authority
+left to play it, the fight having lived in the host. A loss then REPLACES the
+host (`LocalOwner.rehost`, `MatchHost.replace`: the old one torn down, a wedged
+Worker terminated, a new one opened the boot's way and re-wired), up to
+`CONFIG.net.localRehosts` times a page. A round asked for while the replacement
+is coming up fails at once, and past the bound, or when a replacement fails to
+open, the toast asks for a reload (`LocalOwner.state`).
+
+**Until X2.5c the page hosted a CORE rather than a match**, and the shape is
+kept here as history because each piece of it is a thing a refactor might
+reach for again. X2.5a put a `SimCore` in the page behind a `SimHost` — three
+doors, `ask`, `step` and `drainSim` into a switch of its own, `Game.onSimEvent`
+— and X2.5b moved it into a Worker wherever the page was cross-origin isolated,
+commands and frames crossing as numbers in `SharedArrayBuffer`s
+(`commandCodec.ts`, `publication.ts`, an `Atomics` signal), the page's views
+reading the core's `SimFrame` through mirrors (`frame.ts`, `mirror.ts`,
+`BattleView`'s `BotRig`s), checked under `?simcheck` and rehearsed under
+`?simcopy`. It worked, and it was a SECOND client model beside the match's: two
+event switches that had begun to differ, two prediction models (23 methods in
+`Game.ts` forked on `this.net`), two state vocabularies, and event payloads read
+by raw offset. X2.5c C4 made offline a match client, C5 deleted the old host
+and everything only it read, and C6 took out the cross-origin isolation the
+shared memory had needed. `BABYLON_EXIT.md` X2.5c has the argument and the
+record.
 
 ## The constructor takes what it cannot build, and stays SYNCHRONOUS
 
-**There are two arguments beside the canvas and they are arguments for the same
-reason**: `havok` is the instantiated physics WASM and `engine` is a
-`WebGPUEngine` whose `initAsync` has already resolved. Both are awaited by
-`main.ts`, both are REQUIRED, and a failure of either is the boot screen's
-business — so nothing in this file is written twice for a machine that never got
-one, and there is no init state, no `ready` flag and no "has it arrived yet"
-question anywhere below.
+**There are six arguments beside the canvas, and the first four are arguments
+for the same reason**: `havok` is the instantiated physics WASM, `device` the
+`GPUDevice` and `surface` the canvas its context is configured on
+(`core/CanvasSurface.ts`) — the game's own since `BABYLON_EXIT.md` X5.4h, asked
+for and configured as Babylon's `WebGPUEngine` did, whose `initAsync` resolving
+was this argument until then — and `local` is the page's own match host
+(`MatchHost`, X2.5c C4), whose Worker has already answered its first call or
+been given up on for the page's own thread. The other two are the BOOT's,
+handed in because they began before the constructor or belong to its screen:
+`clock`, the frame's `FrameClock`, made by the boot before the canvas's first
+size and sampled at every size since (X5.4h), and `deviceFailed`, which puts
+the boot's "No graphics device" plate back up for a second lost device
+(X5.4i, "A lost device" below). The four are awaited by `main.ts` and a
+failure of any is the boot screen's business — the host
+cannot fail by its Worker, which falls back to the page, only by the in-page
+module's fetch failing too — so nothing in this file is written twice for a
+machine that never got one, and there is no init state, no `ready` flag and no
+"has it arrived yet" question anywhere below. The host is the one of the four
+that can be REPLACED after the boot (`LocalOwner.rehost`, above), which is why
+`LocalOwner` keeps the host and everything reads the match off it rather than
+holding the match.
 
 **The engine used to be built here**, back when it was a `WebGLEngine` with a
 synchronous constructor. WebGPU's is not — an adapter and a device are both
@@ -46,12 +229,12 @@ where it is explained.
 ## What may leave `Game.ts`, and what may not
 
 **`Game.ts` is long on purpose, and what may leave it is mechanical so nobody
-has to re-argue the line count.** It is the only place systems meet, so most of
-its length *is* its job — and splitting the wiring re-creates exactly the
+has to re-argue the line count.** It is the only place the VIEWS meet the wire
+and each other, so most of its length *is* its job — and splitting the wiring re-creates exactly the
 system→system edges the rule above spends itself preventing. What may leave is a
 cluster of **private fields that answers only to itself**: nothing else in the
 file reads them, and the methods over them touch no system, no mesh and no
-frame. There are two worked examples. `net/HitCredits.ts` is the smaller and
+frame. There are three worked examples. `net/HitCredits.ts` is the smaller and
 the plainer: the queue of rounds this client has already cued a hitmarker for
 was one field and three methods that no line outside them touched, so the rule
 that a landed round is announced ONCE is now stated in one file that flashes
@@ -59,7 +242,14 @@ nothing, plays nothing and never reads the wire — `Game` spends the answer and
 draws the cue, which is the two halves below staying behind exactly as they
 should. `net/RegionBook.ts` is the larger — the region list, its one
 read, the player's pick, the automatic pick and the pings ranking it were six
-fields no line outside the five lobby methods over them ever touched. What may
+fields no line outside the five lobby methods over them ever touched.
+`net/LocalOwner.ts` is the third, and the one with HOOKS: the page's ownership
+of its own match was eight fields whose methods touched only the owner's
+channel, so the hold accounting and the timing skip are one file now — and
+the two halves stayed behind as four hooks, `fileTiming` (the profiler, which
+`Game` files into) and `roundFailed`/`hostLost`/`replaced` (the toast and the
+menu, which `Game` draws). Four is the ceiling of that shape: a cluster that
+needs more callbacks than that is reaching across systems. What may
 **not** leave is anything whose methods reach across systems, however big it
 gets: the netplay client is the biggest cluster in the file and touches ~35 of
 its members across a dozen systems, so extracting it would hand a constructor
@@ -85,24 +275,54 @@ place.
 
 ## `installMap` is the one place a map is built
 
-**`installMap` is the one place a map is built**, and both callers — a round
-starting and an editor rebuild — go through it. It disposes the standing map,
+**`installMap` is the one place a map is built**, and its one caller is a
+round starting (`buildRound`); the map editor's rebuild was the other until
+`BABYLON_EXIT.md` X5.3c deleted it. It disposes the standing map,
 builds `this.mapDef`, and hands the result to every system that reads geometry or
 environment off it: shadows (casters, key light, fog range), atmosphere, water,
-grass, the player's terrain, the grenade pool, the physics body. It was once two
+grass, the player's terrain, the grenade pool, the physics body — and every
+simulation's PICTURE beside it (below). It was once two
 copies that had drifted apart, and the failure is silent: a system added to the
-round's copy and forgotten in the editor's keeps a cached pointer into a *disposed*
-map, so the editor renders last build's water over this build's terrain and
-nothing throws. **Anything new that consumes a `GameMap` or an `EnvironmentSpec`
-goes in `installMap`.** What stays with the callers is what they genuinely
-disagree about: the round applies the environment and repaints the sky while the
-editor drives `applyEnvironment` itself so it can toggle its work light, and the
-round alone owns what is about a *fight* — battle, conquest, flag markers, minimap.
+round's copy and forgotten in the editor's kept a cached pointer into a *disposed*
+map, so the editor rendered last build's water over this build's terrain and
+nothing threw. **Anything new that consumes a `GameMap` or an `EnvironmentSpec`
+goes in `installMap`.** What stays with the caller is the environment (the round
+applies it and repaints the sky; the viewer's work light swaps it over a round
+and puts it back) and what is about a *fight* — the match it plays (opened before
+the build, `openLocalRound`), the roster's pool, flag markers, minimap.
+
+**A simulation and its view are handed the map on adjacent lines, and a view
+is handed only what its own picture reads.** The split is `CLAUDE.md`'s
+("Ownership and wiring"): the simulation owns the state on `src/math`, the view
+reads it and never writes it, and the core builds the simulations alone — in
+the match, never on the page — so every view's line here has no twin in
+`SimCore`. **No node decides an outcome**: the player's throw hand, launcher
+muzzle and mine point are read HERE and sent as the message's `origin`
+(`FINDINGS.md` 55), so the authority reads none.
+`CombatFx` takes
+`map.rays` (its `drawRounds` casts for itself); `GrenadeFx` takes `map.rays`,
+the terrain and the environment (a fire's flames stand on their own floor
+probe, and the map decides what colour a blast's dust is); `GlassFx` takes the map,
+whose merged glazing it collapses; the session's roster (`NetRoster`) takes the
+body draw distance with `RagdollSystem` — pushed by `wireNet` too, since a
+roster built for a join into a match in progress arrives after the map; and
+`VehicleViews` builds one view per hull right after `vehicles.build`, by
+hardstanding. **Two views take nothing from a map**: `AntiTankFx` draws its
+simulation's pools and nothing else, and `PlayerView` is the viewmodel on the
+camera. The bodies' rigs are the ROSTER's, not the map's — `NetSoldier`s in
+the session's pool, whoever hosts the match: `buildRound` sizes the pool
+(`NetSession.setFielded`) right after `ragdolls.reset()`, the other thing that
+holds a rig. Until X2.5c C4 the page's own round drew the core's bots through
+`BattleView`'s `BotRig`s instead; C5 deleted both.
 
 **Its disposal half is a method of its own, `teardownMap`, and the MENU calls it
 alone.** It puts every system `installMap` hands a map to back as it was at
-boot: the map disposed and `Game.map` null, the fleet, crews and rotor rings let
-go, the water and grass disposed, the reflection probes parked, the mote field
+boot: the map disposed and `Game.map` null, the shots' tracers and marks
+(`CombatFx.clearTransient`), both ordnance pools AND their pictures
+(`GrenadeFx`, `AntiTankFx`), the fleet's views (`VehicleViews`, before the
+fleet they draw), the fleet and rotor rings let go, every fire's light the
+page holds (a fire the authority lit is put out by nothing this page will hear
+again), the water and grass disposed, the reflection bake's queue emptied, the mote field
 stopped, both shadow maps' casters and the lamps' atlas emptied, the bodies' blob shadows hidden, the traced
 bounce's buffers dropped, the candidate list and the physics world cleared (with
 their corpses, shards and rubble), and the fires' voices and the storm's thunder
@@ -113,12 +333,58 @@ its fires and its shore still audible. **So the rule has a second half: anything
 new that `installMap` hands a map to owes a line in `teardownMap` that takes it
 back**, or it outlives the round under the title card. It is idempotent and safe
 with nothing standing, which the boot and a build that failed its floor fetch
-both rely on.
+both rely on. **The SIMULATION's world is not in that list, because it is not
+the page's**: it is the match's, and `leaveMatch` closes the match — from
+`enterMenu`, beside this — so the authority's map, fleet, crews and everything
+in the air go with the host's `close` rather than with a line here. Until X2.5c
+C5 it was a line here (`SimCore.releaseWorld`, its `burntOut`s drained and
+dropped so the next round's first drain did not draw fires on a map that never
+had them).
+
+**The world's drawing is our renderer's, and a failure of it is the ROUND's**
+(`BABYLON_EXIT.md` X3.7b). `installMap` builds the map with
+`BlockHandover.onSurface`, which answers for each surface whether ours draws
+it in every pass, refusing what it cannot — and no build makes a mesh of
+anything (`BABYLON_EXIT.md` X6.1g; a round's was the glazing alone until
+X4.6e, the FIRES being taken for our fire draw since X4.4d,
+`render/FlameDraw.ts`, handed it at the install and drawn while their block's
+cell is offered), while `map.world` keeps a record of every surface — then files it
+(`WorldCulling.setMap`, the cells grown off the records) and hands it over
+(`handover.install`, the cut, and every pass of ours its world). **What ours cannot draw is
+never handed back, there being no mesh to hand it to: it is
+`Game.worldFailed(reason)`**, run after the task in hand (a failure can land
+inside a render, or inside `installMap` itself) — a `console.error`,
+`enterMenu` (which leaves the match, a server's as well as the page's own,
+through `leaveMatch`) and a toast that the map could not be drawn:
+`loadHeights`' move, for its reason, there being no honest half-world to play
+in and no fallback engine. Its doors are the handover's — a surface it cannot
+hold, failed at the install (and thrown after it in a DEV build, so
+`merge:hash` refuses the map — the page still reaching the menu, the map it
+built whole and torn down), a group or a cull that fails (under the building
+card, where a pipeline settles), a cut past the device's limits, a refused
+pass, a pass of ours that cannot draw the world it was handed (each is
+handed its world WITH the install's failure and tells it, since X3.7c: no
+pass latches a loss, and a pipeline failed for the session fails every
+install after it through its settled promise) — and the cull's, which REFUSES a build
+whose own contract is broken (`setMap` hands back the reason rather than
+throwing, `reachBoxOf` a null, and `installMap` hands nothing over after
+it). **One door is not the handover's**: the bodies' shadow map (X4.1c) is no
+part of the world but has no fallback either, so `installMap` hands it the
+install's failure after the handover's (`BodyShadowMap.setFailure`, taken
+back by `teardownMap`), and its pipeline, asked once
+for the session, fails every round after a failed build. **A failure belongs to the INSTALL it came from**: the handover latches
+a fresh `WorldOwner` at each install and hands it back with the failure, so
+the console line and the toast name the map that failed, and one of the OLD
+map still standing under the next round's building card (between
+`startRound` and that round's install, `Game.roundWorld` null) is said and
+ignored rather than ending the round being built. (The map editor's build
+failed nothing, by the build's kind, until X5.3c deleted it.) `teardownMap` takes our side down
+first (`handover.clear`), ahead of the map's meshes.
 
 **It also lets go of the map's DATA, and that half is proved rather than
-reviewed.** `BattleSystem`'s nav and cover, `Player`'s ground, the `rays` six
-systems were handed, `GlassSystem`'s panes, the deploy screen's and the
-minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
+reviewed.** `Player`'s ground, the `rays` eight
+systems and views were handed, `GlassSystem`'s panes and `GlassFx`'s meshes, the deploy
+screen's and the minimap's copies, `MapBuilder`'s own build scratch and `WorldCulling`'s
 candidate array all held the last map through the menu; none of them was
 stepped, drawn or heard there, so what they cost was memory — the whole map,
 until the next one was built over it. They were found by holding a `WeakRef`
@@ -127,18 +393,25 @@ direct holder, and after `teardownMap` every one of them is collected in the
 menu. **One of them is a trap worth knowing on its own**: V8 gives every
 closure made in one call a single shared scope, so an arrow written inline in
 `installMap` keeps THAT call's `map` alive for as long as anything holds the
-arrow. That is why `Game.deckAt` is a field. **What BABYLON kept of a map is
-the last line of it** (`forgetBindGroups`), with its twin installed on the
-engine at boot: Babylon's WebGPU arm never frees a released effect's
-uniform-buffer pools nor prunes its bind-group cache, which was ~30 MB of heap
-and ~28 MB of GPU buffers per Coldharbour build, kept for the life of the tab
-(`core/webgpuLeaks.ts` has the mechanism and the measurement).
+arrow. That is why `Game.deckAt` is a field. **What BABYLON kept of a map was
+its last line until `BABYLON_EXIT.md` X5.4b** (`forgetBindGroups`, with its twin
+patched onto the engine at boot, `core/webgpuLeaks.ts`): Babylon's WebGPU arm
+never frees a released effect's uniform-buffer pools nor prunes its bind-group
+cache, which was ~30 MB of heap and ~28 MB of GPU buffers per Coldharbour
+build, kept for the life of the tab. Both bit only while Babylon released
+effects and made bind groups, and since our renderer draws everything it does
+neither after the boot: X5.4a's probe (`plans/webgpu-ref/leaks.mjs`) read no
+pipeline context released and no bind group made by Babylon's cache in any
+state, and X5.4b measured the heap and the live GPU buffers flat over four
+Coldharbour rounds without the file, and deleted it. **A change that has
+Babylon compile or draw again owes that probe a run**, since the two leaks come
+back with it.
 
 **It is one SYNCHRONOUS turn and that is why the map's floor is resolved before
 it rather than inside it.** A heightfield is a lazy `import()` now
-(`MapDef.heights`, ENGINE_UPGRADE.md S7), so the two doors into a build each
-await it and put it down on `Game.floor`: `buildRound`, which is async for that
-one line, and `toggleEditor`, which already was. `installMap` reads the field
+(`MapDef.heights`, ENGINE_UPGRADE.md S7), so the one door into a build awaits
+it and puts it down on `Game.floor`: `buildRound`, which is async for that one
+line (the map editor's toggle was a second until X5.3c). `installMap` reads the field
 and hands it to `MapBuilder.build`.
 
 The await in `buildRound` is a hole the MAP can move through, and it is covered
@@ -152,55 +425,87 @@ on the far side; the loop settles in two passes. A fetch that FAILS is
 `leaveUnknownMap`'s move — there is no honest half-build of a map with no
 ground under it, and leaving the card up would wedge `buildPending` forever.
 
-**Six of those hand-offs are one line each and one object**, and they are worth
+**Eight of those hand-offs are one line each and one object**, and they are worth
 naming because they are new and because they look skippable. `map.rays` is the
 segment query every ray in the game asks (`world/RayWorld.ts`), and `installMap`
-pushes it to `CombatSystem`, `GrenadeSystem`, `AntiTankSystem`,
-`AimAssistSystem`, `DeathCam` and `VehicleCamera`. `BattleSystem` and
-`VehicleSystem` are absent from that list and are not exceptions: both are
-handed the whole `GameMap`, and both take it off `map.rays` where they take
-`nav`, `cover` and `obstacles`. A system that misses this one does not throw
+pushes it to `CombatSystem`, `CombatFx` (whose `drawRounds` casts for itself),
+`GrenadeSystem`, `GrenadeFx` (which stands a fire's flames on their floors
+with its own probe), `AntiTankSystem`,
+`AimAssistSystem`, `DeathCam` and `VehicleCamera` — the page's predictions and
+its views; the authority's own systems take `rays` off the world
+`buildSimWorld` builds it, in the match. `VehicleSystem` is absent from that list and is not
+an exception: it is handed the whole `GameMap` and takes it off `map.rays`
+where it takes `nav`, `cover` and `obstacles`, as the core's `BattleSystem`
+does off its own. A system that misses this one does not throw
 either — it casts against a null world and reports that nothing is in the way,
 which reads as a bot with a wallhack or a round that never stops.
 
 **Silent is the operative word.** A system that missed the funnel does not throw
 and does not log; it renders, correctly, from a map that no longer exists. The
-editor is where it shows first because the editor is the caller that rebuilds
-most often, but a round is just as capable of it — and by then the symptom is a
+map editor was where it showed first, being the caller that rebuilt most often,
+but a round is just as capable of it — and by then the symptom is a
 map that looks a build out of date in one layer only, which reads as a bug in
 that layer. The funnel is cheap insurance against a class of bug that costs a
 day to attribute.
 
-## Both world steps share a tail, and it is one funnel for `installMap`'s reason
+## One world frame, and its tail is one funnel for `installMap`'s reason
 
-`updateWorld` is the offline round and `updateNetWorld` is the client's half of
-a networked one, and the second is not a subset of the first — it runs `net`
-where the other runs `conquest` and the bots, and it poses the fleet off the
-wire rather than stepping a crew. What they DO share is eight system updates
-that are identical on both sides, in the same relative order, and those were
-written out twice.
+**There is ONE frame of the round on the page, `updateNetWorld`, whoever hosts
+the match** (X2.5c C4). It has two callers and they differ by one line each:
+`updateWorld`, for the states that are IN the round (`playing`, `dying`, a
+benchmark's FIGHT), which in the page's own match first posts the frame's
+`advance` (above); and `updateNetUnderCard`, for a card a SERVER's round
+carries on behind (`updateRoundBehind`, `docs/states.md`), which adds the two
+gauges the deploy screen and the pause card leave showing. Inside it, in this
+order: `updateNet` (the snapshots onto the roster's bodies, the flags and
+tickets onto `conquest`, this frame's `move`) → `fillPushers` →
+`drawNetShots` → `stepShots` → the fleet (`syncNetVehicles`,
+`vehicles.update`, `VehicleViews.update`) → `stepAftermath`.
 
-**They are one call each now, `stepShots` and `stepAftermath`, and the argument
-is `installMap`'s exactly.** A system added to the offline sequence and
-forgotten in the networked one does not throw and does not log — it simply never
-runs in a match. The symptom is a tracer that hangs at the muzzle where the shot
-went off, or a fuse that never burns down, or a corpse that takes a rig and hangs
-in the air; each of those reads as a bug in that system rather than as a missing
-line in a method nobody was looking at. **Anything new that both worlds owe per
-frame goes in one of the two, and a system that only one of them owes goes at
-its own call site with the reason written there.**
+**Until X2.5c C4 there were two world steps, and that is where this section's
+rule comes from.** `updateWorld` was the offline round — the core's step, the
+fleet posed off its frame, its bots drawn through `BattleView` — and
+`updateNetWorld` the client's half of a networked one; what they shared was ten
+system updates in the same relative order, written out twice, until each run
+of them became one call, `stepShots` and `stepAftermath`. The argument for that
+was `installMap`'s exactly, and it outlives the merge: a system added to one
+sequence and forgotten in another does not throw and does not log — it simply
+never runs there. The symptom is a tracer that hangs at the muzzle where the
+shot went off, or a fuse that never burns down, or a corpse that takes a rig
+and hangs in the air; each of those reads as a bug in that system rather than
+as a missing line in a method nobody was looking at. **Anything new the
+round's frame owes goes in `updateNetWorld` — in `stepShots` or
+`stepAftermath` when it is about the rounds or what follows the armour — and
+never in one of its callers; something only one caller owes goes at that call
+site with the reason written there**, as the advance and the gauges do.
 
-**They are TWO blocks rather than one because the armour goes between them, and
-it goes in a different place on each side**: offline the fleet is stepped before
-the bots think, so a hull that has just pulled across a street breaks the
-sightline on the frame it visibly blocked it; in a match it is posed from the
-wire after the shots, because none of it decides anything. What both orders
-guarantee is the only thing `stepAftermath` asks of a caller — that the hulls
-have already moved this frame, since a mine's trigger is a distance test against
-where a hull IS. **`stepAftermath` is also now the ONE place the physics world
-is stepped anywhere in the client**, which was two places and a sentence in each
-saying so; `scene.physicsEnabled` stays false precisely so that a pause, the
-deploy map and the menu, all of which render, cannot advance it.
+**The bodies and the fleet are pictures stepped before anything reads them.**
+The roster's `NetSoldier`s are posed inside `updateNet`, which is also what
+raises an interpolated death (`roster.onDeath`, a ragdoll off the authority's
+word), before anything reads a rig — the grass's pushers, the bodies' shadow
+map, the mesh walk — and the body draw distance `installMap` pushes goes to
+`NetRoster` and `RagdollSystem` together (the HULL draw distance, X4.2d, to
+`WorldCulling` alone: nothing a hull does reads it). `VehicleViews.update` runs right
+after `vehicles.update`, after `syncNetVehicles` has posed the fleet off the
+wire, and before anything reads a node (the two shadow maps' boxes are off
+each view's body); `installMap` builds the views right after `vehicles.build`,
+one per hull by hardstanding, and `teardownMap` takes them down before the
+fleet. What a view must hear between two of those updates — a placing, a shot,
+each step's belts and mass, and a wreck — it is told as it happens, through
+the hull's `HullPicture`.
+
+**They are TWO blocks rather than one because the armour goes between them**:
+the page poses its fleet off the wire after the shots, because none of it
+decides anything — the authority steps its own fleet before its bots think, in
+the match, so a hull that has just pulled across a street breaks the sightline
+on the step it visibly blocked it. What the page's order guarantees is the only
+thing `stepAftermath` asks of its caller — that the hulls have already moved
+this frame, since a mine's trigger is a distance test against where a hull IS.
+**`stepAftermath` is also the ONE place the physics world is stepped anywhere
+in the client**, which was two places and a sentence in each saying so; no
+frame point steps it (there is no scene to, since `BABYLON_EXIT.md` X6.1h;
+`scene.physicsEnabled` was held false until then), so a pause, the deploy map
+and the menu, all of which render, cannot advance it.
 
 ## What `tick` pushes, not a state's own arm
 
@@ -215,27 +520,37 @@ site:
 
 | push | owed to | why from `tick` |
 | --- | --- | --- |
-| `net.conn.setFrame` | every state, in a match | first in the frame: where on the authority's timeline a frame is posed is a question about when it is SEEN, and anything later may ask it (`Connection`'s header) |
+| `net.conn.setFrame` | every state with a session — every round, whoever hosts it | first in the frame: where on the authority's timeline a frame is posed is a question about when it is SEEN, and anything later may ask it (`Connection`'s header) |
 | `input.update` | every state | the arms read it |
 | `hud.setFps`, `profChip.update` | every state | they are instruments, and a frame rate that stops being reported when a menu opens cannot be investigated |
-| `updateRoundBehind` | the states whose `ScreenSpec.roundBehind` says so | the authority's round carries on behind the screen; BEFORE the switch, because `dt` has already passed under the screen that was up (`docs/states.md`) |
+| `updateRoundBehind` | in a SERVER's round, the states whose `ScreenSpec.roundBehind` says so | the authority's round carries on behind the screen (the page's own is held there instead); BEFORE the switch, because `dt` has already passed under the screen that was up (`docs/states.md`) |
 | *the state's own arm* | | |
+| `LocalOwner.pass` | every state, in the page's own match once seated | after the arm, so what `updateWorld` advanced is counted first: the rest of the frame's real time is posted as `hold`, so the match's clock stays on the wall's and the client's offset never sees a hold (`docs/multiplayer.md`, "Holding the world") |
 | `netShots.clear` | every state | the wire's shots a state did not draw are DROPPED, or the menu's worth leave the barrel on the next round's first frame |
-| `hud.update` | every state, at `dt` 0 under a held world | a pause freezes the killfeed with the world; a netplay pause holds nothing, so neither does the feed |
-| `post.update`, `sky.update`, `setCloudShadow`, `pushLightning` | every state | the sky and the weather do not stop for a menu; in a match the clouds' turn and the lightning run on the authority's clock, so every client agrees |
+| `hud.update` | every state, at `dt` 0 under a held world | a pause over the page's own match freezes the killfeed with the world; one over a server's round holds nothing, so neither does the feed |
+| `post.update`, `sky.update`, `setCloudShadow`, `pushLightning` | every state | the sky's clocks and the weather do not stop for a menu, though with no map standing nothing draws it (`Sky.setStanding`); in a server's match the clouds' turn and the lightning run on the authority's clock, so every client agrees |
 | `syncVolumetrics`, `motionBlur.update` | every state | after every arm has placed the camera, before the render they are drawn into |
 | `followEye` — `mats.updateCamera`, `water.follow`, `grass.follow`, `culling.update`, `atmosphere.update` | every state | the EYE; see below |
-| `followEye` — `rotorWash.update`, `water.setWash`; and `pushHullEngines` | every state, gated on `fleetStepped` (read ONCE) | a held world is a fleet frozen in place, so these owe it stillness and SILENCE rather than nothing |
-| `stageWarmFrame` | while the building card's pipeline warm-up stands | BEFORE `followEye`, which is what carries its vantage into the cull, the water and the grass; `unstageWarmFrame` after the render undoes all of it, so a wait `go` abandons leaves nothing behind (`docs/states.md`) |
-| `gi.update` | every state with a map, but never a warm-up frame | the bounce is owed to every picture with a map in it, and converges behind the loading card — around the CAMERA, so not around each vantage the warm-up stands at |
-| `sfx.setListener`, `pushAmbience` | every state; the listener never from a warm-up frame | the EAR, for the eye's reason; a fire is a property of the map and the ear, both true behind a deploy card |
+| `followEye` — `fadeHulls` | every state, straight after `culling.update` | every present hull's joints composed (`vehicleRig.composeHull`, its one compose a frame) and its whole measure asked its FADE at the map's draw distance (`WorldCulling.hullFade`, `BABYLON_EXIT.md` X4.2d; off the eye the cull's `offer` just set; 1 on a map stating none, for a hull not present and with no draw installed) into `Game.hullFades`, by fleet index — BEFORE its two readers, `rotorWash.update` and `drawHulls`; after every write to a joint (`VehicleViews.update`, in the world step) |
+| `followEye` — `rotorWash.update`, `water.setWash`; and `pushHullEngines` | every state, gated on `fleetStepped` (read ONCE) | a held world is a fleet frozen in place, so these owe it stillness and SILENCE rather than nothing; the wash is handed `hullFades` and fades with its hull (the rate and the ripple, X4.2d's post-commit review) |
+| `gi.update` | every state with a map | the bounce is owed to every picture with a map in it, and converges behind the loading card — around the CAMERA (never from a vantage the warm-up stood at, until X5.4c retired them) |
+| `sfx.setListener`, `pushAmbience` | every state | the EAR, the same bug with a different symptom — a listener placed only by the frames that simulate sits at the origin, so a fire in the village pans from the map's corner while the menu is up; a fire is a property of the map and the ear, both true behind a deploy card |
 | `pushTouchControls`, `pushScoreboard` | the state the frame ENDS in | see below |
-| `updateBakeWait` | while a reflection bake drains, and then while the pipeline warm-up runs | after the render, which released the bake's share or compiled the warm frame's pipelines; not an arm, because `loading` simulates nothing |
+| `drawBodies` | every state, inside the `render` span, immediately before the frame's render (`SceneFrame.render`) | every pooled rig `WorldCulling` says is drawn this frame (`drawsBody`: switched on, not under the size gate) has its joints composed and its segments' matrices written as an instance of its side's kit (`SoldierModel.writeRigDrawing`, `BABYLON_EXIT.md` X4.1d), handed to our renderer (`BodyDraw.commit`) — after every write that poses or places a body and after the cull; in the render span because Babylon composed the rigs' meshes inside `scene.render` until X4.1a, so the attribution did not move. What only the render knows — each body's segment ORDER and its visor's bloom, both off `camera.globalPosition` — is PULLED by the renderer's prepare inside the render (`Game.bodyPull`) |
+| `drawHulls` | every state, right after `drawBodies`, immediately before the frame's render (`SceneFrame.render`) | every present hull, off the joints `fadeHulls` composed and the FADE it asked (above) — a hull faded out not drawn, the ones drawn whole handed over first and the fading ones after — and its segments' matrices written as an instance of its kind's kit, each segment the size gate drops (`WorldCulling.keepsSphere`) written as nothing (`vehicleRig.writeHullDrawing`, `BABYLON_EXIT.md` X4.2b), and every DETAIL segment of a hull whose whole measure the detail tier refuses (`WorldCulling.keepsDetail`, X4.2c), handed to our renderer (`HullDraw.commit`) — after every write to a joint (`VehicleViews.update` and what the hull tells its picture) and after the cull; in the render span for `drawBodies`' reason, Babylon having composed the hulls' nodes inside `scene.render` until X4.2a (the compose itself in the cull span since X4.2d's post-commit review, `fadeHulls`). Each hull's segment ORDER is PULLED inside the render (`Game.hullPull`), off `camera.globalPosition` |
+| `drawView` | every state, right after `drawHulls`, immediately before the frame's render (`SceneFrame.render`) | the player's own weapon (`BABYLON_EXIT.md` X4.3b-d): its switches synced (`ViewTree.syncSwitches` — every viewmodel surface's own enabled flag written to its joint chain's; until X4.3d also run before the cull, which asked a Babylon glass or card `isEnabled()`), then every switched-on, visible SURFACE of every role, the set `_evaluateActiveMeshes` took off the cull's list before X4.3c, evaluated through the viewmodel's `RenderCache` as the render evaluated its nodes (`ViewModel.drawView`), and each written as one draw of the weapon's kit — its joint's world, its slot, an opaque part's material's recipe — the kit card first (its canvas uploaded if it was painted since, `ViewDraw.cardPicture`), the opaque parts in Babylon's group-1 order (a stable sort of the order made by material `uniqueId`), the glasses back to front, and handed to our renderer (`ViewDraw.commit`), each lit draw's bloom PULLED inside the render (`Game.viewPull`). The joints it stamped are given the render's id where the render evaluated, once the id has moved (`RenderId.onEvaluated`; the id OURS since X5.4b, `core/renderId.ts`, moved where `scene.render` moved Babylon's, told off its observables until the scene stopped rendering and by our frame since X5.4f, `core/SceneFrame.ts`), so the next frame's readers (`muzzleWorld`, `throwHandWorld`, the eject port, the reload's gravity) meet Babylon's stamps — after every write to a joint and after the cull; in the render span because Babylon composed the viewmodel's nodes inside `scene.render` until X4.3b |
+| `drawPieces`, `drawMarks` | every state, right after `drawView`, immediately before the frame's render (`SceneFrame.render`) | the effect pools' PIECES (`BABYLON_EXIT.md` X4.4b): every switched-on tracer, spent case, thrown body (the simulation's and the wire's), rocket and mine composed fresh and written as an instance of its kit (`pieces.writePieceDrawing`) — an unlit segment always, a cel one where the size gate keeps its world sphere this frame — and every standing bullet MARK the gate keeps, by its frozen sphere, handed to our renderer (`PoolDraw.commit`); after every pool's step (`CombatFx.update`, `GrenadeFx.update`, `AntiTankFx.update`, `NetSession.update`, `PlayerView.stepped`) and after the cull; in the render span because Babylon composed the pools' meshes inside `scene.render` until X4.4b. Each piece's segment ORDER and its unlit part's bloom, and the marks' own order, are PULLED inside the render (`Game.piecePull`, `Game.markPull`), off `camera.globalPosition` |
+| `drawBlasts`, `drawDebris` | every state, right after `drawMarks`, immediately before the frame's render (`SceneFrame.render`) | the blast's BILLOWS and the DEBRIS (`BABYLON_EXIT.md` X4.4c): whether any batch `BlastFx` posed holds a billow, and whether the glow may draw them (`glowAdmits`) — the batches themselves PULLED inside the render (`Game.blastPull`: Babylon's frustum test of each batch's hand-set sphere off this render's planes, group 0's front-to-back order, the active list's order for the mask, each batch's bloom faded at its centre); and every switched-on glass shard and rubble chunk composed off its body's pose (`poseView.writePosedDrawing`) and kept by the size gate on its sphere composed this frame (Babylon's latch on stale bounds dropped on purpose, the owner's decision of 2026-11-01), handed over in pool order, the order front to back PULLED inside the render (`Game.debrisPull`); after `stepAftermath` (the engine, then the debris clients) and after the cull, in the render span because Babylon composed those meshes inside `scene.render` until X4.4c |
+| `drawZones` | every state, right after `drawFires`, immediately before the frame's render (`SceneFrame.render`) | the capture zones' RINGS AND FLAGS (`BABYLON_EXIT.md` X4.6b): each surface `ZoneDraw` holds through its switch (`ZoneSurface.on`) and the size gate (`keepsSphere`, as `offer` asked it of the mesh it was), and the rest PULLED inside the render (`Game.nearestPull`: Babylon's frustum test of the surface's sphere off this render's planes, nearest first off `globalPosition`, the order of building breaking a tie, and the one run merges them with the blades and the water, `render/NearestRun.ts`). The cloth's vertices are written earlier, by `zones.update` itself. Absent while the draw is not installed: the menu |
+| `drawGrass` | every state, right after `drawZones`, immediately before the frame's render (`SceneFrame.render`) | the GRASS (`BABYLON_EXIT.md` X4.6c): the field through the size gate (`keepsSphere`, its one sphere), the patches `GrassSystem.follow` chose, where the blades fall being the one run's (`docs/rendering.md`) |
+| `drawWater` | every state, right after `drawGrass`, immediately before the frame's render (`SceneFrame.render`) | the WATER (`BABYLON_EXIT.md` X4.6d): each body through the size gate (`keepsSphere`, its one sphere), the shape `WaterSystem.follow` chose, the live key and the rotors' array copied (`WaterSystem.commit`), and its place in the one run asked inside the render (`Game.nearestPull`) |
+| `updateBakeWait` | while a reflection bake drains, and then while the pipeline warm-up waits for our pipelines | after the render, which released the bake's share; not an arm, because `loading` simulates nothing. The wait's end (`finishBakeWait`) SEALS our pipeline cache for the round (`PipelineCache.seal`, until `teardownMap`): a compile of ours in play is a DEV warning naming what the declared list missed |
 
 **The shader's eye is not in that chain either**, because it is owed by the
 states that simulate nothing: `Game.followEye` pushes `mats.updateCamera()`
 once per frame in every state, after every arm has placed the camera and before
-`scene.render()`. The scene renders behind the menu, the building card, the
+the frame's render (`SceneFrame.render`, `scene.render()` until `BABYLON_EXIT.md`
+X5.4f). The frame is drawn behind the menu, the building card, the
 deploy screen and the kit turntable, and all four would otherwise be fogged
 against wherever the last *live* frame stood — the origin, before there has been
 one. `updateCamera` guards on the position, so a state with a still camera pays
@@ -265,8 +580,136 @@ controls are owed to `playing` alone, which is narrower than `inRound`, and a
 frame that paused, died or deployed has already taken them away by the time it
 reads the state.
 
+**The map viewer's frame is an ARM, and the one arm of a state that simulates
+nothing to run the camera tail** (`Game.updateViewer`, `BABYLON_EXIT.md` X5.3b,
+`docs/states.md`, "The map viewer's lid"). It sits between `updateRoundBehind` —
+which, the viewer answering `roundBehind`, steps a server's round under it — and
+`LocalOwner.pass`, which hands the page's own match the whole frame as a `hold`,
+the viewer answering `holdsWorld`. It moves the free camera and then runs
+`updateSceneForCamera` from it — at `dt` 0 over the page's own held match, as
+the pause holds it, and at the frame's `dt` over a server's round — with the
+round's bodies as the grass's pushers and no player: the shadow window, the bodies' map, the light
+slots, the lamps' atlas, the water's and the grass's own clocks and the wind —
+the half of a played frame that needs only a posed camera, which is the map
+editor's tail renamed. So every row of the table above reads the viewer's camera as it
+reads the player's: the EYE (`followEye`), the bounce around it (`gi.update`),
+the EAR (`sfx.setListener`, over an audio clock suspended in the page's own
+match), and the draws before the render. It is in the arm and not in `tick`
+because it is owed by that one state rather than by a span of them. Lowering
+the lid, however it comes down, owes the tail once more at `dt` 0 from the shadow
+focus the lid found, for the sake of a deploy screen, a round-over card or a
+pause, which run no tail of its own: `closeViewer` sets `sceneOwed` and the next
+`tick` pays it after its state's arm (`honourSceneOwed`), inside the frame —
+never from the keydown or the message that lowered it — unless that frame's own
+tail paid it first.
+
 Every row above shares a shape worth recognising before adding another: the
 thing being pushed is owed by a **span** of states rather than by one, and the
 span does not match "is the world moving". Anything with that shape belongs in
 `tick` and gets a row in the table, and anything without it belongs in the
 state's own arm.
+
+### What a frame owes
+
+**The frame is drawn by the game, once a frame in every state**:
+`Game.tick` calls `sceneFrame.render()` (`core/SceneFrame.ts`, `BABYLON_EXIT.md`
+X5.4f) inside the `render` span, after the draws the table above hands our
+renderer (`drawBodies` to `drawBlended`) and before `updateBakeWait`, where it
+called `scene.render()` until that step. **There is no Babylon scene** (X6.1h
+deleted it, with the `NullEngine` it stood on). The frame does what
+`scene.render()` did for this game, in Babylon's order — its index (its own),
+the scene's animations (`Scene.animate`'s arithmetic ported over the loop's
+delta, X5.4g: `SceneFrame.animationRatio`, the particle fields' clock — its
+bounds, its non-lock-step branch and `renderTargetsEnabled` constants since
+X6.1h, its constant-delta switch the frame's own), the camera's update, the
+render id's two advances, `updateTransformMatrix` (the scene's, ported at
+X6.1f), the evaluation, the draw phase, the post chain, and the canvas's pass
+if nothing began one — and raises its OWN observables, each named for the
+scene's it replaces, at the point the scene raised that one. **Every observable
+is `core/Observable.ts`**, Babylon's PORTED as written (X6.1h): its order, its
+deferred removal and its mask are Babylon's, which the frame adapter and every
+probe rest on. So **a module that hooks a frame point hangs off the frame's or
+the loop's, and a new one hangs there too**, and a script waiting on a drawn
+frame waits on `g.sceneFrame.onAfterRenderObservable` and counts
+`g.sceneFrame.index` (`VERIFYING.md`). **The frame's clear colour is its own**
+(`SceneFrame.clearColor`, the environment's: `applyClearColor`), and **the
+page's READINESS is ours** (`core/PendingData.ts`, `Game.pending`: the scene's
+pending-data list ported, `isReady` what `scene.isReady()` answered — the
+list empty; the water's foam its one holder while it decodes). Nothing in the
+game reads the readiness; the instruments wait on it (the frame adapter's
+`ready`), so **a new thing the frames must wait on is added there**. The order
+point for point, and what `scene.render()` did that this does not, is
+`SceneFrame`'s header and `docs/rendering.md`, "Our renderer's frame".
+
+**And the LOOP around it is the game's** (`core/FrameLoop.ts`,
+`BABYLON_EXIT.md` X5.4g): what Babylon's `runRenderLoop`, `beginFrame` and
+`endFrame` did, in their order. Every display refresh is asked of `FrameCap`
+(the admitter, the frame-rate cap); an admitted one samples the clock
+(`FrameClock`: Babylon's `getDeltaTime` and `getFps`, its performance
+monitor's arithmetic ported), raises the loop's `onBeginFrameObservable`, runs
+`tick`, submits the frame's ONE encoder in ONE `queue.submit`
+(`render/FrameSubmit.ts` — every pass of the frame is recorded into it, and
+`FrameHost.afterSubmit` is told after it), closes the profiler's `present`
+around that submit, moves the loop's `frameId` and raises its
+`onEndFrameObservable` — and only then requests the next refresh, so a frame
+that throws stops the loop as Babylon's did. **The world is stepped by the
+REFRESH stamps (`FrameCap.elapsed`), never by the loop's delta**, which is the
+readout's, the profiler's and the particle fields' clock. A lost device ENDS
+the loop (`stop`, as `engine.stopRenderLoop` did; below). Babylon's own `beginFrame` and `endFrame`
+ran inside a RESIZE (`_initializeMainAttachments`) until X5.4h stopped
+constructing the engine; the clock samples where it did — once as the boot
+configures the canvas's context and at every size that takes
+(`CanvasSurface.onSized`), as Babylon's monitor did.
+
+### A lost device
+
+**A LOST DEVICE RELOADS THE PAGE TO THE MENU** (`Game.deviceLost`,
+`core/deviceLoss.ts`, `BABYLON_EXIT.md` X5.4i, the owner's (A)). Every draw
+of ours is made on the one device `main.ts` asked for, and nothing rebuilds
+one in place (`FINDINGS.md` 74 is what that would take), so the answer is the
+page's rather than a state's. The device's own `lost` — every reason, the
+`"destroyed"` a script's `device.destroy()` resolves it with included — runs a
+TEARDOWN and then the ANSWER, the answer whatever the teardown does (each step
+on its own: a throw is said and the rest go on). The teardown runs between
+frames, after the last submit, none recording into it — a frame is one
+synchronous step of the loop and a promise settles between two — in the order
+the loss owes it: the loop STOPPED, so no frame runs into what follows;
+`Renderer.dispose` (its frame buffer, the frame's targets and every texture
+`TextureMaker` made, destroyed at once); `ChainPasses.dispose` (the chain's
+pool and the canvas's depth, which are `Game`'s and which the renderer does
+not reach); `FrameSubmit.dispose` (the frame timer's queries and buffers; the
+encoder made after the last submit abandoned, never finished); and
+`LampAtlas.dispose` (`LocalShadows.dispose` releases nothing). The device is
+not destroyed by it — a lost one has nothing to give back, and a promise that
+settles once cannot be re-entered anyway. Then the answer: a first loss
+records itself in `sessionStorage` with a one-line notice and RELOADS; the menu
+the reload brings up shows the notice once, as a toast; the settings are
+`localStorage`'s and come back as they were. **A second loss inside
+`CONFIG.graphics.deviceLossWindow` (60 s) of the last does not reload**: it
+puts the boot's own "No graphics device" plate back up (`main.ts`,
+`deviceLostForGood`) and lets the page go under it — the match left, the sound
+suspended, the pointer lock released — so a device that dies on every boot
+cannot loop the page. **Storage that cannot be read or written is answered with
+the plate too, and that includes the FIRST loss**: a page whose
+`sessionStorage` throws never reloads on a loss, because a reload it cannot
+record is one the guard cannot see (`core/deviceLoss.ts`; an open question for
+the owner, `plans/done/babylon_exit_landed.md`). **And nothing is OPENED after
+a loss** (`Game.deviceIsLost`, set first): `startRound`, `buildRound` and
+`joinMatch` refuse, so a build `startRound` booked two frames ahead — frames
+the browser's and not the loop's, which `stop` does not cancel — or a join or
+a welcome reaching for a round cannot open a match or build a map on the dead
+device, under the plate or in a reload's last moments. **Offline the round is lost; in a server's match the player has
+left it**, its slot going back to its bot as any leaving peer's does
+(`docs/multiplayer.md`), and the notice says to rejoin it from Online — there
+is no reconnect into your own slot, and the reload is not one. What a reload
+owes nothing: the canvas's listeners (`CanvasSurface.adoptInput`), the boot's
+`uncapturederror` listener and the context's configuration, which the
+document takes with it. What no frame resumes owes nothing either:
+`FrameLoop`'s order against the cap and the clock sample Babylon's restore
+took (`FrameLoop`'s header) — both owed by a loss survived in place, if one
+ever is. A loss before `Game` exists is the boot's (the device's request
+failing is its third failure branch); one landing between the request and the
+constructor is heard the moment the constructor hangs its handler on the
+already-settled promise, and reloads; one under the building card or the
+deploy screen is the same reload — nothing about the state it lands in
+changes the answer.

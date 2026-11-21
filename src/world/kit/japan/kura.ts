@@ -4,7 +4,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -90,12 +89,11 @@ import {
  * mesh the install pays for.
  */
 export function buildKura(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "kura");
+  const b = new Build(mats, "kura");
   const w = p.width ?? 6;
   const d = p.depth ?? 5;
   const h = p.height ?? 5.4;

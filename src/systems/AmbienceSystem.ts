@@ -13,7 +13,7 @@
  * Never plays anything itself: what a fire SOUNDS like is `Sfx`'s, and how
  * many fires a map may hold is this file's.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like } from "../math";
 import { CONFIG } from "../config";
 import type { AmbienceKind, Sfx } from "../core/Sfx";
 
@@ -152,7 +152,7 @@ export class AmbienceSystem {
    * all. It matters because this runs in every state that renders, menus
    * included, on a map whose bay can hold several hundred sampled points.
    */
-  update(listener: Vector3, sfx: Sfx): void {
+  update(listener: Vector3Like, sfx: Sfx): void {
     const cap = CONFIG.audio.ambience.maxVoices;
     const margin = CONFIG.audio.ambience.swapMargin;
     // The previous frame's winners, needed while the new ones are chosen: the

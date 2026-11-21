@@ -25,7 +25,7 @@
  * see `net.onSeated`.
  *
  * The default is 0, which is the identity remap: an offline round, and the
- * authority's own NullEngine build, both want exactly that and neither has to
+ * authority's own build, both want exactly that and neither has to
  * know this file exists.
  */
 import { CONFIG } from "../config";
@@ -50,6 +50,16 @@ export function viewerTeam(): Team {
  */
 export function viewTeam(team: Team): Team {
   return team === viewer ? 0 : 1;
+}
+
+/**
+ * `viewTeam`'s inverse: the team that is drawn as `view` — for a builder that
+ * makes one drawing a VIEW ahead of any team being on the field (the hulls'
+ * kits, `vehicleModels.hullKits`), whose rig is then built through the same
+ * `viewTeam` every other rig is.
+ */
+export function teamOfView(view: Team): Team {
+  return view === 0 ? viewer : viewer === 0 ? 1 : 0;
 }
 
 /** That row — the name, the worn colour and the visor's emissive. */

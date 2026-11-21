@@ -18,6 +18,15 @@
 // is a high oblique. Local +Z is the placement's north before its rotation.
 //
 // Needs a GPU (see VERIFYING.md). Writes <out>/<view>.jpg.
+//
+// **The `sun` bearing is the map's KEY LIGHT** (`g.mats.keyLight.dir`, the
+// direction the cel factory lights every surface along, which the map's
+// `EnvironmentSpec.lighting.direction` sets and the shadow maps aim down too),
+// printed with the views. It was read off a scene light named "moonShadow" —
+// the shadow camera's `DirectionalLight`, aimed the same way — until
+// BABYLON_EXIT.md X5.3d deleted that light, after which every run took the
+// default (0.7, 0.7) whatever the map's light; X6.1a's review read it here
+// instead.
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -62,15 +71,17 @@ try {
       const kit = await import("/src/world/BuildingKit.ts");
       const out = [];
       for (const p of variants) {
-        const s = kit.BUILDERS[kind](g.scene, g.mats, p);
+        // A builder takes the factory and no scene (BABYLON_EXIT.md X6.1d):
+        // its pictures are cached under the factory it is handed.
+        const s = kit.BUILDERS[kind](g.mats, p);
         let verts = 0;
         const colours = new Set();
+        // Parts (`world/parts.ts`), not meshes: nothing was put in the scene.
         for (const m of s.meshes) {
-          verts += m.getTotalVertices();
+          verts += m.geometry.vertexCount;
           colours.add(m.material?.name ?? "?");
         }
         out.push({ params: p, parts: s.meshes.length, verts, colours: colours.size, colliders: s.colliders.length, lights: s.lights.length });
-        for (const m of s.meshes) m.dispose();
       }
       return out;
     }, { kind: statsKind, variants });
@@ -80,7 +91,9 @@ try {
   // The views, resolved in the page because the sun's bearing lives there.
   const views = await page.evaluate(({ R, extra }) => {
     const g = window.__celshock;
-    const sun = g.scene.getLightByName("moonShadow")?.direction;
+    // The key light (the header): the direction it TRAVELS, as "moonShadow"'s
+    // was, so the bearing it comes FROM is its negation.
+    const sun = g.mats.keyLight.dir;
     // Horizontal bearing the light comes FROM, in world XZ.
     let sx = sun ? -sun.x : 0.7;
     let sz = sun ? -sun.z : 0.7;
@@ -89,6 +102,7 @@ try {
     sz /= l;
     return { sun: [sx, sz], extra };
   }, { R, extra });
+  console.log(`sun bearing (the key light comes FROM, world XZ): ${views.sun.map((v) => v.toFixed(3)).join(", ")}`);
   const c = Math.cos(rot);
   const s = Math.sin(rot);
   // World bearing -> local: MapBuilder turns local +X onto (cos, -sin), +Z onto (sin, cos).
@@ -116,7 +130,13 @@ try {
     }
     await page.evaluate(({ px, pz, rot, v, keepZones }) => {
       const g = window.__celshock;
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      // No bodies: the session's roster (`g.net.roster`) re-shows a living
+      // one every frame, so it draws none past 0 m instead.
+      const roster = g.net?.roster;
+      if (roster) {
+        roster.setViewDistance(0);
+        for (const body of roster.soldiers) body.setEnabled(false);
+      }
       if (!keepZones) g.zones?.dispose?.();
       const c = Math.cos(rot);
       const s = Math.sin(rot);
@@ -133,13 +153,11 @@ try {
       g.cameraSys.pitch = cam.rotation.x;
       g.mats.updateCamera(cam.position);
       g.lighting.update(0.05, cam.position, g.mats);
-      g.shadows.invalidate();
       g.shadows.update(cam.position, g.mats);
     }, { px, pz, rot, v, keepZones });
     await H.settle(page, 8);
     await page.evaluate(() => {
       const g = window.__celshock;
-      g.shadows.invalidate();
       g.shadows.update(g.cameraSys.camera.position, g.mats);
     });
     await H.settle(page, 4);

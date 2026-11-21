@@ -1,9 +1,11 @@
 /**
  * RayWorld.ts — The segment query that retired `scene.pickWithRay`.
  * Owns: a uniform grid over the collider boxes, the oriented-box and
- * heightfield intersections behind it, and the two questions every ray in the
- * game asks. Owns no meshes, no materials, and nothing a frame can move except
- * the hulls, which are handed in rather than held.
+ * heightfield intersections behind it, the two questions every ray in the
+ * game asks — and the candidate list every SWEEP asks for (`bodyNear`), which
+ * is `castBody`'s question put to a region instead of a line. Owns no meshes,
+ * no materials, and nothing a frame can move except the hulls, which are
+ * handed in rather than held.
  *
  * WHY THIS EXISTS, and it is the same argument `ObstacleField.groundAt` won.
  * `scene.pickWithRay` filters `scene.meshes` by predicate, then bounds-tests,
@@ -25,10 +27,11 @@
  *
  * ## The two questions, and where the mesh predicates went
  *
- * `world/solid.ts` holds them and they are now the EDITOR's alone — its
- * centre-screen pick is a `scene.pick` over real meshes and stays one. The two
- * questions live on here as `castBody` and `castRound`, and the mapping is
- * exact:
+ * They were `SOLID_ONLY` and `OPAQUE_ONLY`, two pick predicates in
+ * `world/solid.ts`; the last caller of the first was the map editor's
+ * centre-screen pick, and the file went with the editor (`BABYLON_EXIT.md`
+ * X5.3c). The two questions live on here as `castBody` and `castRound`, and
+ * the mapping is exact:
  *
  * | collider | `SOLID_ONLY` / `castBody` | `OPAQUE_ONLY` / `castRound` |
  * | --- | --- | --- |
@@ -73,7 +76,7 @@
  * pointing away from itself (a wall met from inside a doorway) and the blast
  * probe flips one pointing down. Do not "fix" it into a near-face hit.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like, type Vector3Ref } from "../math";
 import type { WorldBox } from "./MapBuilder";
 import type { TerrainField } from "./TerrainField";
 
@@ -124,14 +127,20 @@ const COINCIDENT = 1e-4;
  * `surface` is `CombatSystem.ImpactKind`'s two world answers, stated rather
  * than looked up: it was `metadata.surface`, present on exactly one thing (the
  * floor's collider clone) and absent everywhere else.
+ *
+ * `V` is whose vectors `point` and `normal` are. A cast writes them through
+ * `set` and nothing else, so it filled either library's; `newRayHit` makes
+ * ours, and a caller reading them with Babylon's methods wrote its own
+ * literal of Babylon's (`CaptureZoneSystem`'s `MOUNT_HIT`, the last one, ours
+ * since X6.1f).
  */
-export interface RayHit {
+export interface RayHit<V extends Vector3Ref = Vector3> {
   /** Metres along the ray. */
   distance: number;
   /** Where it landed. */
-  point: Vector3;
+  point: V;
   /** The OUTWARD normal of the face that stopped it — see the header. */
-  normal: Vector3;
+  normal: V;
   surface: "ground" | "hard";
   /**
    * The moving hull the cast stopped ON, or null for the static world.
@@ -211,6 +220,15 @@ export class RayWorld {
   private readonly mark: Int32Array;
   private stamp = 0;
 
+  /** `bodyNear`'s hits as indices, so they can be put back in `rank` order. */
+  private readonly picked: number[] = [];
+  /**
+   * Where each static box stands in the order a SWEEP tests them — `bodyNear`'s
+   * sort key, and a tie-break that decides where a body slides. See the
+   * constructor.
+   */
+  private readonly rank: Int32Array;
+
   /** The heightfield's own numbers, hoisted: every terrain step reads them. */
   private readonly half: number;
   private readonly cell: number;
@@ -224,6 +242,12 @@ export class RayWorld {
     boxes: readonly WorldBox[],
     rayGroups: readonly (readonly WorldBox[])[],
     private readonly terrain: TerrainField,
+    /**
+     * `GameMap.boxGroups`: which boxes the client merged into one scatter
+     * cluster, in the order it made them. Read for the sweep's tie order and
+     * nothing else; absent is no clusters.
+     */
+    boxGroups: readonly (readonly number[])[] = [],
   ) {
     const f = terrain.field;
     this.grid = f ? f.size : 0;
@@ -258,13 +282,38 @@ export class RayWorld {
     };
     for (const box of boxes) {
       // Glass is `porous` and says so on the box, so an intact pane stops a
-      // body and passes a round with no term of its own — `world/solid.ts`.
+      // body and passes a round with no term of its own.
       take(box, box.porous ? BLOCKS_BODY : BLOCKS_BODY | BLOCKS_ROUND);
     }
     for (const group of rayGroups) for (const box of group) take(box, BLOCKS_ROUND);
 
     this.flags = Uint8Array.from(flags);
     this.mark = new Int32Array(this.boxes.length).fill(-1);
+    // **The sweep's tie order is the order the client's collider MESHES were
+    // made in while they were meshes (until `BABYLON_EXIT.md` X5.3e), because
+    // that is the order Babylon's walk met them in and the feel of a body
+    // leaning on two boxes at once was tuned against it.** A sweep
+    // keeps the FIRST of two contacts at one distance, and an ellipsoid that
+    // has ended up touching two boxes — a hull wedged on a quay's corner, a
+    // body against a tree beside a wall — slides along whichever plane won. On
+    // the client every box but the scattered props got its mesh as it was
+    // recorded, and the props were merged into clusters afterwards, all
+    // together and in `boxGroups` order — nothing made a collider after them.
+    // So: every box no cluster holds, in collider order, then each cluster's
+    // boxes, cluster by cluster. Measured against the shipped scene, collider
+    // order alone slid hulls metres apart from embedded starts. The authority
+    // made its clusters FIRST, so under Babylon the two sides broke these ties
+    // differently; both rank from the same `boxGroups` now and agree.
+    const rank = new Int32Array(this.boxes.length);
+    const grouped = new Uint8Array(this.boxes.length);
+    for (const group of boxGroups) for (const b of group) grouped[b] = 1;
+    let next = 0;
+    for (let i = 0; i < boxes.length; i++) if (!grouped[i]) rank[i] = next++;
+    for (const group of boxGroups) for (const b of group) rank[b] = next++;
+    // The struts stop no body and are never a sweep's candidate; ranked last
+    // only so every slot holds a number.
+    for (let i = boxes.length; i < this.boxes.length; i++) rank[i] = next++;
+    this.rank = rank;
     for (let c = 0; c < cells; c++) counts[c + 1] += counts[c];
     this.cellStart = counts;
     this.cellBox = new Int32Array(counts[cells]);
@@ -301,15 +350,17 @@ export class RayWorld {
    * tank's chase camera, the dismount's floor test.
    *
    * `skip` is how a caster takes its OWN hull out of the answer — two property
-   * writes around a `scene.pickWithRay` before this, an argument now.
-   * `world/solid.ts` forbade minting a predicate at a call site and that rule
-   * is kept: nothing here allocates per cast.
+   * writes around a `scene.pickWithRay` before this, an argument now, and the
+   * only way there is: no predicate is minted at a call site (nothing here
+   * allocates per cast, the rule `world/solid.ts` stated while it stood), and a hull
+   * has no flag left to clear (`Vehicle.present` is whether it is on the
+   * field at all).
    */
   castBody(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
-    out: RayHit,
+    out: RayHit<Vector3Ref>,
     skip: RayHull | null = null,
   ): boolean {
     return this.cast(origin, dir, length, BLOCKS_BODY, out, skip);
@@ -329,10 +380,10 @@ export class RayWorld {
    * knows which hull to take out, never this.
    */
   castRound(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
-    out: RayHit,
+    out: RayHit<Vector3Ref>,
     skip: RayHull | null = null,
   ): boolean {
     return this.cast(origin, dir, length, BLOCKS_ROUND, out, skip);
@@ -348,15 +399,112 @@ export class RayWorld {
    * box that blocks instead of walking the rest of the segment to find out
    * which blocked first. At sixteen bots and `thinkRate` that is the difference
    * between a whole segment and a few metres of one.
+   *
+   * `skip` is `castRound`'s, and its one caller is a CREW's sightline: the
+   * cupola eye is five centimetres over the top of its own hull's collider,
+   * so the hull it is looking out of has to be out of the answer.
    */
-  blocked(from: Vector3, to: Vector3): boolean {
+  blocked(from: Vector3Like, to: Vector3Like, skip: RayHull | null = null): boolean {
     const dx = to.x - from.x;
     const dy = to.y - from.y;
     const dz = to.z - from.z;
     const len = Math.hypot(dx, dy, dz);
     if (len < 0.01) return false;
     ANY_DIR.set(dx / len, dy / len, dz / len);
-    return this.cast(from, ANY_DIR, len, BLOCKS_ROUND, null, null);
+    return this.cast(from, ANY_DIR, len, BLOCKS_ROUND, null, skip);
+  }
+
+  /**
+   * Every box that stops a BODY and could be within `reach` of `(x, z)` in the
+   * ground plane — the candidate list for one body sweep
+   * (`ellipsoidSweep.ts`), written into `out` and handed back.
+   *
+   * **A SUPERSET, never an exact answer**: a box is in when the grid cells its
+   * footprint was stamped into meet the query square, which is all a sweep may
+   * rely on. Struts and broken panes are out by the same body bit `castBody`
+   * reads, so a sweep and the death cam's pull-in cannot disagree about what a
+   * body may walk through.
+   *
+   * **The order is part of the answer.** A sweep keeps the FIRST of two
+   * contacts at the same distance (`ellipsoidSweep.ts`), so the static boxes
+   * come back sorted by `rank` — the order the client's collider meshes were
+   * made in while they were meshes (see the constructor) — and the hulls last, which is where
+   * `scene.meshes` had a hull built after the map it stands on. A hull is its
+   * `rayBox()`, so one `hide` or a wreck carried away takes it out of every
+   * sweep as it takes it out of every ray, and `skip` is the hull doing the
+   * sweeping.
+   *
+   * `reach` of `Infinity` is every body box on the map.
+   */
+  bodyNear(
+    x: number,
+    z: number,
+    reach: number,
+    skip: RayHull | null,
+    out: WorldBox[],
+  ): WorldBox[] {
+    out.length = 0;
+    const picked = this.picked;
+    picked.length = 0;
+    if (reach === Infinity) {
+      for (let i = 0; i < this.boxes.length; i++) {
+        if (this.flags[i] & BLOCKS_BODY) picked.push(i);
+      }
+    } else {
+      const stamp = this.nextStamp();
+      const i0 = this.cellOf(x - reach);
+      const i1 = this.cellOf(x + reach);
+      const j0 = this.cellOf(z - reach);
+      const j1 = this.cellOf(z + reach);
+      for (let j = j0; j <= j1; j++) {
+        for (let i = i0; i <= i1; i++) {
+          const c = j * this.dim + i;
+          const end = this.cellStart[c + 1];
+          for (let k = this.cellStart[c]; k < end; k++) {
+            const b = this.cellBox[k];
+            if (this.mark[b] === stamp) continue;
+            this.mark[b] = stamp;
+            if (this.flags[b] & BLOCKS_BODY) picked.push(b);
+          }
+        }
+      }
+      for (const b of this.big) if (this.flags[b] & BLOCKS_BODY) picked.push(b);
+    }
+    // An insertion sort by rank rather than `Array.sort`: a list is a dozen
+    // boxes, and this runs once per body per frame, where a comparator closure
+    // over `rank` and the sort's own work array would be garbage every call.
+    const rank = this.rank;
+    for (let i = 1; i < picked.length; i++) {
+      const b = picked[i];
+      const r = rank[b];
+      let j = i - 1;
+      while (j >= 0 && rank[picked[j]] > r) {
+        picked[j + 1] = picked[j];
+        j--;
+      }
+      picked[j + 1] = b;
+    }
+    for (const b of picked) out.push(this.boxes[b]);
+    for (const h of this.hulls) {
+      if (h === skip) continue;
+      const box = h.rayBox();
+      if (box) out.push(box);
+    }
+    return out;
+  }
+
+  /**
+   * A fresh query stamp. **Wrapped by hand before the `Int32Array` would**: an
+   * authority that runs for days asks billions of these, and a stamp that had
+   * wrapped inside `mark` would never match again — de-duplication silently
+   * off, every straddling box tested once per cell it is in.
+   */
+  private nextStamp(): number {
+    if (this.stamp === 0x7fffffff) {
+      this.mark.fill(-1);
+      this.stamp = 0;
+    }
+    return ++this.stamp;
   }
 
   /**
@@ -371,10 +519,14 @@ export class RayWorld {
   private eachCell(box: WorldBox, fn: (cell: number) => void): void {
     const c = Math.abs(Math.cos(box.rotY));
     const s = Math.abs(Math.sin(box.rotY));
-    const hw = box.w / 2;
+    // `createBox`'s defaulting, `||` and all — a zero extent is a metre — so
+    // the footprint stamped here is the one a SWEEP tests (`ellipsoidSweep`
+    // builds its triangles the way a collider mesh of it was built). No bake holds
+    // such a box; this keeps `bodyNear` a superset if one ever does.
+    const hw = (box.w || 1) / 2;
     const hd =
-      (box.d / 2) * Math.abs(Math.cos(box.rotX)) +
-      (box.h / 2) * Math.abs(Math.sin(box.rotX));
+      ((box.d || 1) / 2) * Math.abs(Math.cos(box.rotX)) +
+      ((box.h || 1) / 2) * Math.abs(Math.sin(box.rotX));
     const x0 = this.cellOf(box.cx - (hw * c + hd * s));
     const x1 = this.cellOf(box.cx + (hw * c + hd * s));
     const z0 = this.cellOf(box.cz - (hw * s + hd * c));
@@ -400,11 +552,11 @@ export class RayWorld {
    * the LENGTH of the segment — is bounded by all three.
    */
   private cast(
-    origin: Vector3,
-    dir: Vector3,
+    origin: Vector3Like,
+    dir: Vector3Like,
     length: number,
     mask: number,
-    out: RayHit | null,
+    out: RayHit<Vector3Ref> | null,
     skip: RayHull | null,
   ): boolean {
     if (!(length > 0)) return false;
@@ -456,7 +608,7 @@ export class RayWorld {
     }
 
     const xz = Math.hypot(dx, dz);
-    const stamp = ++this.stamp;
+    const stamp = this.nextStamp();
     if (xz < EPS) {
       // Straight up or straight down: one cell, and every downward probe in
       // the game takes this path.
@@ -883,7 +1035,7 @@ function boxCast(
  * Möller-Trumbore, two-sided, writing the triangle's own upward normal into the
  * module scratch.
  *
- * Two-sided because Babylon's triangle picking is (`assertFacesUp` says so from
+ * Two-sided because Babylon's triangle picking was (`assertFacesUp` says so from
  * the other direction), and the floor is met from underneath by anything
  * standing inside a building cut into a hill. The normal is turned to +Y rather
  * than toward the ray, because a heightfield has no overhangs and so has

@@ -1,22 +1,32 @@
 /**
  * vehicleKinds.ts — The list of vehicles that exist, and the ONE place a kind
- * is turned into the two things a hull is made of.
- * Owns: the `VehicleKind` union and the table pairing each kind's
- * `VehicleSpec` with the function that builds its mesh.
- * Owns NO behaviour. `entities/Vehicle.ts` is one hull of any kind and has
- * never heard of this file; `systems/VehicleSystem.ts` is the only reader, and
- * it reads it once per hardstanding at map load.
+ * is turned into what a hull is made of.
+ * Owns: the `VehicleKind` union, the default kind (`resolveKind`), the
+ * table pairing each kind's name with its `VehicleSpec` and its `HullFrame`,
+ * and the two figures read over the whole table (`HULL_REACH`: how far a
+ * hull's fire reaches, how far a viewer's eye stands from what it can hit).
+ * Owns NO behaviour and NO drawing: **no `@babylonjs/core`**, because the
+ * authority builds its fleet from this table and has no scene to build a rig
+ * in. What a kind LOOKS like is the client's own table,
+ * `entities/vehicleModels.ts`, keyed by the same union.
+ * `entities/Vehicle.ts` is one hull of any kind and has never heard of either
+ * file; `systems/VehicleSystem.ts` reads this one once per hardstanding at map
+ * load, and the client's `systems/VehicleViews.ts` reads the other beside it.
  *
  * ## Why a table and not a branch
  *
  * A vehicle in this game is exactly two things — a block of numbers
- * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`) and a `VehicleRig` that
- * draws them — and everything else about it, the collider and the drive and
+ * (`CONFIG.vehicles.<kind>`, shaped by `VehicleSpec`, with the `HullFrame` its
+ * model states beside it: where its joints are, which the simulation reads
+ * instead of a rig) and a model that draws them, which hands over a
+ * `VehicleRig` — and everything else about it, the collider and the drive and
  * the ten ground contacts and the two seats and the chase camera and the
  * crush, is machinery that reads those two and nothing else. So a fourth kind
- * is a row here, a block in `config/vehicles.ts` and a model file, and NO
- * `if` anywhere: the moment a system asks which kind it is holding, that
- * bargain is broken.
+ * is a member of `VehicleKind`, a row here, a block in `config/vehicles.ts`, a
+ * frame file, a model file and a row in `vehicleModels.ts` — and both tables
+ * are `Record<VehicleKind, …>`, so a kind with a row in one and not the other
+ * does not compile. And NO `if` anywhere: the moment a system asks which kind
+ * it is holding, that bargain is broken.
  *
  * **The helicopter was the test of that and it held.** It is the one kind so
  * far that needed anything the other two did not, and what it needed was a
@@ -38,20 +48,16 @@
  *
  * `VehicleSpawnDef.kind` is a string in a layout file, defaulting to `"tank"`
  * so that the maps written before there was a second kind say nothing and are
- * unaffected. That default is stated once, here, rather than at each of the
- * three readers (the fleet, `MapBuilder.keepClear`, the editor) — three copies
- * of a default is three places for a map to mean different things to different
- * halves of the game.
+ * unaffected. That default is stated once, here (`resolveKind`), rather than
+ * at each of the readers (the fleet, its views, `MapBuilder.keepClear`) — copies of a default are places for a map to mean different things
+ * to different halves of the game.
  */
 import { CONFIG } from "../config";
 import type { VehicleSpec } from "../config/vehicles";
-import type { Team } from "./Combatant";
-import { buildHeli } from "./HeliModel";
-import { buildTank } from "./TankModel";
-import { buildTruck } from "./TruckModel";
-import type { VehicleRig } from "./vehicleRig";
-import type { CelMaterialFactory } from "../shaders/CelShader";
-import type { Scene } from "@babylonjs/core";
+import { HELI_FRAME } from "./heliFrame";
+import type { HullFrame } from "./hullFrame";
+import { TANK_FRAME } from "./tankFrame";
+import { TRUCK_FRAME } from "./truckFrame";
 
 /**
  * What kinds of vehicle exist. A map's hardstanding names one of these, and a
@@ -59,7 +65,7 @@ import type { Scene } from "@babylonjs/core";
  */
 export type VehicleKind = "tank" | "truck" | "heli";
 
-/** The two halves of one kind, as `VehicleSystem` needs them, and its name. */
+/** One kind as the SIMULATION needs it: its name, its numbers and its joints. */
 export interface VehicleType {
   /**
    * What the HUD calls it, upper case — `ENTER TANK`, `TAKE OVER TRUCK`,
@@ -74,11 +80,13 @@ export interface VehicleType {
    */
   readonly name: string;
   readonly spec: VehicleSpec;
-  readonly build: (
-    scene: Scene,
-    mats: CelMaterialFactory,
-    team: Team,
-  ) => VehicleRig;
+  /**
+   * Where the joints on the way to each muzzle are, and the three extents the
+   * drive reads off the drawing — the model's own numbers, which it builds its
+   * nodes from (`entities/hullFrame.ts`). The simulation reads THESE and never
+   * the rig.
+   */
+  readonly frame: HullFrame;
 }
 
 /**
@@ -86,15 +94,69 @@ export interface VehicleType {
  * member of `VehicleKind` fails to compile until it has a row.
  */
 const VEHICLE_KINDS: Record<VehicleKind, VehicleType> = {
-  tank: { name: "TANK", spec: CONFIG.vehicles.tank, build: buildTank },
-  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, build: buildTruck },
-  heli: { name: "HELI", spec: CONFIG.vehicles.heli, build: buildHeli },
+  tank: { name: "TANK", spec: CONFIG.vehicles.tank, frame: TANK_FRAME },
+  truck: { name: "TRUCK", spec: CONFIG.vehicles.truck, frame: TRUCK_FRAME },
+  heli: { name: "HELI", spec: CONFIG.vehicles.heli, frame: HELI_FRAME },
 };
 
 /**
  * The kind a hardstanding stands for, resolved. **The one place the default is
- * written down** — see the header.
+ * written down** — see the header. `vehicleModels.modelOf` resolves through
+ * this too, so a hardstanding's numbers and its drawing cannot be of two kinds.
  */
-export function kindOf(kind: VehicleKind | undefined): VehicleType {
-  return VEHICLE_KINDS[kind ?? "tank"];
+export function resolveKind(kind: VehicleKind | undefined): VehicleKind {
+  return kind ?? "tank";
 }
+
+/** The kind a hardstanding stands for, as the simulation needs it. */
+export function kindOf(kind: VehicleKind | undefined): VehicleType {
+  return VEHICLE_KINDS[resolveKind(kind)];
+}
+
+/**
+ * How far a hull's fire REACHES, and how far a viewer's eye stands from what
+ * of him it can hit — the two figures every kind's own numbers state, read
+ * over the whole table (`BABYLON_EXIT.md` X4.2d), so a longer range, a bigger
+ * blast, a further chase camera or a fourth kind moves them by itself. What a
+ * map's `EnvironmentSpec.hullDrawDistance` is floored by (`world/environment.ts`'
+ * `hullDrawFloor`), so that no setting fades out a hull whose guns can still
+ * reach the player looking for it. **The floor's THIRD term is not here**:
+ * how far a muzzle stands from its hull's measure centre is the DRAWING's (a
+ * barrel's length, a turret's place), which no spec states — measured into
+ * `CONFIG.graphics.culling.hullFade.muzzle` and GUARDED by a dev-build throw
+ * whenever the hull kits are built (`vehicleModels.ts`' `checkMuzzleReach`),
+ * so a longer barrel or a fourth kind's gun is caught there, not here.
+ */
+export interface HullReach {
+  /**
+   * Metres from a MUZZLE to the farthest point its fire can hurt: the main
+   * gun's `range` plus its blast's `blastRadius` (the splash goes off where
+   * the round stopped, a miss at full range included), or the machine gun's
+   * `range` — the farthest of every kind's guns. The tank's shell today:
+   * 340 + 7 m.
+   */
+  readonly fire: number;
+  /**
+   * Metres from a VIEWER's eye to the farthest point of what a round can hit
+   * of him: a person on foot is his own body, and one in a hull is that
+   * hull's whole box seen from its chase camera — `camera.anchorHeight` over
+   * the centre, `camera.distance` back from that, and half the box's
+   * diagonal to its far corner — the farthest of every kind's. The
+   * helicopter's today: 2.4 + 14 + 6.0 m.
+   */
+  readonly eye: number;
+}
+
+/** See `HullReach`. Computed once; no kind is asked which it is. */
+export const HULL_REACH: HullReach = (() => {
+  let fire = 0;
+  let eye = 0;
+  for (const { spec } of Object.values(VEHICLE_KINDS)) {
+    const gun = spec.gun;
+    fire = Math.max(fire, spec.mg.range, gun ? gun.range + gun.blastRadius : 0);
+    const h = spec.hull;
+    const corner = 0.5 * Math.hypot(h.length, h.width, h.height);
+    eye = Math.max(eye, spec.camera.anchorHeight + spec.camera.distance + corner);
+  }
+  return { fire, eye };
+})();

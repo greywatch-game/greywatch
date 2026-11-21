@@ -7,10 +7,11 @@
  * static fixtures compete nearest-first — so fixtures must be hand-placed
  * SPATIALLY SPREAD, and any new per-bot transient light must be budgeted
  * through Game.spendMuzzleLightBudget. update() runs after the camera update
- * (slot selection keys off camera position). Adding a PointLight or
- * HemisphericLight to the scene does nothing to cel-shaded meshes — don't.
+ * (slot selection keys off camera position). A PointLight or
+ * HemisphericLight never lit a cel-shaded mesh, and there is no scene to add
+ * one to.
  */
-import { Color3, Vector3 } from "@babylonjs/core";
+import { Color3, Vector3, type Vector3Like } from "../math";
 import {
   CelMaterialFactory,
   MAX_POINT_LIGHTS,
@@ -256,7 +257,7 @@ export class LightingSystem {
    * Every registered static fixture, in registration order — not the slots
    * that won this frame (that is `activeLights`).
    *
-   * Exists for the map editor's light-cluster check: the shader cap is
+   * Exists for the map viewer's light-cluster check (`viewer/validate.ts`): the shader cap is
    * absolute, fixtures compete nearest-first, so a cluster of lanterns wastes
    * slots and flattens the darkness around it. Read-only — mutating a fixture
    * behind LightingSystem's back desyncs `baseIntensity` from the flicker.
@@ -267,8 +268,8 @@ export class LightingSystem {
 
   /**
    * The lights that won shader slots in the last `update`, nearest-first by
-   * construction. Other uniform-lit materials (water) read the same set so
-   * every surface agrees about which lights exist.
+   * construction. What states its own lamps (the grass, the water) reads the same
+   * set, so every surface agrees about which lights exist.
    */
   get activeLights(): readonly PointLightData[] {
     return this.active;
@@ -300,7 +301,7 @@ export class LightingSystem {
    * Advances flicker/decay and uploads the winning lights to every cel
    * material. Call once per frame, after the camera has been updated.
    */
-  update(dt: number, viewPos: Vector3, mats: CelMaterialFactory): void {
+  update(dt: number, viewPos: Vector3Like, mats: CelMaterialFactory): void {
     this.t += dt;
 
     // Written out twice rather than through a closure defined per frame: this

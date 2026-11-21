@@ -13,7 +13,7 @@
  * answer with a KIND rather than a boolean. Soft cover is a hint about where to
  * walk and must never be treated as a safety claim.
  */
-import { Vector3 } from "@babylonjs/core";
+import type { Vector3Like, Vector3Ref } from "../math";
 import { CONFIG } from "../config";
 import { segmentHitsBox } from "./boxGeometry";
 import type { WorldBox } from "./MapBuilder";
@@ -360,10 +360,10 @@ export class CoverMap {
    * `cover.claimRadius`. Omitted, every spot is free.
    */
   findCover(
-    from: Vector3,
+    from: Vector3Like,
     tx: number,
     tz: number,
-    into: Vector3,
+    into: Vector3Ref,
     taken?: (x: number, z: number) => boolean,
   ): CoverKind {
     const cx = this.clampCell(this.toCell(from.x));

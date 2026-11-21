@@ -1,8 +1,8 @@
 # .github/workflows/ci.yml — run the gates this repo already has, on every push.
 #
-# There is no test suite and no linter here by design; `npm run typecheck` and
-# the four scripts around it ARE the gates, and until this file existed nothing
-# ran them automatically. `docker.yml` builds the images, which runs `npm run
+# There is no test suite and no linter here by design; `npm run typecheck`, the
+# scripts around it, `corecheck` and the four copy checks ARE the gates, and
+# until this file existed nothing ran them automatically. `docker.yml` builds the images, which runs `npm run
 # build` as a side effect of the image build — but only after a push has
 # already landed, and it reports a failure as "the image
 # did not build" rather than as the type error it was.
@@ -66,7 +66,7 @@ jobs:
       - name: typecheck (client + server)
         run: npm run typecheck
 
-      # The collision-bake staleness guard, the deep-import guard, the client
+      # The collision-bake staleness guard, the import gates, the client
       # bundle and the proving-ground sentinel check, in that order — this is
       # `npm run build`, and it is the first Dockerfile RUN line verbatim.
       #
@@ -76,7 +76,7 @@ jobs:
       # without tripping it. `npm run parity` is what actually catches that, and
       # it is NOT in this workflow — see the block at the foot of the file for
       # why, and run it by hand after anything touching the world layer.
-      - name: build (collision + deep-import gates, typecheck, bundle)
+      - name: build (collision + import gates, typecheck, bundle)
         run: npm run build
 
       # The second Dockerfile RUN line. Transpile-only — it proves the server
@@ -91,6 +91,27 @@ jobs:
       # DEV-only proving ground is in neither artefact.
       - name: check proving ground is in neither bundle
         run: node scripts/check-proving.mjs
+
+      # The one test (`server/corecheck.ts`): the core's scoring and person
+      # rules, asserted on a bare core through the trusted door and then
+      # through a real `Match`'s validated door, which must drain the same
+      # events. `npm run corecheck` is `build:server` plus this line, and the
+      # step above has already built `dist-server/corecheck.js`, so it is run
+      # directly rather than bundled twice. Node only, about a minute.
+      - name: corecheck
+        run: node dist-server/corecheck.js
+
+      # The four copy checks: `src/math`, `src/geometry`, the bounds and the
+      # ellipsoid sweep held bit for bit to the committed tables in
+      # `scripts/tables/` (`docs/build.md`). Node only, seconds each. They are
+      # regression oracles now that Babylon is gone — a change that moves an
+      # answer fails here and names the group.
+      - name: copy checks (math, geometry, bounds, sweep)
+        run: |
+          node scripts/math-check.mjs
+          node scripts/geometry-check.mjs
+          node scripts/bounds-check.mjs
+          node scripts/sweep-check.mjs
 
   # ---------------------------------------------------------------------------
   # THERE IS NO PARITY JOB HERE, AND THIS BLOCK IS WHY — DO NOT ADD ONE BACK

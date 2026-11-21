@@ -4,8 +4,8 @@
  * buildFungus, buildLog, buildBramble and buildRubble.
  * Part of the scatter set: follows the contract in `./index.ts`.
  */
-import { Mesh, MeshBuilder, Scene } from "@babylonjs/core";
-import { partBox, partCylinder } from "../parts";
+import { createBox, createCylinder, createSphere } from "../../geometry/primitives";
+import { Part } from "../parts";
 import type { CelMaterialFactory } from "../../shaders/CelShader";
 import { BARK, DEAD_BARK, JUNGLE_BARK, VINE } from "./palette";
 
@@ -28,15 +28,13 @@ const CONCRETE = "#4a4d54";
  * a log should be.
  */
 export function buildButtressLog(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const bark = mats.get(JUNGLE_BARK);
-  const trunk = partCylinder(
+  const trunk = new Part(
     "buttresslog-trunk",
-    { height: 5.2, diameterTop: 0.72, diameterBottom: 0.95, tessellation: 7 },
-    scene,
+    createCylinder({ height: 5.2, diameterTop: 0.72, diameterBottom: 0.95, tessellation: 7 }),
   );
   trunk.position.y = 0.48;
   trunk.rotation.z = Math.PI / 2;
@@ -47,10 +45,9 @@ export function buildButtressLog(
   // Buttress fins, still standing off the butt end. Parented to the trunk, so
   // they ride its roll — a fin that ignored it would float.
   for (let i = 0; i < 2; i++) {
-    const fin = partBox(
+    const fin = new Part(
       `buttresslog-fin${i}`,
-      { width: 0.16, height: 1.5, depth: 1.1 },
-      scene,
+      createBox({ width: 0.16, height: 1.5, depth: 1.1 }),
     );
     fin.parent = trunk;
     fin.position.set(0, -2.0, (i === 0 ? 1 : -1) * 0.42);
@@ -59,10 +56,9 @@ export function buildButtressLog(
   }
 
   // The torn root plate: a disc on edge, closing the butt.
-  const plate = partCylinder(
+  const plate = new Part(
     "buttresslog-plate",
-    { height: 0.28, diameterTop: 1.7, diameterBottom: 1.9, tessellation: 7 },
-    scene,
+    createCylinder({ height: 0.28, diameterTop: 1.7, diameterBottom: 1.9, tessellation: 7 }),
   );
   plate.parent = trunk;
   plate.position.y = -2.7;
@@ -71,10 +67,9 @@ export function buildButtressLog(
   // Moss along the upper flank — a log on a wet floor is the first thing the
   // forest takes.
   for (let i = 0; i < 3; i++) {
-    const moss = partBox(
+    const moss = new Part(
       `buttresslog-moss${i}`,
-      { width: 0.5, height: 0.1, depth: 0.62 },
-      scene,
+      createBox({ width: 0.5, height: 0.1, depth: 0.62 }),
     );
     moss.parent = trunk;
     moss.position.set(0.44, -1.4 + i * 1.5, 0);
@@ -100,15 +95,13 @@ export function buildButtressLog(
  * already makes at a much steeper angle.
  */
 export function buildCarvedStele(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const stone = mats.get(STONE);
-  const slab = partBox(
+  const slab = new Part(
     "stele-slab",
-    { width: 0.95, height: 2.3, depth: 0.42 },
-    scene,
+    createBox({ width: 0.95, height: 2.3, depth: 0.42 }),
   );
   slab.position.y = 1.15;
   // Shallower than the gravestone's: nobody has been keeping this one upright,
@@ -117,10 +110,9 @@ export function buildCarvedStele(
   slab.rotation.z = (rng() - 0.5) * 0.24;
   slab.material = stone;
 
-  const cap = partCylinder(
+  const cap = new Part(
     "stele-cap",
-    { height: 0.2, diameter: 0.98, tessellation: 6 },
-    scene,
+    createCylinder({ height: 0.2, diameter: 0.98, tessellation: 6 }),
   );
   cap.parent = slab;
   cap.rotation.x = Math.PI / 2;
@@ -130,30 +122,27 @@ export function buildCarvedStele(
   // Relief bands across the face — the carving, at the only fidelity a cel
   // shader's flat bands can carry at this distance.
   for (let i = 0; i < 3; i++) {
-    const band = partBox(
+    const band = new Part(
       `stele-band${i}`,
-      { width: 0.78, height: 0.14, depth: 0.06 },
-      scene,
+      createBox({ width: 0.78, height: 0.14, depth: 0.06 }),
     );
     band.parent = slab;
     band.position.set(0, 0.55 - i * 0.55, 0.24);
     band.material = mats.get(DARK_STONE);
   }
 
-  const plinth = partBox(
+  const plinth = new Part(
     "stele-plinth",
-    { width: 1.3, height: 0.3, depth: 0.7 },
-    scene,
+    createBox({ width: 1.3, height: 0.3, depth: 0.7 }),
   );
   plinth.parent = slab;
   plinth.position.y = -1.1;
   plinth.material = mats.get(DARK_STONE);
 
   // Creeper up one face.
-  const vine = partBox(
+  const vine = new Part(
     "stele-vine",
-    { width: 0.16, height: 1.6, depth: 0.08 },
-    scene,
+    createBox({ width: 0.16, height: 1.6, depth: 0.08 }),
   );
   vine.parent = slab;
   vine.position.set(-0.3, -0.15, -0.25);
@@ -163,35 +152,31 @@ export function buildCarvedStele(
 
 /** Leaning headstone with a cracked-off corner. */
 export function buildGravestone(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const stone = mats.get(STONE);
-  const slab = partBox(
+  const slab = new Part(
     "grave-slab",
-    { width: 1.0, height: 1.5, depth: 0.24 },
-    scene,
+    createBox({ width: 1.0, height: 1.5, depth: 0.24 }),
   );
   slab.position.y = 0.75;
   slab.rotation.x = (rng() - 0.5) * 0.22;
   slab.rotation.z = (rng() - 0.5) * 0.3;
   slab.material = stone;
 
-  const cap = partCylinder(
+  const cap = new Part(
     "grave-cap",
-    { height: 0.22, diameter: 1.0, tessellation: 7 },
-    scene,
+    createCylinder({ height: 0.22, diameter: 1.0, tessellation: 7 }),
   );
   cap.parent = slab;
   cap.rotation.x = Math.PI / 2;
   cap.position.y = 0.72;
   cap.material = stone;
 
-  const plinth = partBox(
+  const plinth = new Part(
     "grave-plinth",
-    { width: 1.3, height: 0.28, depth: 0.5 },
-    scene,
+    createBox({ width: 1.3, height: 0.28, depth: 0.5 }),
   );
   plinth.parent = slab;
   plinth.position.y = -0.72;
@@ -201,16 +186,14 @@ export function buildGravestone(
 
 /** Cluster of luminous corpse-fungus — small, cold, and everywhere. */
 export function buildFungus(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const stem = mats.get("#6a6f63");
   const glow = mats.getEmissive("#6effc0");
-  const base = partCylinder(
+  const base = new Part(
     "fungus-base",
-    { height: 0.5, diameterTop: 0.12, diameterBottom: 0.2, tessellation: 5 },
-    scene,
+    createCylinder({ height: 0.5, diameterTop: 0.12, diameterBottom: 0.2, tessellation: 5 }),
   );
   base.position.y = 0.25;
   base.material = stem;
@@ -219,19 +202,17 @@ export function buildFungus(
     const a = (i / 4) * Math.PI * 2 + rng();
     const r = 0.25 + rng() * 0.35;
     const h = 0.3 + rng() * 0.4;
-    const stalk = partCylinder(
+    const stalk = new Part(
       `fungus-stalk${i}`,
-      { height: h, diameterTop: 0.07, diameterBottom: 0.1, tessellation: 5 },
-      scene,
+      createCylinder({ height: h, diameterTop: 0.07, diameterBottom: 0.1, tessellation: 5 }),
     );
     stalk.parent = base;
     stalk.position.set(Math.cos(a) * r, h / 2 - 0.2, Math.sin(a) * r);
     stalk.material = stem;
 
-    const cap = MeshBuilder.CreateSphere(
+    const cap = new Part(
       `fungus-cap${i}`,
-      { diameter: 0.26 + rng() * 0.12, segments: 5 },
-      scene,
+      createSphere({ diameter: 0.26 + rng() * 0.12, segments: 5 }),
     );
     cap.parent = stalk;
     cap.position.y = h / 2;
@@ -244,24 +225,21 @@ export function buildFungus(
 
 /** Fallen, half-rotted log. */
 export function buildLog(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const log = partCylinder(
+): Part {
+  const log = new Part(
     "log",
-    { height: 3.0, diameterTop: 0.55, diameterBottom: 0.7, tessellation: 6 },
-    scene,
+    createCylinder({ height: 3.0, diameterTop: 0.55, diameterBottom: 0.7, tessellation: 6 }),
   );
   log.rotation.z = Math.PI / 2;
   log.rotation.x = (rng() - 0.5) * 0.4;
   log.position.y = 0.36;
   log.material = mats.get(DEAD_BARK);
 
-  const stub = partCylinder(
+  const stub = new Part(
     "log-stub",
-    { height: 0.9, diameterTop: 0.12, diameterBottom: 0.22, tessellation: 5 },
-    scene,
+    createCylinder({ height: 0.9, diameterTop: 0.12, diameterBottom: 0.22, tessellation: 5 }),
   );
   stub.parent = log;
   stub.position.set(0, 0.6, 0.3);
@@ -275,15 +253,13 @@ export function buildLog(
  * fills bare ground without adding another thing for a bot to get wedged in.
  */
 export function buildBramble(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
+): Part {
   const wood = mats.get(DEAD_BARK);
-  const base = partCylinder(
+  const base = new Part(
     "bramble",
-    { height: 0.4, diameterTop: 0.5, diameterBottom: 0.7, tessellation: 5 },
-    scene,
+    createCylinder({ height: 0.4, diameterTop: 0.5, diameterBottom: 0.7, tessellation: 5 }),
   );
   base.position.y = 0.2;
   base.material = wood;
@@ -292,10 +268,9 @@ export function buildBramble(
   for (let i = 0; i < canes; i++) {
     const a = (i / canes) * Math.PI * 2 + rng() * 0.5;
     const h = 0.8 + rng() * 0.9;
-    const cane = partCylinder(
+    const cane = new Part(
       `cane${i}`,
-      { height: h, diameterTop: 0.03, diameterBottom: 0.09, tessellation: 4 },
-      scene,
+      createCylinder({ height: h, diameterTop: 0.03, diameterBottom: 0.09, tessellation: 4 }),
     );
     cane.parent = base;
     cane.position.set(Math.cos(a) * 0.22, h / 2, Math.sin(a) * 0.22);
@@ -308,24 +283,21 @@ export function buildBramble(
 
 /** Collapsed masonry with rebar poking out — waist-high cover. */
 export function buildRubble(
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
-): Mesh {
-  const heap = partBox(
+): Part {
+  const heap = new Part(
     "rubble",
-    { width: 1.9, height: 0.6, depth: 1.6 },
-    scene,
+    createBox({ width: 1.9, height: 0.6, depth: 1.6 }),
   );
   heap.position.y = 0.3;
   heap.rotation.y = rng() * Math.PI;
   heap.material = mats.get(CONCRETE);
 
   for (let i = 0; i < 3; i++) {
-    const chunk = partBox(
+    const chunk = new Part(
       `chunk${i}`,
-      { width: 0.7, height: 0.5, depth: 0.6 },
-      scene,
+      createBox({ width: 0.7, height: 0.5, depth: 0.6 }),
     );
     chunk.parent = heap;
     chunk.position.set(
@@ -337,10 +309,9 @@ export function buildRubble(
     chunk.material = mats.get("#565a62");
   }
 
-  const rebar = partCylinder(
+  const rebar = new Part(
     "rebar",
-    { height: 1.7, diameterTop: 0.05, diameterBottom: 0.07, tessellation: 4 },
-    scene,
+    createCylinder({ height: 1.7, diameterTop: 0.05, diameterBottom: 0.07, tessellation: 4 }),
   );
   rebar.parent = heap;
   rebar.position.set(0.5, 0.8, -0.3);

@@ -2,12 +2,24 @@
  * BlastDebrisSystem.ts — What a blast tears out of the ground and throws, and
  * the mark it leaves where it happened: two of `CONFIG.grenade`'s eight blast
  * layers, and the two that outlive the fire.
- * Owns: the chunk pool and its bodies, the per-surface rubble colours, and
- * `ScorchMarks`. The other six layers are `GrenadeSystem`'s.
+ * Owns: the chunk pool — its bodies, each chunk's box and its drawing
+ * (`PosedPiece`) — the per-surface rubble colours, and `ScorchMarks`. The
+ * other six layers are `GrenadeFx`'s (`BlastFx`).
  * Invariants: it is the THIRD `PhysicsClient` and owns no engine — see
  * `PhysicsWorld`. Nothing here feeds navigation, cover or hit detection: a
  * chunk is dressing exactly as a corpse and a glass shard are, and rounds and
- * bodies pass through it.
+ * bodies pass through it. A chunk's place is its body's `pose`, drawn by
+ * our renderer straight off it since `BABYLON_EXIT.md` X4.4c, exactly as
+ * `DebrisSystem`'s shards are (`Game.drawDebris`,
+ * `poseView.writePosedDrawing`): no chunk is a mesh, a chunk's box
+ * is its own arrays (`chunkBoxes`), and its switch, its scale and its bounds
+ * are its `PosedPiece`'s. **The SCORCH is our renderer's too since
+ * `BABYLON_EXIT.md` X4.6e**: each mark a FADE of its kit (`entities/fades.ts`),
+ * drawn in the one back-to-front run among the see-through panes
+ * (`Game.farthestPull`), where it fades by `visibility` as Babylon's
+ * transparent sort faded its mesh; its map is ours since X5.4d, a canvas
+ * painted here as the `DynamicTexture` it was (`scorchMap`,
+ * `TextureMaker.picture`).
  *
  * ## What makes this worth having is that it knows what it went off ON
  *
@@ -15,9 +27,9 @@
  * and in a marble lobby is a blast that has not noticed where it happened, and
  * that is most of why explosions read as decals stuck onto a world rather than
  * as something the world did. `GrenadeSystem.probeGround` casts one downward
- * ray at the detonation and reads the same `metadata.surface` a bullet's impact
- * reads — the field `MapBuilder` sets on exactly one thing, the terrain floor's
- * collider clone — so a blast is one of two things:
+ * ray at the detonation and reads the same `RayHit.surface` a bullet's impact
+ * reads — which `RayWorld` answers "ground" off exactly one thing, the floor,
+ * and "hard" off every box — so a blast is one of two things:
  *
  * | surface | throws | coloured from |
  * | --- | --- | --- |
@@ -32,7 +44,7 @@
  *
  * **The POOL** is `debris.bursts` bursts of `debris.chunks` bodies, built once
  * and never rebuilt. At 3 and 10 that is 30 bodies, against `DebrisSystem`'s 48
- * and `RagdollSystem`'s 80 at full stretch; the three are one budget and want
+ * and `RagdollSystem`'s 96 at full stretch; the three are one budget and want
  * raising together or not at all.
  *
  * **A chunk's SIZE is decided at construction, not at the burst.** Each of the
@@ -53,24 +65,14 @@
  * exactly, and for its reason: rubble that vanishes mid-flight is worse than
  * rubble that never flew, while a chunk lying in the road is fair game.
  */
-import {
-  Color3,
-  DynamicTexture,
-  Mesh,
-  MeshBuilder,
-  PhysicsBody,
-  PhysicsMotionType,
-  PhysicsShape,
-  PhysicsShapeBox,
-  Quaternion,
-  Scene,
-  StandardMaterial,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
+import { Fade, fadeKit, type FadeKit, SCORCH } from "../entities/fades";
+import { createBox, createDisc } from "../geometry/primitives";
+import { Color3, Quaternion, Vector3, type Vector3Like } from "../math";
+import type { OwnTexture } from "../render/HostBindGroup";
+import { newCanvas, SAMPLING, type TextureMaker } from "../render/TextureMaker";
 import type { CelMaterialFactory } from "../shaders/CelShader";
-import { attachEmissiveFog } from "../shaders/EmissiveFog";
-import type { ShaderMaterial } from "@babylonjs/core";
+import type { MaterialKey } from "../shaders/MaterialKey";
 import type { EnvironmentSpec } from "../world/environment";
 import type { BlastGround } from "./GrenadeSystem";
 import {
@@ -78,7 +80,21 @@ import {
   WORLD_GROUP,
   type PhysicsClient,
   type PhysicsWorld,
+  type WorldBody,
 } from "./PhysicsWorld";
+import { parkPose, parkedPose, PosedPiece, storePose } from "./poseView";
+
+/**
+ * What a blast went off on, as THIS system reads it: `GrenadeSystem`'s
+ * `BlastGround`, its normal a COPY `Game` hands it (`Game.debrisGroundOf`),
+ * never the simulation's own. The copy was a crossing into Babylon's vector
+ * until `BABYLON_EXIT.md` X6.1e moved this system onto `src/math`; both
+ * shapes are one library's now.
+ */
+export interface DebrisGround {
+  surface: BlastGround["surface"];
+  normal: Vector3;
+}
 
 /**
  * What each surface throws, and the two rules the table is written under.
@@ -101,6 +117,9 @@ const RUBBLE: Record<
   ground: { tint: null, count: 1, size: 0.85 },
   hard: { tint: "#8d8781", count: 0.7, size: 1.25 },
 };
+
+/** The stone the `hard` rubble is painted in, every map — `RUBBLE.hard.tint`, for our renderer's palette. */
+export const HARD_TINT = RUBBLE.hard.tint!;
 
 /**
  * What a crater turns up, and how much of it is the map's rather than this.
@@ -126,12 +145,31 @@ const EARTH_DARKEN = 0.85;
 /** Where a body waits between bursts, well under any map. `DebrisSystem`'s. */
 const PARKED_Y = -1000;
 
-/** One chunk: its mesh, the body that moves it, and the shape cut to its size. */
+/**
+ * One chunk's box, as `CreateBox` made its mesh's arrays until
+ * `BABYLON_EXIT.md` X4.4c (`src/geometry/`'s `createBox` since X6.1g: doubles
+ * in a `Float64Array` and the indices in a `Uint32Array`, where Babylon's
+ * were `number[]`s, which our renderer copies into its buffers the same) —
+ * what our renderer uploads once, a kit for each of the two paints (`Game`).
+ */
+export interface ChunkBox {
+  readonly positions: ArrayLike<number>;
+  readonly normals: ArrayLike<number>;
+  readonly uvs: ArrayLike<number>;
+  readonly indices: ArrayLike<number>;
+}
+
+/** One chunk: its drawing, the body that moves it, and its size. */
 interface Chunk {
-  mesh: Mesh;
-  body: PhysicsBody;
-  shape: PhysicsShape;
-  /** Half-extents (m). The mesh, the shape and the mass all come off these. */
+  /** The chunk as drawn, from `body.pose` — see the header. */
+  readonly piece: PosedPiece;
+  /** What it was last thrown off: which of the two paints it is drawn in. */
+  surface: BlastGround["surface"];
+  /** Its box: what the drawing is an instance of. */
+  readonly box: ChunkBox;
+  /** On Havok's raw API, through `PhysicsWorld` — see `buildPool`. */
+  body: WorldBody;
+  /** Half-extents (m). The box, the shape and the mass all come off these. */
   hx: number;
   hy: number;
   hz: number;
@@ -152,17 +190,35 @@ const _spin = new Vector3();
 const _tangent = new Vector3();
 const _bitangent = new Vector3();
 const _along = new Vector3();
+const _place = new Vector3();
+const _turn = new Quaternion();
 
 export class BlastDebrisSystem implements PhysicsClient {
   private bursts: Burst[] = [];
   private readonly scorch: ScorchMarks;
+  /**
+   * Every chunk's drawing, burst-major — the order their meshes were made in
+   * until `BABYLON_EXIT.md` X4.4c, which is the tie-break of the order our
+   * renderer draws them in (`Game.debrisPull`) — and what `Game.drawDebris`
+   * hands it, beside each one's box (`chunkBoxes`) and the surface it was
+   * last thrown off (`surfaceOf`).
+   */
+  readonly pieces: readonly PosedPiece[];
+  /** Every chunk's box, in `pieces`' order — sizes drawn at construction, off the seeded stream. */
+  readonly chunkBoxes: readonly ChunkBox[];
+  /**
+   * The EARTH this map's rubble is painted in (`setEnvironment`), as the hex
+   * its `get` material is keyed on, or null before a map. The stone is
+   * `HARD_TINT`, every map.
+   */
+  earth: string | null = null;
   /**
    * The two rubble materials, rebuilt per map by `setEnvironment`. Null until
    * one has been installed, which is the state a burst before the first
    * `installMap` would be in — there is no such state in the game, and the
    * check is what makes that true rather than assumed.
    */
-  private mats: Record<BlastGround["surface"], ShaderMaterial> | null = null;
+  private mats: Record<BlastGround["surface"], MaterialKey> | null = null;
 
   /**
    * The burst's own jitter stream, re-seeded by `reset` — so per round, and per
@@ -176,13 +232,26 @@ export class BlastDebrisSystem implements PhysicsClient {
   private seed = 0x5bd1;
 
   constructor(
-    private scene: Scene,
+    /** Our renderer's maker of the textures the game paints: the scorch's map. */
+    textures: TextureMaker,
     private factory: CelMaterialFactory,
     private physics: PhysicsWorld,
   ) {
     physics.register(this);
-    this.scorch = new ScorchMarks(scene);
+    this.scorch = new ScorchMarks(textures);
     this.buildPool();
+    const chunks = this.bursts.flatMap((b) => b.chunks);
+    this.pieces = chunks.map((c) => c.piece);
+    this.chunkBoxes = chunks.map((c) => c.box);
+    this.chunkList = chunks;
+  }
+
+  /** What `surfaceOf` reads: every chunk, in `pieces`' order. */
+  private readonly chunkList: readonly Chunk[];
+
+  /** The surface chunk `i` (in `pieces`' order) was last thrown off — which paint it is drawn in. */
+  surfaceOf(i: number): BlastGround["surface"] {
+    return this.chunkList[i].surface;
   }
 
   /** How many bursts are live. Test hook, exactly as `DebrisSystem`'s is. */
@@ -200,7 +269,7 @@ export class BlastDebrisSystem implements PhysicsClient {
   afterFirstStep(): void {
     for (const burst of this.bursts) {
       if (burst.t < 0) continue;
-      for (const c of burst.chunks) c.body.disablePreStep = true;
+      for (const c of burst.chunks) c.body.teleport = false;
     }
   }
 
@@ -215,7 +284,7 @@ export class BlastDebrisSystem implements PhysicsClient {
    * What this map's rubble is made of.
    *
    * Called from `installMap` with the environment the map was built against,
-   * the same place `GrenadeSystem.setEnvironment` tints the dust — and for the
+   * the same place `GrenadeFx.setEnvironment` tints the dust — and for the
    * same reason: a blast is only ever seen against the map it went off on.
    *
    * **The scorch is deliberately not in here.** It multiplies rather than
@@ -228,9 +297,14 @@ export class BlastDebrisSystem implements PhysicsClient {
       Color3.FromHexString(SUBSOIL),
       EARTH_MIX,
     ).scale(EARTH_DARKEN);
+    // Each paint's material still asked of the factory, where the chunks that
+    // wore them were dressed from until X4.4c, so its order is unmoved; what
+    // our renderer reads is the hex (`earth`, `HARD_TINT`), a slot of the
+    // debris draw's palette.
+    this.earth = earth.toHexString();
     this.mats = {
-      ground: this.factory.get(earth.toHexString()),
-      hard: this.factory.get(RUBBLE.hard.tint!),
+      ground: this.factory.get(this.earth),
+      hard: this.factory.get(HARD_TINT),
     };
   }
 
@@ -250,20 +324,26 @@ export class BlastDebrisSystem implements PhysicsClient {
    * burns on and throws no rubble out of it — petrol does not dig. `power` is
    * the mark's size against a frag's, exactly as `burst`'s is.
    */
-  scorchAt(at: Vector3, power: number, ground: BlastGround): void {
+  scorchAt(at: Vector3, power: number, ground: DebrisGround): void {
     this.scorch.mark(at, power, ground);
   }
 
-  /**
-   * One scorch mark shown, or taken back off, for the frames of the building
-   * card's pipeline warm-up (`core/PipelineWarmup.ts`) — see
-   * `ScorchMarks.warm`.
-   */
-  warm(on: boolean): void {
-    this.scorch.warm(on);
+  /** The scorch's kit: the arrays `MeshBuilder.CreateDisc` made each mark's mesh of. */
+  get scorchKit(): FadeKit {
+    return this.scorch.kit;
   }
 
-  burst(at: Vector3, power: number, ground: BlastGround, camPos: Vector3): boolean {
+  /** The scorch's map: our texture, painted here (`BABYLON_EXIT.md` X5.4d). */
+  get scorchMap(): OwnTexture {
+    return this.scorch.map;
+  }
+
+  /** Every mark, by slot — the order their meshes stood in the scene: what `Game.farthestPull` reads (never writes). */
+  get scorchFades(): readonly Fade[] {
+    return this.scorch.fades;
+  }
+
+  burst(at: Vector3, power: number, ground: DebrisGround, camPos: Vector3Like): boolean {
     const d = CONFIG.grenade.debris;
     this.scorch.mark(at, power, ground);
 
@@ -274,7 +354,6 @@ export class BlastDebrisSystem implements PhysicsClient {
     const slot = this.take();
     if (!slot) return false;
 
-    const material = this.mats[ground.surface];
     // Scaled by the surface AND by the blast: a shell in a field throws
     // everything the pool has, a grenade on flagstones throws seven pieces.
     const wanted = Math.min(
@@ -283,6 +362,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     );
     slot.t = 0;
     slot.live = wanted;
+    const hp = this.physics.havok;
 
     // An orthonormal pair across the surface, so the spread is laid out ON the
     // ground rather than in world XZ — a blast on a 30-degree bank throws its
@@ -296,7 +376,7 @@ export class BlastDebrisSystem implements PhysicsClient {
 
     for (let i = 0; i < wanted; i++) {
       const chunk = slot.chunks[i];
-      chunk.mesh.material = material;
+      chunk.surface = ground.surface;
 
       // Born spread across the crater rather than all at the centre, and lifted
       // clear of the surface by its own longest half-extent: thirty boxes born
@@ -305,7 +385,7 @@ export class BlastDebrisSystem implements PhysicsClient {
       const yaw = ((i + this.rand()) / wanted) * Math.PI * 2;
       const spread = CONFIG.grenade.flash.radius * 0.35 * power * this.rand();
       const clear = Math.max(chunk.hx, chunk.hy, chunk.hz) + 0.04;
-      chunk.mesh.position
+      _place
         .copyFrom(_tangent)
         .scaleInPlace(Math.cos(yaw) * spread)
         .addInPlace(_along.copyFrom(_bitangent).scaleInPlace(Math.sin(yaw) * spread))
@@ -315,17 +395,21 @@ export class BlastDebrisSystem implements PhysicsClient {
         this.rand() * Math.PI * 2,
         this.rand() * Math.PI * 2,
         this.rand() * Math.PI * 2,
-        chunk.mesh.rotationQuaternion!,
+        _turn,
       );
-      // The surface's own size multiplier, and the ONE place the mesh and its
-      // collision box are allowed to disagree: Havok's transform sync writes
-      // position and orientation onto an unparented node and leaves scaling
-      // alone, so a chunk drawn at 1.25 rests up to 3 cm inside the road it
-      // landed on. That is under the ground's own vertex noise, against a piece
-      // of dressing that is gone in seven seconds; the alternative is a second
+      // Into the body's pose, which the next substep teleports from, and drawn
+      // there now — see `DebrisSystem.burst`.
+      storePose(chunk.body.pose, _place, _turn);
+      // The surface's own size multiplier, and the ONE place the drawing and
+      // its collision box are allowed to disagree: the drawing composes a
+      // body's position and orientation (the two writes the plugin's sync
+      // made) with this scale, while the box is cut to the unscaled size — so
+      // a chunk drawn at 1.25 rests up to 3 cm inside the road it landed on.
+      // That is under the ground's own vertex noise, against a piece of
+      // dressing that is gone in seven seconds; the alternative is a second
       // shape per size, which is a WASM allocation for a shadow-thin gain.
-      chunk.mesh.scaling.setAll(look.size);
-      chunk.mesh.setEnabled(true);
+      chunk.piece.scale = look.size;
+      chunk.piece.enabled = true;
 
       // Out along the ground and up off it, mixed by `lift`. The lift is high
       // and has to be — see `CONFIG.grenade.debris`. A chunk lighter than the
@@ -358,13 +442,13 @@ export class BlastDebrisSystem implements PhysicsClient {
         (this.rand() - 0.5) * spin,
       );
 
-      chunk.body.setMotionType(PhysicsMotionType.DYNAMIC);
+      this.physics.setMotion(chunk.body, "dynamic");
       // Two-phase teleport, exactly as a corpse's bones and a glass shard take:
-      // one step reads the node into the sim, and `afterFirstStep` hands
+      // one step reads the pose into the sim, and `afterFirstStep` hands
       // ownership over.
-      chunk.body.disablePreStep = false;
-      chunk.body.setLinearVelocity(_vel);
-      chunk.body.setAngularVelocity(_spin);
+      chunk.body.teleport = true;
+      hp.setLinearVelocity(chunk.body.id, [_vel.x, _vel.y, _vel.z]);
+      hp.setAngularVelocity(chunk.body.id, [_spin.x, _spin.y, _spin.z]);
     }
     return true;
   }
@@ -386,11 +470,14 @@ export class BlastDebrisSystem implements PhysicsClient {
       // alpha 1.0 and one instance of it is shared by everything of that
       // colour, so a fade here would dim every chunk in the pool at once rather
       // than the burst that is expiring. A chunk goes down through the floor.
+      // It lowers the POSE, which the next substep's sync writes back over
+      // while the body is live — `DebrisSystem.update` says what that costs
+      // the sink, and it is kept as it always behaved.
       const sinking = burst.t - d.life;
       if (sinking > 0) {
         const drop = (sinking / d.sink) * 0.5;
         for (let i = 0; i < burst.live; i++) {
-          burst.chunks[i].mesh.position.y -= drop * dt * 8;
+          burst.chunks[i].body.pose[1] -= drop * dt * 8;
         }
       }
       if (burst.t > d.life + d.sink) this.release(burst);
@@ -419,19 +506,19 @@ export class BlastDebrisSystem implements PhysicsClient {
   private release(burst: Burst): void {
     burst.t = -1;
     burst.live = 0;
+    const hp = this.physics.havok;
     for (const c of burst.chunks) {
-      c.mesh.setEnabled(false);
-      c.body.setLinearVelocity(Vector3.ZeroReadOnly);
-      c.body.setAngularVelocity(Vector3.ZeroReadOnly);
-      c.body.setMotionType(PhysicsMotionType.STATIC);
-      // Parked THROUGH the plugin, not just by moving the node: a static body
+      c.piece.enabled = false;
+      hp.setLinearVelocity(c.body.id, [0, 0, 0]);
+      hp.setAngularVelocity(c.body.id, [0, 0, 0]);
+      this.physics.setMotion(c.body, "static");
+      // Parked THROUGH the engine, not just by moving the node: a static body
       // whose transform was only written on the mesh leaves its collision proxy
       // where it stopped — an invisible box lying in the street that rounds and
-      // bodies stop on. `RagdollSystem.park` carries the measurement.
-      c.mesh.position.set(0, PARKED_Y, 0);
-      c.body.disablePreStep = false;
-      this.physics.plugin.setPhysicsBodyTransformation(c.body, c.mesh);
-      c.body.disablePreStep = true;
+      // bodies stop on. `RagdollSystem.park` carries the measurement. Only the
+      // position is reset; the orientation is whatever the chunk last wore.
+      parkPose(c.body.pose, PARKED_Y);
+      this.physics.park(c.body);
     }
   }
 
@@ -452,6 +539,7 @@ export class BlastDebrisSystem implements PhysicsClient {
     const d = CONFIG.grenade.debris;
     const death = CONFIG.bots.death;
     const span = d.sizeMax - d.sizeMin;
+    const hp = this.physics.havok;
     for (let i = 0; i < d.bursts; i++) {
       const chunks: Chunk[] = [];
       for (let j = 0; j < d.chunks; j++) {
@@ -462,52 +550,44 @@ export class BlastDebrisSystem implements PhysicsClient {
         const hx = base * (0.7 + 0.6 * this.rand());
         const hy = base * (0.55 + 0.5 * this.rand());
         const hz = base * (0.7 + 0.6 * this.rand());
-        const mesh = MeshBuilder.CreateBox(
-          `blastChunk${i}-${j}`,
-          { width: hx * 2, height: hy * 2, depth: hz * 2 },
-          this.scene,
-        );
-        mesh.position.y = PARKED_Y;
-        mesh.rotationQuaternion = Quaternion.Identity();
-        mesh.isPickable = false;
-        mesh.checkCollisions = false;
-        mesh.setEnabled(false);
-        // No ink and no bloom. An outline shell around a 15 cm box is most of
-        // the pixels it covers and doubles a draw that is on screen for six
-        // seconds; `noGlow` is not inert, because this system is built before
-        // `Game`'s construction-time glow-exclusion scan runs — the same
-        // ordering `DebrisSystem`'s pool relies on.
-        mesh.metadata = { noGlow: true };
+        // Its box, as `CreateBox` built the mesh it was until X4.4c — by
+        // `src/geometry/`'s copy since `BABYLON_EXIT.md` X6.1g, held to
+        // Babylon's bit for bit by `geometry-check`.
+        const data = createBox({ width: hx * 2, height: hy * 2, depth: hz * 2 });
+        const box: ChunkBox = {
+          positions: data.positions,
+          normals: data.normals!,
+          uvs: data.uvs!,
+          indices: data.indices,
+        };
+        // No bloom: a chunk is matte cel.
 
-        const shape = new PhysicsShapeBox(
-          Vector3.Zero(),
-          Quaternion.Identity(),
-          new Vector3(hx * 2, hy * 2, hz * 2),
-          this.scene,
-        );
-        shape.material = { friction: death.friction, restitution: 0.2 };
-        shape.filterMembershipMask = DEBRIS_GROUP;
+        const shape = hp.box([0, 0, 0], [0, 0, 0, 1], [hx * 2, hy * 2, hz * 2]);
+        hp.setMaterial(shape, death.friction, 0.2);
+        hp.setFilterMembership(shape, DEBRIS_GROUP);
         // The world and nothing else — see `DEBRIS_GROUP`. Rubble must not
         // shove corpses, and chunk-on-chunk buys a pile nobody looks at for a
         // solver cost quadratic in the burst.
-        shape.filterCollideMask = WORLD_GROUP;
+        hp.setFilterCollide(shape, WORLD_GROUP);
 
-        // The body is on the MESH with no proxy node, which a chunk can do and
-        // a ragdoll's bone cannot: it is parented to nothing and posed by
-        // nobody, so the quaternion Havok writes is the only thing that ever
-        // orients it.
-        const body = new PhysicsBody(
-          mesh,
-          PhysicsMotionType.STATIC,
-          false,
-          this.scene,
-        );
-        body.shape = shape;
-        body.setMassProperties({ mass: (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3) });
-        body.setLinearDamping(death.linearDamping);
-        body.setAngularDamping(death.angularDamping);
+        // The body is drawn straight off its pose with no node at all
+        // (`poseView`), as a corpse's joints are since BABYLON_EXIT.md X4.1b,
+        // so the quaternion in the pose is the only thing that ever orients
+        // it.
+        //
+        // Created parked, static, then shaped, weighed and damped: the
+        // plugin's calls in its order (`PhysicsWorld.addBody`).
+        const at = parkedPose(PARKED_Y);
+        const body = this.physics.addBody("static", at);
+        const piece = new PosedPiece(body);
+        // Its bounds, in its own frame (`poseView`).
+        piece.setLocal(box.positions);
+        hp.setShape(body.id, shape);
+        hp.setMass(body.id, (d.mass * (hx * hy * hz)) / (d.sizeMax ** 3));
+        hp.setLinearDamping(body.id, death.linearDamping);
+        hp.setAngularDamping(body.id, death.angularDamping);
 
-        chunks.push({ mesh, body, shape, hx, hy, hz });
+        chunks.push({ piece, surface: "hard", box, body, hx, hy, hz });
       }
       this.bursts.push({ chunks, t: -1, live: 0 });
     }
@@ -527,24 +607,12 @@ export class BlastDebrisSystem implements PhysicsClient {
     this.scorch.reset();
     this.seed = 0x5bd1;
   }
-
-  dispose(): void {
-    this.reset();
-    for (const burst of this.bursts) {
-      for (const c of burst.chunks) {
-        c.body.dispose();
-        c.shape.dispose();
-        c.mesh.dispose();
-      }
-    }
-    this.bursts = [];
-    this.scorch.dispose();
-  }
 }
 
 /** One scorch: the disc, and how long it has left. */
 interface Mark {
-  mesh: Mesh;
+  /** What our renderer draws: the mesh it was until `BABYLON_EXIT.md` X4.6e. */
+  fade: Fade;
   /** Seconds since it was laid; < 0 while the slot is free. */
   t: number;
 }
@@ -558,7 +626,10 @@ interface Mark {
  * for `scorch.life` and fading over `scorch.fade`.
  *
  * **Four things about it are what stop a decal from looking like a decal**, and
- * every one of them has been got wrong here already:
+ * every one of them has been got wrong here already. Each was the
+ * `StandardMaterial` its meshes wore until `BABYLON_EXIT.md` X4.6e, and each
+ * is the state and the pixel our renderer's scorch is drawn with now
+ * (`render/FadeDraw.ts`, `shaders/wgsl/fade.ts`):
  *
  * - **It is BLACK, and that is what makes it a multiply.** Ordinary alpha
  *   blending over an RGB of zero is `dst * (1 - a) + 0 * a` — a proportional
@@ -573,85 +644,49 @@ interface Mark {
  *   - **`Constants.ALPHA_MULTIPLY`** is `blendFunc(DST_COLOR, ZERO)`: the result
  *     is `dst * src` and the source ALPHA plays no part in the colour at all. A
  *     black disc came out as a hard-edged black hole cut in the street, with the
- *     soft texture doing nothing and `mesh.visibility` unable to fade it. The
- *     mode is named for multiplying COLOURS, not for a decal.
- * - **It loses the depth fight on purpose.** `disableDepthWrite` plus a
- *   negative `zOffset` — the polygon offset is what puts it in front of the
- *   floor it is lying on, rather than a lift big enough to make it visibly
- *   hover the moment the ground tilts. `scorch.lift` is the small remainder.
+ *     soft texture doing nothing and the fade unable to touch it. The mode is
+ *     named for multiplying COLOURS, not for a decal.
+ * - **It loses the depth fight on purpose.** No depth written, plus a negative
+ *   polygon offset of BOTH terms, -4 units and a slope of -2: the slope term is
+ *   scaled by the fragment's depth slope, which for a decal lying flat on a
+ *   floor seen from above is very nearly zero, so the factor alone does nothing
+ *   in exactly the case the offset exists for. The offset is what puts it in
+ *   front of the floor it is lying on, rather than a lift big enough to make it
+ *   visibly hover the moment the ground tilts. `scorch.lift` is the small
+ *   remainder. Both faces are drawn.
  * - **It is turned onto the surface, not onto world up.** A mark drawn flat on
  *   a hillside is a disc floating over it at both ends.
- * - **It is FOGGED**, through the same `attachEmissiveFog` plugin every unlit
- *   emissive material in the game wears — and it is the fog that stops a distant
- *   mark darkening, because the plugin lifts the RGB off black toward the fog
- *   colour and `dst * (1 - a) + fog * a` is the haze rather than a hole in it. A
- *   scorch that stayed pitch black across a valley the rest of which had gone to
- *   haze is the bug that rule exists for.
+ * - **It is FOGGED**, on the curve every unlit emissive in the game takes
+ *   (`EmissiveFog`'s, which its material wore) — and it is the fog that stops a
+ *   distant mark darkening, because the fade lifts the RGB off black toward the
+ *   fog colour and `dst * (1 - a) + fog * a` is the haze rather than a hole in
+ *   it. A scorch that stayed pitch black across a valley the rest of which had
+ *   gone to haze is the bug that rule exists for.
  *
- * One material for every mark and one texture behind it, so the per-mark fade
- * is `mesh.visibility` — which IS per mesh, is the same lever the fireball's
- * lobes fade on, and at zero walks the mark back to `dst` exactly.
+ * One map behind every mark, so the per-mark fade is the fade's `visibility`
+ * — the same lever the fireball's lobes fade on, and at zero the mark walks
+ * back to `dst` exactly.
  */
 class ScorchMarks {
   private marks: Mark[] = [];
-  private readonly material: StandardMaterial;
+  /** Every mark, by slot. */
+  readonly fades: Fade[] = [];
+  /** The arrays `MeshBuilder.CreateDisc` made every mark's mesh of: built at radius 1 and scaled. */
+  readonly kit: FadeKit = fadeKit(createDisc({ radius: 1, tessellation: 24 }));
+  /** The alpha map, our texture. */
+  readonly map: OwnTexture;
 
-  constructor(scene: Scene) {
+  constructor(textures: TextureMaker) {
     const s = CONFIG.grenade.scorch;
-    this.material = new StandardMaterial("blastScorch", scene);
-    this.material.opacityTexture = buildScorchTexture(scene);
-    this.material.diffuseColor = Color3.Black();
-    this.material.specularColor = Color3.Black();
-    // BLACK, and it has to be: ordinary alpha blending over zero is
-    // `dst * (1 - a)`, which is the proportional darkening this whole decal is.
-    // Any RGB above zero is a colour being painted ON the ground instead, which
-    // is the version that could not be made to read on a night village and a
-    // dusk city at once. The blend mode is left at the DEFAULT for the same
-    // reason — see the header on what `ALPHA_MULTIPLY` actually does. The RGB's
-    // only other job is to be lifted toward the fog colour by the plugin below,
-    // which is what stops a distant mark darkening.
-    this.material.emissiveColor = Color3.Black();
-    this.material.disableLighting = true;
-    this.material.backFaceCulling = false;
-    this.material.disableDepthWrite = true;
-    // BOTH terms. `zOffset` is the polygon-offset FACTOR, which is scaled by
-    // the fragment's depth slope — and a decal lying flat on a floor seen from
-    // above has a slope of very nearly zero, so the factor alone does nothing
-    // in exactly the case the offset exists for. `zOffsetUnits` is the constant
-    // that bites there.
-    this.material.zOffset = -2;
-    this.material.zOffsetUnits = -4;
-    attachEmissiveFog(this.material);
-
+    this.map = buildScorchTexture(textures);
     for (let i = 0; i < s.marks; i++) {
       // Built at radius 1 and scaled, which a flat disc may do and a physics
       // body may not: nothing here is under the solver.
-      const mesh = MeshBuilder.CreateDisc(
-        `blastScorch${i}`,
-        { radius: 1, tessellation: 24 },
-        scene,
-      );
-      mesh.material = this.material;
-      mesh.metadata = { noGlow: true, noShadowCaster: true };
-      mesh.isPickable = false;
-      mesh.checkCollisions = false;
-      mesh.rotationQuaternion = Quaternion.Identity();
-      mesh.isVisible = false;
-      this.marks.push({ mesh, t: -1 });
+      const fade = new Fade(SCORCH);
+      fade.node.quaternion = Quaternion.Identity();
+      this.fades.push(fade);
+      this.marks.push({ fade, t: -1 });
     }
-  }
-
-  /**
-   * The last mark shown at its standing opacity while it is free, or hidden
-   * again — so the first blast of a round draws its scorch through a pipeline
-   * the building card already compiled. The opacity is part of it: a mark
-   * fades by `visibility`, which is what puts it on the blended pipeline.
-   */
-  warm(on: boolean): void {
-    const slot = this.marks[this.marks.length - 1];
-    if (slot.t >= 0) return;
-    if (on) slot.mesh.visibility = CONFIG.grenade.scorch.opacity;
-    slot.mesh.isVisible = on;
   }
 
   /**
@@ -660,7 +695,7 @@ class ScorchMarks {
    * nothing is spent on a mark, so a blast with no scorch is a worse lie than
    * an old one cut short.
    */
-  mark(at: Vector3, power: number, ground: BlastGround): void {
+  mark(at: Vector3, power: number, ground: DebrisGround): void {
     const s = CONFIG.grenade.scorch;
     let slot = this.marks[0];
     for (const m of this.marks) {
@@ -670,19 +705,13 @@ class ScorchMarks {
       }
       if (m.t > slot.t) slot = m;
     }
+    const node = slot.fade.node;
     // `CreateDisc` faces +Z, so the turn is from that onto the surface normal.
-    Quaternion.FromUnitVectorsToRef(
-      FORWARD,
-      ground.normal,
-      slot.mesh.rotationQuaternion!,
-    );
-    slot.mesh.position
-      .copyFrom(ground.normal)
-      .scaleInPlace(s.lift)
-      .addInPlace(at);
-    slot.mesh.scaling.setAll(s.radius * power);
-    slot.mesh.visibility = s.opacity;
-    slot.mesh.isVisible = true;
+    Quaternion.FromUnitVectorsToRef(FORWARD, ground.normal, node.quaternion!);
+    node.position.copyFrom(ground.normal).scaleInPlace(s.lift).addInPlace(at);
+    node.scaling.setAll(s.radius * power);
+    slot.fade.visibility = s.opacity;
+    node.visible = true;
     slot.t = 0;
   }
 
@@ -693,11 +722,11 @@ class ScorchMarks {
       m.t += dt;
       if (m.t > s.life + s.fade) {
         m.t = -1;
-        m.mesh.isVisible = false;
+        m.fade.node.visible = false;
         continue;
       }
       if (m.t > s.life) {
-        m.mesh.visibility = s.opacity * (1 - (m.t - s.life) / s.fade);
+        m.fade.visibility = s.opacity * (1 - (m.t - s.life) / s.fade);
       }
     }
   }
@@ -705,14 +734,8 @@ class ScorchMarks {
   reset(): void {
     for (const m of this.marks) {
       m.t = -1;
-      m.mesh.isVisible = false;
+      m.fade.node.visible = false;
     }
-  }
-
-  dispose(): void {
-    for (const m of this.marks) m.mesh.dispose();
-    this.marks = [];
-    this.material.dispose();
   }
 }
 
@@ -733,15 +756,10 @@ const FORWARD = new Vector3(0, 0, 1);
  * gradient is a shadow; the spokes out of the middle are the thing an eye reads
  * as something having been thrown outward from a point.
  */
-function buildScorchTexture(scene: Scene): DynamicTexture {
+function buildScorchTexture(textures: TextureMaker): OwnTexture {
   const size = 256;
-  const texture = new DynamicTexture(
-    "blastScorchTex",
-    { width: size, height: size },
-    scene,
-    false,
-  );
-  const ctx = texture.getContext();
+  const canvas = newCanvas(size, size);
+  const ctx = canvas.getContext("2d") as CanvasRenderingContext2D;
   const c = size / 2;
   ctx.clearRect(0, 0, size, size);
 
@@ -785,7 +803,7 @@ function buildScorchTexture(scene: Scene): DynamicTexture {
     ctx.fill();
   }
 
-  texture.update();
-  texture.hasAlpha = true;
-  return texture;
+  // Painted as the `DynamicTexture` it was painted on and made our texture as
+  // Babylon made that one (`BABYLON_EXIT.md` X5.4d): flipped, no mips, flat.
+  return textures.picture({ label: "blastScorchTex", canvas, flipY: true, mips: false, sampling: SAMPLING.flat });
 }

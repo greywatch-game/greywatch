@@ -86,7 +86,7 @@
  * tank is taken out of the pick anyway (`Vehicle`'s header says why) — a hull is
  * the nearest solid thing to its own camera by several metres.
  */
-import { Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import { CONFIG } from "../config";
 import type { AxisSpec, VehicleSpec } from "../config/vehicles";
 import type { Vehicle } from "../entities/Vehicle";
@@ -341,8 +341,11 @@ export class VehicleCamera {
     if (optic) return this.sight(tank);
     const v = tank.spec.camera;
     this.fov = CONFIG.camera.fovHip;
+    // Copied by its floats (written when the anchor was Babylon's vector, whose
+    // `copyFrom` read `_x`; the same numbers either way).
+    const c = tank.center;
     this.anchor
-      .copyFrom(tank.center)
+      .copyFromFloats(c.x, c.y, c.z)
       .addInPlaceFromFloats(0, v.anchorHeight, 0);
     const pitch = this.pitch + this.kick;
     const cp = Math.cos(pitch);

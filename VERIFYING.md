@@ -8,7 +8,9 @@ when you are reasoning about a change.
 
 Playwright + Chromium are devDeps for ad-hoc smoke tests; write throwaway scripts
 to the scratchpad, not the repo. `Game`'s constructor exposes `window.__celshock`
-(`g` below).
+(`g` below) **in a DEV build only** — a production page (`npm run preview`, the
+deployed site) has no such handle, so drive the dev server
+(`scripts/dev-server.mjs`), as every script in the tree does.
 
 **READ THIS FIRST, because the game runs on WebGPU and WHICH MACHINE you are
 on decides more than any flag does.** There are two dev machines, they fail in
@@ -21,7 +23,7 @@ you are on before you believe anything else in this section.
 | WebGPU adapter | `nvidia/lovelace`, 21 features | `google/swiftshader`, CPU |
 | headless presents a canvas | **yes**, via `channel: "chromium"` | **no**, one frame then device loss |
 | `--enable-unsafe-webgpu` | no-op | **required**, and its absence is invisible |
-| Coldharbour's 40-probe bake | ~1.4 s, one frame | takes the device |
+| Coldharbour's reflection bake | ours ~41 ms over 5 frames; Babylon's ~1.4 s, one frame | Babylon's took the device; ours not tried |
 | a round | 46–176 fps | ~0.5–2 fps |
 | the one-second check | — | `ls /dev/dri` |
 
@@ -43,26 +45,112 @@ you are on before you believe anything else in this section.
   constructed, and the script fails as `waitForFunction` timing out on
   `window.__celshock` — which says nothing about why. `scripts/browser.mjs`
   exists to get this right once; go there before you suspect the game.
+- **The page is NOT cross-origin isolated, and nothing serving it to a
+  script has to be**: `crossOriginIsolated` is false, because no server and
+  no service worker sends the pair any more. The page's own match runs in a
+  Worker that posts JSON (`src/net/matchHost.ts`) and wants no
+  `SharedArrayBuffer`, so the COOP/COEP pair X2.5b sent for one went at
+  `BABYLON_EXIT.md` X2.5c C6 (`docs/pwa.md`) — and the dev server,
+  `vite preview` and a bare `node:http` server all serve the page alike.
+  What decides where the match runs is whether the Worker COMES UP, and
+  `?simpage`: the boot's one
+  `[sim] the simulation runs in …` console line says where and why, and every
+  capture's `simMode` does. Assert on one of those, never on the frame rate.
+  Two things a script must know:
+  **every round is a MATCH now** (`BABYLON_EXIT.md` X2.5c C4) — offline the
+  page joins a `Match` it hosts itself, in the Worker or (under `?simpage`,
+  or when the Worker cannot be had) on a channel in its own thread — **so an
+  ask is answered by a MESSAGE, never inside the call**: `g.spawnPlayer()`
+  sends a `deploy` and returns before the body exists, so poll
+  `g.player.alive` or `g.state === "playing"` rather than reading it on the
+  next line, and wait for `g.net.seated` before asking anything of a round
+  that has just been built.
+- **The local match's Worker can be driven with no game at all**, under the
+  dev server: open any document on its origin (`/FILES.md` will do — nothing
+  of the game boots), then in `page.evaluate` import
+  `/src/net/LocalMatch.ts` and `/src/net/Connection.ts`, construct
+  `new Worker("/server/localMatchWorker.ts", { type: "module" })`, and hand it
+  to `new LocalMatch(worker)`. Vite serves both trees as modules. Measured at
+  X2.5c C3: the bench's Greyfen round over the owner channel folds the
+  banked `83e8e74ef36916ba`, with a person dialled in and welcomed at slot 0.
 - **`scripts/browser.mjs` and `scripts/dev-server.mjs` are the only places a
   launch flag or a server spawn is written**, and the harness under
   `plans/webgpu-ref/` imports both rather than copying either.
-- **A script that needs Babylon's own classes must import the URL the PAGE
-  loaded, and find it off the resource timeline.** Vite pre-bundles
+- **A LOST DEVICE MUST END A RUN, and a script of yours has to arrange it.** On a
+  hung device (`DXGI_ERROR_DEVICE_HUNG`, `FINDINGS.md` 64) the page goes on
+  answering `evaluate` with its frame counter stopped, so anything awaiting a frame
+  waits for ever at no CPU: one `pipelines.mjs --round` sat about 11 hours.
+  `plans/webgpu-ref/harness.mjs` is where the stops are (its header): a page from
+  `bootMap` exits the process 4 on the console line, `settle`, `waitUntilDrawn`,
+  `installRound` and `freeze` exit it 3 at a hard limit, and `hardLimit(seconds)` is
+  the whole run's, `--limit=<seconds>` over it on `bank`, `surfaces`, `census`,
+  `shaders` and `pipelines`. A page you make yourself wears `watchDevice(page)`; a
+  frame count in a page's own loop never fires under a stopped counter, so it wants a
+  wall-clock limit beside it. **The console line is a WARNING first** (Dawn's, then
+  Babylon's "WebGPU context lost" at a tree with Babylon's engine, the game's own
+  "WebGPU device lost (reason)" since `BABYLON_EXIT.md` X5.4h), so a filter on
+  `error` does not hear it. **Since X5.4i a loss RELOADS the page to the menu**
+  (`Game.deviceLost`), so a page left to itself does not freeze on one any more:
+  it navigates, which a script waiting on its frames reads as a new page or an
+  `evaluate` whose context was destroyed — the harness stops on the game's line
+  first. Exit
+  through `process.exit`, which takes the browser and the dev server with it, and not
+  through `browser.close()`, which can hang on the same GPU. **An outer `timeout -k` is
+  the last resort**: its SIGKILL skips those handlers and can leave a Chromium tree
+  standing, idle, in the next run's way, so check for one before you measure anything.
+- **A script that needed Babylon's own classes had to import the URL the PAGE
+  loaded, and find it off the resource timeline — since `BABYLON_EXIT.md`
+  X6.1h the page loads NONE** (no scene, no engine, the frame's `Observable`
+  ours), **and since X6.1i the package is not in the tree**, so no script
+  here loads it: the four that did where a page had it (`leaks.mjs`' cache
+  hook, `surfaces.mjs`' `Plane`, `depth.mjs`' retired `zoffset` rig and
+  `plans/physics-ref/clients.mjs`' stand-in vector, `src/math`'s now) had
+  those arms deleted, and `scripts/check-babylon-free.mjs` refuses an import
+  of it anywhere. What follows is how it was done, for a tree before X6.1i.
+  On an older tree: Vite pre-bundles
   `@babylonjs/core` into `/node_modules/.vite/deps/@babylonjs_core.js` under a
   content hash that moves with the lockfile; importing the package by its own
   path gives a SECOND copy of the library, whose classes are not the game's —
   a shape built from it is registered against a plugin the scene has never
   heard of — and `/@id/@babylonjs/core` throws outright, redefining Babylon's
   own observables. `performance.getEntriesByType("resource")` is where the real
-  URL is written down; assert the identity (`B.Vector3 ===
-  camera.position.constructor`) rather than trusting the spelling.
-  `plans/physics-ref/drop.mjs` is the worked version.
+  URL is written down; assert the identity against a Babylon class the page
+  still holds (`B.Observable === g.sceneFrame.onBeforeRenderObservable
+  .constructor`, as `plans/webgpu-ref/leaks.mjs` does, until X6.1h — the
+  camera's position, which told it until `BABYLON_EXIT.md` X6.1f, is `src/math`'s)
+  rather than trusting the spelling. `plans/webgpu-ref/depth.mjs` was the
+  worked version (its `zoffset` body, at a tree before X6.1i). **A script that only needed a Babylon VALUE could skip the
+  timeline** by importing a game module that made one — `/src/math/babylon.ts`'s
+  `toBabylon`, deleted at X6.1f — because Vite serves each `/src` file at one
+  URL; no game module makes a Babylon vector since, so take the timeline, as
+  `plans/physics-ref/clients.mjs` did from X6.1f's review until X6.1h.
 - **`plans/physics-ref/drop.mjs` is the physics oracle**, and it is the only
   thing in the tree that can check a change to `PhysicsWorld`: `npm run parity`
   fingerprints the nav graph and `bank.mjs` diffs pixels, and Havok is in
   neither. It drops sixty-four boxes on a seeded lattice, settles them and
   hashes the resting transforms; `--check` grades a run against
-  `plans/physics-ref/ref/<map>.json`. Two of its lessons generalise to any
+  `plans/physics-ref/ref/<map>.json`, and prints a BIT verdict against
+  `ref/exact.json` beside it (`--check --exact` grades that too — the bar for
+  a change that must move nothing). Its bodies are built on Havok's RAW
+  `HP_*` calls, the plugin's own replayed one for one, so it reads the same
+  through `BABYLON_EXIT.md` X2.4. **`plans/physics-ref/clients.mjs` is its
+  other half**: a fixed script of corpses (bullet, frag and shell deaths, the
+  pool's eviction, an early retire), glass bursts and rubble played through
+  the three real clients and hashed off `HP_Body_GetQTransform` in flight and
+  at rest — every POOLED body every frame too, parked ones required to sit
+  exactly at the park, after a map teardown and rebuild whose Havok body count
+  it checks — banked as `ref/clients-<map>.json` and graded on bits; it has to
+  hold the game's own step and the pools' doors shut from before
+  `startRound`, or a bot killed under the deploy screen would put a corpse
+  into the world first. `plans/physics-ref/lib.mjs` is where both reach the
+  engine, in the plugin-era tree and the raw one alike — so **a new check is
+  banked on the PRE-PORT source** (`git checkout fb90b7d -- src`, run,
+  `git checkout HEAD -- src`) **and graded on the port**, or it proves
+  nothing about the port — for `drop.mjs`, and for `clients.mjs` only on a
+  tree before X4.1b: its banks were re-taken there (f554b68), a corpse's
+  spawn moving on purpose, so a clients check is banked on that tree or
+  later, and a change that moves the spawn proves the spawn is all it moved
+  with `--spawns-out=`/`--spawns-in=` (the script's header). Two of drop's lessons generalise to any
   script that steps the engine: **a settled body's VELOCITY is frozen at
   whatever it held when Havok deactivated it**, so "has it stopped" is a
   displacement over the last N substeps and never `getLinearVelocity()`; and
@@ -77,7 +165,10 @@ you are on before you believe anything else in this section.
   POSES one — exactly the things a culling change touches. A gate that deleted
   the player's own VIEWMODEL passed `bank.mjs --check` byte-identical on all
   21 vantages (`FINDINGS.md` 39); since X0.1 the bank has rows that pose a
-  rig, each hull kind and the viewmodel and would catch THAT, but still none
+  rig, each hull kind and the viewmodel and would catch THAT (and since
+  X4.2c one, `cinderhaven-tank-far`, with a tank past the hull detail
+  tier's swap — a change of ~55 pixels a byte comparison of two `--keep`
+  directories sees and `--check`'s mean tolerance does not), but still none
   where bodies move or a world is culled while it is walked. What catches it is a screenshot pair taken in a LIVE
   round at one frozen camera, and **the pair needs a CONTROL** — two shots under
   the SAME condition — because `freeze` does not quite still everything and the
@@ -124,12 +215,14 @@ you are on before you believe anything else in this section.
   presents perfectly well: 240 swap-chain frames, no device loss. So the flag
   buys no ADAPTER on this machine and the channel is the whole game, which is
   the exact inverse of the Chromebook below.
-  **It is not dead weight, though, and this file said it was for a
-  milestone.** `--enable-unsafe-webgpu` is also what exposes
-  `GPUCommandEncoder.writeTimestamp`, which is the whole of the profiler's
-  whole-frame GPU counter — so `launchClient` passing it is why every
-  `gpu.frame` reading in this file exists, and a stock Chrome reading the same
-  build gets `samples: 0`. See the `?gpu` bullet below.
+  **It was not dead weight until report v38, though, and this file said it
+  was for a milestone.** `--enable-unsafe-webgpu` is what exposes
+  `GPUCommandEncoder.writeTimestamp`, which was the whole of the profiler's
+  whole-frame GPU counter (Babylon's) — so `launchClient` passing it is why
+  every `gpu.frame` reading in this file before v38 exists, and a stock
+  Chrome reading those builds got `samples: 0`. From v38 (`BABYLON_EXIT.md`
+  X5.4g) the counter is ours, pass descriptors' stamps, and was measured
+  without the flag. See the `?gpu` bullet below.
 - **`--use-angle=d3d11` is a trap.** It gets an adapter and then fails
   `requestDevice` with `DynamicLib.Open: dxil.dll Windows Error: 87`. No ANGLE
   override is needed or wanted here.
@@ -153,11 +246,15 @@ you are on before you believe anything else in this section.
   pipeline each on the other three. The rule
   still stands for a frame rate, because the first seconds also hold the GI
   converging and the deploy screen's own first-second stall, and for anything
-  the warm-up does not reach — the entry lists them. To find what compiles and
-  WHO, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
+  the warm-up does not reach — the entry lists them. A compile of OUR
+  renderer's in play is named by a DEV build itself (`[pipelines] … compiled
+  in play`, the cache's seal, `BABYLON_EXIT.md` X4.4e). To find what compiles and
+  WHO at a tree that still had Babylon, wrap `GPUDevice.prototype.createRenderPipeline` in an init script and
   `_processRendering` on a mesh's prototype in the page; the mesh being drawn
   when the pipeline is created is the answer, and the profiler names the
-  effect and defines.
+  effect and defines. That wrap sees BABYLON's compiles only: our renderer's
+  are `createRenderPipelineAsync` and `createComputePipelineAsync`, off the
+  frame (`PipelineCache`'s `CompileProgress` counts them).
 
 - **Two traps from a raw-WebGPU pipeline spike, both of which cost time.**
 
@@ -234,23 +331,38 @@ you are on before you believe anything else in this section.
   bring it.** `timestamp-query` is a device feature, so it is asked for when
   the device is created and cannot be armed afterwards by anything — see
   `docs/profiling.md`. Boot with `?profile&gpu` and read `gpu.frame`, which
-  is the whole command encoder; `gpu.mainPass` is the final full-screen quad in
-  this pipeline and reads in tens of microseconds, so a script that asserts on
-  it is asserting on a composite. `gpu.frame` samples about HALF the frames —
+  is the whole frame, from before its first pass to after its last — our
+  frame timer's two stamps around the frame's one encoder since report v38
+  (`BABYLON_EXIT.md` X5.4g; Babylon's upload encoder to its render encoder
+  before, beside a `gpu.mainPass` that was the final full-screen quad and is
+  retired). `gpu.frame` samples about HALF the frames —
   only one measurement is in flight at a time — so `gpu.frame.samples` is the
   denominator, and a 0 in `series.gpuFrameMs` is an unmeasured frame rather
   than a fast one. Measured on this box: 130.0 fps with `?gpu` against 129.9
   without, and Cinderhaven at 1718x858 reads 1.372 ms mean GPU against a
   6.746 ms tick.
-  **`?gpu` is necessary and not sufficient: the whole-frame counter also needs
-  `--enable-unsafe-webgpu`**, which `launchClient` passes and a browser started
-  by hand does not. Without it the capture reads `available: true` and
-  `frame.samples: 0` — a real measurement of zero taken 747 times, not an
-  absent one — while `gpu.mainPass` keeps working and makes the report look
-  healthy. `gpu.frameMeasurable` (report v9) is the field that tells the two
-  apart; check it before believing a zero. Verified both ways on this box:
-  1549 samples with `--enable-unsafe-webgpu`, 0 without, same build and same
-  map.
+  **From report v38 `?gpu` is sufficient**: both counters are pass
+  descriptors' stamps, which need `timestamp-query` and no browser flag.
+  Measured on this box (2026-11-11, X5.4g's review): `?bench=hollowmere&gpu`
+  in a Chromium launched WITHOUT `--enable-unsafe-webgpu` (headless,
+  `channel: "chromium"`, `GPUCommandEncoder.prototype.writeTimestamp`
+  absent, so the flag was truly off) read `frameMeasurable: true` and
+  `gpu.frame` on 4,443 rows, mean 4.651 ms, with `gpu.cull` on 4,716 — the
+  flagged run beside it 4.445/4.471/5.173 ms on the three groups. A phone's
+  Chrome is unmeasured.
+  **Before v38 it was necessary and not sufficient: the whole-frame counter
+  also needed `--enable-unsafe-webgpu`** (Babylon's `writeTimestamp`), which
+  `launchClient` passes and a browser started by hand does not; without it a
+  capture read `available: true` and `frame.samples: 0` — a real measurement
+  of zero taken 747 times — while `gpu.mainPass` kept working, and
+  `gpu.frameMeasurable` (report v9) was the field that told the two apart.
+  Verified both ways on this box then: 1549 samples with the flag, 0 without,
+  same build and same map.
+  **`gpu.cull` (report v18) is our culls alone and needs no flag** — stamps
+  on their own compute passes, read to the microsecond on this box's
+  Chromium with the flag and without; it is part of `gpu.frame`, never added
+  to it. In an uncapped `bench.mjs --gpu` run both sampled counters land on
+  only 1-3% of a vantage's frames, so read their `samples` first.
 - **The profiler's HEAP columns need `--enable-precise-memory-info` and its GC
   count needs nothing.** Chrome rate-limits the bucketised `performance.memory`
   to one update every twenty minutes on purpose, so without that flag a capture
@@ -269,8 +381,11 @@ you are on before you believe anything else in this section.
   25 on the relative bar, the baseline going 7.8 → 15.1 → 39 ms over the first
   two seconds. `frame.hitchThresholdMs` and `frame.baselineMs` are in every
   capture, so a script can assert on both rather than inferring them.
-- **Counting `requestAnimationFrame` callbacks beats `Engine.getFps` for
-  anything under a percent.** That readout is a 30-frame rolling mean and cannot
+- **Counting `requestAnimationFrame` callbacks beats the readout's `getFps`
+  for anything under a percent** — `g.frameLoop.clock.getFps()` since
+  `BABYLON_EXIT.md` X5.4g (`FrameClock`, Babylon's arithmetic ported; the
+  engine's own `getFps()` moved only at a resize until X5.4h, the engine running no
+  loop), `Engine.getFps` before. That readout is a 30-frame rolling mean and cannot
   see a fractional-percent change; a rAF count over eight seconds is what
   resolved the profiler's own overhead at all (128.3/128.4/128.8 armed against
   129.1/129.2/130.6 disarmed). Note which side moved: the ARMED readings agree
@@ -280,7 +395,8 @@ you are on before you believe anything else in this section.
   `--disable-frame-rate-limit --disable-gpu-vsync` Hollowmere reads 103 fps
   because that is the ceiling rather than the cost; with them, 132–176. Say
   which you measured.
-- **A map DRAWS when `scene.isReady()` says so, and a frame count is not a
+- **A map DRAWS when the page's readiness says so (`scene.isReady()` until
+  `BABYLON_EXIT.md` X6.1h, `Game.pending` since), and a frame count is not a
   substitute.** Until the pipelines exist the canvas presents nothing, and the
   frame that first changes is not a constant — across runs it moved between 67
   and 137 on Hollowmere and between 3 and 35 on Greyfen. `scene.isReady()`
@@ -288,13 +404,23 @@ you are on before you believe anything else in this section.
   time. This is not academic: `capture-map-shots.mjs` settled six frames, which
   was three wall-clock seconds on the Chromebook and 45 ms here, and running
   `npm run shots` would have overwritten Hollowmere's and Harrowmead's
-  committed backdrops with blank frames.
+  committed backdrops with blank frames. **Ask it through the frame adapter**
+  (`scripts/lib/frameAdapter.mjs`, installed as an init script through its
+  `installFrameAdapter`, which honours `REF_NO_SCENE=1`:
+  `window.__refFrame().ready()`, beside its `drawn`/`onDrawn`), never of the
+  game directly: there is no `Game.scene` since `BABYLON_EXIT.md` X6.1h, and
+  the adapter answers with the GAME's readiness (`Game.pending`,
+  `core/PendingData.ts`: the scene's pending-data list ported, the water's foam
+  mask its one holder while it decodes) — and on an older tree with whatever
+  it had. Every other question a script once asked of the scene — the
+  camera's matrices and frustum planes, the particle switch, the materials,
+  the clear colour, the constant delta — is a member of the same adapter.
 - **…and ONE unuploaded texture anywhere in the scene turns that answer off
   for the whole process**, which is the trap rather than the rule above. A
   `DynamicTexture` is not READY until something calls `update()` on it, so a
   material carrying one that has never been uploaded makes
   `StandardMaterial.isReadyForSubMesh` return false before it ever builds an
-  effect — and `scene.isReady()` walks every mesh in the scene, drawn or not.
+  effect — and `scene.isReady()` walked every mesh in the scene, drawn or not.
   It cost two runs and a broken `npm run shots`: `89f592c` moved the kit
   backdrop's paint into `paintKitPool`, which only runs when the kit BAY moves,
   so a session that never opened the loadout screen left `viewmodel_kitBackdrop`
@@ -303,13 +429,24 @@ you are on before you believe anything else in this section.
   asks. Fixed by painting once where the card is built (every other
   `DynamicTexture` in the tree already does); `npm run shots -- harrowmead`
   went from failing after 120 s to a picture in 2.8 s, and Sarab in 5.9 s.
-  **What generalises is the diagnosis**: when `scene.isReady()` will not flip,
-  list the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
-  usually a texture rather than a shader. Material-less meshes (colliders, the
-  effect pools) show up in that list on the FIRST call and clear themselves on
-  later ones, because asking is what compiles them; ask every frame before
-  believing the list. **`npm run parity` asks this of every map now**, prints the
-  frame count each one took, and fails the run naming the meshes that are stuck
+  (Since `BABYLON_EXIT.md` X4.3d the card is no mesh and has no
+  `DynamicTexture`: it is a segment our renderer draws, its canvas made and
+  uploaded at its first paint, so it cannot hold the scene unready; since
+  X5.4d no `DynamicTexture` is left in the tree — every canvas the game paints
+  is OUR texture, made in the call that paints it, `render/TextureMaker.ts`;
+  and since X6.1h there is no scene to walk: the page's readiness is its
+  pending data and nothing else, so this trap has nowhere left to live — a
+  new thing the frames must wait on is ADDED to `Game.pending`.)
+  **What generalises is the diagnosis**: when the readiness will not flip,
+  list what holds it — since X6.1h `g.pending._pendingData`, and while there
+  was a scene the meshes where `!mesh.isReady(true)` — it is usually ONE, and it is
+  usually a texture rather than a shader. Material-less meshes (the colliders
+  and the effect pools were, until `BABYLON_EXIT.md` X4.6e and X5.3e left a
+  round's scene holding none) show up in that list on the FIRST call and clear
+  themselves on later ones, because asking is what compiles them; ask every
+  frame before believing the list. **`npm run parity` asks this of every map now**, prints the
+  frame count each one took, and fails the run naming what is stuck (the
+  pending data since X6.1h, the meshes before it)
   — which is the guard the shots script could not be, because nobody runs a
   photographer as a check.
 - **Do not touch `src/` while a dev-server-backed script is running.** Vite's
@@ -332,13 +469,26 @@ you are on before you believe anything else in this section.
   maps. Both are correct. A reference bank must be taken and checked in the
   same mode; `plans/webgpu-ref/bank.mjs` records the mode and refuses a
   mismatch.
-- **Coldharbour's shipped forty-probe bake completes here** — all forty, one
+- **A bank run wants the GPU to itself.** Once in X4.6a's runs a frame came back
+  wholly BLACK (8.5 KB, `cinderhaven-fx-fire-fade`) and the run then hung in the
+  next row, with a scratch `surfaces.mjs` sharing the machine; the same row ran
+  clean alone, and so did many other shared runs, so the cause is unproven. A
+  check that goes red at a mean of 31/255 on one row, its kept file a few KB against
+  its neighbours' 2-4 MB, is this and not a regression: look at the frame.
+- **Coldharbour's bake is OUR RENDERER's now and drains in five frames**
+  (X3.6c, `render/ProbeBake.ts`): 39 probes at `probesPerFrame` 8, frames of
+  5-6 ms against an idle 1-3, ~41 ms of wall clock, under the loading card.
+  It is the only bake since X3.7c. **What follows is BABYLON's bake**, which
+  no round has taken since X3.7b and X3.7c deleted (the tag
+  `exit-babylonworld` has it), and every number in it is that path's — kept
+  as the record of why the bake is spread over frames.
+  Coldharbour's shipped forty-probe bake completes here — all forty, one
   frame, no device loss — and the probes are refresh-once, so it is a build cost
   and never a frame cost. **It is one frame BY BUDGET now rather than by
-  default**: `CONFIG.graphics.reflection.drawsPerFrame` (50,000) is set just
+  default**: its `drawsPerFrame` (50,000, deleted with it) was set just
   over Coldharbour's whole bake (41,934 draws, ~2.3 s), and a map asking for
-  more spends the rest on
-  the frames after (`ReflectionSystem.releaseBatch`). So a bake is no longer
+  more spent the rest on
+  the frames after (its `releaseBatch`). So a bake is no longer
   contractually on the frame after the install on any map — and since S0c it is
   no longer after the install at all: the batches are spent under the LOADING
   card, so `installRound`'s `installMs` covers the whole bake and its
@@ -370,19 +520,20 @@ you are on before you believe anything else in this section.
   exactly that. **`g.reflections.bakePending === 0` is still the honest thing
   to warm on** if a script starts a round by any route other than waiting for
   `deploy` — and note it is `bakePending` rather than `queue.length`, because a
-  released probe that has not rendered yet is in neither the queue nor the
-  past.
-- **The reflection drain cannot be CPU-PROFILED, and finding out costs twenty
-  minutes.** A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
+  released probe that has not rendered yet (on our path, not RECORDED yet) is
+  in neither the queue nor the past.
+- **Babylon's reflection drain cannot be CPU-PROFILED, and finding out costs
+  twenty minutes** (ours is a cull and a pass a face, not 50,000 draws, and
+  has not been tried under the profiler). A CDP `Profiler` capture at a 500 us interval over the 1500 m drain
   ran past **twenty minutes** against an unprofiled 37 seconds and had to be
   killed: a frame issuing 50,000 draws is a deep stack being sampled two
   thousand times a second, and the overhead is multiplicative rather than
   additive. The same profiler over the map INSTALL is fine — `parts.ts`'s header,
   `ENGINE_UPGRADE.md` S5b-S5c and `FINDINGS.md` 26 are all taken that way —
   so it is the bake specifically. Anything wanting the per-draw cost broken
-  down needs a GPU capture, or `CONFIG.graphics.reflection.drawsPerFrame`
-  turned down until a frame is
-  samplable and the cost read off the slope.
+  down needed a GPU capture, or its `drawsPerFrame` turned down until a frame
+  was samplable and the cost read off the slope (both went with that bake at
+  X3.7c; ours is `probesPerFrame`).
 - **A round left to itself fires NO ray at all**, so a script measuring rays has
   to force contact. `BattleSystem.acquire` gathers candidates by distance and
   only ray-tests inside `bots.perception.engageRange` (55 m): measured at **zero
@@ -390,7 +541,11 @@ you are on before you believe anything else in this section.
   proving ground both. Standing the bots in a ring around the player
   (`bot.position.set(...)`) and re-standing them every second is what
   `ENGINE_UPGRADE.md` S2's measurements used; overriding
-  `battle.spawnPointFor` is the other way in.
+  `battle.spawnPointFor` is the other way in. **Both are the CORE's now**: a
+  page script reaches no `Bot` and no `BattleSystem` (X2.5c C4, every round
+  being the authority's), so the ring is stood in a headless probe against
+  `SimCore` (the bot-behaviour bullet below), and a page measures only the
+  rays its OWN side casts.
 - **A weapon FINISH is judged on the kit stage, and the stage is two calls
   away.** `g.openLoadout()` puts the real viewmodel on the turntable (it is a
   lid over `deploy`, so `installRound` is the whole of the setup),
@@ -414,9 +569,13 @@ you are on before you believe anything else in this section.
   occlusion test that way reported **1.73/255 mean and 230/255 worst** and the
   whole of it was motion — the same test in `deploy` came back with an A-vs-A
   control that was byte-identical. **Stage in `deploy`; if the arm needs a live
-  round, hold it by stubbing `battle.update` / `vehicles.update` /
-  `crew.update` after warming, which freezes the fight where it stands and
-  leaves the LOD's last word in place.**
+  round, hold the MATCH rather than a system.** The fight is the authority's
+  (X2.5c C4) and the page has no `battle` or `crew` to stub; what holds the
+  page's own match is the page itself — it steps only when the page hands it
+  time, and a lid or the deploy screen hands it none (`docs/multiplayer.md`),
+  which freezes the fight where it stands. Stubbing the page's
+  `vehicles.update` stops only the picture, and the next snapshot moves it
+  anyway.
 - **An A-vs-A control taken FIRST measures the post chain converging, not the
   floor — and it can come back LARGER than the lever it is grading.** The god
   rays and the motion blur are pinned by the CAMERA rather than by a constant
@@ -447,8 +606,8 @@ you are on before you believe anything else in this section.
   Chromebook that is not a preference — headless cannot present a WebGPU canvas
   at all.** In headless, `getContext("webgpu")` and `configure()` both succeed
   and then the FIRST `getCurrentTexture()` destroys the device: `device.lost`
-  resolves `reason: "destroyed"`, Babylon reports "WebGPU context lost", tries
-  to restore, and dies with "Could not retrieve a WebGPU adapter". Measured
+  resolves `reason: "destroyed"`, Babylon reported "WebGPU context lost", tried
+  to restore, and died with "Could not retrieve a WebGPU adapter". Measured
   across seven flag sets, both browser binaries and all three canvas kinds
   (DOM, detached `OffscreenCanvas`, `transferControlToOffscreen`): **one frame,
   every time.** Headed on `:0` runs indefinitely — 1275 frames of the real game
@@ -487,14 +646,18 @@ you are on before you believe anything else in this section.
     the Windows box the same bake completes in one frame and needs nothing done
     to it** (~1.4 s — see the Windows section above), so
     what follows is a workaround for this machine and not a property of the
-    game. **The stagger it used to describe is IN the game now** — the bake is
-    spent `CONFIG.graphics.reflection.drawsPerFrame` at a time
-    (`ReflectionSystem.releaseBatch`) — but the budget is sized so Coldharbour
-    is one batch, which is the frame this machine cannot finish. So the lever
-    here is that number rather than a wrapper: **drop `drawsPerFrame` to a few
-    thousand before `startRound`** and the same forty probes arrive over ten
-    frames or so, no device loss, and the round then draws at 99% lit with the
-    city in its glass. Two other ways round it, if what you want is a frame
+    game. **It is BABYLON's bake**: since X3.6c a round bakes on our renderer
+    (five frames of 8 probes on Coldharbour), which nobody has run on this
+    machine; the bake described here needs a build at the tag
+    `exit-babylonworld` and `?babylonworld` (deleted at X3.7b; the bake
+    itself at X3.7c), and `probesPerFrame` is the lever on ours. **The
+    stagger it used to describe was IN that build** — the bake spent
+    `drawsPerFrame` at a time (`releaseBatch`) — but the budget was sized so
+    Coldharbour is one batch, which is the frame this machine cannot finish.
+    So the lever there was that number rather than a wrapper: **drop
+    `drawsPerFrame` to a few thousand before `startRound`** and the same forty
+    probes arrived over ten frames or so, no device loss, and the round then
+    drew at 99% lit with the city in its glass. Two other ways round it, if what you want is a frame
     rather than the mirrors: `g.reflections.build = () => {}` before
     `startRound` gives a Coldharbour that renders (99% of pixels lit,
     everything but the glazing correct), and truncating `map.paneGroups` inside
@@ -518,10 +681,18 @@ you are on before you believe anything else in this section.
     simulation** — the boot path, `__celshock`, state transitions, the screens,
     rules, damage arithmetic, nav — none of which needs a presented frame, and
     it is much faster to start. Use it for those. It gets two frames in before
-    the device goes, so `scene.getFrameId()` stops at 2 and `engine.getFps()`
-    reads ~3 forever; do not read either as a stall.
+    the device goes, so the frame's index (`g.sceneFrame.index`) stops at 2 and
+    the frame rate stops where those frames left it — `engine.getFps()` read
+    ~3 forever under Babylon's loop; since `BABYLON_EXIT.md` X5.4g the readout
+    is `g.frameLoop.clock.getFps()`, the same arithmetic over the same
+    samples (not re-measured here), and since X5.4h there is no
+    `WebGPUEngine` to read at all (and since X6.1h no scene or `NullEngine`
+    either) — so do not read the readout as a stall. (That
+    index was `scene.getFrameId()` until `BABYLON_EXIT.md` X5.4f; the scene was
+    never rendered since, and is gone since X6.1h.)
 
-- **The engine fetches glslang and twgsl from `cdn.babylonjs.com`, so match
+- **Babylon's `WebGPUEngine` fetched glslang and twgsl from `cdn.babylonjs.com`
+  (none is built since `BABYLON_EXIT.md` X5.4h, so nothing can now), so match
   `**/*.babylonjs.com/**` and never a hostname from memory.** Four files —
   `v9.19.1/glslang/glslang.{js,wasm}` and `v9.19.1/twgsl/twgsl.{js,wasm}` —
   pulled the first time a GLSL shader reaches the backend. **Nothing in the tree
@@ -529,7 +700,8 @@ you are on before you believe anything else in this section.
   what it costs is `docs/pwa.md`'s offline promise: a game that needs the
   network on its first draw. `harness.mjs` owns the check and every script it
   boots gets it — `bootMap` records every request to the domain AND aborts the
-  route, and `assertNoTranspiler` reads the engine.
+  route, and `assertNoTranspiler` reads the scene's engine (none since X6.1h:
+  the adapter's `transpilers()` answers `null`, RETIRED).
 
   **Four traps in that one check, and the last two are the reason it is two
   halves rather than one.** It has already produced a false PASS by watching
@@ -559,15 +731,23 @@ is one machine's:
   to 0.05, so **game time runs at ~25% of wall clock**. Don't wait for bots to cross a map (240 m, or
   Coldharbour's 320) — force a
   skirmish by overriding `battle.spawnPointFor`, or drive rules directly with
-  `conquest.update(1/60, fakeCombatants)` in a loop.
-- **`window.__celshock` now appears TWO awaits later than it used to.**
-  `main.ts` awaits an adapter and a device (`checkWebGPU`, then
-  `new WebGPUEngine(...)` + `initAsync()`) and then `loadHavok()` before
-  constructing `Game`, so a script that polls for the handle is waiting on a GPU
-  device and a ~2 MB physics binary as well as on the bundle — give
+  `conquest.update(1/60, fakeCombatants)` in a loop, **in a headless probe or
+  `corecheck`**: both are the authority's (X2.5c C4), and the page's
+  `g.conquest` is a MIRROR the next snapshot overwrites.
+- **`window.__celshock` now appears THREE awaits later than it used to.**
+  `main.ts` awaits an adapter and a device (`checkWebGPU`, then — since
+  `BABYLON_EXIT.md` X5.4h — its own `requestAdapter` and `requestDevice` and
+  the canvas's `configure`, where `new WebGPUEngine(...)` + `initAsync()`
+  stood), then `loadHavok()`, then the
+  page's own match host (`openMatchHost`, a Worker answering its first call)
+  before constructing `Game`, so a script that polls for the handle is waiting
+  on a GPU device, a ~2 MB physics binary and a Worker as well as on the
+  bundle — give
   `waitForFunction` a generous timeout and do not read the absence of the handle
   as a construction failure. The upside is unchanged and is the whole point of
-  keeping the constructor synchronous: `g.engine`, `g.physics.plugin` and both
+  keeping the constructor synchronous: `g.renderer.device` and `g.surface` (the
+  canvas, `core/CanvasSurface.ts`; `g.engine` until X5.4h), `g.physics.havok` (the raw
+  module and world, `havok.ts` — there is no Babylon plugin any more) and the
   pools are non-null on the FIRST evaluate, so nothing has to wait for anything
   separately. To exercise the failure branch, `page.route("**/*.wasm", r
   => r.abort())` before `goto` and assert on `#boot.failed`'s message — the
@@ -580,15 +760,21 @@ is one machine's:
   taken from, and outside it `shadowVisibility` returns FULLY LIT — so a camera
   teleported to a vantage is standing in a world with no shadows in it, and a
   script that collapses the PCF kernel, changes the bias or darkens the term
-  reports that none of them does anything. `g.shadows.invalidate()` then
-  `g.shadows.update(cam.position, g.mats)` before the grab is the whole fix.
+  reports that none of them does anything. `g.shadows.update(cam.position,
+  g.mats)` before the grab is the whole fix: it re-centres the window on the
+  vantage once the camera has moved past the rung's `hold` (2 m at most), which
+  a teleport always has.
   **Write the control, because the failure is silent in the direction of
   "clean"**: set `shadowParams.y` (the darkness) to 0 and diff — that says how
   much of the frame is in shadow at all, and if it too comes back 0% then
   nothing is being measured. Measured with the push in, the shadowed share is
   32.7% / 40.0% / 7.2% / 26.8% on the four maps at their committed vantages.
 - **To measure a shader change without editing the tree, edit the registered
-  INCLUDE and then push a dummy define onto every cached material.** Rewriting
+  INCLUDE and then push a dummy define onto every cached material.** (History:
+  this was a Babylon material's technique, and no Babylon material draws since
+  `BABYLON_EXIT.md` X5.3d or exists since X6.1c, which deleted the registered
+  includes with the cel program's Babylon declarations — a shader change is
+  measured on our renderer's programs now.) Rewriting
   `ShaderStore.IncludesShadersStoreWGSL.celBand` alone changes nothing — Babylon
   keys its effect cache on the shader name and the defines, not on the include's
   contents, so every material hands back the effect it already has. Pushing
@@ -602,7 +788,9 @@ is one machine's:
 - **A DEPTH BIAS set live does NOTHING, and it fails silently in the direction
   that looks like an answer.** `material.zOffsetUnits` (and `zOffset`) is baked
   into the WebGPU render BUNDLE the first time that material draws, and this
-  engine is built with `compatibilityMode = false`, so a bundle is recorded once
+  engine was built with `compatibilityMode = false` (a Babylon material draws in
+  no state since X5.3c, and no `WebGPUEngine` is built since X5.4h: the finding
+  is Babylon's, kept for the method), so a bundle is recorded once
   and replayed — a sweep that boots, draws, and then walks a material through
   0, -2, -4, -8, -16 photographs the FIRST value five times and reports a
   perfectly flat curve. It is the same value at every rung, which reads exactly
@@ -680,19 +868,65 @@ is one machine's:
   block can come from the teardown either side of it and show the card
   half-dismantled; take the middle 80% and let PNG payload size stand in for
   "did this frame contain the bright thing" across the lot.
-- **A tank is easiest to test by stepping the fleet directly, and the camera is
-  the trap.** `g.vehicles.hulls` is the fleet, `g.mount(tank, 0)` takes the DRIVER's
-  seat — the seat is a SECOND argument, and passing none writes
+- **A tank is tested through the WIRE, offline exactly as in a match, and the
+  camera is the trap.** Every round is a match (`BABYLON_EXIT.md` X2.5c C4):
+  the fleet that DECIDES is the authority's, inside the page's own `Match` in
+  its Worker (or its own thread under `?simpage`) and out of a script's reach,
+  and `g.vehicles.hulls` is the page's copy — built `predicted`, so no hull on
+  the page takes damage, and every hull but the one this player drives is
+  POSED off the snapshot (`syncNetVehicles`). So the netplay recipe below is
+  the recipe everywhere, minus the `?mp=`. **Board by ASKING**:
+  `g.net.sendMount(i, 0)`, where `i` indexes `g.vehicles.hulls` and the second
+  argument is the seat (0 the DRIVER, 1 the GUNNER — pass it, or the authority
+  picks), then `waitForFunction(() => !!g.driving)`: the authority's `seat`
+  event is what calls `g.mount`. **`g.mount(tank, 0)` by hand is a picture of
+  boarding and nothing more** — the authority never seated you, so every
+  `drive` the page reports is refused — and a `g.mount` with no seat writes
   `seats[undefined]`, which reads as a hull that IS being driven (`g.driving`
-  is right) while the rotor never spools: a helicopter sits on its pad at full
-  collective looking like a bug in the flight model — and
-  `g.vehicles.update(dt, g.vehicleOrders)` is the real drive path with no
-  rendering in it — sixty calls at `1/20` is three seconds of driving in one
-  synchronous `evaluate`, which is the only way to move a vehicle at 0.1 fps.
+  is right) while the rotor never spools. Once seated,
+  `g.vehicles.update(dt, g.vehicleOrders)` is still the real drive path with
+  no rendering in it — `driveFor` answers for the hull under this player and
+  for nothing else — **but the page REPORTS what it stepped**, at `INPUT_HZ`
+  and through `validateDrive` offline too, so sixty synchronous calls at
+  `1/20` is a three-second jump the authority refuses and a `hullcorrect`
+  puts back (`Vehicle.correctTo`). Drive in bursts of ~4 steps with a frame
+  between, or with the sticks (`g.input.moveY` and friends written after
+  `g.input.update`, or hold the keys).
+  **The DRAWING does not follow a direct call** (since X2.2 C9): a hull is
+  the simulation and its rig is its view's, so follow it with
+  `g.vehicleViews.update()` before reading a joint or photographing — the
+  view of a hull is `g.vehicleViews.views.find((v) => v.hull === tank)`.
+  **Since X4.2a the joints are OURS** (`view.rig.tree`, a `JointTree`), and a
+  joint's `world` is only what the last compose left: read one through
+  `view.rig.tree.computeChain(joint)` (fresh). **Since X4.2b there is no mesh
+  of a hull at all**: our renderer draws it as an instance of its kind's kit
+  (`g.hullDraw`, fed by `g.drawHulls()` just before the render), so a script
+  reads a segment's world as `seg.local` times `seg.joint.world` after a
+  compose (`view.rig.segments`), and what the last frame drew as
+  `g.hullDraw.matrices`. **A zero there is one of three things**: the size
+  gate's drop and the DETAIL tier's (X4.2c: every segment its kit flags
+  `detail` on a hull whose whole measure projects under
+  `CONFIG.graphics.culling.hullDetail`), both written by `g.drawHulls()`,
+  and — once the render's prepare has run — the FRUSTUM's, zeroed in the
+  same array by `g.hullPull`. So a script reading it after a render cannot
+  count gated segments off the zeros: read it straight after
+  `g.drawHulls()` (before the render), or tell them apart by the segment's
+  sphere in `g.hullSpheres` (four doubles a segment, in the same order),
+  which is NaN for a gated, detail-dropped or padded segment and left
+  standing for a frustum-culled one — and the gate from the tier by asking
+  `g.culling.keepsDetail` of the hull's measure (`vehicleRig.measureHull`,
+  after a compose). **To photograph either set by force**, write
+  `CONFIG.graphics.culling.hullDetail` in the page (import
+  `/src/config/index.ts`, the module the game holds): 0 is always the full
+  set, a huge number always the reduced one.
   **The signature takes a LOOKUP rather than a hull and a stick**, because a bot
-  crew can be driving one hull while the player drives another: write the sticks
-  into `g.drive` for the hull `g.driving` points at, and everything else is
-  answered by `g.crew`. Two things that have already cost time: **do not read `speed` after
+  crew can be driving one hull while the player drives another — and on the
+  page the bot crew is the wire's (`remoteFor`), there being no crew here.
+  **For a frame-exact comparison pin the step** — `g.frameCap.elapsed = () =>
+  1 / 60` — and script the inputs by frame; the page's prediction is then
+  deterministic run to run, and what the authority made of it is
+  `g.net.vehicles.stateFor(i)` once you are out (the netplay bullet below).
+  Two things that have already cost time: **do not read `speed` after
   a phase with the throttle at zero** (the brake is 9 m/s², so a second of
   turning takes 11 down to 2 and it looks like a stall that is not there), and
   **do not call `spawnPlayer()` if you are placing the camera by hand** —
@@ -700,8 +934,11 @@ is one machine's:
   player's head every frame and points your carefully aimed shot at the rim.
   Photograph a vehicle from `deploy`, exactly as `capture-map-shots.mjs` does.
 - **The TRACKS are read off the rig, not off a screenshot.** At 2 fps two
-  photographs of a moving strip prove nothing about which way it went;
-  `tank.rig.tracks[i]` is `{lower, upper, sprocket}` per side, and the three
+  photographs of a moving strip prove nothing about which way it went. The
+  rig is the hull's VIEW's (the hull has no rig since X2.2 C9) and it names
+  no track: the three joints a side are in `view.rig.tree.joints` by name
+  (`tank-link-lo`, `tank-link-hi`, `tank-sprocket`, the left side's first —
+  joints since X4.2a), and the three
   numbers that settle it are `lower.position.z` (in `(-LINK_PITCH, 0]`),
   `upper.position.z` (its mirror) and `sprocket.rotation.x`. Drive a straight
   run and the two sprockets step together; drive `steer: 1` at `throttle: 0`
@@ -711,9 +948,14 @@ is one machine's:
   each way. **Take that delta modulo 2 pi before believing it**: the angle is
   wrapped, so a track running backwards reads as a large positive step (5.104
   is -1.179) rather than as a negative one.
-- **The ANTI-TANK kit is easiest to drive through `g.antiTank`, and the trap is
-  the SAME world-matrix one the fleet has.** `g.antiTank.launch(from, dir, team,
-  by)` and `g.antiTank.place(at, team, by)` are the real entry points, and
+- **The ANTI-TANK kit is easiest to drive through its system, and on the page
+  that system DECIDES NOTHING.** `g.antiTank` is the page's PREDICTION, offline
+  as in a match (X2.5c C4): its `onDetonated` spends nothing, so a rocket it
+  flies hits and draws and damages no hull. What a strike is WORTH is the
+  authority's — a `corecheck` case, or a headless probe against `SimCore`
+  (`core.antiTank`, the bot-behaviour bullet below), is where that is
+  asserted. For the FLIGHT, `g.antiTank.launch(from, dir, team, by)` and
+  `g.antiTank.place(at, team, by)` are the real entry points, and
   `g.antiTank.update(1/60)` in a `while (rockets.some(r => r.live))` loop flies a
   rocket home inside one synchronous `evaluate`. **The world-matrix trap this
   entry used to carry is gone and is worth knowing about anyway**, because the
@@ -722,39 +964,48 @@ is one machine's:
   something computes its world matrix, so the FIRST script run after a build
   reported a rocket flying straight through a tank and every run after it
   reported a hit. The step ray is `RayWorld.castRound` now and the hull reaches
-  it through `Vehicle.rayBox`, which reads `body.position` — always current, no
+  it through `Vehicle.rayBox`, which reads `tank.pos` — always current, no
   matrix involved. Anything still asking `getAbsolutePosition()` needs a frame
-  driven first. Measured on Coldharbour: 1200 → 580 on a clean strike, which is `damage` exactly and
+  driven first. Measured on Coldharbour, on the core while a page script could
+  still reach one: 1200 → 580 on a clean strike, which is `damage` exactly and
   no splash — `blastAt` needs line of sight to the hull's centre and the hull is
   in the way.
-- **To A/B the narrowed sweep against the old one you must CLEAR
-  `surroundingMeshes`, not just null the field.** It is state on the MESH:
-  `narrowedMove` now clears it on the no-field path, but a harness that sets
-  `player.setGround(..., null)` and nothing else is handing Babylon whatever
-  list was last written, so BOTH arms walk the narrow list and the change
-  reports as worth nothing. Measured wrongly this way it read 0.022 ms a frame
-  either side; measured properly it is **2.21 ms against 0.036**.
+- **To A/B the sweep against Babylon's, run `scripts/sweep-check.mjs`; do not
+  build a harness in the page.** Since `BABYLON_EXIT.md` X2.1 the sweep is
+  ours (`CollisionField` over `ellipsoidSweep.ts`) and there is no
+  `surroundingMeshes`, no `narrowedMove` and no collidable mesh to walk, so
+  Babylon's `moveWithCollisions` survives only as the oracle's reference —
+  since X6.1i its RECORDED answers (`scripts/tables/sweep-check.json`), the
+  package gone.
+  (Under Babylon, an A/B that nulled the field without clearing the mesh's
+  `surroundingMeshes` walked the narrow list in BOTH arms and read 0.022 ms a
+  frame either side, against a true **2.21 ms against 0.036**.)
 - **Time a sweep in a ROUND, not in an isolated loop at the spawn.**
-  `_collideWithWorld` re-walks the whole list on every retry, so the cost peaks
+  The retry loop (Babylon's `_collideWithWorld`, ported) re-walks the whole
+  list on every retry, so the cost peaks
   when a body is pressed against geometry — which is most of a real round and
-  none of a loop run on open ground. The player's walk reads 106-377 us
-  isolated at a spawn and 388-2,209 us walking a town. The isolated form is
+  none of a loop run on open ground. Under Babylon, the player's walk read
+  106-377 us isolated at a spawn and 388-2,209 us walking a town. The isolated form is
   still the right instrument for a per-call figure (the clock is clamped, so
   only a sum over hundreds of calls means anything); it just has to be run
   somewhere a body is actually colliding.
-- **Teleporting a hull between calls does NOT move the sweep, and the failure
-  looks exactly like a broken collider index.** `moveWithCollisions` opens with
-  `getAbsolutePosition()`, and `computeWorldMatrix()` early-outs when
-  `_currentRenderId` already equals `scene.getRenderId()` — which never advances
-  inside one synchronous `page.evaluate`. So the first `body.position.set()` in
-  such a loop takes and **every one after it is ignored**, and the hull sweeps
-  from wherever it stood at the last render. Chasing this cost an afternoon:
-  a differential harness reported the whole-scene walk colliding with a
-  `compoundWall-col` **600 m away** from where the test had put the body, which
-  reads as an index missing a mesh and is nothing of the kind. **Call
-  `body.computeWorldMatrix(true)` after every position write**, and if something
-  still disagrees, print `collider._basePointWorld` — it says where Babylon
-  thinks the sphere is, and one line of it ends the argument.
+- **Teleport a hull through `tank.pos`, never through its drawing, and a
+  drawn matrix still does not follow it.** Since X2.2 C8 the hull's
+  position IS `pos` (`placeAt`/`correctTo` write it too): the sweep starts
+  from it, every other hull meets it at its `rayBox()`, and the three muzzles
+  are replayed off it, so none of those involve a matrix. The body is the
+  VIEW's (`view.rig.body`, a joint since X4.2a and a mesh before), a
+  FOLLOWER `VehicleView.update` overwrites from `pos` after every fleet step
+  — a write to it moves nothing and is undone. A joint's world is only what
+  the last compose left, and a hull's drawing only what the last
+  `g.drawHulls()` wrote, which the frame calls just before the render (X4.2b:
+  no mesh of a hull exists). **Call `g.vehicleViews.update()` and then read a
+  joint through `view.rig.tree.computeChain(joint)` after a position
+  write.** (Under Babylon a node's
+  `computeWorldMatrix()` early-out on the render id was the trap here, and
+  it was the SWEEP's start too,
+  and it cost an afternoon: a harness reported the walk colliding with a
+  `compoundWall-col` 600 m from where the test had put the body.)
 - **A scripted DRIVE is not a test of anything a hull hits.** Measured over
   1,800 steps of full-throttle turning and reversing, on Sarab, Coldharbour and
   Harrowmead: **every hull finished without being blocked once.** Hardstandings
@@ -766,56 +1017,70 @@ is one machine's:
   in the same loop as the real comparison. The two-arm version of the above
   reported 3 m divergences that were entirely the harness's own doing, and the
   control is the one line that would have said so immediately.
-- **A BOT CREW is stepped with `g.crew.update(dt)` immediately before the
-  fleet**, in that order and never the other way round — it writes the drive
-  input `vehicles.update` then consumes, exactly as `updateDriver` writes the
-  player's. Four things that have already cost time:
+- **A BOT CREW is the authority's, and no page script reaches it** (X2.5c C4):
+  the page has no crew — `Game.vehicleOrders` answers for this player's hull
+  and poses every other off the wire. Test one in a headless probe against
+  `SimCore` (the bot-behaviour bullet below; `?simpage` puts the page's own
+  match in its thread for a DEBUGGER, not for a script) or as a `corecheck`
+  case, where it is stepped with `core.crew.update(dt)` immediately before the
+  fleet, in that order and never the other way round — it writes the drive
+  input `core.vehicles.update` then consumes, and `core.step` keeps that order
+  itself. Four things that have already cost time:
   - **Boarding is on its own 1.5 s clock** (`crew.boardDelay`), so a script that
     spawns a bot beside a hardstanding and steps two frames sees nothing. Step
-    ~2 s of game time, or read `g.crew.crews.length` rather than asserting on
+    ~2 s of game time, or read `core.crew.crews.length` rather than asserting on
     the first tick. The bot has to be ALIVE, of its hull's own team, within
-    `crew.boardRadius` and not `g.battle.aside(...)` — and `seatPlayer` has
-    already benched the lowest slot on the player's side, so picking
+    `crew.boardRadius` and not `core.battle.aside(...)` — and a person's
+    `addPlayer` has already benched the lowest slot on their side, so picking
     `bots.find(b => b.team === 0)` hands you a benched body that can never crew.
   - **A driver steers on `Bot.objective`, which is a squad ORDER and is empty
     until `battle.update` has planned one.** A crew with no objective holds
     station and fights, which is correct and looks exactly like a driver that is
-    broken. Set `bot.objective = g.conquest.points[i].def.id` by hand (it is
+    broken. Set `bot.objective = core.conquest.points[i].def.id` by hand (it is
     `def.id`, not `id`) or step `battle.update` for a second first.
   - **Ask line of sight through the crew's own door, not `battle.losBetween`.** A
     hull's cupola sits five centimetres above the top of its own collider, so
     every sightline to anything shorter dives back into the box: the raw call
     reports no visibility in any direction and looks like a broken map.
-    `g.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out of
-    the pick.
-  - `g.crew.clearAlong(tank, yaw)` and `g.crew.pickBearing(tank, wantYaw)` are
-    the whiskers, and sweeping 24 bearings through the first is the fastest way
-    to see what a stuck driver thinks the world looks like. A hull with the
-    throttle at 1.0 and `travel` near zero is `moveWithCollisions` refusing —
+    `core.crew.ctx.visibleFrom(tank, point)` is the one that takes the hull out
+    of the pick.
+  - `core.crew.clearAlong(tank, yaw)` and `core.crew.pickBearing(tank, wantYaw)`
+    are the whiskers, and sweeping 24 bearings through the first is the fastest
+    way to see what a stuck driver thinks the world looks like. A hull with the
+    throttle at 1.0 and `travel` near zero is the sweep refusing —
     which means the whiskers said clear and were wrong, and the sweep is where
     that shows.
-- **A NETPLAY tank is driven the same way, and three things about the harness
-  bite before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
+- **A tank on a SERVER's match is driven the same way — the offline round being
+  a match too, the bullet above — and three things about the harness bite
+  before the feature does.** Point the page at `?mp=ws://host:port/ws`, set
   `localStorage["greywatch.map"]` in an `addInitScript` (the map a match is
   created on is the one the JOINING client asks for, and there is no URL
-  parameter for it), and deploy with `g.net.sendDeploy(i)` where `i` indexes
+  parameter for it), and deploy with
+  `g.net.sendDeploy(i, g.weapon, g.equipment, g.throwable)` where `i` indexes
   `g.map.spawns` — the deploy screen's own list is derived and is not that
-  index. Then:
-  - **`g.mount()` is not the way in.** In a match the seat is an ask:
+  index (the kit rides the deploy, so the other three are owed). **A BOTLESS
+  match keeps a bot crew from taking the hull first**: wrap `WebSocket` in an
+  `addInitScript` and rewrite the outgoing `join` frame to `bots: false`
+  (`Join.bots`; there is no URL parameter for it either). Then:
+  - **`g.mount()` is not the way in.** The seat is an ask, on every round:
     `g.net.sendMount(hullIndex)` and then `waitForFunction(() => !!g.driving)`.
     The authority refuses it unless the body IT holds is inside `enterRadius`,
     so the player has to genuinely walk there.
   - **Walking there fights the movement validator, and the frame rate is what
-    makes it fight.** `placeAt` in a loop is fine at ~3 m a step, but at 2 fps a
+    makes it fight.** At 60 fps on the GPU box, real keyboard input through the
+    frame loop (`page.keyboard.down("w")`) walks there and drives the hull
+    with no help, and is the better test. `placeAt` in a loop is fine at ~3 m a
+    step, but at 2 fps a
     loop with a 100 ms wait runs several steps between frames — the uploads
     then carry the whole jump, get refused, and the player is snapped back with
     nothing on screen to say why. Wait ~500 ms per step, or accept that the
     walk never arrives.
-  - **Sixty synchronous `vehicles.update` calls will be REFUSED.** The
-    offline recipe above drives three seconds inside one `evaluate`; a netplay
-    driver reporting that jump has covered 19 m since its last accepted sample
-    and `validateDrive` allows about 7. Drive in bursts of ~4 steps with a frame
-    in between, which is what a real driver's reports look like.
+  - **Sixty synchronous `vehicles.update` calls will be REFUSED** — on a
+    server's match as on the page's own (above): a driver reporting three
+    seconds of driving from one `evaluate` has covered 19 m since its last
+    accepted sample and `validateDrive` allows about 7. At a low frame rate, drive in bursts of
+    ~4 steps with a frame in between, which is what a real driver's reports
+    look like; at 60 fps, drive with the keyboard instead.
   - **After a dismount, `g.net.vehicles.stateFor(i)` is the authority's own copy
     of the hull** — the client's samples for a hull it was driving are skipped
     while it drives it, so this is the only way to see whether the drive was
@@ -826,7 +1091,10 @@ is one machine's:
   `dt`, so at 2 fps the interpolator's catch-up divides out at 80 m/s. It is
   bounded to the hull's own top speed, which means a headless run reads exactly
   `drive.maxSpeed` while driving — treat that as "moving", not as a measurement.
-- **A stepped mine has to be told the hull moved.** The trigger is
+- **A stepped mine has to be told the hull moved** — on the core: the page
+  never predicts a mine (X2.5c), so a mine that should go off is the
+  authority's, and is stepped in a headless probe or a `corecheck` case. The
+  trigger is
   `hullNear(at, contactRadius, team)`, which reads `tank.center`; teleporting a
   hull by writing `.x` moves the centre and the collider agrees only at the next
   render, which is fine for the mine (no ray) and not for anything else in the
@@ -837,12 +1105,13 @@ is one machine's:
   trigger pull returns false. Set `swapT = -1` and `swapPending = false` by hand
   after `completeSwap`, and clear `fireCooldown`/`triggerHeld` between shots —
   the AT items are semi-automatic, so a held trigger is refused on purpose.
-- **A bot's launcher is a per-tick CHANCE, so call `considerRocket` in a loop.**
-  `bot.rocketT = 0` before each call or the cooldown eats the run;
+- **A bot's launcher is a per-tick CHANCE, so call `considerRocket` in a loop**
+  — in a headless probe against `SimCore` (`core.battle.bots`), since no page
+  script reaches a `Bot` (X2.5c C4). `bot.rocketT = 0` before each call or the cooldown eats the run;
   `bot.target = tank` is what the decision is about, and it will never fire at a
   body however long the loop runs — that is the rule, not a flaky test.
 - **The ANTENNAE are read off the rig too, and the number you want is the SUM of
-  two nodes.** `tank.rig.antennae[i]` is `{base, tip}`, and the tip's rotation is
+  two nodes.** `view.rig.antennae[i]` is `{base, tip}`, and the tip's rotation is
   LOCAL — the mast's actual angle is `base.rotation.x + tip.rotation.x` (and the
   same in `z`), so reading either alone reports a bend that is not there. Two
   more things that have already cost time: the terms are in the TURRET's frame,
@@ -864,10 +1133,10 @@ is one machine's:
   off is a FALL and not the climb mirrored** — `tank.grounded` goes false for
   about 18 frames and `position.y` drops under gravity — so a script asserting
   a symmetric shape is reading the fix as a bug. **The SUSPENSION is
-  `tank.heave`, which is `tank.rig.sprung.position.y`**: negative is
+  `tank.pose.sprungY`, which the view copies onto `rig.sprung.position.y`**: negative is
   compressed, it bottoms out at `suspension.heaveBump` landing off the car, and
   it is the one part of the vehicle whose Y moves against tracks that do not. A
-  `heave` that never leaves zero on a drive usually means `standOnGround` found
+  `sprungY` that never leaves zero on a drive usually means `standOnGround` found
   nothing — read `tank.floorY` before believing the springs are broken. **Find
   the car by its collider rather than by eye** — it is the only 4.4 x 1.1 x 1.86
   box on the map — and check the run-up is clear of everything else solid, or
@@ -884,17 +1153,16 @@ is one machine's:
   wall parks with `position.z + 3.6` a couple of centimetres off the face. A
   script that checks `position` against the wall and expects `collideRadius`
   will report a bug that is the fix.
-- **A stepped fleet COLLIDES WITH NOTHING unless you compute the world matrix
-  yourself**, and it fails silently in the direction that looks like a finding.
-  `moveWithCollisions` starts from `getAbsolutePosition()`, which only catches up
-  with `position` when something computes the world matrix — a render, and there
-  is not one inside a synchronous `evaluate`. So every step after the first
-  collides from where the hull stood at the last drawn frame: the hull advances,
-  nothing is ever in the way, and a script "proves" a tank drives through the
-  rim, through a barrier and out of the map. Put
-  `tank.body.computeWorldMatrix(true)` immediately before each
-  `vehicles.update`, which is what the render loop was doing for you. Anything
-  driving another `moveWithCollisions` body in a tight loop owes the same call.
+- **A stepped fleet collides without help now; it did not under Babylon.**
+  `moveWithCollisions` started from `getAbsolutePosition()`, which catches up
+  with `position` only when something computes the world matrix, so a fleet
+  stepped inside one synchronous `evaluate` collided from where each hull stood
+  at the last drawn frame and a script "proved" a tank drives out of the map.
+  Since X2.1 the sweep reads the hull's position and the other hulls'
+  `rayBox()`, so `vehicles.update` in a tight loop is honest — and since X2.2
+  C8 so are the three muzzles, which are arithmetic off `tank.pos`. Anything
+  ELSE in the same loop that reads a node's world position (a rig joint you
+  are measuring) still owes `computeWorldMatrix(true)` first (the item above).
 - **`startRound()` does not build the map — it books it.** The state goes to
   `loading` and `buildRound()` runs two animation frames later, so a script that
   calls it and reads the world on the next line gets last round's (or nothing at
@@ -927,8 +1195,17 @@ is one machine's:
   is most of the residue. Measured on Hollowmere: a control pair read mean
   **5.4/255** with the clocks pinned and this one left running, **0.23** with it
   stubbed, and **0.0** with the whole of `updateGameplay` stubbed.
-- **`engine.stopRenderLoop()` plus a manual `scene.render()` does NOT give
-  `page.screenshot` a new frame**, and the failure is the worst shape there is:
+- **A stopped loop plus a manual `scene.render()` does NOT give
+  `page.screenshot` a new frame** — and since `BABYLON_EXIT.md` X5.4f a manual
+  `scene.render()` draws nothing of ours at all, the frame being
+  `g.sceneFrame.render()` (`core/SceneFrame.ts`, called from `Game.tick`); a
+  manual call of THAT is untested, so presume the finding holds for it too.
+  **The loop is the game's since X5.4g, so `engine.stopRenderLoop()` stopped
+  NOTHING** — the engine ran no loop, and since X5.4h there is no `g.engine`
+  to call it on — and the stop is `g.frameLoop.stop()`
+  (`core/FrameLoop.ts`, its port: the pending refresh cancelled, none
+  requested again, not restartable, so close the page after it).
+  The failure is the worst shape there is:
   every pair reads **0% of pixels differ**, including a deliberate change, so an
   A/B concludes that whatever it was testing does nothing. Keep the render loop
   running and freeze the SIMULATION instead — stubbing `g.updateGameplay` holds
@@ -937,30 +1214,17 @@ is one machine's:
   and make it the same KIND of change as the thing under test: a camera move is
   a bad one, because `cameraSys.update` rewrites the angles from the input on
   the next frame and it reads as no change either.
-- **Stubbing `battle.update` alone does not hold a round still if the map has
-  vehicles.** The hulls keep driving, and the diff then GROWS with the number of
+- **Holding the bots alone does not hold a round still if the map has
+  vehicles** (a probe's `battle.update` stubbed, as this was first found on a
+  page that still held a core). The hulls keep driving, and the diff then GROWS with the number of
   frames between two shots — 0.011 at three frames, 0.27 at six, 0.65 at twelve
   — which is drift being measured rather than the lever. That growth with frame
   distance is the tell; if you see it, something is still moving.
-- **Teleporting a bot needs the RIG moved and enabled, not just `bot.position`.**
-  The rig follows that field inside `Bot.update`, and `BattleSystem`'s distance
-  LOD — also in that update — is what switched the root off in the first place,
-  so a staging that pins the AI first leaves every body where it was and
-  switched off. Set `bot.rig.root.position` to `(x, y + rig.centerHeight, z)`
-  and `rig.root.setEnabled(true)` beside `bot.position.set(...)`, THEN pin.
-- **`bot.takeDamage(999, ...)` kills a bot and produces NO RAGDOLL**, and the
-  result reads as the physics being broken. `Game.registerBotKill` is the one
-  place all three death paths converge and the one place the body is offered to
-  the pool, so a direct `takeDamage` leaves a dead bot whose rig is simply
-  switched off — `ragdolling` false, the torso never falls, nothing drawn. Call
-  `g.ragdolls.spawn(victim, g.cameraSys.camera.position)` immediately after, which
-  is exactly what that method does. With it: `ragdolling` true, the rig stays
-  ENABLED for the life of the corpse (`BattleSystem`'s LOD re-enables it every
-  frame while the bot is dead), and the torso drops — measured 3.20 m to 2.32 in
-  300 ms.
 - **Bots are not alive on the frame `playing` arrives**, so a script that stages
-  the roster immediately stages nothing: `battle.bots.filter(b => b.alive)` is
-  empty and every downstream count reads zero without erroring. Wait several
+  the roster immediately stages nothing: the page's bodies,
+  `g.net.roster.soldiers.filter((s) => s.alive)`, are empty (as a probe's
+  `core.battle.bots.filter((b) => b.alive)` is) and every downstream count
+  reads zero without erroring. Wait several
   seconds first — and assert on the count you staged rather than trusting it.
 - Getting into `playing` takes an indeterminate number of Enter presses (the menu
   gates confirm on `overlayT > 0.5`), so press until `state === "playing"`. A LONG
@@ -996,10 +1260,10 @@ is one machine's:
   of the processor rather than guessed: `preProcessShaderCode` runs
   `RemoveComments` over the whole source before the cursor splits a single
   line, so the comment is gone before anything can find a `;` in it. Comment
-  a WGSL shader freely. The rule stands for the GLSL strings that are left.
+  a WGSL shader freely. The rule stood for the GLSL strings while any were left.
 - **To read what the driver actually saw, hook
   `GPUDevice.prototype.createShaderModule` in an `addInitScript` and keep
-  `descriptor.code`** — a failed effect is not in `engine._compiledEffects`, so
+  `descriptor.code`** — a failed effect was not in `engine._compiledEffects`, so
   there is nothing to read afterwards. This is strictly better than the
   `WebGL2RenderingContext.prototype.shaderSource` hook it replaces, and not only
   because the backend moved: the module you captured answers
@@ -1031,13 +1295,14 @@ is one machine's:
   the water came back byte-identical this way.
   **To stand it up again after the scaffold**: restore `glslScaffold.ts` from
   git, and install ONLY `repairTranspiledWGSL` — `forceStandardMaterialGLSL`
-  now throws on boot, because `EmissiveFog.isCompatible` answers WGSL and only
-  WGSL and `MaterialPluginManager._addPlugin` refuses the mismatch. The GLSL
+  threw on boot while `EmissiveFog` stood (until `BABYLON_EXIT.md` X6.1c),
+  because its `isCompatible` answered WGSL and only WGSL and
+  `MaterialPluginManager._addPlugin` refused the mismatch. The GLSL
   original also has to be interpolated by hand: the shared `*_GLSL` constants
   it pastes in are deleted too, so generate the expanded source from
   `git show HEAD~:` and register it as a throwaway module rather than trying to
   import what is no longer there.
-- **A ShaderMaterial's twin is built the same way and needs one more step:
+- **A ShaderMaterial's twin was built the same way and needed one more step:
   carry the UNIFORMS across.** A second material compiled from the old source
   is born empty, and everything the factory, the environment and the frame have
   pushed into the live one lives in its private stores — so
@@ -1047,7 +1312,7 @@ is one machine's:
   and nothing else. Then swap `mesh.material` between them and diff. The grass
   came back byte-identical this way with eight pushers and four point lights
   forced on, neither of which is in any banked frame.
-- **A whole-scene material swap is the cel shader's version of the same
+- **A whole-scene material swap was the cel shader's version of the same
   technique, and it reaches what a banked frame cannot: `bank.mjs` disables
   every rig and never spawns the player, so no reference frame in the set holds
   a single mesh WITHOUT a vertex colour buffer.** That is `vBaked` reading the
@@ -1059,6 +1324,11 @@ is one machine's:
   Then twin every cel material, swap, and diff. All four maps came back at 0% of
   pixels with 65-279 bufferless meshes in frame.
 - **Skip `renderingGroupId !== 0` in that swap, and the reason is the TEST's.**
+  (Since `BABYLON_EXIT.md` X4.3c the weapon is no mesh at all — a walk of the
+  scene's meshes does not reach it, and since X4.3d no mesh is outside group 0
+  — but `Game.drawView` orders its opaque segments by their MATERIAL'S ID
+  exactly as the group did, so a swap of `ViewSegment.material` meets the same
+  trap.)
   `Game` sets its front-to-back comparator on group 0 only, so the VIEWMODEL
   group keeps Babylon's `PainterSortCompare`, which orders by MATERIAL ID —
   hand the weapon 54 freshly minted materials and it re-decides a handful of
@@ -1109,7 +1379,7 @@ is one machine's:
   global that is not exposed. **Run at M4 for the packed light arrays and both
   shapes came back exact**: `pointPos[3]` and `pointColor[7]` out of an
   `array<vec3f, 16>` filled by `setArray3`, and `pointRange[3]` and `[9]` out
-  of the SCALAR array Babylon rewrites into a `@size(16)` struct with `.el`
+  of the SCALAR array Babylon rewrote into a `@size(16)` struct with `.el`
   patched onto every access — which is the one with no diagnostic if it goes
   wrong, and the reason the check exists. Write the known values as 0..255 and
   divide by 255 in the shader so an 8-bit write round-trips exactly.
@@ -1132,23 +1402,23 @@ is one machine's:
 - `Game.tick` pushes the Tab board every frame (`pushScoreboard`), so
   `scoreboard.set(...)` by hand is overwritten next tick. Drive the input
   (`page.keyboard.down("Tab")`).
-- **`moveWithCollisions` is inert headless, so a "does this stop a body" test
-  cannot be written that way.** Set `scene.collisionsEnabled`, give the mover an
-  `ellipsoid` and push it 10 m into a `checkCollisions` box and it travels the
-  full 10 — and it does so for a plain `MeshBuilder.CreateBox` as readily as for
-  anything the map built, which is the tell that the harness is what is missing
-  rather than the geometry. What that costs is real: the merged scatter
-  colliders (`MapBuilder.clusterColliders`) were verified for RAYS directly (200
-  shots fired at trunks from 6 m, 200 stopped) and for BODIES only by
-  equivalence — a merged mesh and a loose one behave identically in the same
-  harness, and so do the same map before and after the merge. Prefer a
-  `pickWithRay` assertion, which works, and say plainly when the body half rests
-  on equivalence.
+- **A "does this stop a body" test is a direct call now.** The sweep is plain
+  numbers since X2.1, so `g.map.collidables.move(body, step)` (any object with
+  `position`, `ellipsoid` and `ellipsoidOffset`) works headless and in the
+  page alike, and `scripts/sweep-check.mjs` is the oracle against Babylon's
+  recorded answers.
+  Babylon's own `moveWithCollisions` was inert in a headless page — a body
+  pushed 10 m into a `checkCollisions` box travelled the full 10 — which is why
+  the merged scatter colliders were once verified for BODIES only by
+  equivalence; since `BABYLON_EXIT.md` X5.3e there is no merged mesh at all,
+  the grouping being data (`boxGroups`).
 - **A canopy is checked by firing rays at the sky, not by looking at a
-  screenshot.** Make the visual meshes pickable (they are `isPickable = false`
-  by default), sample a grid of ground points inside the stand, cast straight up
-  with a predicate that rejects `metadata.solid`, and the hit fraction is the
-  closure. Pair it with the local stem density off `map.colliderBoxes` and the
+  screenshot** — and **the recipe owes a PORT** (`FINDINGS.md` 72). It made the
+  visual meshes pickable, sampled a grid of ground points inside the stand and
+  cast straight up, and the hit fraction was the closure. A round makes no
+  visual mesh to pick any more (the world is our renderer's, and since
+  `BABYLON_EXIT.md` X6.1h there is no scene to pick through), and `map.rays` cannot stand in: a crown is no collider. Pair
+  it with the local stem density off `map.colliderBoxes` and the
   two give the crown's effective area: for randomly placed crowns
   `closure = 1 - exp(-rho * Aeff)`, so `Aeff = -ln(1 - closure) / rho` — which is
   what makes "is a bigger crown worth more than another frond" a measurement
@@ -1157,11 +1427,11 @@ is one machine's:
   "trees with sky behind them" depending on where you stand.
 - **Bot BEHAVIOUR is measured in the headless simulation, not in the browser.**
   At ~2 fps nothing crosses a map, so anything about squads, spacing, cover or
-  state occupancy wants `HeadlessGame` instead: build a throwaway entry against
+  state occupancy wants `SimCore` instead: build a throwaway entry against
   it with `vite build` (copy `vite.server.config.ts`, point `input` at a
-  scratchpad file, and either write the bundle inside the repo or set
-  `ssr: { noExternal: true }` — a bundle outside the tree cannot resolve
-  `@babylonjs/core`), then step `game.step(1/TICK_HZ)` and sample
+  scratchpad file; the bundle may live outside the tree, since the authority
+  imports no `@babylonjs/core` to resolve and `ws` is all `server/index.ts`
+  needs), then step `game.step(1/TICK_HZ)` and sample
   `game.battle.bots`. Two things make it a comparison rather than a number:
   `CONFIG` is `as const` to the typechecker and a plain object at runtime, so a
   probe can override any tunable from an env var and ablate one change at a
@@ -1184,32 +1454,54 @@ is one machine's:
   minutes, which is exactly long enough to be tempted. Finish the run, or copy
   the tree.
 - The muzzle flash is unhittable at 2 fps (`gunfeel.flashTime` 0.05 s); force it
-  with `player.flashRoot.setEnabled(true)`.
+  with `g.playerView.flashRoot.enabled = true` (a JOINT's switch since
+  `BABYLON_EXIT.md` X4.3b, seen from the next frame; the flash is
+  `PlayerView`'s, its petals segments our renderer draws since X4.3c;
+  `Player` draws nothing).
 - **A soldier is judged in a picture, and the rig can be photographed without
-  fighting a round for it.** `await import("/src/entities/SoldierModel.ts")`
-  inside `page.evaluate` hands back the real module — the same URL Vite already
-  resolved, so it is the same instance the game is using — and
-  `buildSoldier(g.scene, g.mats, team)` builds one of each side to park wherever
-  you like. An `onBeforeRenderObservable` that puts them a few metres along
-  `scene.activeCamera.getDirection(...)` keeps them in shot whatever the camera
-  does, `deploy` is the cheapest state to do it in (the map is up and nothing is
-  shooting), an injected `#hud{display:none}` takes the interface off the glass,
-  `animateSoldier` poses them and writing `rig.root.rotation.y` turns them for a
-  turntable. Two traps: there is no `BABYLON` global, so build a vector with
-  `new (cam.position.constructor)(x, y, z)`; and **the team read has to be
-  checked at RANGE, not only in the close-up** — park the same pair 25–30 m out,
-  where a body is ~40 px tall, which is the size at which a kit that only works
-  in a portrait stops telling you anything.
+  fighting a round for it.** Since `BABYLON_EXIT.md` X4.1d a rig is no mesh:
+  our renderer draws the rigs `Game.installBodyPools` filed (the roster's and
+  the death cam's) and NO OTHERS, so a rig a script builds with `buildSoldier`
+  is never photographed. Borrow the roster's, as `placeVantage` does
+  (`plans/webgpu-ref/harness.mjs`): in `deploy`, the cheapest state to do it in
+  (the map is up and nothing is shooting), hold the roster's per-frame update
+  (`g.net.roster.update = () => {}`) and pose `g.net.roster.soldiers[i].rig`
+  yourself — `resetSoldierPose`, then `animateSoldier(rig, {...REST_POSE,
+  ...})` from `/src/entities/SoldierModel.ts` (imported inside `page.evaluate`,
+  the same URL Vite resolved, so the game's own module), `rig.root.position`
+  and `rig.root.rotation.y` for a turntable, and `soldier.setEnabled(true)`.
+  The roster's first half is one side and the second the other (`soldier.team`).
+  Nothing has to be drawn by hand: `Game.drawBodies` composes and hands over
+  every switched-on filed rig each frame. An injected `#hud{display:none}`
+  takes the interface off the glass. Two more traps: there is no `BABYLON`
+  global, so build a vector with `new (cam.position.constructor)(x, y, z)`;
+  and **the team read has to be checked at RANGE, not only in the close-up** —
+  park the same pair 25–30 m out, where a body is ~40 px tall, which is the
+  size at which a kit that only works in a portrait stops telling you
+  anything.
 - **Sight alignment is checkable without a picture**, and should be after anything
   touching the viewmodel or camera — for **every** optic, since each carries its
-  own eye reference. Take
-  `scene.getTransformNodeByName("view_<weapon>_<sight>_sightCenter")
-  .getAbsolutePosition()` (all twenty-five of
-  `rifle`/`carbine`/`smg`/`dmr`/`lmg` × `reflex`/`iron`/`holo`/`prism`/`scope`, since
-  a weapon change moves the optic too, plus `view_pistol_iron_sightCenter`) and put it
-  in the CAMERA's frame — `computeWorldMatrix(true)` on both, then transform the
-  point by `cameraSys.camera.getWorldMatrix().clone().invert()` (the camera is the
-  CameraSystem's, not a field on `Game`). At `adsBlend === 1` the answer is
+  own eye reference. Take the worn sight's `sightCenter` — since
+  `BABYLON_EXIT.md` X4.3b a JOINT of the viewmodel's tree, not a node in the
+  scene: `view.rigs[<weapon>].parts.sights`, its `assemblies[<sight>]` on a rail
+  or its `assembly` on a fixed sight — for every weapon in every sight it can
+  wear (a weapon change moves the optic too), and COMPOSE ITS WORLD INTO A
+  SCRATCH MATRIX of your own: import `/src/math/index.ts` and walk the joint up
+  to the root, each step `local × parent` with the local composed as
+  `rigJoints.ts`' `composeLocal` does it (`fixedLocal` if set; else the
+  quaternion or the Euler through `Quaternion.RotationYawPitchRoll`, then
+  `Matrix.ComposeToRef`, or for a pivoted joint `pivot × Scaling × rotation ×
+  pivotInverse` plus the translation), and the root's world
+  `Matrix.FromArrayToRef(root.outside().m, 0, …)`. **Never `view.tree.read`
+  or `world` from a script**: those are the game's readers, and a call from
+  outside the frame re-stamps the render cache, so the next frame's grenade or
+  rocket would start from a different answer than it would have. Take the
+  translation row and put it in the CAMERA's frame by
+  `cameraSys.camera.getWorldMatrix().clone().invert()` (the camera is the
+  CameraSystem's, not a field on `Game`). X4.3b's oracle took all forty-five
+  combinations this way, the six rail weapons in all seven sights and the
+  pistol, the launcher and the mine in their own; wait three rendered frames
+  past the fit all the same (below). At `adsBlend === 1` the answer is
   `(0, 0, eyeRelief × zoomComp)` for that sight; measured across all
   twenty-five, the worst cross-axis component is **6 µm**, so anything above a
   few thousandths of a millimetre is real. Prefer this to projecting the
@@ -1238,14 +1530,16 @@ is one machine's:
     PREVIOUS combination's settled values. A predicate over those is true before
     a single frame has re-posed anything, and what you then measure is the old
     weapon's pose against the new weapon's sight node. Count
-    `scene.onAfterRenderObservable` and wait three frames past the fit change; at
+    `g.sceneFrame.onAfterRenderObservable` (the frame's own since
+    `BABYLON_EXIT.md` X5.4f: the scene's was never raised, and is gone since X6.1h) and wait three
+    frames past the fit change; at
     2 fps that is a real wait, and the tell that you skipped it is
     `view.weapon.position` reading **identical across combinations** while
     `view.adsPos` varies. Read the two side by side and they must be equal.
     Measured wrong this way, twenty-three of twenty-five optics come back 1–22 mm
     low or high, in a pattern that correlates neatly with the sight and looks
     exactly like a real geometry bug; measured right, all twenty-five are zero.
-  - **The kick's NEAR-PLANE clearance is a second reading off the same node,
+  - **The kick's NEAR-PLANE clearance is a second reading off the same joint,
     and it needs the two magnified optics specifically.** The per-shot kick
     travels the weapon toward the eye, so on the prism and the scope it can
     drive the sight through `camera.minZ`. Freeze the spring
@@ -1253,18 +1547,30 @@ is one machine's:
     stacked-burst worst case, plus `kickDrift` pinned so the roll is in it too),
     force ADS, and read the same `sightCenter` z: it must exceed `minZ` for
     every weapon on both optics. **Do not derive this instead of measuring it.**
-    The bound in `ViewModel` is computed on the weapon NODE's travel while what
+    The bound in `ViewModel` is computed on the weapon JOINT's travel while what
     has to clear the plane is the SIGHT, which the kick's pitch and roll swing
     by another ~4 mm — derived, the DMR with the prism reads 6.2 cm and
     measures 3.8.
   **Alignment is not occlusion, and the second is a MEASUREMENT and not a
   picture**: a sight can read a perfect zero and still be looking at the
-  weapon's own stock, which is what the DMR's irons did. `optics.ts`'s
+  weapon's own stock, which is what the DMR's irons did. **The recipe below is
+  RETIRED and cannot be run as written**: it picks the viewmodel's MESHES
+  through `scene.pickWithRay`, and since `BABYLON_EXIT.md` X4.3d no viewmodel
+  part is a mesh (a SEGMENT of one kit, `render/ViewDraw.ts`) and since X6.1h
+  there is no scene to pick through. No replacement is written: one owes a ray
+  test against the weapon kit's own triangles, which nothing in the tree
+  offers. It is kept as the record of what the method found and of the traps a
+  successor still owes — the other five sights excluded, a disc dense enough
+  for a wedge, the names read rather than the count. `optics.ts`'s
   `ironSightFloor` keeps geometry out of the aperture; what proves it is a grid
   of rays down the sight's own cone, and that needs no round and no map at all —
-  every weapon and every optic is built in `Game`'s constructor, so the rigs are
-  in the scene while the MENU is up. Take the weapon's root
-  (`view_<weapon>_<weapon>`) and its `sightCenter`, put the eye on the sight
+  every weapon and every optic is built in `Game`'s constructor, so the rigs
+  exist while the MENU is up. Take the weapon's root joint
+  (`view.rigs[<weapon>].parts.root`, its world composed into scratch as
+  above, never through the tree's readers) and its
+  `sightCenter` — and note the meshes have no parent since X4.3b: each holds the
+  world `drawView` last handed it, so a rig that has not been DRAWN (not carried,
+  or the viewmodel hidden) holds none; carry it, show it and wait a frame — put the eye on the sight
   axis at `eyeRelief / viewmodel.scale` behind the centre IN THE WEAPON'S OWN
   FRAME, and fire a disc of rays at the cone's rim plane one unit ahead —
   `scene.pickWithRay(ray, m => own.includes(m))`, whose custom predicate is what
@@ -1294,7 +1600,9 @@ is one machine's:
   land on the tube — 6 on the 3.5x, 6 on the prism, 10 on the 6x — because a stepped tube circumscribes its own cone and meets it at
   every step's far rim. Only a name that is neither of those is a fault. The launcher's optic read 0 clear of 313
   as a solid body and 270 of 313 as a tube; a `Ray` constructor with no import
-  is `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`. A
+  was `scene.createPickingRay(0, 0, null, scene.activeCamera).constructor`
+  (no longer: since `BABYLON_EXIT.md` X6.1f the scene holds no camera — the
+  frame does, `SceneFrame.activeCamera`, and it is ours). A
   screenshot at `adsBlend === 1` is worth taking afterwards, and it is the
   slower half: a launcher's swap is over a second of GAME time, which is ~40 s
   of wall clock at 2 fps, and reading `player.swapping` too early shows the
@@ -1324,12 +1632,17 @@ is one machine's:
     than calling it once.
 
   What to READ is the landmark projected to pixels: `Vector3.Project(p,
-  Matrix.Identity(), scene.getTransformMatrix(), viewport)`, with the point
+  Matrix.Identity(), transform, viewport)` (the transform is
+  `window.__refFrame().camera().transform` through the frame adapter since
+  X6.1a, which answers with no scene — the frame's own,
+  `SceneFrame.getTransformMatrix()`, since X6.1f, when the scene's stopped
+  being computed; its sixteen floats into a matrix of either library), with the point
   built by `Vector3.TransformCoordinates(local, node.getWorldMatrix())` so a
   weapon's own coordinates can be named directly (the muzzle at z 1.24, the
   round's nose at 1.2, its motor's tail at 0.44). There is no `BABYLON` global:
   take the classes off live objects (`cameraSys.camera.position.constructor`,
-  `scene.getTransformMatrix().constructor`). The support hand
+  `sceneFrame.getTransformMatrix().constructor` — both `src/math`'s since
+  X6.1f). The support hand
   (`local(supportArm, -0.01, -0.16, 0.64)`) is the self-check — it reads
   **(725, 634)** at rest, which is the figure `docs/antitank.md` recorded when
   the launcher's carry was first framed, so a harness that disagrees with it is
@@ -1350,15 +1663,20 @@ is one machine's:
   `tryShot(true)` returning **false** on a trigger that was never released.
 - **Grenades are testable without waiting for a round**: `g.grenades` takes
   `throwAlong`/`throwAt` and `g.grenades.update(1/60)` steps the flight, so a whole
-  detonation is a synchronous loop in one `page.evaluate`. A bot moved by hand must
+  detonation is a synchronous loop in one `page.evaluate`. The flight lives in
+  `g.grenades.flights[i].pos`; the MESH only follows it on
+  `g.grenadeFx.update(dt)` (and a rocket's on `g.antiTankFx.update()`), which a
+  frame runs straight after — a loop that steps the simulation alone moves no
+  mesh. A bot moved by hand must
   be put back to `alive = true` between blasts — `takeDamage` kills it and
   `hittablesAgainst` then leaves it out, which reads exactly like broken falloff.
   "0 damage" at a plausible range is usually the LOS ray finding a wall: sample the
   same distance in all four compass directions before believing it.
 - **A whole BLAST is one synchronous evaluate, and `blastAt` is the door.**
   `g.grenades.blastAt(at, team, by, {radius, inner, damage, kind, power})` runs
-  the damage and the six drawn layers; `g.grenades.drawBlast(at, power)` runs the
-  picture alone and hands back the `BlastGround` the ground probe found. Neither
+  the damage and the six drawn layers (through `onBlast` to `g.grenadeFx`);
+  `g.grenades.drawBlast(at, power)` runs the picture alone and hands back the
+  `BlastGround` the ground probe found — its normal is `src/math`'s. Neither
   fires the light, the sound, the shake or the two Havok layers — those are
   `Game`'s, so a script that wants the whole thing calls
   `g.onExplosion(at, power, g.grenades.probeGround(at))` after it. Step it with
@@ -1372,17 +1690,30 @@ is one machine's:
   went; `g.blastDebris.scorch.marks` is the decal pool. **Put the blast on OPEN
   GROUND**: a control point on Coldharbour is a monument, and a mark laid on its
   plinth is inside the plinth.
-- **The blast DUST is not steppable that way** — the puffs run on the GPU and
-  advance on RENDERED frames by `updateSpeed * scene.getAnimationRatio()`, and
-  headless that ratio is the real frame delta (~30 at 2 fps, not clamped), so a
-  2.4 s cloud is three frames. Override `scene.getAnimationRatio`: 0 freezes the
-  dust, and `seconds * 60` for exactly one rendered frame (counted on
-  `scene.onAfterRenderObservable`) steps the cloud to a known age and holds it.
-  Also: `dust.burst()` needs a real `Vector3` (`copyFrom` reads `_x`/`_y`/`_z`, so
-  a plain `{x,y,z}` silently gives a cloud at NaN), and `getActiveCount()` is the
-  ring size, not live puffs. **There are TWO of these pools now** —
-  `g.grenades.dust` and `g.grenades.smoke`, the same class with different
-  numbers — and the freeze has to cover both, because they share the one clock.
+- **The blast's dust and smoke are no GPU pool any more**: they are billows
+  (`systems/BlastFx.ts`, `g.grenadeFx.blasts`), stepped by
+  `g.grenadeFx.update(dt)` like any other pool, so a script steps them as it
+  steps the flight. **What is NOT steppable that way is a PARTICLE FIELD** —
+  the ash and the rotor wash's dust and spray rings (`render/ParticleDraw.ts`,
+  Babylon's `GPUParticleSystem` ported), which run on the GPU and advance on
+  RENDERED frames by `updateSpeed * ratio`. The ratio is
+  `g.sceneFrame.animationRatio` (`core/SceneFrame.ts`, `scene.getAnimationRatio()`
+  until `BABYLON_EXIT.md` X5.4g: neither `scene.animate()` nor that getter is
+  called any more, so overriding it does nothing), which `render()` OVERWRITES
+  every frame from the loop's delta — headless the real frame delta, ~30 at
+  2 fps, clamped only at 1000 ms — so a 2.4 s cloud is three frames. Pin it
+  with an accessor: `Object.defineProperty(g.sceneFrame, "animationRatio",
+  { configurable: true, get: () => r, set() {} })` — the SETTER is owed,
+  because `render()` assigns it and a getter alone throws in the module's
+  strict code — and `delete g.sceneFrame.animationRatio` puts the plain field
+  back. **0 is NOT a freeze**: a field reads `ratio || 1`, as Babylon wrote it,
+  so 0 steps a whole sixtieth. Freeze with a tiny positive `r` (`1e-6`), and
+  step a ring (`updateSpeed` 1/60) to a known age with `r = seconds * 60` for
+  exactly one rendered frame (counted on `g.sceneFrame.onAfterRenderObservable`,
+  the frame's own since X5.4f; the scene's was never raised, and is gone since X6.1h). **Overriding the
+  CLOCK instead cannot freeze anything**: `render()` clamps the loop's delta to
+  `Scene.MinDeltaTime`, 1 ms, so the smallest ratio a clock override reaches
+  is 0.06.
 - **`Game.setMap` takes the INDEX into `MAPS`, not a `MapDef` and not an id.**
   A script that hands it the def gets `Cannot read properties of undefined
   (reading 'id')` from inside `setMap`, which reads like the map is missing. The
@@ -1440,42 +1771,140 @@ is one machine's:
   feature rather than a testing problem.** It is a Fresnel between the tint of
   what is behind the pane and a reflection of the sky, so square-on and down the
   street are two different materials to the eye: shoot both, or a value tuned on
-  one will be wrong on the other. Two standing checks are cheap and are worth
-  asserting instead of eyeballing — `map.paneGroups.every(g =>
-  !g.mesh.renderOutline)` and no pane mesh in
-  `g.shadows.generator.getShadowMap().renderList` (40 pane meshes against 316
-  casters on Coldharbour). A pane that gains either is drawn as a dark plate or
-  lays a hard shadow through clear glass.
+  one will be wrong on the other. The two standing checks that were cheap to
+  assert here (no pane mesh with `renderOutline`, no pane mesh in the shadow
+  generator's render list) have nothing left to read: a round makes no pane
+  mesh (none since `BABYLON_EXIT.md` X4.6e, and the `PaneGroup.mesh` field went
+  at X5.3e) and there is no generator (X5.3d). Both rules are held by construction now — see-through
+  glazing writes no depth, so the ink never finds it, and
+  `BlockHandover.takeGlass` REFUSES a glazing surface that would cast, so a
+  round that starts holds no pane in any shadow pass. A pane that broke either
+  would be drawn as a dark plate or lay a hard shadow through clear glass.
+- **The bodies' map reads back the same way** (`BABYLON_EXIT.md` X4.1c):
+  `g.bodyShadowMap.colour` is our `r16float` texture, made WITHOUT
+  `COPY_SRC`, so a readback adds it in an init script (wrap
+  `GPUDevice.prototype.createTexture`, label `"body shadows"`) before the
+  page boots, and copies after the frame's submit
+  (`g.frameLoop.onEndFrameObservable` — our loop's since `BABYLON_EXIT.md`
+  X5.4g; the engine's never raised in a frame since) to read the frame just drawn. It holds
+  bodies only where the window is: re-place it inside the render
+  (`g.sceneFrame.onBeforeRenderObservable` — the frame's own since
+  `BABYLON_EXIT.md` X5.4f, the scene's was never raised and is gone since X6.1h — `g.bodyShadows.update(focus, g.mats,
+  g.mapBodies(), g.vehicles.hulls)`) on a body or a hull, or it reads lit.
+  There is no Babylon side left to compare against; X4.1c's comparison kept
+  the deleted generator as a temporary twin fed the same matrices array.
+- **The glow's MASK reads back the same way, and it is the place to check who
+  drew the palette's bloom** (`BABYLON_EXIT.md` X3.6d, X3.6e): `g.glow.mask
+  .getInternalTexture()._hardwareTexture.underlyingResource` is an
+  `rgba8unorm` render target Babylon made with `COPY_SRC`, so a
+  `copyTextureToBuffer` off `g.renderer.device` between frames reads the last
+  frame's mask. `g.worldGlow.drawing` and `.drawn` say whether ours drew the
+  palette into it. **There is no Babylon side of the palette to compare
+  against** (no mesh is made of it since X3.7b, and its stages and
+  mask twin went at X3.7c): a mask ours cannot draw FAILS THE WORLD (below),
+  and the old A/B — a forced loss, then `g.handover.takePalette()` to take
+  it back — is gone with the meshes. A frame of Babylon's palette needs a
+  build at the tag `exit-babylonworld`.
+- **Every former handback is now the world's failure, and each can be
+  FORCED in a scratch page** (`BABYLON_EXIT.md` X3.7b, X3.7c). No pass of ours
+  has a `lose()` any more: each is handed its world WITH the install's
+  failure and tells it what it cannot draw, so a forced failure is forced on
+  the PASS's own path. After `installRound`: `g.handover.refused()` (the main
+  pass refused), `g.handover.failed([0])` (a group's surfaces failed),
+  `g.handover.mainPaletteFailed()`, and `g.worldGlow.refused()` (the glow's
+  mask pass refused — what `Renderer.onGlowMaskRefused` calls). Armed before
+  `g.startRound()`, each landing at the install: the casters' build failing
+  (wrap `g.worldShadows.setCasters` — or `g.lampAtlas.setCasters` — to hand
+  the real one `Object.create(depth, { ready: { value: Promise.resolve(false) }
+  })`), the lamps' proxies' pipeline failed for the session (`g.lampAtlas
+  .proxies = Promise.resolve(false)` — and a SECOND round fails the same
+  way, the session's), the bake's mips pipeline failed for the session
+  (`g.probeBake.mips = Object.create(g.probeBake.mips, { ready: … false })`),
+  the bake's view not made (`g.handover.blocks.probeView = () => null`) or
+  not built (wrap it to return `{ ...view, ready: Promise.resolve(false) }`),
+  and the mask's view the same two ways (`blocks.glowView`) — and the
+  bodies' map's pipeline failed for the session (`g.bodyShadowMap.ready =
+  Promise.resolve(false)`; `BABYLON_EXIT.md` X4.1c: not the world, but no
+  fallback either, so the round's failure, a second round failing the same
+  way). Each must end,
+  after the task in hand, in ONE `console.error` beginning `[world] <map>: the
+  map could not be drawn`, `g.state === "menu"`, and a toast naming the map —
+  and a round after it, restored, installs clean. (The fields are private to
+  TypeScript, not to a page script.) Count the console errors, not the
+  states: a second failure inside the same turn is the same one
+  (`Game.worldFailing`), and a stray second `[world]` line is a bug. **The
+  cull's refusal** is forced by `g.culling.setMap = () => "forced"` before
+  `g.startRound()`: the round must reach the menu, not the deploy screen, and
+  not hang the card. **A refused SURFACE is held to the install**, which
+  fails the world like the rest (the one `[world]` line, the menu, the toast)
+  — and a DEV build then THROWS (a page error out of `buildRound`, the page
+  still reaching the menu), which is what `npm run merge:hash` fails on, at
+  every crown rung (`--foliage`). Force one by wrapping `g.handover
+  .onSurface` before `g.startRound()` to mark the first block surface
+  `updatable` (a caster nothing can hold). **A failure of the OLD map under
+  the next round's card** (the old install's failure, captured by wrapping a
+  pass's `setWorld`/`setCasters` and called right after a Restart's
+  `g.startRound()`) is said against the old map — `[world] <map>: … (it was
+  already being replaced…)` — or, once the handover has a new owner, dropped
+  (`BlockHandover.failFor`), and the new round reaches the deploy screen
+  either way, with no toast (`Game.roundWorld`).
+- **Whether the RECORD still describes the mesh is `npm run merge:hash`'s**
+  (`BABYLON_EXIT.md` X3.7a): EVERY surface that has a mesh — on a shipped
+  build the glazing (and the fires until X4.4d); on the map editor's build, until
+  X5.3c retired it, every one, 2,000-odd meshes almost all off identity, which
+  exercised the transformed path (`scripts/bounds-check.mjs`'s since X5.3a) —
+  record bounds against the mesh's bounding info bit for bit (`bounds≠mesh`,
+  and the `record bounds` line counts those off identity), and its record's
+  arrays against the mesh's buffers (`arrays≠buffers`). The DEV reads X3.7a
+  added (`WorldCulling.stats.boundsChecked`, the handover's birth check) went
+  with the meshes at X3.7b. **There is no mesh to compare a record with since
+  `BABYLON_EXIT.md` X6.1g** (no build makes one, and `GameMap.visuals` and
+  `SurfaceRecord.visual` went with them): `scripts/bounds-check.mjs` holds
+  `boundsOf` to Babylon's `BoundingInfo` in Node, every kind at seeded
+  transforms — its answers recorded since X6.1i (`scripts/tables/`).
 - **What a pane REFLECTS is checkable without a screenshot, and the CUBE is the
   place to check it.** There is one probe per glazed map block —
-  `g.reflections.probes[slot]` against `g.map.paneGroups[slot]`, 40 of each on
-  Coldharbour — and `probe.cubeTexture.readPixels(face)` gives one baked face:
-  alpha over 128 is world, everything else is the sky the shader fills in. Three
-  standing checks:
+  `g.reflections.pools.glazing[slot]` against `g.map.paneGroups[slot]` (39 on
+  Coldharbour; `.water[slot]` the water's), `.job.cube.texture` a raw
+  `GPUTexture` made with `COPY_SRC`, so a readback is `copyTextureToBuffer`
+  of each face and level off `g.renderer.device` and nothing else: alpha over
+  128 is world, everything else is the sky the shader fills in. The default
+  cube is none of them and reads all zeroes: its raw `GPUTexture` is the
+  bake's, `g.probeBake.cubes.find((c) => c.texture.label === "probe bake:
+  default").texture`, which is also `g.reflections.defaultCube` since X4.6d (a
+  glazing material held Babylon's wrapped `BaseTexture` over it, which
+  `copyTextureToBuffer` cannot take; a round's glazing has no material since
+  X4.6e, its group bound to the cube itself, `g.glassDraw.surfaces[i].material`).
+  Babylon's `ReflectionProbe` cubes went at X3.7c (the tag
+  `exit-babylonworld` still has them). Three standing checks:
   - **Coverage says the enclosure rule fired.** Mean coverage over all six faces
-    is 0.711 across the 40 probes as shipped. Put the enclosing meshes back
-    (`probe.cubeTexture.renderList = allOpaque; probe.cubeTexture.render()`) and
-    a tower's goes 0.57 → 0.84 and **a parked car's 0.68 → 0.99** — a probe
-    inside its own bodywork, which is the failure the rule exists for.
+    was 0.711 across the 40 probes of Babylon's bake as shipped; putting the
+    enclosing meshes back took a tower's 0.57 → 0.84 and **a parked car's 0.68
+    → 0.99** — a probe inside its own bodywork, which is the failure the rule
+    exists for. On ours the same test is a probe re-baked with its
+    `job.exclude` set to null.
   - **Face 2 is 100% and face 3 is 0**, and that pair is the Y-flip contract
     rather than a curiosity: face 2 is `POSITIVE_Y` and it holds the DOWNWARD
     view, which is why the shader samples the cube with `-y`. A bake that lost
     the flip reads as glass that is simply too dark.
-  - **A material per probe, and no extra draw.** `new
-    Set(g.map.paneGroups.map(p => p.mesh.material.name)).size` is the probe
-    count, while the mesh count is unchanged — that is the whole affordability
-    argument, and a regression here shows up as one name for all 37.
-- **The eye is the thing a bake can leak.** `g.mats.camPos` must equal
-  `g.cameraSys.camera.position` on any frame after an install; if it equals one
-  of `g.reflections.probes[i].position` instead, the bake put the eye back
-  wrong and the install frame fogged the whole map from a point inside it. It
-  self-corrects on the next frame, so this is only ever visible as an
-  assertion — read it in the same `evaluate` that starts the round.
+  - **A probe per block, and no extra draw.** Since X4.6e a round's glazing is
+    no mesh and holds no material: count the slots, `g.reflections.pools
+    .glazing.length`, against `g.glassDraw.surfaces.length`, one draw a group —
+    that is the whole affordability argument.
+- **The eye was the thing Babylon's bake could leak** — it moved every cel
+  material's `camPos` into the probe and back, and a bake that put it back
+  wrong fogged the install frame from a point inside the map. Ours PASSES the
+  eye in a frame of its own and moves nothing (the only bake since X3.7c), so
+  the check is a cube baked with the camera at the probe and 600 m off it
+  coming back identical.
 - **Whether the glazing is DRAWN at all is a separate question from how it
   looks, it is a number, and it has to be asked at RANGE** — that is where
   glass past ~100 m was found not to be drawn at all
   (`CelMaterialFactory.GLASS_DEPTH_UNITS`). The reading is the pane's own
-  contribution: grab a patch, `paneGroups[i].mesh.setEnabled(false)`, grab
+  contribution: grab a patch, take the pane out of its draw (since X4.6e a
+  round's is `g.glassDraw.surfaces[i]`, no mesh: clear its `material` and it
+  draws nothing; no build makes `paneGroups[i].mesh` since the map editor's
+  went at X5.3c), grab
   again, and difference the two. Zero means the pane lost the depth test, not
   that it is subtle. Three things make the sweep say something:
   - **Hold the incidence angle and the on-screen size still, or the answer is
@@ -1484,7 +1913,10 @@ is one machine's:
     `cam.fov = 2 * atan(k / dist)`, so the only thing changing down the sweep
     is the distance.
   - **Hide the rest of the map rather than hunting for a clear sightline** —
-    `map.visuals`, `setEnabled` on a radius around the target. Above ~100 m
+    `map.visuals`, `setEnabled` on a radius around the target, while the world
+    was Babylon's meshes (a round's world has none since X3.7b, and no build
+    makes one since `BABYLON_EXIT.md` X6.1g: a port hides our renderer's
+    blocks instead). Above ~100 m
     every line across Coldharbour crosses something, and a blocked shot reads
     exactly like a pane that is not drawn. **A radius is not enough and was
     measured not to be**: it leaves another wing of the target's own tower
@@ -1492,20 +1924,23 @@ is one machine's:
     produced a clean zero in the middle of a row of healthy readings. Keep the
     pane's own BUILDING — the visuals whose boxes overlap the group's, padded a
     few metres — and hide everything else at every range.
-  - **`markVisual` freezes the world matrices**, so moving a pane group to test
-    a standoff silently does nothing: `unfreezeWorldMatrix()` and
-    `computeWorldMatrix(true)` first. Measured that way, a pane at 220 m needs
+  - **`markVisual` froze the world matrices** (while there were meshes to
+    freeze, until X6.1g), so moving a pane group to test a standoff silently
+    did nothing: `unfreezeWorldMatrix()` and `computeWorldMatrix(true)` first. Measured that way, a pane at 220 m needs
     ~0.2 m of clear air in front of the wall before the depth buffer can
     separate the two, against the 0.04 m the builder gives it.
 
   **This whole sweep is now a committed script** —
-  `node plans/webgpu-ref/depth.mjs glass` — because the number it takes is
+  `node plans/webgpu-ref/depth.mjs glass`, which THROWS "owes a port" since
+  `BABYLON_EXIT.md` X4.6e, a round's glazing being our renderer's and no mesh
+  (`FINDINGS.md` 69) — because the number it takes is
   decided by the DEPTH FORMAT, which is decided by one boot flag, and nothing
   else in the repository re-derives it. It differs from the recipe above in one
   further way worth knowing: the reading is a COUNT of tinted pixels rather than
   a difference of two grabs, which is what makes the far end legible. Its
-  `zoffset` mode is the same instrument pointed at the outline pass's own
-  offsets, and answers what they are worth in metres at a given range.
+  `zoffset` mode was the same instrument pointed at the outline pass's own
+  offsets, answering what they were worth in metres at a given range; it is
+  RETIRED since `BABYLON_EXIT.md` X6.1c's review (`FINDINGS.md` 69).
 - **Placing a camera on Coldharbour by hand lands it inside a building far more
   often than it looks like it should.** The towers sit on a 30 m grid and are 26 m
   across, so the gaps are metres; the four avenues (`x` and `z` at ±40 and ±120)
@@ -1529,7 +1964,7 @@ is one machine's:
   8.3, 7.9, 7.9, 7.6, 8.1 and 7.8 after, against a 7–8 ms median either side.
   To compare a field against ground truth, sweep it again by hand —
   `nav.buildField` with the same goal and radius `MapBuilder` and
-  `server/world.ts` both use (a control point's `pos` and `radius * 0.6`, a
+  `buildSimWorld` both use (a control point's `pos` and `radius * 0.6`, a
   spawn's `pos` and 6) — and diff the `dist` arrays. That needs no browser at
   all: `NavGrid` takes a size, the baked boxes and a `TerrainField`, so an
   esbuild bundle of the three run under node is the whole harness, and
@@ -1588,14 +2023,16 @@ is one machine's:
   covered fraction. Feed it a hit at the centre AND one a handful of
   centimetres from a corner: the second is the case the reach retry exists
   for.
-- **A THROWN corpse is measured off the PROXY and only until it FREEZES**, and
-  both halves have already cost time. `slot.bones[i].proxy.position` is the
-  corpse while the solver owns it — a root node, so the local position IS the
-  world one and no `computeWorldMatrix` is owed. But `freeze` bakes the pose
-  back into the rig and parks the bodies, and a parked proxy sits at the ORIGIN:
-  keep sampling past that and a corpse on Hollowmere's north spawn reads as
-  having flown 138.62 m, which is exactly the distance from that spawn to
-  (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
+- **A THROWN corpse is measured off the POSE and only until it FREEZES**, and
+  both halves have already cost time. `slot.bones[i].body.pose` is the corpse
+  while the solver owns it — seven numbers, its world position first — and
+  the rig's joint is drawn off that very array (`Joint.pose`, since
+  `BABYLON_EXIT.md` X4.1b), so it is current as soon as `physics.update` has
+  run. But `freeze` copies the pose into `slot.bones[i].still` and parks the
+  bodies, and a parked pose sits at the ORIGIN (a kilometre down): keep
+  sampling the body past that and a corpse on
+  Hollowmere's north spawn reads as having flown 138.62 m, which is exactly
+  the distance from that spawn to (0, 0, 0) and is the tell. Break on `slot.subject !== bot || slot.frozen`.
   Two more that look like the throw not working: a body placed by hand needs
   `rig.root` at `position.y + rig.centerHeight` and NOT at the feet (the root is
   the body's middle, so feet-aligning it buries the corpse to the hip and the
@@ -1613,9 +2050,11 @@ is one machine's:
   the only thing that makes it false is the view distance, since a full pool
   evicts its oldest corpse rather than refusing. (A useful shape for that: offer
   a dozen staged bodies in a row, stepping once between each so none is merely
-  sinking, and assert every one comes back true.) Four traps. **Reading a rig joint's world position needs `computeWorldMatrix(true)`
-  first** — outside the render loop `getAbsolutePosition()` is a stale cache, and a
-  joint that looks pinned while its proxy falls is that, not a broken hand-off. **A
+  sinking, and assert every one comes back true.) Four traps. **Reading a rig joint's world position needs it COMPOSED
+  first** — the joints are not nodes since `BABYLON_EXIT.md` X4.1a, and a joint's
+  `world` is whatever the last compose left: `rig.tree.computeChain(joint).m[12..14]`,
+  or `jointPosition(rig, joint, out)` from `SoldierModel`, and a joint that looks
+  pinned while its proxy falls is a read without that, not a broken hand-off. **A
   bot reused between takes needs `alive = true` and `hp` restored.** **The camera's
   pitch is negative for down** (`forward.y = sin(pitch)`), so placing bodies along
   `cameraSys.forward` while pitched throws them into the air — build a horizontal
@@ -1629,10 +2068,10 @@ is one machine's:
   synchronously off `player.stance`. Then step `g.ragdolls.update(1/60)` in a loop as
   above; the death cam's own clock is not involved. **The reading that means
   something is the knee's fold angle**, and it is an angle between world positions
-  rather than a local rotation — the joints belong to the solver's proxies while it
-  owns them, so `kneeL.rotation.x` is not the pose. Take
+  rather than a local rotation — the joints are posed off the solver's arrays while
+  it owns them, so `kneeL.rotation.x` is not the pose. Take
   `acos(normalise(knee - hip) · normalise(ankle - knee))` with
-  `computeWorldMatrix(true)` on all three: 2.58 rad is the drawn full crouch, and a
+  each composed (`rig.tree.computeChain`): 2.58 rad is the drawn full crouch, and a
   leg that reads ~0 within a step or two of the throw is a joint limit that does not
   contain its own spawn pose. A standing body settles with every joint inside 0.06 m
   of the floor; a crouched one settles on its side and stays curled, so the
@@ -1644,8 +2083,9 @@ is one machine's:
   bearing, `g.deathCam.corpse` is the stand-in body (`.rig`, `.ragdolling`), and
   `g.deathCam.stop()` + `g.state = "playing"` + `g.player.fullReset()` gets back
   out. The corpse rig is built ONCE per process and never rebuilt, so a leak is
-  permanent: assert `rotationQuaternion === null` on all nine posed joints
-  afterwards, plus each one's parent and local position against `rig.rest`. There
+  permanent: assert `pose === null` on every joint afterwards (a joint has no
+  quaternion to leak since X4.1a and no holder since X4.1b; a pose left on it is
+  the leak), plus each one's local position against `rig.rest`. There
   is no fallback path left to reach — the body is at the camera, so the distance
   gate cannot refuse it, and a full pool evicts its oldest corpse instead of
   saying no. **`deathCam.start(feet, yaw, eye, forward, from, damage, kind, crouch)` is
@@ -1686,14 +2126,16 @@ is one machine's:
     what said the difference could not be in the uniforms. **The phase is
     seeded in `LightingSystem` now** (`FLICKER_SEED`, re-seeded in `clear`), so
     a script inherits that one and does not have to reach for it; what a script
-    still owes is `resetRefreshCounter()` on both probe pools AFTER pinning the
-    clocks, then a few frames. That reaches byte-identity across processes.
+    still owes is a re-bake AFTER pinning the clocks — `g.reflections.rebake()`
+    then waiting `bakePending` out (before X3.6c, `resetRefreshCounter()` on
+    both of Babylon's probe pools and a few frames). That reaches byte-identity
+    across processes.
     `plans/webgpu-ref/harness.mjs`'s `freeze` is the worked version and carries
     the whole argument.
 - **The pause lid is a free camera**, and it is raised with `g.raiseLid("paused")`
   — **`g.state` is a getter and assigning it throws**, since nothing in the
   codebase assigns a state (see `Game`'s three moves). The lid stops
-  `updateGameplay` while the scene still renders, so nothing overwrites
+  `updateGameplay` while the frame is still drawn, so nothing overwrites
   `cameraSys.camera` and it can be placed by hand — `cam.position.set(...)` plus
   `cam.setTarget(...)` frames a roofline or a shadow edge from anywhere, which
   beats hunting for a vantage by walking the player. The shader's eye follows:
@@ -1715,12 +2157,12 @@ is one machine's:
   blade pixel is a blend of grass and ground. Grab at full canvas size.
 - **A generated texture is inspectable in a second, without booting the game**,
   and the ground surfaces should be looked at both ways. Bundle
-  `src/world/textures.ts` with esbuild against a **stub `@babylonjs/core`**
-  (`--alias:@babylonjs/core=...`) exporting a `DynamicTexture` that wraps a real
-  `<canvas>` and answers `getContext()`/`update()`, load the bundle into an
-  `about:blank` page with `addScriptTag`, and `toDataURL()` whatever the module
-  hands back — the REAL recipes, no engine, no map build, ~1 s for every surface
-  at every tint. Draw them 4x4 as well: a tile that looks right on its own can
+  `src/world/textures.ts` with esbuild (it imported Babylon for a TYPE alone, and
+  since `BABYLON_EXIT.md` X5.4d hands back a `Picture`, its painted `<canvas>`
+  and how it is sampled, so no stub `@babylonjs/core` is wanted any more), load the
+  bundle into an `about:blank` page with `addScriptTag`, and `toDataURL()` the
+  `canvas` of whatever the module hands back — the REAL recipes, no engine, no
+  map build, ~1 s for every surface at every tint. Draw them 4x4 as well: a tile that looks right on its own can
   still carry a blotch big enough to advertise its own period, and that is only
   visible repeated. Counting distinct colours in the result is the cheap check
   that a posterized ramp is actually being used — a surface spending 98% of its
@@ -1730,13 +2172,15 @@ is one machine's:
   (`cameraSys.pitch` is NEGATIVE downward) with `player.view` disabled — and
   point a run at the surfaces no map ships, since `turf` rotted precisely because
   nothing ever selected it.
-- **The mote field is frozen for a pixel diff with `stop()` + `reset()`** on
-  `g.atmosphere.system`. That works on `GPUParticleSystem` only because
-  `Atmosphere` constructs it with `emitRateControl: true`; Babylon's legacy GPU
-  mode keeps accumulating while stopped and refills the sky a second later — do not
-  change that option. The field takes `maxLifeTime` to reach steady state, so let
-  `getActiveCount()` settle first. Read `system` through the handle each time: a
-  *different* `ParticleSpec` replaces the whole system. **Two maps have one now**
+- **The mote field is frozen for a pixel diff with `stop()` and then
+  `g.particleDraw.reset(field)`** on `g.atmosphere.system` (a `ParticleField` of
+  ours since `BABYLON_EXIT.md` X4.7c; `g.particleDraw.enabled = false` is
+  `scene.particlesEnabled`'s twin and switches every field of ours off). It stays
+  empty only because the field is emit-rate CONTROLLED, the one mode ported
+  (Babylon's legacy GPU mode kept accumulating while stopped and refilled the sky
+  a second later). The field takes `maxLifeTime` to reach steady state, so let
+  `currentActiveCount` settle first. Read `system` through the handle each time: a
+  *different* `ParticleSpec` capacity replaces the whole field. **Two maps have one now**
   — Hollowmere's falling ash and Coldharbour's rising dust — so a script that
   froze the field on one map and not the other no longer covers both.
 - **The wind is an A/B, not a wait.** Foliage sway is a per-vertex displacement
@@ -1779,7 +2223,7 @@ is one machine's:
   is a query string, `?volumetrics=low|medium|high`, which overrides the player
   setting for the session the way `?profile` does. `Game.volumetrics` is null
   only when the setting says `off`, and the pass is attached one frame LATER than
-  it is built — `syncVolumetrics` waits for `FrameDepth` to have an image, so
+  it is built — `syncVolumetrics` waits for the frame's depth to be made, so
   `camera._postProcesses` is the honest check rather than the field.
 - **A heavy frame outruns Playwright's default 30 s `page.screenshot` deadline**,
   and the error names the screenshot rather than the cause. Coldharbour with the
@@ -1793,25 +2237,27 @@ is one machine's:
   Greyfen one rect covers the map and only 11% of it is wet, so scan for cells where
   `surfaceAt(x, z) < surfaceY` and aim along the longest wet run from one. Three
   things will otherwise fill the frame with something that is not water and does not
-  look like a mistake — the viewmodel (`player.view.weapon.setEnabled(false)`), the
+  look like a mistake — the viewmodel (`player.view.weapon.enabled = false`, a
+  joint's switch, seen from the next frame), the
   capture skirt, which you are always inside of near a flag (`g.zones.dispose()`),
   and the **fog**: Greyfen's `fogEnd` is 78 m, so a look down a long reach is a
   uniform wall of fog colour that reads exactly like being stuck inside a mesh. Put
-  the camera within ~30 m of what you are judging. **Every water tunable is a
-  NAMED float uniform**, so `g.water.bodies[i].mat.setFloat("foamDepth", 0.05)` (and
+  the camera within ~30 m of what you are judging. **Every water tunable was a
+  NAMED float uniform** (until X4.6d, a Babylon material), so `g.water.bodies[i].mat.setFloat("foamDepth", 0.05)` (and
   `setColor3` for the palette, off the app's own `Color3` — import
   `@babylonjs_core.js` by the url in `performance.getEntriesByType("resource")` or
-  you get a second Babylon and a class the materials reject) sweeps a whole
+  you got a second Babylon and a class the materials rejected) swept a whole
   parameter space in one page session with no rebuild. Two readings that mean
-  something when the water looks wrong: `g.reflections.waterProbes[0].cubeTexture`
-  answers `readPixels(face)` — face 2 is the DOWN view and face 3 the sky, because
+  something when the water looks wrong: the body's cube,
+  `g.reflections.pools.water[0].job.cube.texture`, read back as the glazing
+  section says — face 2 is the DOWN view and face 3 the sky, because
   a cube rendered into is stored mirrored about the horizon — and a water surface
   that comes back as one flat colour at every angle is almost always the cube's
   average, i.e. the mip level, rather than a broken bake.
 - The kit turntable needs no clicking: `g.openLoadout()` reaches it from `menu` or
   `deploy` (assign `g.state = "deploy"` first from a live round). The pose is
   readable (`player.view.inspectYaw`/`inspectPitch`), and
-  `view.weapon.rotationQuaternion` must be **null** again after the screen closes
+  `view.weapon.quaternion` (a joint's, since X4.3b) must be **null** again after the screen closes
   or the carried pose never comes back — re-run the sight-alignment check after a
   session on it, since a leaked quaternion or scale shows up there and nowhere
   else.
@@ -1887,9 +2333,10 @@ is one machine's:
   bleed. To record which world each build actually got, wrap `g.installMap` and push
   `g.mapDef.id` — the end state alone cannot tell one build from two.
 - **The whole of spawn selection is testable without a browser, and two of the
-  three ways are faster than one.** `dist-server/assets/HeadlessGame-*.js`
-  exports the simulation (`H`) and the world chunk exports `MAPS`/`CONFIG`
-  (`M`/`C`), so a scratch `.mjs` can `addPlayer`, set `deployRequest`, step at
+  three ways are faster than one.** `dist-server/assets/SimCore-*.js`
+  exports the simulation (`S` today — the letter is the minifier's, so read the
+  chunk's export list) and the world chunk exports `MAPS`/`CONFIG` (`M`/`C`),
+  so a scratch `.mjs` can `addPlayer`, `submit` a `deploy`, step at
   `1/60` and assert on the clock in milliseconds of wall time — including
   `takeDamage(999)` for a death the rules actually dealt. A raw `ws` client
   covers the protocol half (join, refuse, fall back) with no rendering at all.
@@ -1899,7 +2346,7 @@ is one machine's:
 - **A stationary body at a REAR flag is not killed, and that reads exactly like
   a broken death path.** Four minutes at the chapel spawn drew nothing; the
   square kills one in about forty seconds, which `does-a-human-die`-style
-  stepping of a `HeadlessGame` will tell you in three. Bots do engage a person
+  stepping of a `SimCore` will tell you in three. Bots do engage a person
   — check where you parked before believing anything else.
 - **`page.waitForFunction(fn, { timeout })` silently uses the DEFAULT 30 s.**
   The second parameter is the argument passed INTO the page function; options
@@ -1950,6 +2397,29 @@ is one machine's:
   same command run before the change, must print the same one. A change that
   moves a draw (a new outcome stream, a different order of draws) is expected
   to change it, and says so.
+- **When the hash moves, `--events` says WHERE**: `node dist-server/simulate.js
+  <map> 1 1 <seed> --events` (after `npx vite build -c vite.server.config.ts`)
+  prints every event the core wrote, one `<tick> <kind> <fields>` line each in
+  emission order at full precision, so two runs diff line by line and the
+  first differing line names the divergence (`grep -E "^[0-9]+ [a-z]"` keeps
+  only the events; an md5 of that is the quick equality check). `--phases`
+  hands the core a clock and prints its five step phases beside the tick. It
+  does not move the fight — the hash and the event list must be the plain
+  run's. **`node plans/sim-ref/sim.mjs` is all of that
+  at once**: every map's fight and event list at seed 777, every line
+  `corecheck` prints, and (with `--bench f.json`) the benchmark's fights below,
+  graded against the bank in `plans/sim-ref/ref/`; `--keep dir` before a step
+  and `--diff dir` after it name the first event that moved.
+- **The BENCHMARK's fight is the page's oracle for the same claim**, and it
+  is read off a static build: `npx vite build --outDir <scratch>/dist-x`, `node
+  node_modules/vite/bin/vite.js preview --outDir <scratch>/dist-x --port 4931
+  --strictPort`, then `node plans/webgpu-ref/bench.mjs <maps> --runs 2 --size
+  1280x720 --url http://localhost:4931 --out f.json`, which reads
+  `__profile.last().bench.fight.hash` and fails on runs that disagree (about a
+  minute and a half a map; the hash is viewport-independent). A static build is
+  not rebuilt by an edit mid-run, which is the point. `--query simpage`
+  rides the same run (the local match in the page's thread rather than its
+  Worker), and its fight must hash the same.
 - **It is also where a server TIMING question is answered, and no browser can
   answer one.** The same run prints the per-tick distribution against the
   16.67 ms step, the ticks filed by how many bots were in contact, and where
@@ -1959,6 +2429,37 @@ is one machine's:
   mean, exactly as `ENGINE_UPGRADE.md` S2 and S8 had to force a fight on the
   client side. And a round on a 900 m map often hits the 45-minute cap, so
   check `winner: NONE` before averaging it with one that finished.
+- **`npm run corecheck` is the oracle for anything about a PERSON on the
+  authority**, which `simulate` cannot see — it seats nobody. It builds the
+  server bundle, then on Greyfen and Coldharbour drives `SimCore` with a
+  scripted person and no `Game`, asserting off the drained events: the kill
+  awards keyed on the victim's flag, a capture paid to the bodies present and
+  not to a benched bot, a bot crew's shell and tracks credited to the bot, a
+  hull that pays nobody and a crew filed `crew`, the leash (`other`, killer
+  -1), the respawn clock, seat and evict. It runs every script twice (same
+  seed, same commands, identical event-stream hash) and then through a real
+  `Match` behind a fake transport, which must leave the identical award/death
+  list. On botless Sarab it then calibrates a person's helicopter crash
+  (`sarab/crash`) and runs the X2.5a review's cases: a seated flier leashed
+  (`sarab/leash`), a peer's stamps bounded by when they arrive
+  (`sarab/clock` — `MatchHost` replaces `Match.arrivalClock` with the
+  simulation's time, so an upload delivered before step `at` arrived then),
+  and a correction rebasing the crash series (`sarab/break`). On Greyfen it
+  also plays the bench's round through an owned `Match` (`greyfen/owned`) and
+  through the LOCAL TRANSPORT (`greyfen/local`: `server/localMatch.ts` on a
+  Node `MessageChannel`, the owner's `LocalMatch` client, and a person
+  through the page's real `Connection` over a port). A port delivers on a
+  later turn of the event loop, so that run waits for what it reads
+  (`until`) and grades snapshots by their STAMPS, never by how many have
+  arrived. Under a minute, no browser, exits non-zero on a failure; `--
+  --list` prints the lists it compared. Run it after touching `src/sim/`,
+  `server/Match.ts`, `killRules`, `ScoreBook` or `hullRules`.
+- **A harness cannot write the core directly any more** (X2.5c C4): the
+  round's core is the authority's, inside the page's own `Match` — in the
+  Worker, out of reach — and the page holds only what the wire told it
+  (`g.net`). What a harness may still write is the page's own MIRROR (the
+  flags in `g.conquest`, the roster's bodies), which the next snapshot puts
+  back.
 - **The DEV-only proving ground needs `npm run simulate:dev`**, which is the
   dev-mode server build; the production one folds that map away and answers
   "no map". Its collision bake is `npm run collision -- proving`, and it takes

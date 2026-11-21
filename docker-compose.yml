@@ -26,6 +26,11 @@ services:
     build:
       context: .
       target: web
+      # The commit the settings screen prints; the context has no `.git`, so
+      # `BUILD_COMMIT=$(git rev-parse HEAD) docker compose up --build` states
+      # it, and without it the stamp says `unknown`.
+      args:
+        BUILD_COMMIT: ${BUILD_COMMIT:-}
     ports:
       - "8080:80"
     depends_on:

@@ -62,7 +62,7 @@ const ARC_TIP_HALF_U = 0.1;
 /**
  * Seconds between writes to the frame-rate readout. Not a gameplay tunable —
  * it is how fast a number can change and still be read, which is a fact about
- * eyes, so it stays here rather than in CONFIG (the same split the editor's
+ * eyes, so it stays here rather than in CONFIG (the same split the viewer's
  * `tuning.ts` makes). Four a second is fast enough to see a dip and slow
  * enough to hold still while you read it.
  */
@@ -1536,7 +1536,7 @@ export class HUD {
    * Takes the marker down and forgets what it said.
    *
    * The three callers are the three ways the chrome stops being true —
-   * a pause, the death cam and the editor — and each of them already hides
+   * a pause, the death cam and the viewer — and each of them already hides
    * this element in `hud.css`. Hiding it is not enough on its own: the HUD is
    * ticked with `dt = 0` under a pause (`docs/states.md`), so the marker's
    * clock does not run while it is out of sight and what was left of it is
@@ -1628,7 +1628,7 @@ export class HUD {
 
   /**
    * Hides the gameplay chrome (tickets, flags, health, ammo) while
-   * the map editor is open. One class on the root rather than a toggle per
+   * the map viewer's lid is up. One class on the root rather than a toggle per
    * element — `update()` keeps writing to those nodes regardless, and CSS
    * hiding survives that where a per-element flag would be overwritten.
    */

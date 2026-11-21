@@ -1,11 +1,70 @@
 # server/
 
-The authoritative multiplayer server. Runs the same simulation the game does —
-`BattleSystem`, `ConquestSystem`, `CombatSystem` — under Babylon's `NullEngine`,
-with no window, no GL and no rendering.
+The authoritative multiplayer server — and, since `BABYLON_EXIT.md` X2.5c, the
+authority of the offline round too: the page hosts its own OWNED `Match`
+(`localMatch.ts`, in a Worker or on its own thread) and plays it as a client.
+`Match` hosts the simulation core — `SimCore`, with `BattleSystem`,
+`ConquestSystem`, `CombatSystem` and the rest wired inside it — with no window,
+no GPU, no rendering and **no Babylon**: nothing reachable from this directory
+imports `@babylonjs/core`, and `scripts/check-babylon-free.mjs` fails
+`npm run build` if anything ever does (`BABYLON_EXIT.md` X2.3; it ran under
+Babylon's `NullEngine` until then).
 
 Read [`docs/multiplayer.md`](../docs/multiplayer.md) before changing anything in
 here. What follows is only the shape of the directory.
+
+## The simulation is not in this directory
+
+`SimCore` (the round: every simulation system and the wiring between them),
+`SimPlayer` (a connected human as the simulation sees one), `LagComp` (the
+rewind around a shot) and `buildSimWorld` (the solid world rebuilt from the
+bake as data) live in [`src/sim/`](../src/sim/), moved out of here at
+`BABYLON_EXIT.md` X2.5a because the offline page hosted the same core then
+(since X2.5c it hosts a `Match` instead, below, and holds no core at all).
+What stays here is the HOST: `Match` and `simulate` LOAD the world
+(`world.ts`'s `loadSimWorld`), DRAW the round's seed (`freshSeed()`, or the
+one `simulate` was given, or an owned match's owner chose) and ANCHOR the clock (`SimCore.anchor(Date.now())`
+once `startRound` returns) — the three things the core does not do for itself,
+because it reads no clock and no entropy. **`Match` VALIDATES and the core
+DECIDES**: each accepted message is handed over as one `SimCommand`
+(`SimCore.submit`), the core's event ring is drained after every call, and
+`Match.relay` puts what it says on the wire — no rule (a pouch, the seat
+policy, a spawn) lives in `Match`, and no claim gate in the core. Nothing in
+`src/sim/` may import from this directory, and `scripts/check-babylon-free.mjs`
+holds every file in it as it holds every file here.
+
+## Two files here run in a browser
+
+`localMatch.ts` and its Worker entry, `localMatchWorker.ts`, host a match the
+PAGE owns (`BABYLON_EXIT.md` X2.5c C3): one owned `Match`, its owner's calls
+answered off one port (`src/net/LocalMatch.ts` is the owner's half) and each
+person admitted off a port of their own, over the same JSON and through the
+same `Match` door a socket's peer goes through. They run in a browser Worker,
+on a `MessageChannel` in the page's own thread, or in Node under `corecheck` —
+so **nothing they reach may import Node**: no `node:` module and no `ws`.
+`Match` and everything it imports is inside that reach, which is why `Match`
+reaches a peer through a `PeerTransport` and the `ws` adapter lives in
+`index.ts`, the one file a page never loads. From X2.5c C4 that is a gate
+rather than a rule in the headers: `scripts/check-babylon-free.mjs` walks the
+two files' reach a second time for Node — a `node:` specifier, `ws`, or a
+built-in by its bare name — and `npm run build` fails on one, printing the
+chain. The page reaches them as a Worker URL (`src/net/matchHost.ts`), and
+`localMatch.ts` also through that file's one dynamic `import()`, taken only
+when the Worker does not come up — the one value import of this directory
+anywhere in `src/`.
+
+## The one test
+
+`npm run corecheck` (`corecheck.ts`, a fourth entry in
+`vite.server.config.ts`) is the scoring and person rules asserted off the
+core's drained events with no `Game` and no socket, then the same script
+through a real `Match` behind a fake transport — the validated door — which must
+leave the identical award and death list — and a match its OWNER drives
+(`Match`'s `owned`, X2.5c C2) playing the benchmark's round as the offline page
+plays it, then the same round through the local transport (`localMatch.ts` on
+a `MessageChannel`, C3), with a person joining through the page's own
+`Connection`. It exits non-zero on any failed assertion and prints a pass list. `simulate` cannot do this: it seats nobody,
+so a person's death, award or seat never happens in it.
 
 ## Why the two tsconfigs
 
@@ -17,11 +76,13 @@ Node's overload returning a `Timeout` object rather than a number, and
 used to get this guarantee from the absence of the package; now it gets it from
 the empty `types` array, and the guarantee is the same one.
 
-`server/tsconfig.json` opts back into `["node"]` and keeps `DOM` in `lib` —
-Babylon's own types reference `HTMLCanvasElement` and `WebGL2RenderingContext`
-throughout, so the server cannot compile without them. That the DOM types are
-*available* here does not mean a DOM exists at runtime; it does not, and code in
-this directory must not reach for one.
+`server/tsconfig.json` opts back into `["node"]` and keeps `DOM` in `lib` — it
+typechecks the whole of `../src` beside this directory, client types included
+(a simulation could NAME a Babylon type with `import type` until X6.1i), and
+the client's types reference `HTMLCanvasElement` throughout (Babylon's
+referenced `WebGL2RenderingContext` too), so it cannot compile without them. That
+the DOM types are *available* here does not mean a DOM exists at runtime; it
+does not, and code in this directory must not reach for one.
 
 Both are run by `npm run typecheck`. The project has no test suite and no linter,
 so that command is the only automated gate there is — a server left out of it is
@@ -30,32 +91,38 @@ a server with no gate at all.
 ## Why the server is built through Vite
 
 `npm run build:server` runs Vite's SSR build rather than `tsc` emitting to disk,
-for three reasons that all bite otherwise:
+for two reasons that bite otherwise:
 
 1. `TerrainField.ts` reads `import.meta.env.DEV`, which is a Vite substitution
    and `undefined` under bare Node.
-2. Babylon is 7 MB and the server uses a fraction of it; the SSR build
-   tree-shakes what is actually reachable.
+2. `src/` imports without extensions, and a map's collision bake and floor are
+   lazy `import()`s that become chunks of their own.
 
-There used to be a third and it was the loudest: `CelShader.ts` imported
+There used to be two more. `CelShader.ts` imported
 `@babylonjs/core/Shaders/ShadersInclude/bonesDeclaration` with no file
-extension, and since `@babylonjs/core` declares no `exports` map, Node resolved
-that as a literal path and failed. The WGSL port deleted the last of those
-subpath imports and `scripts/check-deep-imports.mjs` now fails the build on a
-new one, so the reason is gone — the other two stand on their own.
+extension, which bare Node could not resolve — the WGSL port deleted the last
+of those, and since `BABYLON_EXIT.md` X6.1i `scripts/check-babylon-free.mjs`
+fails the build on any import of the package at all. And Babylon was 7 MB of
+which the server reached a fraction; the package is not in the tree now.
 
 `ws` and Node builtins stay external — they are runtime dependencies, not
 things to inline.
 
 ## What must never happen here
 
-- **No canvas.** `DynamicTexture.getContext()` throws `OffscreenCanvas is not
-  defined` under `NullEngine`, and `GPUParticleSystem.IsSupported` is false. Any
-  import path that reaches `src/world/textures.ts` or `BlastDust` will fail at
-  construction, not at first use.
-- **No `MapBuilder`.** It reaches a texture through `floorMaterial`. The solid
-  world is rebuilt from the baked boxes in `src/world/<map>/collision.ts`
-  instead — see `scripts/bake-collision.mjs` for why that is sound.
+- **No Babylon.** No engine, no scene, no mesh, no material — not even a
+  `NullEngine`. A value import of `@babylonjs/core` anywhere on a path from
+  this directory or `src/sim/` fails `npm run build` (`scripts/check-babylon-free.mjs`, which
+  prints the chain). What draws belongs in a client VIEW beside its
+  simulation (`CLAUDE.md`, "Ownership and wiring"), and a vector is
+  `src/math`'s.
+- **No canvas.** There is no DOM at runtime, so anything that reaches
+  `src/world/textures.ts` (a painted canvas) would fail at construction —
+  and would have to cross the gate above to get here.
+- **No `MapBuilder`.** It builds the drawn world and reaches a texture through
+  `floorMaterial`. The solid world is rebuilt as data from the baked boxes in
+  `src/world/<map>/collision.ts` instead (`src/sim/simWorld.ts`) — see
+  `scripts/bake-collision.mjs` for why that is sound.
 - **No trusting a client.** A client reports where it is and what it shot; the
   server decides whether either is true.
 - **No unbounded input.** Every socket costs a bounded amount of this process

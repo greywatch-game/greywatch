@@ -1,0 +1,23 @@
+/**
+ * cullcheck.css — `?cullcheck`'s readings, and only that.
+ * Owns: #cullcheck. Imported by CullCheckPanel.ts, the one module that writes
+ * this markup.
+ */
+
+/* Down the left edge under the profiler's chip, over the fight: a diagnostic
+   read off a screenshot, so it wraps rather than running off a phone. */
+#cullcheck {
+  position: absolute;
+  z-index: 21;
+  top: calc(96 * var(--hud-u));
+  left: calc(20 * var(--hud-u));
+  max-width: calc(100% - 40 * var(--hud-u));
+  margin: 0;
+  padding: calc(6 * var(--hud-u)) calc(8 * var(--hud-u));
+  white-space: pre-wrap;
+  word-break: break-word;
+  font: calc(11 * var(--hud-num)) / 1.35 ui-monospace, monospace;
+  color: rgba(255, 255, 255, 0.92);
+  background: rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+}

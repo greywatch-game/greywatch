@@ -1,4 +1,4 @@
-// Audit a map's placements for the things a hand-edited or generated layout
+// Audit a map's placements for the things a generated layout
 // gets wrong without anything crashing: buildings on roads, in the water, on a
 // slope, overlapping each other, with a door that opens onto a wall; spawns
 // inside something; roads running into the water; and how far each side's home
@@ -8,7 +8,7 @@
 //   node .claude/skills/map-layout/scripts/audit.mjs <map|--all> [--verbose]
 //
 // No browser. It reads layout.ts and heights.ts as they are on disk, so run
-// the generator (or save in the editor) first. Only the kinds in
+// the generator first. Only the kinds in
 // footprints.mjs are checked — the village, jungle, city and harbour kits; a
 // desert or temple kind is counted as "not checked" rather than guessed at.
 //

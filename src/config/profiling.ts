@@ -126,9 +126,9 @@ export const profiling = {
    * is sized for a round rather than for a hitch: an install is ~100 creations
    * and a round in play a handful (6 in 40 s, `docs/profiling.md`,
    * "Compiles"), so 256 holds the whole of a round with an install's worth to
-   * spare. The strings are references Babylon already holds, so the memory is
-   * the arrays — about 5 KB — sized once on arming. Every creation is still COUNTED per frame
-   * whatever falls off the end of this.
+   * spare. The strings are references the descriptor already holds, so the
+   * memory is the arrays — about 5 KB — sized once on arming. Every creation is
+   * still COUNTED per frame whatever falls off the end of this.
    */
   creationsKept: 256,
 
@@ -212,8 +212,8 @@ export const profiling = {
    */
   bench: {
     /**
-     * The round's seed — `BABYLON_EXIT.md` X0.2's fixed seed, so the fight is
-     * the one that step proved reproduces. `?seed=` overrides it.
+     * The round's seed, fixed so that every run fights the same fight — the
+     * capture's `bench.fight.hash` says whether it did. `?seed=` overrides it.
      */
     seed: 777,
     /**
@@ -293,5 +293,18 @@ export const profiling = {
     chaseBack: 3.5,
     chaseUp: 1.1,
     chaseTurn: 4,
+    /**
+     * The HOLD a run takes on a touch device before anything is measured
+     * (`Game.holdBench`), in WALL-CLOCK seconds because nothing in it is a
+     * bench frame: after the tap, the canvas must match its window, unchanged,
+     * for `holdSettle` — past the late re-apply `Game` makes 300 ms after a
+     * `fullscreenchange` — in fullscreen, or once `holdWait` has passed
+     * without it (refused, or a browser with no element fullscreen). At
+     * `holdCap` the run starts whatever the canvas is doing, and the
+     * capture's `viewport` says what it was drawn at.
+     */
+    holdSettle: 0.6,
+    holdWait: 2,
+    holdCap: 6,
   },
 } as const;

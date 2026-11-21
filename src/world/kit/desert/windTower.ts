@@ -5,7 +5,6 @@
  * rules in `./index.ts`. Invariants: colliders in the set's order. Never
  * imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -72,11 +71,10 @@ import {
  * stair to a wall.
  */
 export function buildWindTower(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "windtower");
+  const b = new Build(mats, "windtower");
   const w = p.width ?? 13;
   const d = p.depth ?? 14;
   const floors = Math.max(1, Math.min(2, p.floors ?? 1));

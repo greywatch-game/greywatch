@@ -8,7 +8,6 @@
  * varies is seeded off where it stands (`streetSeed`), never
  * `Math.random()`. Never imports another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -112,12 +111,11 @@ import {
  * overhead, or standing on a collider.
  */
 export function buildHarbourCrane(
-  scene: Scene,
   mats: CelMaterialFactory,
   _p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "crane");
+  const b = new Build(mats, "crane");
   const plinth = 0.45;
   const hw = 6.2;
   const hd = 5.0;

@@ -30,30 +30,233 @@ Nothing needs `npm run dev` running first — each script starts and stops its
 own dev server.
 
 ```
-node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap]
-node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check]
+node plans/webgpu-ref/gate.mjs [map...] [--headed] [--uncap] [--query=<flags>]
+node plans/webgpu-ref/bank.mjs [map...] [--headed] [--check] [--query=<flags>] [--keep=<dir>] [--rows=<id,...>] [--limit=<seconds>]
+node plans/webgpu-ref/exact.mjs <before-dir> <after-dir> [--new=<id,...>] [--rows=<id,...>]
+node plans/webgpu-ref/census.mjs [map...] [--query=<flags>] [--out f.json] [--against f.json] [--fall]
 node plans/webgpu-ref/shaders.mjs [map...] [--headed] [--list]
 node plans/webgpu-ref/depth.mjs glass|zoffset [--headed]
 node plans/webgpu-ref/diff.mjs a.png b.png [--tiles]
-node plans/webgpu-ref/pipelines.mjs [map] [--seconds N]
-node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size WxH] [--out f.json] [--against f.json]
+node plans/webgpu-ref/pipelines.mjs [map] [--seconds N] [--round]
+node plans/webgpu-ref/surfaces.mjs [map...] [--rows=<id,...>] [--pixels] [--keep=<dir>] [--out=<f.json>]
+node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--max] [--size WxH] [--out f.json] [--against f.json]
+node plans/webgpu-ref/particles.mjs [map...] [--frames=N] [--out=f.json] [--against=f.json]
+node plans/webgpu-ref/gi.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex,...>] [--shafts-off] [--no-states]
+node plans/webgpu-ref/gi.mjs --compare=a.json --against=b.json [--ignore=<regex,...>]
+node plans/webgpu-ref/post.mjs [--sizes=desk,phone] [--out=f.json] [--against=f.json] [--no-live]
+node plans/webgpu-ref/post.mjs --compare=a.json --against=b.json
+node plans/webgpu-ref/drawlog.mjs [map...] [--out=f.json] [--against=f.json] [--ignore=<regex>] [--no-viewer] [--limit=<seconds>]
+node plans/webgpu-ref/readers.mjs record --out=rec.json [--map=harrowmead] [--frames=1500]
+node plans/webgpu-ref/readers.mjs replay --log=rec.json [--out=f.json] [--against=f.json] [--ignore=pattern,…|@file]
+node plans/webgpu-ref/readers.mjs camera [--out=f.json] [--against=f.json] [--ignore=…]
+node plans/webgpu-ref/readers.mjs --compare=a.json --against=b.json [--ignore=…]
+node plans/webgpu-ref/leaks.mjs [map] [--then=<map>] [--frames=600]
+node plans/webgpu-ref/lost.mjs [map] [--at=menu,loading,deploy,playing] [--seconds=10] [--match] [--twice] [--stale] [--strict] [--out=f.json]
+node scripts/babylon-census.mjs [--files] [--out f.json] [--against f.json]
 ```
+
+**Every question a script here asks about the FRAME goes through ONE adapter**
+(`frameAdapter`, `window.__refFrame()`, `BABYLON_EXIT.md` X5.4a; `postAdapter`'s
+precedent — in `scripts/lib/frameAdapter.mjs` since X6.1a's review, so the
+permanent scripts that drive a page import nothing from `plans/`, and re-exported
+by `harness.mjs`): "the frame was drawn" (`drawn`, `onDrawn`), "its
+draw is about to run" (`beforeDraw`, `onBeforeDraw`: after the frame's camera
+updates and before any of its matrices is computed), "it was submitted"
+(`submitted`, `onSubmitted`, and `onBegin` for its opening), its index, whether
+the scene can draw (`ready`), the device, the canvas and its pass's depth, which
+encoder a command was recorded on (`encoderRole`), the frame's delta when a probe
+schedules it (`scheduleDelta`, `particles.mjs`) and what owns the frame (`host`).
+**Babylon's arm alone at X5.4a**, answering exactly what each read it replaced
+answered (the same observable, the same add-and-remove, the same field), and
+installed on every page `bootMap` opens. Every probe here and the harness moved
+onto it then — `bank.mjs` and `bench.mjs` read no frame of their own (the
+harness's waits, the page's profiler) — so a sub-step of X5.4 that takes the
+loop, the encoders or the device from Babylon adds OUR arm there, picked first,
+in its own commit, and no probe has to be taught. What a probe measures OF
+Babylon — its `_draw`s (`census`, `drawlog`, `surfaces`), its rendering groups,
+its compiled effects, its engine's statics in `post.mjs`' chain — is not a
+question about the frame: it stayed Babylon's, and went as each thing it read
+did.
+
+**OUR arm since X5.4f, picked first** (`Game.sceneFrame`, `src/core/SceneFrame.ts`:
+the scene was never rendered). `drawn`/`onDrawn`, `beforeDraw`/`onBeforeDraw` and
+the index are answered off our frame's own points (each an `Observable` —
+Babylon's until X6.1h, its port as written since, `src/core/Observable.ts` —
+named for the scene's it replaces, raised where Babylon raised that one), the
+canvas pass's depth off our pass owner (`Game.chainPasses`); the engine's
+questions (begin, submit, the device, the encoders, the delta) stayed Babylon's
+until X5.4g and X5.4h. It gained one question in the same commit, on both arms:
+**`onDrawPhase(begin, end, endFirst)`**, the frame camera's draw phase, which
+`census.mjs`, `gi.mjs`, `particles.mjs` and `surfaces.mjs` hung off the scene's
+two draw-phase observables directly and ask the adapter for since. The same
+commit taught `readers.mjs` to log OUR render id's advances (`ours`) beside
+Babylon's (`ids`, which stops moving), `drawlog.mjs` to count `scene.render`
+calls per class (`renders`, beside the classes; 0 asserted under our frame),
+`post.mjs` to name our pool by its targets' textures, and `scripts/
+check-world-parity.mjs` and `capture-map-shots.mjs` to wait on our frame's
+draw. **Proven to read the same on the parent**: every probe it touched, run at
+221abf1 with the new instruments against the logs the old ones wrote there,
+equal (X5.4f's record).
+
+**OUR LOOP's arm since X5.4g, picked over Babylon's engine questions**
+(`Game.frameLoop`, `src/core/FrameLoop.ts`): `onBegin` and `submitted`/
+`onSubmitted` are the loop's own begin and end of frame (each a Babylon
+`Observable` named for the engine's it replaces, raised where the engine raised
+it: after the clock's sample, and after the loop's ONE submit and its frame id's
+move); `scheduleDelta` answers the loop's clock (`FrameClock.getDeltaTime`, the
+port of the engine's, which our frame's animation ratio and `Game.tick` read),
+keyed on the loop's `frameId`; and `encoderRole` names the frame's one encoder
+`"frame"` (`FrameSubmit.encoder`), Babylon's two keeping `"upload"` and
+`"render"`. The begin and the end are OUR frames': Babylon's resize frames (its
+own begin and end of frame inside `_initializeMainAttachments`) raised the
+engine's at a parent and raise nothing here. The same commit taught
+`drawlog.mjs` to count the engine's `beginFrame` per class (`begins`, beside the
+classes, a resize's apart; 0 outside a resize asserted under our loop) and
+`bench.mjs` to read a report without Babylon's draw count (report version 38
+retired it).
+
+**OUR DEVICE's arm since X5.4h, picked over Babylon's device and canvas**
+(`Game.surface`, `src/core/CanvasSurface.ts`): Babylon's `WebGPUEngine` is not
+constructed, so `device` is the game's own (`Game.renderer.device`, asked for
+by `main.ts`), `canvas` the surface's, and `host` names the scene's engine (a
+`NullEngine`, `SceneEngine`, until X6.1h deleted it) beside `webgpu`, whether the frame's device is a
+`GPUDevice`. **"Babylon's engine" in the adapter and in every probe is the
+SCENE's** (`scene.getEngine()`) — at a parent the `WebGPUEngine` the game held
+as `Game.engine`, the same object, so moving the probes onto it moved nothing
+there — and after X5.4h the `NullEngine`, whose begin-frames, draws and
+compiles read 0. The same commit made `census.mjs` tolerate an engine with no
+`_draw`, `post.mjs` read the canvas's size and level off the surface and its
+statics off the device (Babylon's `extractDriverInfo`, the empty string on
+WebGPU; `compatibilityMode` null with no engine; the canvas pass's depth format
+`ChainPasses`'), `leaks.mjs` SKIP its positive control and say so on a
+`NullEngine` (it needs a WebGPU engine to compile and cache; X5.4h's review
+gave it a device half that runs on every tree), and `shaders.mjs`
+skip Babylon's half (no backend to compile against; each material's defines
+still read for ours).
+
+**And it answers with NO SCENE since X6.1a** (for X6.1h, which deleted
+`Game.scene`): **Babylon's arm is built only where `g.scene` exists**, and
+every read a script here made of the scene or its engine is a member of the
+adapter, so no probe names `g.scene` (`harness.mjs`' header lists them): the
+readiness (`ready`, with no scene the game's own — `Game.pending`, the
+scene's pending-data list ported, X6.1h's hook, proven equal to
+`scene.isReady()` on the same frames at the hook's commit — and on a tree
+before it the game's pending data read off its holder, the water's foam mask
+while it decodes);
+the camera (`camera()`: its view, projection and transform as float32s, the
+six frustum planes, `globalPosition`, the render size and the aspect — off the
+frame host's `viewProjection` and the surface with no scene, and the planes
+READ off the game's own array, never restated off the transform: with no scene
+that is `Game.frustumPlanes`, which X6.1f gave the game, so before it they
+answer `null`, UNPROVEN, X6.1a's review — and from X6.1f, when the frame computes
+the transform and the planes itself, BOTH arms read the host's transform and
+`Game.frustumPlanes`); the particle fields and their switch
+(`fields`, `particles`) and the frame's constant delta (`constantDelta`: the
+frame's own flag wherever it has one, X6.1h, else the scene's, and with
+neither it THROWS); the frame's clear colour (`clearColor`);
+every material on the page (`materials`, the factory's with no scene); the
+pictures' cache key (`pictureKey`, the factory on both arms since X6.1d keyed
+the cache on it, where it was the scene a builder was handed); and — `null`, RETIRED,
+with no scene — what the scene holds (`counts`), the engine's two GLSL fields
+(`transpilers`), and the scene and its engine themselves (`babylon()`), for
+the probes that MEASURE Babylon (`census`, `drawlog`, `surfaces`, `particles`,
+`leaks`, `gi`, `pipelines`, `shaders`' Babylon half, `depth`, `post.mjs`'
+clears), each of which logs nothing of Babylon's when it answers `null`. The
+game's DEV counter of Babylon compiles was `compiles()` (`null` since X6.1c). **Proven equal at the
+parent on the same frames**: `window.__refFrame({ scene: false })` builds the
+adapter as a page with no scene would have it, and every arm off the game's
+objects answered what the scene's read answered on every frame of a session
+(X6.1a's note). `scripts/capture-map-shots.mjs`, `merge-hash.mjs`,
+`check-world-parity.mjs` and the skills' `views.mjs` and `shots.mjs` install it
+(an init script) and moved onto it — every script through
+`installFrameAdapter`, which carries `REF_NO_SCENE=1` into the page for each of
+them (X6.1a's review: `bootMap` alone did). **Its census** is `scripts/babylon-census.mjs`
+(every import of the package by name, file and kind, every
+`ssrLoadModule("@babylonjs/core")`, every page-side load of Babylon's chunk,
+and the bundle, every chunk raw and gzipped; `--against` fails if anything
+grew), which every later sub-step of X6.1 records in its note.
 
 - **`gate.mjs`** boots every shipped map, plays a real round on each and fails
   loudly if any is not clean — the engine is WebGPU, the round reaches
-  `playing`, no probe re-renders per frame, and there are no page or console
+  `playing`, the reflection bake has drained by deploy and stays drained
+  over every frame it watches (`ReflectionSystem.bakePending`; until X3.7c,
+  no Babylon probe re-rendering per frame), and there are no page or console
   errors. It exits non-zero, so it can stand in front of a merge.
 - **`bank.mjs`** takes the reference frames into `ref/<map>-<vantage>.png`, and
   refuses to write one that is not reproducible. `--check` re-takes and grades
-  against what is banked instead of replacing it.
+  against what is banked instead of replacing it, and counts the page's
+  console errors as problems on every check, since a draw of ours that fails
+  says so there and draws nothing. **The bank is BABYLON's picture of the
+  blocks, taken before `BABYLON_EXIT.md` X3.3c, and its old rows are STALE**:
+  X3.4 moved the scatter on purpose (sixteen variants a kind, one colour bake
+  a kind) and the GPU driver has moved since the bank was taken (596.21 to
+  610.88), so a plain `--check` fails 34 of its 143 rows, whatever the tree under
+  test does: 33 of the 47 banked before X3.5, Greyfen's `canopy` at a mean of
+  44/255, and `greyfen-crossing` (0.0581), one of the fourteen `ground` and
+  `crossing` rows banked at 54ec8c0. Every row banked since grades within the
+  floor against the bank. **Until the bank is re-taken
+  (the user's call), a step is graded against a BEFORE**: `--check
+  --keep=<dir>` at the parent commit and again at the step, the two
+  directories compared frame by frame with `diff.mjs`'s `comparePngs` at
+  `CHECK_TOLERANCE` (X3.5 did; its record has the numbers). Re-taking the
+  bank gives Babylon's picture of the blocks up for good. `--query=<flags>`
+  boots the game with that URL query and grades it against the bank taken
+  WITHOUT it — how a DEV switch that must draw the same picture is proven
+  (X3.3a's `?ourworld`, gone since X3.3c) — and refuses to take a bank.
+  **The bank is no longer the switch-off picture**: the shipping build draws
+  our renderer's, and the bank is Babylon's from before X3.3c, so a future
+  `--query` check is graded against Babylon's and absorbs the same tie
+  residue, and the stale rows' drift with it, until the bank is re-taken.
+  **A row's frame depends on the rows shot before it** (state carries between
+  them): a frame shot at one vantage alone differs from its banked row by
+  tens of thousands of pixels with nothing changed, so a scratch diff against
+  the bank owes the bank's own sequence up to that row. **`--rows=<id,...>`
+  is how a NEW row is banked without re-taking the old ones**: it shoots each
+  map's sequence in order up to its last named row and writes (under
+  `--check`, grades) only the named rows, leaving every other PNG and
+  `ref/mode.json` alone — so a row appended for a later step is Babylon's
+  picture taken beside a bank it does not disturb. Append new rows at the END
+  of a map's list, or every row after them carries a different state. **The
+  `fx` rows (X4.4a) are no exception**: the put-away after one puts its
+  pools back and re-seeds the streams a row draws from (the rubble's, the
+  shards', the fire lights' flicker), but Havok's world keeps every body
+  the pools made, the lamps' shadow atlas keeps its allocation and caches,
+  and the flights' ids run on — so an `fx` row is its banked frame only shot
+  in its map's sequence, which is how `bank.mjs` shoots it.
+- **`census.mjs`** counts the MAIN pass's draws at every bank vantage —
+  Babylon's into the frame's own target plus our renderer's — on the same
+  frozen frame the bank grades, each row split into Babylon's and ours. With
+  `--query` it counts the build both ways and fails unless the totals are
+  EQUAL (X3.3a: one draw for one), or with `--fall` unless the switch's is
+  LOWER (X3.3b). For a step that leaves no switch behind (X3.3c), `--out
+  f.json` writes the shipping build's rows and `--against f.json` compares
+  them with rows an earlier `--out` wrote — the BEFORE, taken by running this
+  file in a worktree of the commit before the step — failing unless every
+  map's total is equal, or with `--fall` lower.
 - **`shaders.mjs`** compiles every shader on every map and fails on anything
   the driver called an error. It asks the FACTORY rather than the frame — walk
   the cel cache, hand each material a probe mesh, poll `isReady` — so it reaches
-  the variants a still camera cannot see, and it asserts that the six cel
-  define-shapes were all compiled somewhere across the four maps. It also mints
+  the variants a still camera cannot see, and it asserts that the seven cel
+  define-shapes were all compiled somewhere across the maps. It also mints
   the one shape no shipped map does: a ground albedo with no height map beside
   it, which both call sites happen to pass, and which would otherwise rot
-  uncompiled. Exits non-zero, so it stands in front of a merge beside
+  uncompiled. And it builds OUR renderer's modules — both stages — for every
+  shape a map compiled (`src/render/celVertex.ts` and `celFragment.ts`,
+  `BABYLON_EXIT.md` X3.1 and X3.3a) into a real pipeline through our own
+  `PipelineCache`, on a device of its own, so the shared bodies' second
+  reader is compiled for every shape, drawn or not — and the per-stage
+  texture and sampler limits are counted against what is bound. Beside them
+  it builds the compute cull those draws read (`src/render/wgsl/
+  clusterCull.ts`, X3.3b), each of its three entry points into a pipeline,
+  and (since X3.7a) the emissive PALETTE's two programs — the main pass's
+  and a probe face's, and the glow mask's twin — at every depth bias a
+  palette material on the page carries, and fails if a palette group our
+  renderer cut carries a bias it found no material for (so a page with a
+  palette cannot pass having built neither program, as X3.7c's first run
+  did). Since X4.6e's review it also builds the glazing's PLACED stage
+  (`celPlacedVertex`) in the four states `GlassDraw` asks, and the four fade
+  programs in `FadeDraw`'s (`FADE_STATES`): eight more a map.
+  Exits non-zero, so it stands in front of a merge beside
   `gate.mjs`. It is also the strongest place the transpiler tripwire is asked,
   because it forces the CACHED materials to compile rather than the drawn ones.
 - **`vantages.mjs`** is the table of poses `bank.mjs` shoots, one row per frame
@@ -69,8 +272,24 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size W
   only opens the URL N times per map and reads the captures: medians per
   group, the spread of each group and each segment against the protocol's 8%,
   the fight's hash (every run must print one), and `--against` ratios.
-  Uncapped unless `--capped`. `docs/profiling.md`, "The benchmark", is the
-  contract.
+  Uncapped unless `--capped`. `--max` puts every graphics setting at its top
+  rung first and fails a run whose capture says otherwise; without it a run
+  gets a fresh context's per-device defaults. `docs/profiling.md`, "The
+  benchmark", is the contract.
+- **`exact.mjs`** is the proof a step that must move nothing owes: two
+  `--check --keep=<dir>` directories, at the parent and at the step, compared
+  byte for byte. Each row prints `byte-equal`, or the pixels moved and the worst
+  value, and it exits 1 on any row that differs, or stands on one side only, outside
+  `KNOWN_FLAKES` (`harrowmead-view-pistol-reload` up to 2 pixels by 1/255, `sarab-shelf`
+  1 pixel by 1/255). A row the step added is named in `--new`. **`--check`'s pass line
+  cannot do this**: `coldharbour-ring-behind-field` with the ring ahead of the blades moves 54
+  pixels by up to 113/255, a mean of 0.0002 against 0.02. It wants no GPU.
+  **`EXPECTED_MOVES` is not flakes**: a row whose move is a recorded picture difference
+  the owner accepted for a stated time, bounded so the tool fails if it moves MORE, and
+  removed by the step its `until` names. It is empty since X4.6d, whose run ended the one
+  entry it has held (`sarab-shore-flip`, `BABYLON_EXIT.md` "Decisions"). `--rows` compares
+  only the named rows, which is how a kept frame is held against `ref/` alone, whose other
+  rows are stale: `exact.mjs plans/webgpu-ref/ref <keep> --rows=sarab-shore-flip`.
 - **`diff.mjs`** says how much and where two PNGs differ. `bank.mjs --check`
   grades itself with the same function; the CLI is for looking at a specific
   pair by hand, and `--tiles` names the region rather than the number.
@@ -80,14 +299,356 @@ node plans/webgpu-ref/bench.mjs [map...] [--runs 3] [--capped] [--gpu] [--size W
   `depth24plus-stencil8`, and WebGPU defines `depthBias` in a different unit for
   a float format, so `CelMaterialFactory.GLASS_DEPTH_UNITS` and
   `OutlineRenderer`'s own offsets are both stated in a unit that moves when that
-  flag moves. `glass` sweeps the bias against range on a tinted curtain wall;
-  `zoffset` is a ruler that says what the outline pass's offsets are worth in
-  metres. **Nothing else re-derives these, the bank least of all** — a pane that
+  flag moves. `glass` sweeps the bias against range on a tinted curtain wall
+  (and throws since X4.6e, owing a port to our glazing: `FINDINGS.md` 69);
+  `zoffset` was a ruler that said what the outline pass's offsets were worth in
+  metres, RETIRED at X6.1c's review (no pass draws at them since X5.4f, and its
+  rig cloned a material that is a key of ours since X6.1c: it throws, naming why). **Nothing else re-derives these, the bank least of all** — a pane that
   has quietly stopped being drawn at 180 m is in no banked frame.
 - **`pipelines.mjs`** counts shader modules and render pipelines against the
   frame clock. This is the replacement for the WebGL2 `shaderSource` hook —
   `GPUDevice.prototype.createShaderModule` in an `addInitScript`, whose
   `getCompilationInfo()` reports against source you are already holding.
+  It counts our renderer's pipelines too (`createRenderPipelineAsync` and
+  `createComputePipelineAsync`, built off the frame) beside Babylon's.
+  **`--round`** plays a scripted round on an armoured map instead of standing
+  still — two lives, every weapon fired, a frag, a molotov, the launcher and a
+  mine, one pane broken — and files every creation under the action that
+  caused it (the spawn, deploy to playing, is a phase of its own) and under
+  the Babylon mesh being drawn when it was made, each install reported apart
+  and left out: the count `BABYLON_EXIT.md` X4.4e must take to zero (X4.4a's
+  note has the readings). The camera's path is a function of FRAMES and it is
+  turned onto the pane before the pane breaks, so what is on screen when an
+  effect is first drawn does not ride the machine's frame rate; the pane
+  phase says how many shard draws the main pass made. **Both modes print the warm-up's
+  WAIT LOG**: every frame the building card's warm-up was asked about
+  (`PipelineWarmup.afterFrame`, wrapped on its prototype), what each cache created
+  on it off the device (Babylon's synchronous pipelines, our asynchronous ones,
+  the modules) and our cache's settled compiles, and why it held or ended (ours
+  compiling or a declared entry unsettled, settled, the cap). From X5.4a to X5.4c
+  it was the VANTAGE LOG, which read nothing created at any vantage by either
+  cache on all seven shipped maps — the reading X5.4c retired the vantages on.
+
+- **`surfaces.mjs`** is where each surface `BABYLON_EXIT.md` X4.6 moves sits in
+  Babylon's frame, MEASURED: it shoots a map's sequence as `bank.mjs` does and
+  logs one frozen frame's every Babylon draw in record order, our draw points
+  among them, with the list each draw is on (read from its place between the
+  points), what its pipeline holds (depth write and test, bias, cull, blend) and
+  what the frustum kept and the size gate dropped. **`--pixels`** takes each
+  class out at `Mesh.render` for a frame and counts the pixels that move, which
+  is how a row is shown to hold a surface rather than merely to draw it, and
+  counts the overlaps the plan asks about: a blended surface over water, a pane
+  over water. Each class prints a count per list, `other` included, and under
+  `--pixels` the whole-frame mean its removal comes to, which is what `--check`'s
+  tolerance would see. (`--editor`, which asked the same of the map editor's build,
+  and its `proxy` class are retired with the editor, `BABYLON_EXIT.md` X5.3c.)
+  **`--keep=<dir>`** writes each reported row's frame as the probe saw it,
+  under the names `bank.mjs --keep` uses, which is how the probe is shown to move no
+  pixel. What it reads stops being reported as each surface leaves Babylon, which is
+  how a sub-step shows it took the whole of one. **An empty class says only that
+  frame**: no frozen frame reaches `updateBlobs`, so a blob is in no row but one that
+  raises it with a `blob` event. X4.6a's note has the table. **What comes through
+  no `Mesh.render` is logged too** (Phase 4's gate, `BABYLON_EXIT.md`): the engine's
+  `_draw` while no mesh or field renders — the post chain's passes and anything else
+  Babylon would draw on its own (a layer, an effect layer, a sprite) — as `effect ->
+  target`, under a row when it differs from the row before and totalled per draw over
+  the run at the end. A frozen frame still raises only what that frame raises, so the
+  gate read a live round's log beside it (its record names the script).
+  **Since X5.4e our points are marked as the renderer RUNS each list** (the main
+  pass, the mask and the blur are its own passes, recorded rather than queued):
+  the marks keep their names and order but `first`, which lands at the phase's
+  end with the rest where it was queued as the phase began.
+
+- **`particles.mjs`** is the GPU particle fields' CPU half, logged frame by frame in
+  a live frame loop over the deploy screen's HELD world (`BABYLON_EXIT.md` X4.7a; not a
+  live round: `Game.followEye` is told the fleet stepped, the hull and the camera
+  pinned): each field's emission state (rate,
+  accumulator, count, emit index and count, write pointer, step, emitter), the
+  rotors' water sites, the GPU passes each frame began (a field's dispatch
+  SPLITTING the main pass, counted) and which path the seam took, with a flying
+  hull pinned over dry ground and then over water and the ash running, every field
+  reset and the window opened on the first frame every field is ready. **The clock
+  is a schedule of frame deltas handed to the scene's own path** (16.7 ms, and
+  0.25 ms and 1,500 ms once every sixty frames, so the 1..1000 ms clamp in
+  `Scene.animate` is exercised; X4.7a's review, where it had been
+  `useConstantAnimationDeltaTime`, which skips the clamp). Several maps are one boot,
+  rotated through the menu as a player rotates them; at each install it logs the
+  scene's particle systems in order and the `Math.random` draws of each
+  construction and each first update. `--against` compares two logs — the order,
+  every construction's and first update's draws (label and count), then every
+  logged number by `Object.is` — which is how a port of the CPU
+  half is proven, since no live frame's pixels reproduce; one tree against itself
+  is the control. Since X4.7c it reads OUR fields beside Babylon's through one
+  adapter (the ash since X4.7c and the rotor wash since X4.7d are
+  `g.particleDraw`'s, listed first, the order the frame draws them in), the same
+  columns off each, and counts our first updates around
+  `ParticleDraw.initialize` under Babylon's label; a field it cannot count (neither
+  ours nor holding a Babylon `_initialize`) is named in the log's `unwrapped`
+  rather than thrown on. (`--editor`, which ended in the map editor's flow X4.7c's
+  decision names — `F2`, an in-memory `particles.count` edit, the rebuild, back to
+  a round — X4.7d's oracle at 312dc44, is retired with the editor at X5.3c.)
+  `surfaces.mjs` has a class per BABYLON field (`motes`, `rotorWash`,
+  `rotorSpray`), each draw logged at its place between the points with its
+  pipeline, blend mode, count and the defines of its compiled update and render
+  effects, and the seam's path each frame — which logs none on a tree since X4.7d,
+  every field being ours, and is how a BEFORE's are read; `pipelines.mjs --round` keeps each creation's stack.
+
+- **`gi.mjs`** is the irradiance volume, STEPPED one `update` at a time in a held
+  deploy world under a pinned seed (`BABYLON_EXIT.md` X5.1a; its header is its
+  contract): every step's CPU half (the cursor, the warm frames, the window, the
+  light lists, the channels, the hull slots, the whole params array, the passes
+  dispatched by name and workgroups) and its thirteen GPU resources read back and
+  hashed, from a fresh history through the warm-up, a converged world held, a lamp
+  switched on (its bounce followed sweep by sweep), a flash raised and dying, the
+  tiers, and the cloud field's sampler both ways; beside it, measured live and not
+  compared, the states (the building card, deploy, a round, the round-over card,
+  the menu; the map editor's build with a drag until X5.3c retired that arm,
+  `--no-editor` a no-op since), whether each dispatch ended a render pass,
+  which encoder it went on, whether our prepares ran that frame, and Babylon's binds
+  of the seven and the cloud field. The device is wrapped from the page's first line
+  (`bootMap`'s `init`), so the modules' tokens, the pipelines, the bind groups, the
+  textures', buffers' and samplers' descriptors are read as they are made. **The
+  trace RACES** (it reads history another workgroup of the same dispatch may be
+  writing), so its colour lanes are compared only in its `serial` scenarios (one
+  workgroup a dispatch), and everything else everywhere. `--against` compares two
+  logs by `Object.is` and by hash; `--compare=a.json --against=b.json` does it with
+  no browser. Every read of the volume's own resources — the thirteen, and what our
+  frame binds for the seven — goes through one adapter (`window.__giGpu`), Babylon's at
+  a parent before X5.1b, and OURS (`GiVolume.gpu`, `render/GiCompute.ts`) wherever it
+  is present; the cloud field — Babylon's texture at a parent before X5.4d, OUR
+  texture (`TextureMaker`) from X5.4d, its Babylon-only fields reading null, which a
+  comparison across the two names with `--ignore` (path regexes, each pattern's hits
+  said) — and the live half's Babylon wraps are read directly (its header). A sampler is logged by the members
+  `GPUSamplerDescriptor` has (Babylon's cache hands the device one of its own,
+  `anisotropyEnabled`, which WebGPU ignores; X5.1b).
+  **The harness holds the volume by stubbing its `update`**, and that is a contract a
+  port keeps: `freeze`'s `gi` block counts the volume's dispatches through one adapter
+  (`window.__refGiCount`: OURS first since X5.1b — `GiCompute.recorded`, the frames its
+  late prepare recorded the passes on, checked LIVE at every call against the volume's own
+  pipelines' dispatches counted at `GPUComputePassEncoder` (trace, compose and vis each
+  equal to how far `recorded` moved, or it throws: X5.1b's review, so a `recorded` that
+  stopped counting cannot hold a row vacuously) — and Babylon's at a parent, whose arm answers null
+  — and the freeze throws — for anything in `trace`, `compose` or `vis` that is not
+  Babylon's own `ComputeShader`) and
+  `thaw` throws if any happened under the stub; `bank.mjs` thaws once more after each
+  map's last row, so every row's hold is checked.
+
+- **`post.mjs`** is the post chain read off the DEVICE pass by pass (`BABYLON_EXIT.md`
+  X5.2a; its header is its contract): Hollowmere's `lanterns` eye, shot as `bank.mjs`
+  shoots a row, at two page sizes (`desk`, 1920x1080 at 1, the bank's; `phone`, 832x384
+  at a device scale of 2.8125) through seventeen scenarios a boot (every render scale at
+  both glow rungs, every shafts rung, each tail pass off, all of them off, the blur in
+  flight, the damage flash held, the base again after every toggle, and — since X5.2c2's
+  review — FXAA alone, drawn straight into the canvas), two frames
+  captured each and the second logged: every render pass in submit order with its
+  attachments, load and store ops and clear values, a SHA-256 of each target as its pass
+  left it (a copy recorded on the pass's own encoder after its `end`), and every draw a
+  chain stage made, with its pipeline (both modules by their tokens, the vertex layout,
+  cull, front face, depth state, blend, write mask, the layout), its bind groups entry by
+  entry (each sampler's descriptor, each view's target, each uniform buffer's BYTES as the
+  queue held them at the submit — a buffer binding recorded by VALUE since X5.2b, Babylon
+  rewriting its binding objects for the next group), its vertex and index bytes and its draw call; beside
+  them the camera's list as Babylon holds it (its holes), each pass's own fields,
+  `scene.autoClear` and `scene.imageProcessingConfiguration`; and once a boot the
+  device's limits, the canvas's configuration and every module's processed text. **Every
+  naming goes through one adapter** (`window.__postGpu`: Babylon's arm, and a sub-step
+  that moves a stage adds ours, picked first, under the same names — since X5.2b the
+  glow's box filter and blur, `Game.glowBlur`, named off its modules' labels, and since
+  X5.2c1 the grade, `Game.postChain`, the target it reads named for the Babylon pass that
+  writes it, and since X5.2c2 the shafts and the blur, each pool target named for the
+  stage that writes it, and since X5.2d the ink and the frame the scene draws into,
+  `PostPasses.frameTarget`, `frame` and `frame.depth` as Babylon's first pass's input
+  was), so a draw of ours is
+  compared with the Babylon draw it replaced (`harness.mjs`'s `postAdapter`, the CPU half
+  `freeze` holds, shares the name and has ours since X5.2c1, its `ready` the arm
+  `waitUntilDrawn` asks beside `scene.isReady()`, which no longer covers the grade). Beside the log,
+  printed and not compared, the LIVE frames from the page's first, and — on a second,
+  fresh page, where nothing has been drawn at those settings yet and a compile can still
+  show — after a render-scale change, a glow rung change, a shafts rung change and a
+  resize. `--against` compares two logs by `Object.is`, names EVERY differing path a
+  scenario has (`--max-diffs`, 40 by default), a long value from its first differing
+  character, and excuses only the path patterns `--ignore` names (`**` any segments, `*`
+  any run within one, `[stage=glob]` an element by its STAGE rather than its index;
+  `@file` for a list), saying which pattern matched nothing; it exits 1 on a difference
+  left; `--compare` does it with no browser. About 25 minutes for both sizes.
+  **Each X5.2 sub-step's expected differences are committed in
+  `plans/webgpu-ref/post-expected.txt`** (`--ignore=@plans/webgpu-ref/post-expected.txt`),
+  a section a sub-step, each line saying why — X5.2b's three on the glow's draws first,
+  X5.2c1's the same three on the grade's draw and three of Babylon's own `chain` fields,
+  X5.2c2's the same three on the shafts' and the blur's draws, the shafts' two shadow
+  maps' view and sampler descriptors (their owner's since) and the shafts' slot, then the
+  same three on FXAA's draw and its slot and attach (the probe logs neither since),
+  X5.2d's the same three on the ink's draw and the two passes the frame's own clear
+  moved (the opening pass, `passes[0]`, the frame's where it was the canvas's, and the
+  scene's pass, `passes[1]`, loading what it cleared — the one place an index is the
+  key, since each names the same pass in every scenario) —
+  and a later sub-step adds its own section there. **Since X5.4a it logs the WHOLE
+  frame** (X5.4e's to X5.4h's BEFORE), beside the chain's passes and without moving
+  them, so a parent's log compares with its new parts named
+  (`--ignore=**.whole,**.wholeSteady,*.statics.boot`): each scenario's `whole` is the
+  captured frame in SUBMIT order — every submit, its command buffers with each
+  encoder's role and label, and on each, in recording order, every render pass (by
+  its index in `passes`, with its timestamp writes), every COMPUTE pass (its label,
+  timestamp writes and dispatches by pipeline and workgroups) and every
+  encoder-level copy, clear, resolve or timestamp, with the queue's writes counted
+  before each submit (`wholeSteady` says it held over the two captured frames); and
+  `statics.boot` is, once a boot, every `requestAdapter`'s options, every
+  `requestDevice`'s descriptor (features, limits, label), every
+  `GPUCanvasContext.configure`'s argument, and the device's label and features.
+  **Since X5.4e the frame, its depth and the glow's six are OUR renderer's**
+  (`Game.renderer.targets`, `render/FrameTargets.ts`), named by the adapter's
+  arm under the same names (`frame`, `frame.depth`, `glow.<k>`), and the passes
+  into them are recorded on Babylon's UPLOAD encoder: a parent's log compares
+  with their encoder roles and `whole`'s per-buffer item lists named (the
+  X5.4e section of `post-expected.txt`), the frame's command order across the
+  encoder boundary checked apart (X5.4e's record names the script).
+  **Key a line on the draw's stage**
+  (`**.draws[stage=glow.*].viewport`), never on a pass index: an index names whatever
+  draw a scenario puts at it, so it would excuse the same field on another stage's draw
+  (X5.2b's review).
+
+- **`drawlog.mjs`** is the DRAW LOG (`BABYLON_EXIT.md` X5.3a; its header is its
+  contract): what BABYLON draws and compiles in every state a live session passes
+  through, the Phase 4 gate's scratch render log made an instrument. One page a map
+  (Coldharbour by default), the round's seed pinned, scripted through the menu, the
+  building card, deploy, the kit lid, a life (every primary fired, a frag, the third
+  slot, a pane broken, a flying hull pinned where there is one, then walked at the far
+  flag until the authority kills the player), the death cam, deploy, a life under the
+  pause lid, the round-over card, the menu, a second round and the menu (the map
+  editor's step after it is retired with the editor at X5.3c, `--no-editor` a
+  no-op); and,
+  since X5.3b, the map VIEWER's lid (`F2`) raised over the first deploy, the death cam
+  and the second life, flown to a flag with its plan shown and its work light toggled
+  (`--no-viewer` to leave it out; a parent with no viewer is compared with
+  `--ignore='^[a-z]+/viewer(/|$)'`); a step it does not reach fails the run (exit 2).
+  By FRAME CLASS (the state at the engine's begin-frame): every `_draw` keyed by mesh or effect and target, every visit of
+  rendering group 0 keyed by target, every effect (and compute effect) COMPILED, and
+  `scene.meshes`' sizes and folded names — each key as the SET of per-frame counts it
+  took and whether it was there every frame, never a total, so the log compares with
+  itself across two processes. `--against` compares with an earlier `--out` by path
+  (`<map>/<class>/<field>/<key>`) and exits 1 on a difference `--ignore`'s regular
+  expression does not excuse. Frames, what the round did and the steps are printed and
+  not compared. About a minute and a half on Coldharbour here. Its log at X5.3a's parent
+  is X5.3's BEFORE: the editor (`F2`) and the building card raised over its build were
+  the only classes in which Babylon draws, visits group 0 or compiles an effect; in every
+  other state it does none of the three (the post chain is ours since X5.2d). Since
+  X5.3c neither class exists, and a parent's log is compared with
+  `--ignore='^[a-z]+/(editor|loading \(from the editor\))(/|$)'`. **From X5.3d to X6.1c it also
+  read the game's own DEV counter of Babylon effect compiles** (`Game.babylonCompiles`,
+  `src/core/babylonCompiles.ts`) at every frame's end and FAILED the run (exit 1) where it
+  was not 0 in every class, whatever `--against` said; it was kept beside the classes, so a
+  parent's log without one compared. X6.1c deleted the counter with the cel program's
+  Babylon declarations: the arm is RETIRED, the record's `babylonCompiles` `null`, which a
+  comparison with a parent's log names (`--ignore=babylonCompiles`). A VISIT of group 0 in any class fails the run the
+  same way (exit 1), since `onMainPass` assumes none (the seam's items 6 and 10 retired;
+  X5.3d's review). **Since X5.4f it counts `scene.render` per class** (`renders`; 0
+  asserted under our frame) **and since X5.4g the engine's `beginFrame`** (`begins`, a
+  resize's counted apart in `resizeBegins`; 0 outside a resize asserted under our
+  loop). `compiledAtBoot` is the engine's own `clearQuad` alone
+  since X5.3d deleted `localShadowClear` — empty since X5.4h, the scene's engine a
+  `NullEngine` that compiles nothing for itself — and no mesh stands at the boot any
+  more (the `Mesh.render` hook waits for the first).
+
+- **`readers.mjs`** is X4.3b's READERS' ORACLE committed, and the CAMERA LOG
+  (`BABYLON_EXIT.md` X5.4a; its header is its contract). The four answers read out
+  of the viewmodel's render cache — `muzzleWorld`, `throwHandWorld`,
+  `ejectPortWorld` and the reload's gravity through the inverse of the weapon
+  root's world — two of them command inputs. `record` plays a live offline round
+  on Harrowmead through X4.3b's schedule (the rifle hip and aimed, a sprint, a
+  tactical and a dry reload, a frag, the pistol, the launcher and a rocket, a
+  molotov) and logs every call into `ViewModel` and `PlayerView`, the camera at each
+  frame's hand-over, every answer as float64 bits and the origins the page
+  submitted: the INPUT, made once at a parent, not compared. `replay` re-issues it
+  frame for frame in a held `deploy` (from `Game.followEye`, the flash's and
+  the brass's `Math.random` seeded) and logs every answer, a digest of every joint
+  the frame evaluated (read where it lies, never through the cache) and the three
+  origins recomputed by `Game`'s floors and held to the live page's bits — the
+  oracle, compared across processes and trees (`--against`), and a replay that
+  reproduces FEWER live answers than its record holds FAILS the run, whatever
+  `--against` says (X5.4a's review). `--against` excuses only what `--ignore` names,
+  `post.mjs`' path patterns (`ids` the render-id log whole, as X5.4f will owe it), each
+  pattern's hits said and one that excused nothing said too. Both log every change
+  of Babylon's RENDER ID with the site that made it (the camera's render, the
+  mask's, a render target's, the readiness timer; the scene's `_renderId` made an
+  accessor that reads and writes the same number), relative to the run's first
+  frame. `camera` logs the view, the projection, the scene's transform matrix and
+  `globalPosition` as float bits, with the inputs they were computed from, eight
+  frames a state through the menu, the card, deploy, the kit lid, a life, a
+  render-scale change, a resize, the pause, the round-over card and the menu, the
+  pose PINNED at each frame's before-draw (after the camera's updates, before its
+  matrices are computed) as a function of the step — X5.4f's and
+  X5.4h's BEFORE, compared across processes and trees. **Since X6.1a** (X6.1f's
+  BEFORE) it reads the camera through the frame adapter (`camera()`) and logs
+  per frame the six FRUSTUM PLANES as float64 bits and the GUN MARKER — what the
+  frame pushed to the HUD: `"unpushed"`, `null`, or the point projected
+  (`Game.markerAt`), the projection's output (`Game.markerOut`) and the HUD's
+  fractions as float64 bits — and on a map with a gunned hull (`--map=coldharbour`)
+  four steps more after `resumed`: the hull boarded by hand as the driver and then
+  the gunner, then (X6.1a's review) the driver at render scale 0.75 and the gunner
+  after a resize, those two posed past every step X6.1a logged; the chase camera's
+  place, both muzzles and both bearings pinned as functions of the pose (so the
+  marker is the camera's arithmetic and nothing of the drive's). A frame's planes
+  are READ off the game's own array, `"unproven"` where there is none (no scene,
+  before X6.1f), and said aloud. Between steps the pose holds the step's last frame (`n`), since
+  the marker reads the PREVIOUS frame's matrices. Its default map stays
+  Hollowmere, whose log is the old one's with the two new fields. **Since
+  X6.1f** two steps follow on every map before the round-over card: the dev-only
+  map VIEWER raised over the life (`Game.toggleViewer`, the one lid that moves the
+  camera) and lowered, posed past every step before them (17 and 18).
+- **`leaks.mjs`** is the BABYLON-LEAK probe (X5.4a; the proof X5.4b deleted
+  `src/core/webgpuLeaks.ts` on, and the regression read while Babylon's engine
+  stands): one Coldharbour page, the boot settled as the
+  baseline, `--rounds` rounds (two; X5.4b read four) each with a life and a teardown,
+  a map change and a round there, and at each step (after a forced GC) every
+  `_deletePipelineContext` since the baseline, every bind group Babylon's cache made
+  (read across any reset of it), every `createBindGroup` on the device, the live
+  `GPUBuffer`s and their MB, and the JS heap — by frame class. **A POSITIVE CONTROL runs first** (X5.4a's review), in a class of its own
+  kept out of every read: a throwaway effect (clearQuad's WGSL under a define of its own)
+  compiled and disposed through Babylon's release path, which must count one context
+  deleted, and the engine's own bind-group cache asked once to make an empty set, which
+  must count one call and one creation and no device bind group — or the run fails. It
+  records; X5.4b graded it (no context released and no cached bind group made after the
+  boot in any class; the heap and the live buffers flat over four Coldharbour rounds with
+  the file and without) and deleted the file, after which the control's own released
+  effect is the one live buffer more than at a parent with it. **Since X5.4h** the
+  scene's engine is a `NullEngine` (no backend, no pipeline context, no cache): the
+  two counts are 0 by construction, Babylon's half of the control is SKIPPED and
+  said so, and the device's counts, the live buffers and the heap are read as
+  before. **The control's DEVICE half runs on every tree** (X5.4h's review): one
+  256-byte buffer made and destroyed and one bind group made over it, on the
+  device the game draws with (`Game.renderer.device`), which must move the
+  device hooks' counters by 1 buffer, 1 destroyed, 256 live bytes and back, and
+  1 bind group — or the run fails. **With no Babylon on the page** (X6.1h:
+  nothing the page loads imports the package once the scene and the frame's
+  `Observable` go) the cache's hook is RETIRED too, said once at the baseline,
+  its count 0.
+- **`lost.mjs`** destroys the device every draw is made on, from the page, at the
+  menu, the building card, deploy and a life, each on a fresh page, and records
+  what follows for `--seconds`: the state, the frames drawn and submitted, whether
+  the frame adapter answers a new device, what the old device's `lost` said and
+  every console line. Its pages wear no device watch (a loss is the point). It
+  recorded the dead frame (X5.4a to X5.4h; since X5.4h the device is the game's,
+  the adapter's device arm, and no engine restores a new one, so the adapter
+  answered the same, dead, device after a loss). **Since X5.4i's instruments it
+  sees a RELOAD and GRADES the owner's answer** (row "X5.4, a lost device"): each
+  moment on a fresh context (a fresh `sessionStorage`), the main frame's
+  navigations counted, every toast recorded by an init script that runs on every
+  document the page loads (so after a reload too), the frames counted from each
+  page's own boot, the boot's plate read (in the document, failed, on top, its
+  word, cause and sentence), the game's loss record in `sessionStorage` read, and a
+  setting changed through the game's own door before the loss (`fpsCounter`) read
+  after it. `--match` plays each moment in a server's match (`dist-server`, built
+  by `npm run build:server`, on a port of its own; the page joined by
+  `joinMatch()` with `?server=`, the lobby's join, never `?mp`, which would
+  rejoin by itself on a reload) and, after a reload to the menu, joins again and
+  records whether it reaches `deploy`; `--twice` loses the device a SECOND time
+  once the first has settled, inside the game's window, and `--stale` backdates
+  the first loss's record an hour before it. A verdict a loss: a first loss
+  RELOADS to the menu, drawing, the notice shown once and the setting kept; a
+  second inside the window does not reload and stands the boot's "No graphics
+  device" plate on top with no frame drawn under it; `--strict` exits 1 on a
+  verdict that is not that. At a parent every verdict reads "no" and the run
+  records the dead frame as before.
 
 `cold-stagger.mjs` is **gone and is not coming back**. It existed to bake
 Coldharbour's forty cube probes four a frame because doing all forty at once
@@ -171,16 +732,20 @@ lamp or a reflection. See the floor, below.
   which replaced the two scrolling textures the freeze was still zeroing
   (`sky.turn` is pinned to 0 and the clouds' shadow re-primed at it), and
   Cinderhaven's storm, whose clock runs in `deploy` (held with no strike in
-  the air). **When the bank goes red on an unchanged tree again, look for the
+  the air, but for a row that asks for one: `strike`, `sky-flash`). **When the bank goes red on an unchanged tree again, look for the
   newest thing that changes by itself in a held world** — that has now been
   the answer four times.
-- **The post chain is left ON, with only its clock pinned.** The plan called
+- **The post chain is left ON, with only its updaters held.** The plan called
   for `g.post.setEnabled(false)`, and that would reach the same floor — the
-  grade's grain is re-hashed every frame at ~14 LSB and is the largest term in
+  grade's grain was re-hashed every frame at ~14 LSB and was the largest term in
   the noise. But the three post fragments are M3's own work and a set taken
-  with the chain disabled could not diff them. Pinning `post.time` kills the
-  grain and keeps the vignette, the aberration, the god rays and the motion
-  blur in the picture.
+  with the chain disabled could not diff them. Pinning the grade's `time` killed the
+  grain and kept the vignette, the aberration, the god rays and the motion
+  blur in the picture. **The grade has had no clock since** (its paper is pinned to
+  the world), so the `g.post.time = 0` the freeze went on writing was a no-op and
+  is gone (`BABYLON_EXIT.md` X5.2a): what holding it stops now is the damage
+  flash's decay, which a `damage` row raises under the hold. The three updaters
+  are reached through one adapter, `harness.mjs`'s `postAdapter`.
 - **A map is drawn when `scene.isReady()` says so, never after N frames.**
   WebGPU compiles pipelines lazily and presents nothing until they exist. The
   frame that first happens on is not a constant — measured across runs it moved
@@ -191,6 +756,29 @@ lamp or a reflection. See the floor, below.
   a 2 fps box because it was three seconds there, and it photographs a blank
   canvas here. This had already cost two committed backdrops before it was
   found (see `scripts/capture-map-shots.mjs`).
+  **It was not a pure read while Babylon drew the debris**: `Mesh.isReady(true)`
+  COMPUTES every mesh's world, which refreshed the bounds Babylon's size gate
+  read — so before `BABYLON_EXIT.md` X4.4c it is what made the `fx-blast-*`
+  rows' rubble drawable, a chunk a live round never drew, and X4.4c restated
+  that refresh in `waitUntilDrawn` for its pieces. Since the commit after
+  X4.4c every piece is gated on the sphere it is drawn with, the game draws
+  the rubble the rows always showed, and the refresh is gone. **The scorch and
+  the blobs were the same case until X4.6e** and nobody saw it: their meshes'
+  bounds were refreshed by the same call, so no row could tell Babylon's
+  latch from a gate on this frame's sphere, and X4.6e's note said the two
+  were the same. Its review found the latch with a live probe; it was ported
+  exactly for one commit, with this refresh restated in `waitUntilDrawn`, and
+  then dropped by the owner's decision of 2026-11-06, the refresh with it:
+  nothing here touches the game's state before asking whether it is ready.
+  **So the bank is BLIND to a Babylon size-gate latch, by construction, and
+  "no change to the picture" for a size-gated Babylon mesh is not something
+  it can say** — it missed the pieces, the debris and the scorch
+  (`FINDINGS.md` 68 recorded it until `BABYLON_EXIT.md` X6.1j's review deleted
+  it, nothing of ours latching). Ask a LIVE probe instead: the render loop running, no
+  `scene.isReady()` and no freeze, the surface raised through the game's own
+  door far from where its mesh was last computed, the active and candidate
+  lists read per frame on Babylon's side and the draw's on ours, at a
+  phone-height viewport and at 1080p, with a case that releases the latch.
 
 ## One process per MAP, and the pause lid never comes off
 
@@ -206,7 +794,15 @@ are pinned by a camera that has been standing still, so a teleport into a
 still-frozen chain photographs the previous vantage's convergence smeared
 across this one. `harness.mjs` stashes the real updaters on the first freeze
 and `thaw` puts them back; each vantage then converges on its own before it is
-frozen again. **Readiness is asked per vantage too, and for the same reason it
+frozen again. **The post chain's parts are the exception, recorded afresh at
+EVERY freeze off the objects it stubbed**, because the game REBUILDS the shafts
+on a rung change and on off to on: a stash taken once a page gave the first
+pass its updater back and never a successor, so until `BABYLON_EXIT.md` X5.2a's
+held finding F1 was fixed (2026-11-08) Hollowmere's `ground`, `crossing`,
+`sky-moon`, `sky-motes` and `ring-flown`, shot after `post-novol` and
+`post-glowlow` rebuilt the pass, were banked with the shafts held at
+`lanterns`' basis — this smear, measured — and those five were re-banked when
+it was fixed. **Readiness is asked per vantage too, and for the same reason it
 is asked at all** — WebGPU compiles lazily, so a pose that brings a material
 nobody has drawn yet into frame is not ready on the frame the camera moved.
 
@@ -226,7 +822,7 @@ taken headless on the Windows box (`nvidia/lovelace`), and a diff taken against
 it on different silicon is measuring the silicon.
 
 **Which is why `ref/` is NOT committed** — it is in `.gitignore` beside
-`gate.json`. It is ~130 MB of PNG (47 frames since X0.1) that is only
+`gate.json`. It is ~360 MB of PNG (132 frames, measured at X4.6a's review) that is only
 meaningful on one machine in one browser mode, and it has a generator: `node
 plans/webgpu-ref/bank.mjs` rebuilds the whole set in about five minutes. That is the same bar the four generated
 assets in `docs/build.md` are held to, and a bank fails the other half of it —
@@ -245,27 +841,31 @@ silently replaces the thing that would have caught the shader change.
 **Since `BABYLON_EXIT.md` X0.1 the bank is the look oracle for a renderer
 being replaced piece by piece**, and a table of map views holds none of the
 pieces after the static world. So a row may ask for a SUBJECT — soldiers, a
-blast in the air, the viewmodel, the capture rings and flags, a setting
-changed, the motion blur in flight — each posed by the game's own code from a
-fixed state through fixed steps (`src/bench/vantages.ts`'s header lists them, and
+blast in the air, the effect pools on a stated clock (`fx`: rounds, throws, rockets, mines, blasts, fires, shards, brass), the viewmodel (fitted, painted, or held mid-gesture), the
+kit screen, the capture rings and flags, a setting changed, the motion blur in
+flight, the particle fields as the game runs them — each posed by the game's own code from a fixed state through fixed
+steps (`src/bench/vantages.ts`'s header lists them, and
 `placeVantage` puts every one away before the next row). What the table holds
 for each step of the exit:
 
 | exit step | rows |
 | --- | --- |
 | X3 the static world | every map's menu and map views |
+| X3.5 terrain and roads | every map's `ground` (the eye 35 cm off the floor, a turf edge in frame) and `crossing` (two road ranks meeting), banked by `--rows` before X3.5 so they are Babylon's floor |
 | X4.1 bodies | `sarab-rig-near`, `sarab-rig-far` (250 m, inside `bodyDrawDistance`) |
-| X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli` |
-| X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic |
-| X4.4 effect pools | `coldharbour-blast` |
-| X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night |
-| X4.6 water, glazing, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring` |
-| X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns` |
+| X4.2 vehicles | `sarab-tank`, `sarab-truck`, `sarab-heli`; `cinderhaven-tank-far` (X4.2c's detail tier: a tank ~30.5 px across, just past its 32 px swap, so it draws its REDUCED set — ~55 pixels of the frame, seen by a pixel comparison of two `--keep` directories and never by `--check`'s mean tolerance; appended by `--rows`) |
+| X4.3 the viewmodel | `harrowmead-view-<optic>-hip` / `-aim`, one weapon per optic; and X4.3a's twenty-two, appended at the end of Harrowmead's list by `--rows`: the two optics those leave out (`view-greendot-*`, `view-longscope-*` on the DMR), the three rigs with a sight of their own (`view-pistol-aim`, `view-rpg-aim`, `view-mine-hip`), one finish on each rung of the gloss ladder above matte (`view-finish-satin`, `-glint`, `-mirror`), every gesture held mid-phase (`view-reload-drop` and `-seat` — a dry reload, the camera turned by the head's look, each posed off its OWN previous frame because the reload's gravity reads Babylon's render cache — `view-bolt`, `view-load`, `view-throw-frag`, `-molotov`, and `view-flash` on a seeded strobe), and the kit screen (`kit-desktop`, `kit-phone`: the real lid raised over `deploy`, the card, the bench lamps and the glow's stage rule, at the bay `stageBay` measures on a desktop and on an 832x384 phone, stated because the bank hides the interface), and after them the review's three (`view-pistol-reload`, the pistol's slide locked back in its dry reload; `view-bolt-aim`, the bolt cycle aimed with the reticle on the axis; `view-reload-tactical`, the spent magazine stripped into the hand) |
+| X4.4 effect pools | `coldharbour-blast`; and X4.4a's twenty-one, appended by `--rows` at the end of Coldharbour's list and Cinderhaven's (`fx` rows, every one standing at a position the map's rows already stand at, so the benchmark gains no stop): a tracer in flight (`fx-tracer`), impacts mid-fade on `hard` and `ground` (`fx-impact-hard`, `-ground`), a wall of marks near and at the size gate's edge (`fx-marks-near`, `-far`), a frag in flight and at rest with a bottle (`fx-grenade`), a rocket (`fx-rocket`), two mines lit and dark (`fx-mine`), brass (`fx-brass`), the blast at three ages on each surface with its rubble and scorch (`fx-blast-{hard,ground}-{fireball,billows,smoke}`), two scorches full and fading (`fx-scorch`), a molotov (`fx-molotov`), a pane's shards (`fx-shards`), fading effects behind and in front of see-through glazing (`fx-glass`), and on Cinderhaven a world fire alone and with fading effects round it (`fx-fire`, `fx-fire-fade`); and after X4.4b, when the pieces' stale-sphere latch came out, three pieces far enough from the world origin that the latch dropped them, each appended by `--rows` at its stop and at the game's own hip field (`fx-brass-far` at Coldharbour's `avenue`, `fx-mine-far` and `fx-rocket-far` at Cinderhaven's `fx-fire` eye); and after X4.4c, when the debris's latch came out, a pane's shards on Cinderhaven ~313 m from the origin, half of which it dropped (`fx-shards-far` at the `town` eye, appended by `--rows`) |
+| X4.5 sky and clouds | every row; `hollowmere-lanterns` and `cinderhaven-town` at night; and X4.5a's eight, appended by `--rows` at the end of Hollowmere's, Coldharbour's and Cinderhaven's lists, every one at an eye a row above it stands at, so the benchmark gains no stop: the moon and its bloom with a roof under it (`hollowmere-sky-moon`), ash in front of and beside it (`hollowmere-sky-motes`), the disc and its bloom on a day map (`coldharbour-sky-disc`), the ring against a horizon by day and by night (`coldharbour-sky-ring`, `cinderhaven-sky-ring`), a cloud crossing the disc (`cinderhaven-sky-cloud-moon`), the ridge 680 to 740 m off against the dome (`cinderhaven-sky-far`) and a seeded flash (`cinderhaven-sky-flash`, last on its list) |
+| X4.6 water, glazing, grass, flags, rings | `greyfen-marsh`, `harrowmead-millpond`, `coldharbour-shopfront` (see-through), `coldharbour-curtain2/40/90` (backed), `hollowmere-ring`; the far quad in `coldharbour-menu`, `-avenue` and `-sky-disc` and `cinderhaven-sky-cloud-moon` (`surfaces.mjs --pixels` has the counts); and X4.6a's nine, appended by `--rows` at the end of Hollowmere's, Greyfen's, Coldharbour's and Sarab's lists, every one at an eye a row above it stands at or the menu's, so the benchmark gains no stop: the cloth up its pole on both sheets and both sides (`hollowmere-ring-flown`, `coldharbour-ring-flown-far`), a ring's stones (`coldharbour-ring-stones`), Greyfen's grass at each rung (`greyfen-grass-low`, `-medium`, `-high`), sparks and discs over water with a disc under it (`coldharbour-fx-water-fade`), a pane really collapsed (`coldharbour-fx-glass-broken`) and water through glass (`sarab-pane-water`); and its review's two, at the end of Coldharbour's list at `square`'s eye: the blob among the panes and the fades (`coldharbour-fx-blob-sort`) and a scorch through glass on both sides of the sort (`coldharbour-fx-scorch-glass`); and X4.6b's one at the end of the same list at `crossing`'s eye: a ring farther than its field's blades (`coldharbour-ring-behind-field`); and X4.6c's three, at the end of Greyfen's and Harrowmead's lists at `crossing`'s, `millpond`'s and the menu's eyes: blades in water on either side of its sort key (`greyfen-shore-ahead`, `harrowmead-shore-ahead`, `harrowmead-shore-behind`), which no fixed draw point holds; and its review's one, at the end of Sarab's list at `shelf`'s eye: reedy bodies on BOTH sides of the key in one frame (`sarab-shore-flip`), whose frame is 21839d1's truth, banked there, and which the tree moves until X4.6d (the owner's decision, `exact.mjs`'s `EXPECTED_MOVES`); and X4.6e's review's one, by the owner's decision of 2026-11-06, at the end of Coldharbour's list at `square`'s eye through a 6° field: a blob seen from above sorted BETWEEN two glass layers, under the near one and over the far one, which `fx-blob-sort` stopped holding when the blob turned to face up (`coldharbour-fx-blob-glass`) |
+| X4.7 GPU particles | `hollowmere-sky-motes` (the field gathered, for the moon's order); and X4.7a's five, appended by `--rows` at the end of Sarab's, Cinderhaven's and Kurenai's lists, every one at an eye a row above it stands at, so the benchmark gains no stop, each the fields as the game runs them and nothing else in the air: the ash on an ADD field that follows the eye (`cinderhaven-particles-embers`, `town`'s eye) and on a STANDARD one that follows it and falls (`kurenai-particles-leaves`, `ground`'s); a helicopter pinned 2.5 m over sand, its dust ring (`sarab-particles-dust`, `crossing`'s eye); one 3 m over the western sea, its spray ring and the water's hole (`cinderhaven-particles-spray`, `tank-far`'s, 12°); and the dust ring with the embers through it, the order between two fields (`cinderhaven-particles-ring-ash`, the same eye, 20°) |
+| X5.1 the irradiance volume | every row, converged and held (`freeze`'s `gi` block): no row holds it MOVING, which `gi.mjs` logs instead; and the floors under `--query=gi=low` and `--query=gi=off` (X5.1a: the floors, two full processes each: `--query=gi=off` 142 of 143 byte-equal and `harrowmead-view-pistol-reload` within its flake; `--query=gi=low` 142 byte-equal and `sarab-alley` 5 pixels by 2/255 — two frames, Sarab alone twice more drawing the second run's (3 processes of 4 against 1), the class `sarab-ground` is at high (what moves is that row's frame, both frames the same tree's; the cause is not pinned — it did not appear at off in two runs, which fits the volume's race leaving a sub-8-bit residue there, unproven)), the BEFOREs X5.1b is graded against beside the plain bank's |
+| X5.2 the post chain | `hollowmere-post-*`, each one setting off against `lanterns`; and X5.2a's four, appended by `--rows` at the end of Hollowmere's list at `lanterns`' eye, so the benchmark gains no stop: the chain at render scale 0.5 and 0.75 (`post-scale50`, `post-scale75`: every target re-sized, the glow's floored, the blur's kernel and so its shader text moved), the grade's damage flash held at its kick (`post-damage`, `freeze`'s `damage`) and every tail pass off, the ink writing the canvas itself (`post-alloff`). What no row holds — the passes' targets, samplers, descriptors and processed WGSL, a phone's density, a frame before readiness, a resize in play — `post.mjs` logs |
 
 **`placeVantage` also places the camera-dependent passes at each row's eye**
 — the two cascades, the bodies' map, the lamps' atlas, the water and the grass
-— by `Game.updateSceneForCamera` at dt 0, the path the editor and the warm-up
-use. Before X0.1 they stayed wherever the install left them, so a frame far
+— by `Game.updateSceneForCamera` at dt 0, the path the viewer and the building
+card's last frame (`finishBakeWait`) use. Before X0.1 they stayed wherever the install left them, so a frame far
 from the spawn photographed no shadow window at all.
 
 ## What is NOT in it
@@ -274,8 +874,49 @@ from the spawn photographed no shadow window at all.
   walked.** A posed rig and a held camera cover what is drawn, not what a
   candidate-list change does while bodies move — `VERIFYING.md` has the live
   round's screenshot pair with a control for that.
-- **Nothing here holds a GPU particle.** The freeze turns particles off,
-  because they run on their own clock; X4.7 has to bring its own check.
+- **Six rows hold a GPU particle, and every other row holds none.** The freeze
+  turns particles off, because they run on their own clock. `hollowmere-sky-motes`
+  rebuilds the mote field under a seed, gathered into 24 m on the eye, steps it
+  by hand and holds it by a clock of zero (`placeVantage`, the `motes` field),
+  for the moon painting over ash in front of it — an ORDER, not the field.
+  **Since `BABYLON_EXIT.md` X4.7a five more hold the fields AS THE GAME RUNS
+  THEM** (the `particles` field): the ash in its own box on the eye at its own
+  rate on an ADD field (`cinderhaven-particles-embers`) and a STANDARD one that
+  falls (`kurenai-particles-leaves`); a helicopter pinned hovering over sand, its
+  dust ring driven by `RotorWash.update` (`sarab-particles-dust`), and over the
+  sea, its spray ring and the water's hole (`cinderhaven-particles-spray`); and
+  a ring and the ash in one frame, the order BETWEEN two fields
+  (`cinderhaven-particles-ring-ash`). Each field is rebuilt under a seed (the
+  ash before the rings, an install's order), stepped by its own pre-warm pair
+  through fixed frames at an animation ratio of 1 under a second seed, and held
+  by a clock of zero, and every field a row does not state is held EMPTY. **Every
+  touch of a field in this file goes through one adapter (`placeVantage`'s
+  `fields`)** — that path, the `motes` path and `freeze`'s `particles` switch with
+  its thaw — which since `BABYLON_EXIT.md` X4.7c picks per field between OURS (the
+  ash since X4.7c and the rings since X4.7d, `g.particleDraw`: its ready test,
+  reset, pre-warm step and switch) and Babylon's (the rotor wash at a parent
+  before X4.7d), so every particle row grades our fields, and a BEFORE at a parent
+  touches each field where it lies, as before.
+  **These rows sit under `--check`'s mean** — the embers' whole field 0.0142, the
+  order between the ring and the ash about 0.0001 — **so only `exact.mjs` grades
+  them.** No row puts a particle against the see-through panes or the fades, or a
+  ring against the moon. **What
+  no row holds is a field MOVING**: the CPU half a port must reproduce (the
+  emission accumulator, the count, the write pointer, the step, the emitter) is
+  logged frame by frame in a live loop by `particles.mjs`, compared by
+  `Object.is` across two trees, since no live frame's pixels reproduce.
+- **No row holds the irradiance volume MOVING.** Every row is its converged fixed
+  point, with no dispatch in the frame and no pulse light (`freeze`), so a wrong
+  slice order, a dropped frame, a dirty vis channel, or the bake and the dispatch
+  recorded in another order can converge to the same bytes. `gi.mjs` logs it moving
+  (`BABYLON_EXIT.md` X5.1a). **And no two runs agree on it before it converges**: the
+  trace reads the history other workgroups of its own dispatch are rewriting, so
+  one step from the same fresh history came back with four hashes in four tries;
+  what reproduces is the converged frame (eight sweeps leave a held world's drift at
+  most 3.8e-6 a texel) and anything traced one workgroup a dispatch. No row sets
+  `gi`, so the bank is the HIGH tier's; the low and off tiers are graded by
+  `--check --keep --query=gi=low` (and `=off`) at the parent and at the step,
+  compared by `exact.mjs` — never against `ref/`, which is high's.
 - **Nothing here is a frame TIME.** `gate.mjs` reports those and they are real
   on this machine, but they are not what a reference IMAGE is for. Quote the
   gate's `warmFps`, never a number read off a bank run.
@@ -286,7 +927,10 @@ from the spawn photographed no shadow window at all.
   On the Chromebook
   that frame takes the device, and no reference set taken there covers it.
 - **The `GLASS_DEPTH_UNITS` SWEEP is not in it, and the three curtain-wall
-  frames are not a substitute for it.** It is `depth.mjs glass` now. The sweep
+  frames are not a substitute for it.** It is `depth.mjs glass` now — **which
+  THROWS since `BABYLON_EXIT.md` X4.6e** ("owes a port"): it reads Babylon's
+  glazing meshes and a round has none, so the sweep is not re-takeable until
+  it is ported to `GlassDraw` (`FINDINGS.md` 69). The sweep
   is a measurement: it hides the rest of the map, holds the incidence angle and the
   on-screen size still by moving `fov` with the distance, and reads the pane's
   own contribution by toggling the group and differencing — see

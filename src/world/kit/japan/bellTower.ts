@@ -3,7 +3,6 @@
  * Part of the temple-town set: follows the contract in kit/core.ts and the
  * set's rules in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -95,8 +94,8 @@ import type { RoofSpec } from "./roof";
  * the ceiling is drawn at the roof slab's underside, so a round fired
  * straight up inside stops on the ceiling it strikes.
  */
-export function buildBellTower(scene: Scene, mats: CelMaterialFactory, _p: BuildParams = {}, ctx?: BuildCtx): Structure {
-  const b = new Build(scene, mats, "shoro");
+export function buildBellTower(mats: CelMaterialFactory, _p: BuildParams = {}, ctx?: BuildCtx): Structure {
+  const b = new Build(mats, "shoro");
   const plinthH = 0.55;
   const postH = 4.4;
   const bellY = plinthH + postH - 1.9;

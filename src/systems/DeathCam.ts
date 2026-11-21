@@ -15,11 +15,12 @@
  *   asset in this tree and there must not become one: standing up an imported
  *   body here would pull multiple megabytes into the production bundle for four
  *   seconds of screen time, which is the whole reason the first-person
- *   conversion dropped the one that used to exist. The bot rig is nine merged
- *   meshes, is already what `RAGDOLL_BONES` is measured against, and hands to
+ *   conversion dropped the one that used to exist. The bot rig is a joint tree
+ *   drawn as an instance of its side's kit (`BABYLON_EXIT.md` X4.1d), is
+ *   already what `RAGDOLL_BONES` is measured against, and hands to
  *   `RagdollSystem` with nothing adapted.
  * - **It is a stand-in, not the player.** `Player` has no rig and never grows
- *   one: it is a capsule, a viewmodel and an eye. The corpse is a separate
+ *   one: it is a sweep ellipsoid, a viewmodel and an eye, and owns no mesh. The corpse is a separate
  *   `RagdollSubject` stood up at the player's last position on the frame they
  *   die and hidden again when the cam ends, so nothing in movement, collision
  *   or hit detection ever gains a mesh to disagree with.
@@ -40,19 +41,20 @@
  *   `Game.updateGameplay` like every other body; this file only says which body
  *   to throw and where to stand to watch it.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
 import { CONFIG } from "../config";
 import type { Team } from "../entities/Combatant";
+import { Vector3, type Vector3Like } from "../math";
 import type { DamageKind } from "./CombatSystem";
 import {
   animateSoldier,
   buildSoldier,
+  jointPosition,
   resetSoldierPose,
-  REST_POSE,
+  setRigEnabled,
   type RagdollSubject,
   type SoldierRig,
 } from "../entities/SoldierModel";
-import type { CelMaterialFactory } from "../shaders/CelShader";
+import { REST_POSE } from "../entities/soldierPose";
 import { newRayHit, type RayWorld } from "../world/RayWorld";
 import { stanceCentre } from "../entities/stance";
 
@@ -76,7 +78,7 @@ class Corpse implements RagdollSubject {
   constructor(readonly rig: SoldierRig) {}
 
   setEnabled(on: boolean): void {
-    this.rig.root.setEnabled(on);
+    setRigEnabled(this.rig, on);
   }
 }
 
@@ -108,6 +110,8 @@ export class DeathCam {
   private readonly fromLook = new Vector3();
   /** The smoothed point on the body the shot is framed on. */
   private readonly anchor = new Vector3();
+  /** The chest, read fresh each frame of the cam. */
+  private readonly chest = new Vector3();
 
   // Scratch. This runs every frame of the cam; nothing below allocates.
   private readonly want = new Vector3();
@@ -119,11 +123,6 @@ export class DeathCam {
    */
   private rays: RayWorld | null = null;
   private readonly hit = newRayHit();
-
-  constructor(
-    private scene: Scene,
-    private mats: CelMaterialFactory,
-  ) {}
 
   /** Wired from `Game.installMap`, beside every other system holding a map. */
   setWorld(rays: RayWorld | null): void {
@@ -147,28 +146,16 @@ export class DeathCam {
 
   /**
    * The stand-in's rig, for `Game.installBodyPools` — which files it with
-   * `WorldCulling` exactly as it files a bot's and a net soldier's, because
-   * this is the third rig in the game and was for a long time the only one the
-   * mesh walk saw LOOSE.
+   * `WorldCulling` exactly as it files a net soldier's, and draws it as any
+   * body is drawn (`Game.drawBodies`), because this is the other rig in the
+   * game and was for a long time the only one the mesh walk saw LOOSE: its
+   * meshes measured by the size gate one by one from wherever Babylon last
+   * composed them — the world origin, for a rig never drawn — a latch that
+   * held for the whole death cam (`docs/rendering.md`). A body is measured
+   * once and drawn whole since; its drawing is no mesh at all since
+   * `BABYLON_EXIT.md` X4.1d. Null before `prepare` has built one.
    *
-   * That mattered for one reason and it is the size gate: `WorldCulling.offer`
-   * drops a candidate whose projected diameter is under
-   * `CONFIG.graphics.culling.minPixels`, and a POOLED body is exempt from it
-   * because a per-mesh test on a rig takes the head off a soldier while leaving
-   * his torso. This rig was not exempt, and the failure was worse than that
-   * threshold suggests: nothing had ever DRAWN it, so its meshes' world
-   * bounding spheres still sat at the world ORIGIN — Babylon computes a world
-   * matrix inside `_evaluateActiveMeshes` and only for candidates, and neither
-   * `start`'s pose nor `RagdollSystem` touches a drawn mesh's matrix (both
-   * compute JOINTS). So the gate measured every part of the corpse from the
-   * middle of the map, dropped the small ones, and by dropping them made sure
-   * their matrices were never computed either — a latch that held for the whole
-   * death cam. The head merges smallest and went first.
-   *
-   * `SoldierRig` already IS `PooledBody` structurally, which is why this is a
-   * getter and not a conversion. Null before `prepare` has built one.
-   *
-   * **It is only ever read after `prepare`**, because a change of side disposes
+   * **It is only ever read after `prepare`**, because a change of side drops
    * this rig and builds another — see there, and see `Game.buildRound`, where
    * the pools are filed after `applyPlayerTeam` for exactly that reason.
    */
@@ -187,45 +174,18 @@ export class DeathCam {
   }
 
   /**
-   * The stand-in body switched on at `at`, or back off for null, for the
-   * frames of the building card's pipeline warm-up (`core/PipelineWarmup.ts`). No body is switched
-   * on while `loading` draws — the bots are not deployed until the round is —
-   * and this one is built from the same kit and painted from the same caches
-   * as every bot's, so the pipelines it compiles are the ones the first
-   * soldier on screen needs. Not while the cam is up, which is the body's own
-   * life.
-   *
-   * It is stood at the warm-up's eye, because two of the passes it has to
-   * reach — the bodies' shadow map and the lamps' atlas — only draw a body
-   * near the eye they are placed around, and they read its JOINTS, whose
-   * matrices are therefore composed here rather than left to the render.
-   */
-  warm(at: Vector3 | null): void {
-    if (!this.corpse || this.running) return;
-    const rig = this.corpse.rig;
-    if (at) {
-      rig.root.position.copyFrom(at);
-      rig.root.computeWorldMatrix(true);
-      for (const node of rig.root.getChildTransformNodes(false)) {
-        node.computeWorldMatrix(true);
-      }
-    }
-    this.corpse.setEnabled(at !== null);
-  }
-
-  /**
    * Builds the rig, once, before it is needed. Called from `startRound` rather
    * than lazily at the moment of death for the reason `BattleSystem`'s pool is
-   * built up front: `buildSoldier` allocates nine merged meshes and their GL
-   * buffers, and the frame the player is killed on is the worst one in the
-   * round to spend that on.
+   * built up front: `buildSoldier` allocates a joint tree (and, for the first
+   * rig of a side, that side's drawing), and the frame the player is killed on
+   * is the worst one in the round to spend that on.
    *
    * A change of team is the one thing that rebuilds, and the rebuild has to go
    * through `stop()` first. The standing rig may be held by `RagdollSystem` at
-   * that moment, whose proxy nodes are the PARENTS of the joints about to be
-   * disposed — a slot left pointing at freed nodes would go on writing them for
-   * the rest of the corpse's life and hand back a hierarchy that no longer
-   * exists. Offline nothing reaches it: the player is team 0 every round, so
+   * that moment, its joints posed off the pool's bodies (`Joint.pose`) while
+   * the rig is about to be dropped — a slot left holding a rig nothing files
+   * or draws any more would go on posing it for the rest of the corpse's life
+   * and, at the release, switch a body that is no longer anybody's. Offline nothing reaches it: the player is team 0 every round, so
    * every call after the first is the early return above. A netplay welcome is
    * what reaches it — the authority can seat this client on team 1, and it can
    * say so with the cam already up, which is the case `stop()` covers. The cam
@@ -236,13 +196,10 @@ export class DeathCam {
   prepare(team: Team): void {
     if (this.builtFor === team && this.corpse) return;
     this.stop();
-    // Nodes only, never the materials: the body is painted from
-    // `CelMaterialFactory`'s shared caches, so disposing them here takes the
-    // paint out from under every bot on the field and the map with them. See
-    // `Vehicle.dispose`.
-    this.corpse?.rig.root.dispose(false);
-    const rig = buildSoldier(this.scene, this.mats, team);
-    rig.root.setEnabled(false);
+    // Nothing of the old rig to dispose: it is joints, and its drawing is
+    // its kit's (`SoldierModel.soldierKits`), which every body shares.
+    const rig = buildSoldier(team);
+    setRigEnabled(rig, false);
     this.corpse = new Corpse(rig);
     this.builtFor = team;
   }
@@ -258,9 +215,9 @@ export class DeathCam {
    * whether the player watches their own body fold where it stood or leave the
    * ground, and a player killed by a grenade should never be shown the first.
    *
-   * `feet` is the player's FEET, not `Player.position`, which is the middle of
-   * the collider capsule. `Player.floorY` is the height to use and is already
-   * probed this frame, so it costs nothing.
+   * `feet` is the ground under the player: `Player.position`'s x and z at
+   * `Player.floorY`, the height already probed this frame, so it costs
+   * nothing — never the sweep body's centre, half a body up.
    *
    * `crouch` is the player's own eased stance blend, and the body is posed in
    * it before it is offered. It is the same number `Player.syncCombatant` has
@@ -271,9 +228,9 @@ export class DeathCam {
   start(
     feet: Vector3,
     yaw: number,
-    eye: Vector3,
+    eye: Vector3Like,
     forward: Vector3,
-    from: Vector3 | undefined,
+    from: Vector3Like | undefined,
     damage: number,
     kind: DamageKind,
     crouch: number,
@@ -284,7 +241,7 @@ export class DeathCam {
 
     corpse.position.copyFrom(feet);
     // The CENTRE rides the stance and the ROOT does not, which is the same
-    // split `NetPlayer` draws for a remote body: the crouch lives inside the
+    // split `SimPlayer` draws for a remote body: the crouch lives inside the
     // rig — `animateSoldier` drops the hips and plants the boots — so a root
     // pulled down with it would put the feet through the floor. The centre is
     // where the round landed and where the throw is aimed away from, so it goes
@@ -296,7 +253,7 @@ export class DeathCam {
     );
     corpse.deathDamage = damage;
     corpse.deathKind = kind;
-    if (from) corpse.deathFrom.copyFrom(from);
+    if (from) corpse.deathFrom.copyFromFloats(from.x, from.y, from.z);
     else corpse.deathFrom.copyFrom(corpse.center);
 
     // A clean pose facing the way the player was, in the stance they were in,
@@ -319,13 +276,12 @@ export class DeathCam {
       .copyFrom(forward)
       .scaleInPlace(CONFIG.player.deathCam.distance)
       .addInPlace(eye);
-    rig.torso.computeWorldMatrix(true);
-    this.anchor.copyFrom(rig.torso.getAbsolutePosition());
+    jointPosition(rig, rig.torso, this.anchor);
     this.eye.copyFrom(this.fromEye);
     this.look.copyFrom(this.fromLook);
 
     // Offered AFTER the pose is set, because the pool reads each joint's world
-    // transform to place its proxies. This body is never refused — it is at
+    // transform to place its bodies. This body is never refused — it is at
     // the camera, so the distance gate cannot touch it, and a full pool now
     // evicts its oldest corpse rather than saying no.
     this.onSpawnRagdoll(corpse);
@@ -343,11 +299,10 @@ export class DeathCam {
     const rig = this.corpse.rig;
     this.t += dt;
 
-    // The chest, computed rather than read: outside the render loop
-    // `getAbsolutePosition` returns a stale cache, and while the ragdoll owns
-    // this joint its parent is a proxy node the solver moved this frame.
-    rig.torso.computeWorldMatrix(true);
-    const chest = rig.torso.getAbsolutePosition();
+    // The chest, composed fresh off the joints: while the ragdoll owns this
+    // joint it is posed off the chest body's own pose array, as the step last
+    // left it (`Joint.pose`).
+    const chest = jointPosition(rig, rig.torso, this.chest);
     chest.subtractToRef(this.anchor, this.dir);
     this.anchor.addInPlace(this.dir.scaleInPlace(Math.min(1, dt * c.followRate)));
 
@@ -387,8 +342,6 @@ export class DeathCam {
   }
 
   dispose(): void {
-    // Nodes only — see `prepare`.
-    this.corpse?.rig.root.dispose(false);
     this.corpse = null;
     this.builtFor = null;
   }

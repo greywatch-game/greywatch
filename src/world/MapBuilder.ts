@@ -1,18 +1,22 @@
 /**
- * MapBuilder.ts — Turns layout data into a GameMap: merges visual meshes per
- * material (frozen, unpickable) and then again per map block (BlockMerge —
- * neighbouring structures share a draw call), emits collider proxies,
- * registers fixture lights, builds NavGrid + CoverMap + ObstacleField.
- * Invariants: collider() is the ONLY place colliders are created — invisible,
- * pickable, checkCollisions, metadata.solid === true, never merged — and it
- * records the WorldBox for navigation. It sets no `metadata.surface`, and that
- * absence is meaningful: it is what makes every box read as "hard" to the
- * impact effects. The terrain floor's clone is the one collider that says
- * otherwise ("ground"). Geometry added by any other path is
- * invisible to rays AND bots. Colliders must line up with the visuals they
- * stand in for (sparks land on colliders). Visuals must never be pickable or
- * solid. Builders arrive at identity transform; merging then transforming is
- * what makes MergeMeshes safe. Must NOT special-case Hollowmere — a second map
+ * MapBuilder.ts — Turns layout data into a GameMap: merges visual surfaces per
+ * material and then again per map block (BlockMerge — neighbouring
+ * structures share a draw call), records the drawn world as RECORDS
+ * (`GameMap.world`, handing each surface to our renderer on the way — no
+ * visual is a mesh since `BABYLON_EXIT.md` X6.1g), records the colliders as DATA
+ * (`colliderBoxes`, `rayGroups`, `boxGroups`, `terrainGeometry` — no collider
+ * is a mesh since `BABYLON_EXIT.md` X5.3e), registers fixture lights, builds
+ * NavGrid + ObstacleField (and no CoverMap: the AI that reads one is the
+ * simulation core's, which bakes its own — see `GameMap.cover`).
+ * Invariants: collider() is the ONLY place a collider box enters
+ * `colliderBoxes` — the WorldBox every ray, sweep, nav and cover query reads,
+ * carrying its own `porous` and `glass` — and it makes no mesh. A box answers
+ * "hard" to the impact effects; the floor, which is no box, is the one thing
+ * that answers "ground" (`RayWorld`, off `TerrainField`). Geometry added by any
+ * other path is invisible to rays AND bots. Colliders must line up with the visuals they
+ * stand in for (sparks land on colliders). A visual is never tested: no ray or
+ * sweep reads a mesh. Builders arrive at identity transform; merging then transforming is
+ * what makes the merge safe. Must NOT special-case Hollowmere — a second map
  * is one new layout file, and build() takes the layout, the environment and the
  * heightfield as arguments precisely so nothing here can reach for a named one.
  * Scatter runs off the layout's seeded RNG, never Math.random: blocking props
@@ -21,40 +25,36 @@
  * hands in — it is fetched rather than bundled and is no longer a field on the
  * layout (see `MapDef.heights`) — not a flat box, and every authored `y`
  * in the layout is an offset ABOVE it — so a building dropped into a basin
- * needs no bookkeeping. The floor mesh is the one place a visual and a
- * collider share vertices (an invisible clone per block); a heightfield has no
- * box to stand in for it, and splitting it per block is what keeps ray picks
- * rejecting it as cheaply as the old flat box did.
- * Builders arrive with PARTS (world/parts.ts) rather than ordinary meshes: no
- * device buffer under them, because uploading geometry a merge throws away was
- * half of a 1500 m build. So every path out of a merge that KEEPS its source
- * owes uploadPart() — the group-of-one hand-bake in mergeByMaterial and in
- * paneGroup, and the material-less mesh both of them skip — unless it is
- * merged AGAIN: a placement's or scatter field's merge on its way into
- * BlockMerge (or the road merge) stays a part, and the final pass uploads. A
- * part that reaches the scene draws nothing and throws nothing. collider() is
- * deliberately NOT on that path: a part has no submeshes and moveWithCollisions
- * walks them.
- * `build(..., { editor: true })` keeps geometry per layout item, tags it with
- * metadata.editorRef and indexes it — at the cost of the BlockMerge pass and
- * roughly 10x the draw calls. Authoring only; never measure frame cost there.
+ * needs no bookkeeping. The floor is the one place a visual and a collider
+ * share vertices: a heightfield has no box to stand in for it, so the rays
+ * march `TerrainField` itself and `PhysicsWorld` rests bodies on each floor
+ * block's own arrays (`GameMap.terrainGeometry`) — no clone of it is a mesh.
+ * Builders arrive with PARTS (world/parts.ts) — plain geometry, a transform
+ * and a material — which enter the merge in one place (`admitStructure`,
+ * `admitProp` in world/worldGeometry.ts) as `WorldSurface`s, each minted the
+ * BIRTH it is handed over in (`WorldSurface.born`); the floor's patches and the rim's runs are
+ * surfaces too, minted first. Every merge, and then the vertex bake, runs on
+ * those and touches no device; the world becomes RECORDS once, in `bake`
+ * (`worldRecords`), in birth order, which is the scene order the meshes had
+ * when the merge still ran on them, each surface handed to our renderer at
+ * its turn (`BuildOptions.onSurface`) — which draws it whole or refuses it,
+ * failing the world (`BABYLON_EXIT.md` X3.7b) — and made no mesh: the last
+ * arm that made one, for a refused surface, went at X6.1g. What the map keeps
+ * of the record is `GameMap.world`: everything but the arrays, a record a
+ * surface. collider() is
+ * on no path to a mesh at all: the collider meshes' last reader was the map
+ * editor's centre-screen pick (`BABYLON_EXIT.md` X5.3c), nothing that moves or
+ * shoots read one (`RayWorld`, `CollisionField`), and X5.3e stopped making them.
  * The shapes it builds are `mapTypes.ts` and the merge passes it runs are
  * `merge.ts`; both are re-exported from here, so a reader may name either.
  */
-import {
-  Color3,
-  Material,
-  Mesh,
-  MeshBuilder,
-  Scene,
-  Vector3,
-  VertexBuffer,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { kindOf } from "../entities/vehicleKinds";
 import { MAX_PALETTE, type CelMaterialFactory } from "../shaders/CelShader";
-import { MAX_EMISSIVE_PALETTE } from "../shaders/EmissiveWorld";
-import { bakeVertexShading } from "./vertexShading";
+import type { MaterialKey } from "../shaders/MaterialKey";
+import { MAX_EMISSIVE_PALETTE } from "../shaders/wgsl/emissiveWorld";
+import { bakeVertexShading, shadeVertices, shadingContext, takesShading } from "./vertexShading";
+import { swayLayerOf } from "./sway";
 import { begin as beginProfile, record, since } from "./buildProfile";
 import type { LightingSystem } from "../systems/LightingSystem";
 import type { AmbienceSystem } from "../systems/AmbienceSystem";
@@ -83,28 +83,46 @@ import { TerrainField, terrainPatches, waterY } from "./TerrainField";
 import { NavGrid } from "./NavGrid";
 import { RayWorld } from "./RayWorld";
 import { CollisionField } from "./CollisionField";
-import { CoverMap } from "./CoverMap";
 import { ObstacleField } from "./ObstacleField";
-import { uploadPart } from "./parts";
 import {
-  BLOCK_SIZE,
+  bakePartTransform,
+  Part,
+  plainGeometryOf,
+  worldMatrixOf,
+  worldRecords,
+} from "./parts";
+import { Color3, Matrix, Vector3 } from "../math";
+import {
+  admitProp,
+  admitStructure,
+  assertPieces,
+  type Mint,
+  mintFrom,
+  type PaneSurfaceGroup,
+  surfaceOf,
+  type WorldGeometry,
+  type WorldSurface,
+} from "./worldGeometry";
+import { BLOCK_SIZE } from "./blocks";
+import {
   BlockMerge,
-  flatten,
   mergeByMaterial,
+  mergeSurfaces,
   PaneBlocks,
-  tag,
+  type Palette,
 } from "./merge";
 import type {
   BuildOptions,
-  EditorIndex,
-  EditorItem,
   GameMap,
+  ItemRef,
   PaneGroup,
+  TerrainGeometry,
   WaterRect,
   WorldBox,
   WorldPane,
 } from "./mapTypes";
 import { mulberry32 } from "./rng";
+import { type ScatterField, ScatterVariants } from "./scatterVariants";
 import {
   buildAshTree,
   buildBamboo,
@@ -131,44 +149,46 @@ import {
   buildSkip,
   buildTrafficCone,
   RIM_WOOD,
+  SHARED_DRAWS,
 } from "./props";
 
 export type {
   BuildOptions,
   ControlPointDef,
-  EditorIndex,
-  EditorItem,
-  EditorRef,
   GameMap,
   GrassRect,
+  ItemRef,
   PaneGroup,
   SpawnPointDef,
+  TerrainGeometry,
   VehicleSpawnDef,
   WaterRect,
   WorldBox,
   WorldPane,
 } from "./mapTypes";
-export { BLOCK_SIZE } from "./merge";
+export { BLOCK_SIZE } from "./blocks";
 
 /**
- * One scatter prop's factory.
+ * One scatter prop's factory: the prop's ROOT part, with the rest of it
+ * parented under it (`world/parts.ts`). No scene — a prop is geometry and
+ * paint. It is run only to make its kind's VARIANTS (`ScatterVariants`),
+ * never per placement, and is `scatterVariants.ts`'s `VariantBuilder`.
  *
- * **Typed rather than inferred, and the fourth argument is why.** Only
+ * **Typed rather than inferred, and the third argument is why.** Only
  * `buildJungleTree` reads `sub`, and a `Record` of the builders as written
- * would be a UNION of their signatures — which a four-argument call cannot
- * satisfy, because most members declare three. The fifth is the same story
+ * would be a UNION of their signatures — which a three-argument call cannot
+ * satisfy, because most members declare two. The fourth is the same story
  * for `buildAshTree`, `buildMaple` and `buildJungleTree`, the readers of
  * `foliage`. Widening the whole table instead is free: a builder that ignores
  * the stream is assignable to a type that offers it, and a builder that wants
  * one now has a place to say so.
  */
 type ScatterBuilder = (
-  scene: Scene,
   mats: CelMaterialFactory,
   rng: () => number,
   sub: () => number,
   foliage: number,
-) => Mesh;
+) => Part;
 
 /**
  * Scatter props, keyed by the name the layout data uses. Exported for
@@ -203,11 +223,12 @@ export const SCATTER_BUILDERS: Record<ScatterSpec["prop"], ScatterBuilder> = {
 };
 
 /**
- * The side of the square a scatter region's colliders are merged over, metres.
+ * The side of the square a scatter region's colliders are grouped over, metres.
  *
  * Sized like a fence rather than like a map: a few props across, so a cluster's
- * bounding box is small enough that most rays miss it outright and the ones
- * that hit have a handful of boxes to test. See `MapBuilder.clusterColliders`.
+ * bounding box was small enough that most picks missed it outright when each
+ * group was a mesh. No ray picks a mesh now, and it stays because the GROUPS it
+ * makes are the sweeps' tie order on both sides. See `MapBuilder.clusterColliders`.
  */
 const CLUSTER = 12;
 
@@ -435,42 +456,37 @@ export const PROP_BODIES: Record<ScatterSpec["prop"], PropBody> = {
 const NEUTRAL_ALBEDO: readonly [number, number, number] = [0.5, 0.5, 0.5];
 
 /**
- * A mesh's local half-extents — its bounding box's `extendSize` — including
- * for a PART, which has no bounding info at all.
+ * A part's local half-extents, from its vertices, by the arithmetic Babylon's
+ * `BoundingBox` uses — `(max - min) * 0.5` over the positions — and zero for
+ * a part with no vertex, which is what a part MESH's empty bounding info
+ * answered when the merge still ran on those.
  *
- * **A part answers `getBoundingInfo()` with a box of size ZERO**
- * (`world/parts.ts`: no device buffer, no bounding info), so every caller that
- * weighed a part by its bounds was weighing every part the same. That was
- * `albedoFromMeshes` for every kit structure since parts landed: a beam and a
- * whole wall counted alike in the colour the irradiance volume bounces off
- * the structure's boxes, which is not what its own comment says it does. So a
- * part is measured from its vertices, by the same arithmetic Babylon's
- * `BoundingBox` uses — `(max - min) * 0.5` over the positions — and a mesh on
- * the device keeps the bounds it has.
+ * **Measured, never read off a bounding box**: a part mesh had none, so while
+ * this asked one every caller that weighed a part by its bounds weighed every
+ * part the same. That was `albedoFromParts` for every kit structure: a beam
+ * and a whole wall counted alike in the colour the irradiance volume bounces
+ * off the structure's boxes, which is not what its own comment says it does.
  */
-function halfExtentsOf(mesh: Mesh): { x: number; y: number; z: number } {
-  const buffer = mesh.geometry?.getVertexBuffer(VertexBuffer.PositionKind);
-  if (buffer && !buffer.getBuffer()) {
-    const p = mesh.getVerticesData(VertexBuffer.PositionKind);
-    if (p && p.length >= 3) {
-      let x0 = p[0];
-      let y0 = p[1];
-      let z0 = p[2];
-      let x1 = x0;
-      let y1 = y0;
-      let z1 = z0;
-      for (let i = 3; i < p.length; i += 3) {
-        x0 = Math.min(x0, p[i]);
-        x1 = Math.max(x1, p[i]);
-        y0 = Math.min(y0, p[i + 1]);
-        y1 = Math.max(y1, p[i + 1]);
-        z0 = Math.min(z0, p[i + 2]);
-        z1 = Math.max(z1, p[i + 2]);
-      }
-      return { x: (x1 - x0) * 0.5, y: (y1 - y0) * 0.5, z: (z1 - z0) * 0.5 };
+function halfExtentsOf(part: Part): { x: number; y: number; z: number } {
+  const p = part.geometry.positions;
+  if (p.length >= 3) {
+    let x0 = p[0];
+    let y0 = p[1];
+    let z0 = p[2];
+    let x1 = x0;
+    let y1 = y0;
+    let z1 = z0;
+    for (let i = 3; i < p.length; i += 3) {
+      x0 = Math.min(x0, p[i]);
+      x1 = Math.max(x1, p[i]);
+      y0 = Math.min(y0, p[i + 1]);
+      y1 = Math.max(y1, p[i + 1]);
+      z0 = Math.min(z0, p[i + 2]);
+      z1 = Math.max(z1, p[i + 2]);
     }
+    return { x: (x1 - x0) * 0.5, y: (y1 - y0) * 0.5, z: (z1 - z0) * 0.5 };
   }
-  return mesh.getBoundingInfo().boundingBox.extendSize;
+  return { x: 0, y: 0, z: 0 };
 }
 
 /**
@@ -481,16 +497,25 @@ function halfExtentsOf(mesh: Mesh): { x: number; y: number; z: number } {
 interface BuildRun {
   layout: MapLayout;
   terrain: TerrainField;
-  /** Becomes `GameMap.visuals`. */
-  visuals: Mesh[];
-  /** Becomes `GameMap.colliders`. */
-  colliders: Mesh[];
+  /**
+   * Every surface the world draws, in list order — the floor's patches, the
+   * rim's runs, then every merged surface — which the vertex bake colours
+   * and `worldRecords` turns into records, handing each to our renderer, in
+   * `bake`.
+   */
+  surfaces: WorldSurface[];
+  /** The build's birth counter — see `WorldSurface.born`. */
+  mint: Mint;
+  /**
+   * Becomes `GameMap.world.pieces`: one entry per layout item, placements
+   * first and then scatter regions, each a PIECE id by its index — see
+   * `worldGeometry.ts`.
+   */
+  pieces: ItemRef[];
   /** The opaque block merge, fed by the placements and the scatter. */
   blocks: BlockMerge;
   /** The glazing's own, fed by the placements. See `PaneBlocks`. */
   paneBlocks: PaneBlocks;
-  /** Per-item geometry, on editor builds only — `GameMap.editor`. */
-  index: EditorIndex | undefined;
 }
 
 /**
@@ -499,19 +524,21 @@ interface BuildRun {
  *
  * ## The visual / collider split
  *
- * Every ray test in the game runs against `metadata.solid === true` meshes:
- * `CameraSystem`'s occlusion pull-in (every frame), `CombatSystem`'s hitscan
- * (every shot), and the bots' line-of-sight checks. `Player.moveWithCollisions`
- * separately walks every mesh with `checkCollisions`. At village scale, letting
- * visual geometry carry those jobs means thousands of triangle-picked meshes in
- * the hot path.
+ * Every ray test in the game — the death cam's and the chase camera's pull-in,
+ * `CombatSystem`'s hitscan, the bots' line of sight — and every body's sweep
+ * is answered off the COLLIDERS: their `WorldBox`es, through `RayWorld` and
+ * `CollisionField`. At village
+ * scale, letting visual geometry carry those jobs would put thousands of
+ * triangle meshes in the hot path.
  *
  * So the two roles are split, and nothing does both:
  *
- * - **Visual** meshes are merged per colour, unpickable, non-colliding, and
- *   frozen. They are only ever drawn.
- * - **Collider** proxies are invisible boxes, pickable, colliding, and tagged
- *   `solid`. They are only ever tested.
+ * - **Visual** surfaces are merged per colour and kept as RECORDS
+ *   (`GameMap.world`), drawn by our renderer and by nothing else — no mesh
+ *   (`BABYLON_EXIT.md` X6.1g). They are only ever drawn.
+ * - **Collider** proxies are boxes as DATA — a `WorldBox` each in
+ *   `colliderBoxes`, no mesh (`BABYLON_EXIT.md` X5.3e). They are only ever
+ *   tested.
  *
  * Colliders must line up with the surfaces they stand in for, or bullet sparks
  * land off the visible geometry.
@@ -519,15 +546,14 @@ interface BuildRun {
  * Open-frame geometry is described TWICE rather than approximated once, which
  * is how it keeps that rule: a collider tagged `porous` is the solid world to a
  * BODY and not there at all to a ROUND, and the `rayOnly` colliders beside it
- * (`Build.strut`, merged by `struts()`) are the reverse — the timber a round
+ * (`Build.strut`, grouped by `struts()`) are the reverse — the timber a round
  * stops on, with no body behind it and no `WorldBox` at all. A fence is a 1.4 m
- * porous slab for walking into and nine merged posts and rails for shooting at.
- * See `BoxSpec.porous` / `BoxSpec.rayOnly`, and `solid.ts` for the two
- * predicates that split them.
+ * porous slab for walking into and nine grouped posts and rails for shooting at.
+ * See `BoxSpec.porous` / `BoxSpec.rayOnly`, and `RayWorld`'s `castBody` and
+ * `castRound` for the two queries that split them.
  */
 export class MapBuilder {
   constructor(
-    private scene: Scene,
     private mats: CelMaterialFactory,
     private lighting: LightingSystem,
     private ambience: AmbienceSystem,
@@ -536,7 +562,7 @@ export class MapBuilder {
   /** World-space collider boxes, accumulated by `collider()` during a build. */
   private boxes: WorldBox[] = [];
   /**
-   * `r, g, b` per entry of `boxes`, pushed by `recordBox` beside it — see
+   * `r, g, b` per entry of `boxes`, pushed by `collider()` beside it — see
    * `GameMap.colliderAlbedo`. `albedoHint` is what the NEXT box recorded is
    * painted: set per structure and per scatter prop from its own meshes, so
    * a box answers with the colour of what it stands in for.
@@ -547,13 +573,13 @@ export class MapBuilder {
   private partBoxes: WorldBox[] = [];
 
   /**
-   * The `strut` boxes, grouped by the placement whose collider mesh they were
-   * merged into. Deliberately NOT in `boxes` — nothing derived from geometry
-   * (nav, cover, obstacles, AO, scatter) may see them. See `struts()`.
+   * The `strut` boxes, grouped by the placement that declared them.
+   * Deliberately NOT in `boxes` — nothing derived from geometry (nav, cover,
+   * obstacles, AO, scatter) may see them. See `struts()`.
    */
   private rayGroups: WorldBox[][] = [];
   private boxGroups: number[][] = [];
-  /** Scatter boxes recorded, not yet given geometry — see `placeScatter`. */
+  /** Scatter boxes recorded, not yet grouped — see `placeScatter`. */
   private pendingCluster: number[] = [];
   /**
    * Ground a ROOTED scatter prop may not grow out of: every road on the
@@ -587,7 +613,7 @@ export class MapBuilder {
   private keepClear: { x: number; z: number; r: number }[] = [];
 
   /**
-   * Every pane, in build order, and the merged meshes their vertices live in.
+   * Every pane, in build order, and the merged surfaces their vertices live in.
    * Fed by `paneGroup()` exactly as `boxes` is fed by `collider()`, which is
    * what keeps the index that names a pane the same on both sides of the wire.
    */
@@ -612,33 +638,28 @@ export class MapBuilder {
   private boxIndex: BoxIndex = emptyBoxIndex(CONFIG.map.size, 0);
 
   /**
-   * The layout item currently being built, on editor builds only. `collider()`
-   * files its box index here so the editor can find one item's boxes again
-   * without re-deriving them. Null in the shipped path and between items.
-   */
-  private item: EditorItem | null = null;
-
-  /**
-   * The layout's own seed, kept so `scatterRegion` can mint a SECOND stream
-   * per placed prop. Set at the top of every `build`.
+   * The layout's own seed, which the shared scatter stream is minted from and
+   * the scatter's VARIANTS are seeded off. Set at the top of every `build`.
    *
    * The shared stream is why a scatter field is reproducible and also why it
    * is brittle: it is consumed in authored order, so one extra draw anywhere
    * moves every prop after it. That is a real cost — on Greyfen it is 354
    * trees, 149 fern clumps and a re-walk of all five flags — and it is what a
-   * builder pays the moment it wants to randomise something new. A stream
-   * keyed to (region, index) buys that back: it is just as reproducible, it is
-   * independent of what any other prop drew, and adding one leaves the shared
-   * stream untouched down to the draw. Today the jungle tree's liana veil is
-   * the only thing that takes it.
+   * builder used to pay the moment it wanted to randomise something new. Since
+   * X3.4a no placement builds its prop: a builder runs only to make its
+   * kind's variants, off streams of their own (`ScatterVariants`), and a
+   * placement spends what its builder took from the shared stream by replay
+   * (`props/sharedDraws.ts`). So a builder may draw what it likes from its
+   * own streams; only a change to what it takes from `rng` owes the replay.
    */
   private propSeed = 0;
 
   /**
-   * How full a tree's crown is in this build — `BuildOptions.foliage`, set
-   * at the top of every `build` and handed to every scatter builder.
+   * This build's scatter variants (`world/scatterVariants.ts`), made in
+   * `reset` off the layout's seed and the build's foliage rung, and dropped
+   * by `release` — they hold every kind's geometry sixteen times over.
    */
-  private foliage = 1;
+  private variants: ScatterVariants | null = null;
 
   /**
    * This map's albedo palette: the colours the block merge collapsed, in the
@@ -711,7 +732,7 @@ export class MapBuilder {
     this.paneGroups = [];
     this.roads = roadFootprint([], []);
     this.boxIndex = emptyBoxIndex(CONFIG.map.size, 0);
-    this.item = null;
+    this.variants = null;
   }
 
   /**
@@ -738,13 +759,14 @@ export class MapBuilder {
     // times itself whole and names the parts worth naming under it, so the
     // remainder is what is left over. See `buildProfile.ts`, and
     // `ENGINE_UPGRADE.md` S0 for what it found — 87% of a 1500 m build was the
-    // placement loop in `placeStructures`, before the flatten in `parts.ts`.
+    // placement loop in `placeStructures`, before `parts.ts` stopped
+    // uploading the parts the merge throws away.
     beginProfile();
     const buildStart = performance.now();
     // The map's own extent, not the global — a village and a downtown are not
     // the same size. Everything downstream already took it as an argument; it
     // reaches them from here and is carried on `GameMap.size` for the readers
-    // (the minimap, the deploy map, the editor) that meet a built map instead.
+    // (the minimap, the deploy map, the viewer) that meet a built map instead.
     const size = layout.size ?? CONFIG.map.size;
     // How the map is CUT, and it is two numbers rather than one. `blockSize`
     // is what the second merge groups structures over — draw calls and cull
@@ -755,8 +777,8 @@ export class MapBuilder {
     // neither builds exactly what it always did. See `MapLayout.blockSize`.
     const blockSize = layout.blockSize ?? BLOCK_SIZE;
     const terrainBlock = layout.terrainBlock ?? BLOCK_SIZE;
-    // A view onto the floor's own blocks within `colliders` — see GameMap.
-    const terrainColliders: Mesh[] = [];
+    // The floor's blocks as data, for `PhysicsWorld` — see GameMap.
+    const terrainGeometry: TerrainGeometry[] = [];
     // The carriageways, derived before anything is built because `findSpot`
     // asks about them and the scatter pass runs after the placement loop that
     // draws them. Nothing else about a road changes: it is still visual-only,
@@ -771,8 +793,9 @@ export class MapBuilder {
     const network: RoadNetwork = roadNetwork(layout.placements);
     this.reset(layout, env, size, network, opts);
     // One stream for the whole build, so scatter regions stay reproducible in
-    // authored order. Seeding per region would be stabler under editing but
-    // would let two regions with the same seed sample identically.
+    // authored order. Seeding per region would be stabler under a change to
+    // one region but would let two regions with the same seed sample
+    // identically.
     const rng = mulberry32(this.propSeed);
 
     // How far the ground carries on past the play square, and therefore where
@@ -780,23 +803,26 @@ export class MapBuilder {
     // shipped map is any more — see `MapLayout.borderland`.
     const margin = layout.borderland?.margin ?? 0;
     const terrain = this.floorFor(layout, heights, size, margin);
+    const mint = mintFrom();
     const run: BuildRun = {
       layout,
       terrain,
-      visuals: [],
-      colliders: [],
-      // One size, handed to both, because `ReflectionSystem.encloses` asks a
-      // glazing group and the wall behind it whether they are the same
-      // building by comparing the two keys. See `PaneBlocks`.
-      blocks: new BlockMerge(blockSize),
-      paneBlocks: new PaneBlocks(blockSize),
-      index:
-        opts?.editor === true ? { placements: [], scatter: [] } : undefined,
+      surfaces: [],
+      mint,
+      pieces: [],
+      // One size, handed to both, because the reflection bake asks a glazing
+      // group and the wall behind it whether they are the same building by
+      // comparing the two keys (`ReflectionSystem`'s `exclusionOf`). See
+      // `PaneBlocks`.
+      blocks: new BlockMerge(blockSize, mint),
+      paneBlocks: new PaneBlocks(blockSize, mint),
     };
-    const { visuals, colliders, index } = run;
     record("valley", () =>
-      this.buildValley(run, size, margin, terrainBlock, env, terrainColliders),
+      this.buildValley(run, size, margin, terrainBlock, env, terrainGeometry),
     );
+    // The floor's patches and the rim's runs, which are no layout item and
+    // carry no piece — see `assertPieces` below.
+    const unpieced = run.surfaces.length;
 
     this.placeStructures(run, network);
     this.placeScatter(run, rng);
@@ -809,9 +835,10 @@ export class MapBuilder {
       this.waterAmbience(layout.water ?? [], terrain, size / 2 + terrain.margin),
     );
 
-    this.mergeBlocks(run);
-    this.bake(run, size);
-    const { nav, cover, obstacles, rays, collidables } = this.derive(run, size);
+    const glazing = this.mergeBlocks(run, size, opts?.onScatter);
+    const world = this.bake(run, size, glazing, opts?.onSurface);
+    if (import.meta.env.DEV) assertPieces(world, unpieced);
+    const { nav, obstacles, rays, collidables } = this.derive(run, size, opts?.navFields ?? true);
     since("build:total", buildStart);
 
     return {
@@ -820,14 +847,13 @@ export class MapBuilder {
       blockSize,
       terrainBlock,
       nav,
-      cover,
+      cover: null,
       obstacles,
       rays,
       collidables,
       controlPoints: layout.controlPoints,
       spawns: layout.spawns,
       vehicleSpawns: layout.vehicles ?? [],
-      colliders,
       colliderBoxes: this.boxes,
       colliderAlbedo: Float32Array.from(this.boxAlbedo),
       partBoxes: this.partBoxes,
@@ -835,16 +861,13 @@ export class MapBuilder {
       boxGroups: this.boxGroups,
       panes: this.panes,
       paneGroups: this.paneGroups,
-      terrainColliders,
-      visuals,
+      terrainGeometry,
+      world,
       water: layout.water ?? [],
       grass: layout.grass ?? [],
       roads: this.roads,
       terrain,
-      editor: index,
       dispose: () => {
-        for (const m of visuals) m.dispose();
-        for (const m of colliders) m.dispose();
         this.lighting.clear();
         this.ambience.clear();
       },
@@ -899,7 +922,33 @@ export class MapBuilder {
     // a single box exists, which is the only moment the index can be told.
     this.boxIndex = emptyBoxIndex(size, maxScatterClearance(layout));
     this.propSeed = layout.seed ?? 0x484c;
-    this.foliage = opts?.foliage ?? 1;
+    // How full a tree's crown is in this build — `BuildOptions.foliage`,
+    // which the variants are built at.
+    this.variants = new ScatterVariants(SCATTER_BUILDERS, this.mats, this.propSeed, opts?.foliage ?? 1);
+  }
+
+  /**
+   * Every worn variant as a set of instances, through `palette`, its colour
+   * buffer baked ONCE PER KIND (the user's call, `BABYLON_EXIT.md` X3.4): the
+   * variant standing alone on level, open ground, so every placement of it
+   * wears one bake. Only what our renderer could draw is kept — a cel
+   * surface with normals (`takesShading`) — so an ember or a flame stays
+   * Babylon's in the block it was merged into. Null when the bake is off
+   * (`ao.strength` 0), which leaves every block whole.
+   */
+  private scatterField(palette: Palette, size: number, blockSize: number): ScatterField | null {
+    const ctx = shadingContext([], new TerrainField(undefined), size);
+    if (!ctx || !this.variants) return null;
+    const identity = Matrix.Identity().m;
+    return this.variants.field(
+      palette,
+      (part) => takesShading(part.material) && part.geometry.normals !== null,
+      (part) => {
+        const { positions, normals } = part.geometry;
+        part.geometry.colors = shadeVertices(ctx, positions, normals!, identity, swayLayerOf(part));
+      },
+      blockSize,
+    );
   }
 
   /** The floor this build stands everything on — see `TerrainField`. */
@@ -940,15 +989,12 @@ export class MapBuilder {
    * sounds — then the roads, merged on their own.
    */
   private placeStructures(run: BuildRun, network: RoadNetwork): void {
-    const { layout, terrain, visuals, colliders, blocks, paneBlocks, index } =
-      run;
+    const { layout, terrain, surfaces, mint, pieces, blocks, paneBlocks } = run;
     // Roads are merged into one draw call per material so overlapping junctions
     // (the central cross, etc.) don't z-fight between separate meshes.
-    const roadParts: Mesh[] = [];
+    const roadParts: WorldSurface[] = [];
     const placementsStart = performance.now();
     for (const [i, p] of layout.placements.entries()) {
-      const item = index ? newItem(index.placements) : null;
-      this.item = item;
       // An authored y is an offset above the local floor, not an absolute
       // height, so a placement keeps its meaning when the ground under it moves.
       const floor = terrain.heightAt(p.x, p.z);
@@ -959,7 +1005,7 @@ export class MapBuilder {
       // need to read the ground under its footprint — one sample at the centre
       // is not enough for 130 m of road. The result is still origin-local.
       const builder = BUILDERS[p.kind];
-      const s: Structure = builder(this.scene, this.mats, p.params ?? {}, {
+      const built: Structure = builder(this.mats, p.params ?? {}, {
         terrain,
         x: p.x,
         y: origin.y,
@@ -972,84 +1018,54 @@ export class MapBuilder {
             : undefined,
         roads: isRoad ? network.footprint : undefined,
       });
+      // Its parts enter the merge here and nowhere else, each minted the birth
+      // it is handed over in and filed under this placement's PIECE — a
+      // road's included (`worldGeometry.ts`).
+      const piece = pieces.push({ list: "placements", index: i }) - 1;
+      const admitted = admitStructure(built, piece, mint);
       // What light bounces off this structure's boxes: the average of what it
       // is painted, weighted by how much of each there is. Taken HERE, before
-      // the merge below disposes these meshes — what it hands back wears the
+      // the merge below bakes these parts — what it hands back wears the
       // palette material, which has no single colour to read.
-      this.albedoFromMeshes(s.meshes);
+      this.albedoFromParts(built.meshes);
       // …and where its parts stand, for the same reason and against the same
       // deadline: after the merge there is no part left to ask. A road is not
       // asked at all — its footprint is `this.roads`, which feathers the grass
       // into the verge where a box would cut it off square.
-      if (!isRoad) this.recordParts(s, origin, rotY, terrain);
+      if (!isRoad) this.recordParts(built, origin, rotY, terrain);
 
-      // Off the editor, everything below is merged again (`BlockMerge`, the
-      // road merge), so it may stay a part until then.
-      const again = !item;
-      for (const merged of mergeByMaterial(s.meshes, p.kind, { again })) {
-        merged.rotation.y = rotY;
-        merged.position.addInPlace(origin);
-        if (item) {
-          // The block merge is what makes a placement unrecoverable, so the
-          // editor takes the draw-call hit and keeps its meshes separate.
-          tag(merged, { list: "placements", index: i });
-          item.visuals.push(merged);
-          if (isRoad) {
-            merged.metadata.noShadowCaster = true;
-            // Roads are NOT outlined, here or in play — see the road merge
-            // below for the whole of why. The editor found it first and for a
-            // narrower reason (unmerged, each road's shell is drawn over
-            // whatever it overlaps, which is a black patch at every junction);
-            // the selection highlight shows a road's extent instead.
-          }
-          visuals.push(merged);
-        } else if (isRoad) {
+      for (const merged of mergeByMaterial(admitted.meshes, p.kind, { mint })) {
+        place(merged.part, origin, rotY);
+        if (isRoad) {
           roadParts.push(merged);
         } else {
           blocks.add(p.x, p.z, merged);
         }
       }
-      // Body boxes first, then the struts, so `item`'s three parallel arrays
-      // agree on the order whichever kinds a structure declares.
-      for (const box of s.colliders) {
+      // Body boxes first, then the struts, then the glazing: the order
+      // `colliderBoxes` and `rayGroups` are written in, whichever kinds a
+      // structure declares.
+      for (const box of built.colliders) {
         if (box.rayOnly) continue;
-        const mesh = this.collider(`${p.kind}-col`, box, origin, rotY);
-        if (item) {
-          tag(mesh, { list: "placements", index: i });
-          item.localBoxes.push(box);
-        }
-        colliders.push(mesh);
+        this.collider(box, origin, rotY);
       }
-      const strutSpecs = s.colliders.filter((box) => box.rayOnly);
-      if (strutSpecs.length > 0) {
-        const meshes = this.struts(
-          `${p.kind}-timber`,
-          strutSpecs,
+      const strutSpecs = built.colliders.filter((box) => box.rayOnly);
+      if (strutSpecs.length > 0) this.struts(strutSpecs, origin, rotY);
+      // Glazing LAST of the three.
+      if (built.panes.length > 0) {
+        const glazing = this.paneGroup(
+          `${p.kind}-glass`,
+          built,
+          admitted.panes,
           origin,
           rotY,
+          mint,
         );
-        if (item) {
-          // Unmerged in the editor, so these line up one for one with the
-          // specs; the shipped build merges and has no item to keep.
-          meshes.forEach((mesh, j) => {
-            tag(mesh, { list: "placements", index: i });
-            item.localBoxes.push(strutSpecs[j]);
-          });
+        for (const group of glazing) {
+          paneBlocks.add(p.x, p.z, group);
         }
-        colliders.push(...meshes);
       }
-      // Glazing LAST of the three, and for the same reason the body boxes come
-      // first: `item`'s parallel arrays are written in this order on both
-      // sides, so a breakable pane's collider lands at a known place in them
-      // whichever kinds a structure declares.
-      if (s.panes.length > 0) {
-        const glazing = this.paneGroup(`${p.kind}-glass`, s, origin, rotY, i);
-        for (const group of glazing.visuals) {
-          paneBlocks.add(p.x, p.z, group, item, i);
-        }
-        colliders.push(...glazing.colliders);
-      }
-      for (const l of s.lights) {
+      for (const l of built.lights) {
         const at = rotateY(l.x, l.y, l.z, rotY).addInPlace(origin);
         this.lighting.add(at, l.color, l.range, l.intensity, l.flicker);
       }
@@ -1057,19 +1073,18 @@ export class MapBuilder {
       // rotation and the same origin. A placement can be turned, so a sound
       // hung off one is a LOCAL point exactly as a light is — the brazier on
       // the far side of a watchtower has to end up on the far side of it.
-      for (const snd of s.sounds) {
+      for (const snd of built.sounds) {
         const at = rotateY(snd.x, snd.y, snd.z, rotY).addInPlace(origin);
         this.ambience.add(at.x, at.y, at.z, AMBIENCE_KINDS[snd.kind]);
       }
     }
-    this.item = null;
     since("placements", placementsStart);
 
     for (const merged of record("roadMerge", () =>
-      mergeByMaterial(roadParts, "roads"),
+      mergeByMaterial(roadParts, "roads", { mint }),
     )) {
       // Flat ground sheets receive shadows, never cast them.
-      merged.metadata = { ...(merged.metadata ?? {}), noShadowCaster: true };
+      merged.part.metadata = { ...(merged.part.metadata ?? {}), noShadowCaster: true };
       // **AND NO ROAD IS INKED**, which is the same sentence one line up rather
       // than a second exemption: a sheet lying on the ground has no silhouette
       // to cast a shadow from and none to draw a line round either. Nothing has
@@ -1085,59 +1100,68 @@ export class MapBuilder {
       // measured on Sarab, where the ink of whichever mesh the front-to-back
       // sort drew second covered the whole intersection, and no amount of lift
       // fixed it because the shell rode with the slab.
-      visuals.push(merged);
+      //
+      // And it is LANDFORM, as the floor it lies on is (`WorldSurface
+      // .landform`): drawn by our renderer at the floor's point, ahead of the
+      // turf that grows up to its verge.
+      merged.landform = true;
+      surfaces.push(merged);
     }
   }
 
   /**
    * The scattered dressing, region by region off the one shared stream — then
-   * every region's blocking props clustered into collider meshes at once.
+   * every region's blocking props clustered into `boxGroups` at once.
    */
   private placeScatter(run: BuildRun, rng: () => number): void {
-    const { layout, terrain, visuals, colliders, blocks, index } = run;
+    const { layout, terrain, mint, pieces, blocks } = run;
     const scatterStart = performance.now();
     for (const [i, spec] of layout.scatter.entries()) {
-      const item = index ? newItem(index.scatter) : null;
-      this.item = item;
-      this.scatterRegion(spec, terrain, rng, blocks, colliders, item, i);
-      if (item) for (const m of item.visuals) visuals.push(m);
+      // One PIECE per region, every prop in it filed under it.
+      const piece = pieces.push({ list: "scatter", index: i }) - 1;
+      this.scatterRegion(spec, terrain, rng, blocks, mint, i, piece);
     }
-    this.item = null;
     since("scatter", scatterStart);
     // Every region's blocking props at once, and deliberately not region by
     // region: the regions OVERLAP (that is how the layout varies density), so
-    // clustering each on its own would hand the same 12 m square one mesh per
+    // clustering each on its own would hand the same 12 m square one group per
     // region standing over it. Measured on Greyfen's forest, per-region
-    // grouping left 1,412 props in ~500 meshes; all together it is ~180.
-    colliders.push(
-      ...record("scatterClusters", () =>
-        this.clusterColliders("scatter", this.pendingCluster),
-      ),
-    );
+    // grouping left 1,412 props in ~500 groups; all together it is ~180.
+    record("scatterClusters", () => this.clusterColliders(this.pendingCluster));
     this.pendingCluster = [];
   }
 
   /**
    * The second merge pass, over the opaque world and then over the glazing,
-   * and the palette the first of them discovers.
+   * and the palette the first of them discovers. Hands back the glazing's
+   * groups, which become `GameMap.paneGroups` once their surfaces are records.
    */
-  private mergeBlocks(run: BuildRun): void {
-    const { visuals, blocks, paneBlocks } = run;
+  private mergeBlocks(
+    run: BuildRun,
+    size: number,
+    onScatter: BuildOptions["onScatter"],
+  ): PaneSurfaceGroup[] {
+    const { surfaces, blocks, paneBlocks } = run;
     // One more merge across neighbouring structures — see BlockMerge. This is
-    // the ONE merge that paletteises, which is also what exempts the editor for
-    // free: an editor build files its meshes on the item instead and never
-    // reaches this pass at all (see the `item` branch in `placeStructures`).
-    for (const merged of record("blockMerge", () =>
-      blocks.finish({
-        slot: (hex) => this.paletteIndex(hex),
-        material: this.mats.getWorldCel(),
-        glow: {
-          slot: (hex) => this.glowIndex(hex),
-          material: (overGlass) => this.mats.getEmissiveWorld(overGlass),
-        },
-      }),
-    )) {
-      visuals.push(merged);
+    // the ONE merge that paletteises.
+    const palette: Palette = {
+      slot: (hex) => this.paletteIndex(hex),
+      material: this.mats.getWorldCel(),
+      glow: {
+        slot: (hex) => this.glowIndex(hex),
+        material: (overGlass) => this.mats.getEmissiveWorld(overGlass),
+      },
+    };
+    for (const merged of record("blockMerge", () => blocks.finish(palette))) {
+      surfaces.push(merged);
+    }
+    // The scatter as our renderer draws it — each worn variant a set of
+    // instances (`BABYLON_EXIT.md` X3.4b) — through the SAME palette, after
+    // the merge that met every colour a placement wears and before the
+    // palette is published.
+    if (onScatter) {
+      const field = record("scatterField", () => this.scatterField(palette, size, blocks.blockSize));
+      if (field) onScatter(field);
     }
     // Published before anything draws and after the merge that discovers it —
     // see `CelMaterialFactory.setPalette`. Unconditional, so a rebuild that
@@ -1145,9 +1169,9 @@ export class MapBuilder {
     this.mats.setPalette(this.paletteColors);
     this.mats.setEmissivePalette(this.glowColors);
     // And the same pass over the glazing, which keeps its ranges — see
-    // `PaneBlocks`. Its meshes join `visuals` for the AO bake and to be
-    // disposed with the map, and they are the one entry in that list that is
-    // NEITHER outlined NOR a shadow caster.
+    // `PaneBlocks`. Its surfaces join `surfaces` for the AO bake and the
+    // records, and they are the one entry in that list that is NEITHER
+    // outlined NOR a shadow caster.
     //
     // **A pane is transparent, and both of those are things only an opaque
     // surface can afford.** A clear sheet laying a hard black shadow across
@@ -1155,9 +1179,9 @@ export class MapBuilder {
     // `noShadowCaster` answers.
     //
     // The ink is the sharper one and it is mechanical rather than a matter of
-    // taste. Babylon draws an outline as an inverted hull BEFORE the mesh
-    // itself, and it keeps that hull out of a transparent mesh's own area with
-    // a STENCIL pass — which this engine has no buffer for (`Game` builds it
+    // taste. Babylon drew an outline as an inverted hull BEFORE the mesh
+    // itself, and it kept that hull out of a transparent mesh's own area with
+    // a STENCIL pass — which this engine has no buffer for (`main.ts` builds it
     // with no stencil, deliberately). So the shell is not a ring around a pane
     // here, it is a dark plate drawn behind the whole of it, and every window
     // in the city goes back to being the opaque slate it was, correctly lit and
@@ -1165,41 +1189,54 @@ export class MapBuilder {
     // therefore the one visual in the world with no ink, and it loses nothing:
     // what draws a window's frame is the mullion, the collar and the reveal,
     // all of which are geometry with outlines of their own.
-    for (const merged of record("paneMerge", () =>
-      paneBlocks.finish(this.panes, this.paneGroups),
-    )) {
-      merged.metadata = {
-        ...(merged.metadata ?? {}),
+    const glazing = record("paneMerge", () => paneBlocks.finish(this.panes));
+    for (const { surface } of glazing) {
+      surface.part.metadata = {
+        ...(surface.part.metadata ?? {}),
         noInk: true,
         noShadowCaster: true,
       };
-      visuals.push(merged);
+      surfaces.push(surface);
     }
+    return glazing;
   }
 
   /**
-   * The vertex-colour bake and the freeze, over every visual the merges left.
+   * The vertex-colour bake over the finished record, and the hand-over to our
+   * renderer — and what the map keeps of the record (`GameMap.world`).
    */
-  private bake(run: BuildRun, size: number): void {
-    const { terrain, visuals } = run;
-    // The vertex-colour bake — occlusion, the world mark and the wind's sway
-    // weight — and its position in `build` is the whole of it.
+  private bake(
+    run: BuildRun,
+    size: number,
+    glazing: PaneSurfaceGroup[],
+    onSurface: BuildOptions["onSurface"],
+  ): WorldGeometry {
+    const { terrain, surfaces } = run;
+    // The vertex-colour bake — occlusion, the world mark, the wind's sway
+    // weight and the wear ramp — and its position in `build` is the whole of
+    // it.
     //
-    // AFTER every merge, because `VertexData.merge` throws on a group where
-    // some meshes carry `colors` and some do not, and `mergeByMaterial`
-    // disposes its sources — which is what turns Babylon's attribute-aligning
-    // path off. Baking last cannot hit that.
+    // AFTER every merge, because the merge (`mergeTransformed`) refuses a
+    // group where some members carry `colors` and some do not, and has no
+    // attribute-aligning path to fall back on. Baking last cannot hit that.
+    // It runs on the RECORD — each surface's part, its arrays as held and its
+    // world matrix composed as Babylon composed the mesh's — and the colours
+    // it writes are uploaded with everything else.
     //
-    // BEFORE `markVisual`, which freezes the world matrices the bake needs to
-    // recompute, and before the nav graph, which wants `this.boxes` for its own
-    // reasons and is not affected either way.
+    // BEFORE the hand-over, then; and before the nav graph, which wants `this.boxes` for its own reasons and
+    // is not affected either way.
     //
     // `this.boxes` is complete here — every `collider()` has run — and it is
     // the whole input besides the terrain. See `world/vertexShading.ts` for
     // what each channel of the colour buffer carries and why.
     const bakeStart = performance.now();
     const bakedVerts = record("aoBake", () =>
-      bakeVertexShading(visuals, this.boxes, terrain, size),
+      bakeVertexShading(
+        surfaces.map((surface) => surface.part),
+        this.boxes,
+        terrain,
+        size,
+      ),
     );
     if (import.meta.env.DEV) {
       console.info(
@@ -1207,18 +1244,22 @@ export class MapBuilder {
       );
     }
 
-    // The ink for everything that sways, and it is built HERE — after the bake
-    // and before the freeze — for two reasons that are both about the twin
-    // SHARING its source's geometry rather than copying it.
-    //
-    // After the bake, because a shared `Geometry` means the colour buffer the
-    // bake just wrote is already on the twin: it reads the same weights, sways
-    // by the same amount, and cannot drift from the surface it wraps. Baking
-    // afterwards would walk the same vertices a second time to write them the
-    // same values.
-    record("markVisual", () => {
-      for (const m of visuals) this.markVisual(m);
+    // **The one place the world becomes records** (`worldRecords`): every
+    // surface handed to our renderer (`onSurface`) in the order Babylon made
+    // their meshes in when the merge still ran on meshes — the floor and the
+    // rim first, as they were — which draws it whole or refuses it, failing
+    // the world (`BABYLON_EXIT.md` X3.7b), with each surface's arrays released
+    // once it is past and no mesh made of any (X6.1g). The glazing groups are
+    // handed their surface's index on the way past, which is the shape
+    // `GameMap.paneGroups` and `GlassFx` read.
+    const records = record("upload", () => worldRecords(surfaces, onSurface));
+    const indexOf = new Map<WorldSurface, number>();
+    surfaces.forEach((surface, i) => indexOf.set(surface, i));
+    this.paneGroups = glazing.map((g) => {
+      const at = indexOf.get(g.surface)!;
+      return { record: at, panes: g.panes, block: g.block };
     });
+    return { surfaces: records, pieces: run.pieces };
   }
 
   /**
@@ -1228,21 +1269,25 @@ export class MapBuilder {
   private derive(
     run: BuildRun,
     size: number,
-  ): Pick<GameMap, "nav" | "cover" | "obstacles" | "rays" | "collidables"> {
-    const { layout, terrain, colliders } = run;
+    /** `BuildOptions.navFields`: false builds the graph and no field. */
+    fields: boolean,
+  ): Pick<GameMap, "nav" | "obstacles" | "rays" | "collidables"> {
+    const { layout, terrain } = run;
     // Navigation is derived from the finished collider set, then a flow field
     // is precomputed per objective: five flags plus both home spawns. The map
-    // is static, so this is the only time any of it is computed.
+    // is static, so this is the only time any of it is computed — and for the
+    // page's own (offline) match none of the fields are, its bots being
+    // steered by that match's world in its host (`BuildOptions.navFields`).
     const nav = record(
       "navGrid",
       () => new NavGrid(size, this.boxes, terrain, layout.surfaces),
     );
-    for (const cp of layout.controlPoints) {
+    for (const cp of fields ? layout.controlPoints : []) {
       record(`flowField:${cp.id}`, () =>
         nav.buildField(cp.id, cp.pos, cp.radius * 0.6),
       );
     }
-    for (const team of [0, 1] as const) {
+    for (const team of fields ? ([0, 1] as const) : []) {
       const home = layout.spawns.find((s) => s.team === team);
       if (home) {
         record(`flowField:home${team}`, () =>
@@ -1250,12 +1295,11 @@ export class MapBuilder {
         );
       }
     }
-    // Cover needs the finished graph as well as the finished colliders, so it
-    // is built last. Baked once here and only read from then on. Both of these
-    // are named rather than inlined into the returned object for one reason:
-    // the build's own clock has to stop after them and before the object is
-    // assembled, or the profile's total excludes two of its own phases.
-    const cover = record("coverMap", () => new CoverMap(nav, this.boxes));
+    // No cover: the AI that reads it is the simulation core's, whose world
+    // bakes its own (`GameMap.cover`). The field below is named rather than
+    // inlined into the returned object for one reason: the build's own clock
+    // has to stop after it and before the object is assembled, or the
+    // profile's total excludes one of its own phases.
     const obstacles = record(
       "obstacleField",
       () => new ObstacleField(size, this.boxes),
@@ -1265,19 +1309,13 @@ export class MapBuilder {
     // them — a strut group added later would be geometry no round could find.
     const rays = record(
       "rayWorld",
-      () => new RayWorld(size, this.boxes, this.rayGroups, terrain),
+      () => new RayWorld(size, this.boxes, this.rayGroups, terrain, this.boxGroups),
     );
-    // …and the same set indexed for a SWEEP. Off the finished MESHES rather
-    // than off `boxes`, which is the one thing here that cannot be derived from
-    // geometry: what `moveWithCollisions` walks is the merged collider meshes,
-    // and a cluster of a scatter region's props is one of those and twelve of
-    // the other. The floor and the struts are in `colliders` and carry no
-    // `checkCollisions`, so the constructor drops them for free.
-    const collidables = record(
-      "collisionField",
-      () => new CollisionField(colliders),
-    );
-    return { nav, cover, obstacles, rays, collidables };
+    // …and the sweep a body MOVES by, over the same index: its candidates are
+    // `rays.bodyNear`'s, so it holds nothing to build and nothing to go stale
+    // apart from `rays`. No collider is a mesh (`BABYLON_EXIT.md` X5.3e).
+    const collidables = new CollisionField(rays);
+    return { nav, obstacles, rays, collidables };
   }
 
   /** The valley floor plus the rim that bounds play. */
@@ -1289,49 +1327,43 @@ export class MapBuilder {
     /** `MapLayout.terrainBlock`, or `BLOCK_SIZE` — the floor's own cut. */
     terrainBlock: number,
     env: EnvironmentSpec,
-    /** The floor's blocks alone — see `GameMap.terrainColliders`. */
-    terrainColliders: Mesh[],
+    /** The floor's blocks as data — see `GameMap.terrainGeometry`. */
+    terrainGeometry: TerrainGeometry[],
   ): void {
-    const { terrain, visuals, colliders } = run;
+    const { terrain, surfaces, mint } = run;
     const ridge = run.layout.ridge;
     const floorMat = floorMaterial(
       this.mats,
-      this.scene,
       env.floorColor,
       env.floorSurface,
     );
     for (const patch of record("terrainPatches", () =>
       terrainPatches(terrain, size, terrainBlock),
     )) {
-      const ground = new Mesh(`terrain-${patch.key}`, this.scene);
-      patch.data.applyToMesh(ground);
+      // A surface of the world's record, minted before anything else so it is
+      // handed over first, as its mesh was made first; the bake colours it
+      // and it is recorded with the rest.
+      const ground = new Part(`terrain-${patch.key}`, patch.data);
       ground.material = floorMat;
       // Receiver only: a floor casting into its own depth map is pure acne.
       ground.metadata = { noShadowCaster: true };
-      visuals.push(ground);
+      // The LANDFORM, which our renderer draws ahead of the turf laid over it
+      // (`WorldSurface.landform`) — stated here, where the floor is made.
+      const floor = surfaceOf(ground, mint());
+      floor.landform = true;
+      surfaces.push(floor);
 
       // The floor is the one place a collider shares the visual's vertices.
-      // `collider()` builds boxes and records a WorldBox for the nav grid, and
-      // a heightfield is neither — NavGrid reads the TerrainField directly
-      // instead, so this deliberately bypasses it.
-      const col = new Mesh(`terrain-${patch.key}-col`, this.scene);
-      patch.data.applyToMesh(col);
-      col.isVisible = false;
-      col.isPickable = true;
-      // Vertical placement is the ground probe's job and bots never touch the
-      // collidable list, so the floor stays out of moveWithCollisions.
-      col.checkCollisions = false;
-      // `surface` is the impact channel, and this is the only place in the
-      // world that sets it to anything: the clone IS the heightfield, so it
-      // is the one collider that can honestly say "ground". `collider()`
-      // leaves the field absent on every box it makes, and absent reads as
-      // "hard" — see `ImpactKind` in `systems/CombatSystem.ts`. Splitting the
-      // boxes into stone/timber/metal later is a `surface` argument on
-      // `collider()` and a row in that table; nothing here has to move.
-      col.metadata = { solid: true, surface: "ground" };
-      col.freezeWorldMatrix();
-      colliders.push(col);
-      terrainColliders.push(col);
+      // `collider()` records a WorldBox for the nav grid and the queries, and
+      // a heightfield is no box — NavGrid and `RayWorld` read the TerrainField
+      // directly instead (the rays answer "ground" off it, the one surface
+      // that does; every box answers "hard" — see `ImpactKind` in
+      // `systems/CombatSystem.ts`), so this deliberately bypasses it. What is
+      // kept is the block's own arrays, for `PhysicsWorld`, which rests bodies
+      // on the floor without reaching a mesh — in the types Babylon was
+      // handed them when a clone of this block was a mesh (`BABYLON_EXIT.md`
+      // X5.3e took the mesh away).
+      terrainGeometry.push(plainGeometryOf(patch.data));
     }
 
     // The boundary itself: four boxes, and they are the ONLY thing stopping
@@ -1356,34 +1388,34 @@ export class MapBuilder {
     const t = 2;
     const extent = size + margin * 2;
     const half = extent / 2;
-    const sides: [string, number, number, number, number][] = [
-      ["n", extent + t * 2, t, 0, half + t / 2],
-      ["s", extent + t * 2, t, 0, -half - t / 2],
-      ["e", t, extent + t * 2, half + t / 2, 0],
-      ["w", t, extent + t * 2, -half - t / 2, 0],
+    // North, south, east, west — in that order, which is their order in
+    // `colliderBoxes`.
+    const sides: [number, number, number, number][] = [
+      [extent + t * 2, t, 0, half + t / 2],
+      [extent + t * 2, t, 0, -half - t / 2],
+      [t, extent + t * 2, half + t / 2, 0],
+      [t, extent + t * 2, -half - t / 2, 0],
     ];
-    for (const [name, w, d, x, z] of sides) {
-      colliders.push(
-        this.collider(`ridge-${name}-col`, { w, h, d, x, y: h / 2, z }),
-      );
+    for (const [w, d, x, z] of sides) {
+      this.collider({ w, h, d, x, y: h / 2, z });
     }
 
     // The rim, as landform. Built outward from the boundary only, so it costs
     // no playable area — see Ridge.ts, which owns the shape and its invariants.
     for (const seg of ridgeSegments(ridge, extent, terrain)) {
-      const mesh = new Mesh(`ridge-${seg.key}`, this.scene);
-      seg.data.applyToMesh(mesh);
+      const part = new Part(`ridge-${seg.key}`, seg.data);
       if (seg.tone === "scree" || seg.tone === "rock") {
-        mesh.material = this.mats.get(
+        part.material = this.mats.get(
           seg.tone === "scree" ? env.ridgeScreeColor : env.ridgeColor,
         );
       } else {
-        // The woods on a rolling rim, in the near trees' own paint. They go
-        // into `visuals` like the rock, so the vertex bake gives them the same
-        // colour buffer the merged pines carry — which is what makes sharing
-        // the pines' cached material safe (see `CelMaterialFactory.remember`).
+        // The woods on a rolling rim, in the near trees' own paint. They are
+        // surfaces of the record like the rock, so the vertex bake gives them
+        // the same colour buffer the merged pines carry — which is what makes
+        // sharing the pines' cached material safe (see
+        // `CelMaterialFactory.remember`).
         const wood = RIM_WOOD[seg.tone];
-        mesh.material =
+        part.material =
           wood.trans === null
             ? this.mats.get(wood.hex)
             : this.mats.getTranslucent(
@@ -1395,8 +1427,10 @@ export class MapBuilder {
       // shadow window is a fixed 110 m square that follows the player — so a
       // casting rim would end its shadow in a hard line that slides across open
       // ground as you walk. It is a receiver only.
-      mesh.metadata = { noShadowCaster: true };
-      visuals.push(mesh);
+      part.metadata = { noShadowCaster: true };
+      const rim = surfaceOf(part, mint());
+      rim.landform = true;
+      surfaces.push(rim);
     }
   }
 
@@ -1409,10 +1443,9 @@ export class MapBuilder {
    * Like a builder, this assembles **at the region's origin, unrotated**, and
    * the merged result is transformed into place afterwards. A rectangle is
    * therefore sampled in its own local frame and turned bodily by `rotY`, prop
-   * yaws included, which is what lets the editor move and rotate a region by
-   * writing one transform (`repositionItem`) instead of rebuilding it. The
-   * rebuild then lands on the same offsets — bar the props whose new
-   * surroundings reject them, which is the point of `findSpot`.
+   * yaws included, so a region moved or turned in its layout lands on the
+   * same offsets — bar the props whose new surroundings reject them, which is
+   * the point of `findSpot`.
    *
    * Every instance in a region is merged into one mesh per colour. A stand of
    * sixteen dead trees becomes two draws instead of ninety-six — the trees do
@@ -1566,16 +1599,18 @@ export class MapBuilder {
     terrain: TerrainField,
     rng: () => number,
     blocks: BlockMerge,
-    colliders: Mesh[],
-    item: EditorItem | null,
+    mint: Mint,
     index: number,
+    /** The region's PIECE id — see `worldGeometry.ts`. */
+    piece: number,
   ): void {
-    const build = SCATTER_BUILDERS[spec.prop];
+    const variants = this.variants;
+    if (!variants) throw new Error("MapBuilder: scatter placed outside a build");
     const light = SCATTER_LIGHTS[spec.prop];
     const sound = SCATTER_AMBIENCE[spec.prop];
     const [minS, maxS] = scatterScale(spec);
     const placed: { x: number; z: number; r: number }[] = [];
-    const parts: Mesh[] = [];
+    const parts: WorldSurface[] = [];
     // A disc has no orientation, so this is zero for every circular region —
     // which is every region on the shipped map.
     const rot = isScatterRect(spec) ? (spec.rotY ?? 0) : 0;
@@ -1584,6 +1619,9 @@ export class MapBuilder {
       (spec.y ?? 0) + terrain.heightAt(spec.x, spec.z),
       spec.z,
     );
+    // Where the region's merged surfaces are put below (`place`), which every
+    // placement's recorded matrix ends in.
+    const frame = { x: origin.x, y: origin.y, z: origin.z, rotY: rot };
 
     for (let i = 0; i < spec.count; i++) {
       const scale = minS + rng() * (maxS - minS);
@@ -1610,29 +1648,27 @@ export class MapBuilder {
         roadTopAt(this.roads, spot.x, spot.z) -
         origin.y;
 
-      // The prop's own stream, keyed to where it sits in the layout rather
-      // than to how much has been drawn before it — see `propSeed`. Minted
-      // per prop and not per region so that changing a region's `count`
-      // leaves the props it still places drawing what they drew.
-      const sub = mulberry32(this.propSeed ^ (index * 7919 + i));
-      const prop = build(this.scene, this.mats, rng, sub, this.foliage);
-      prop.scaling.setAll(scale);
-      prop.position.x = spot.lx;
-      prop.position.z = spot.lz;
-      prop.position.y = prop.position.y * scale + base;
-      // Drawn here and not a line earlier: `build` consumes the same seeded
+      // The prop is no longer BUILT here: it wears one of its kind's variants
+      // (`world/scatterVariants.ts`, `BABYLON_EXIT.md` X3.4a), picked by
+      // where it sits in the layout. What its builder took from the shared
+      // stream is still taken, by the kind's REPLAY (`props/sharedDraws.ts`)
+      // — the yaw below and the next prop's spot come off the same stream,
+      // so a draw fewer would move every prop after it and the bake with them.
+      SHARED_DRAWS[spec.prop](rng);
+      // Drawn here and not a line earlier: the replay consumes the same seeded
       // stream, so moving this draw would reroll the whole dressing field.
       // Kept in a local because the collider below is oriented with the prop —
       // the only way a headstone or a fallen log gets a box that means anything.
       const yaw = rng() * Math.PI * 2;
-      prop.rotation.y = yaw;
-      // Bake the placement into the vertices, then hand the flattened
-      // hierarchy to the merge — the same identity-transform trick the
-      // structures use, applied one level up.
-      const flat = flatten(prop);
+      // The variant's parts, standing where the placement's root used to: its
+      // spot, the ground under it, its yaw and its scale. The root's own
+      // height and lean are already in the variant. The merge bakes each
+      // part's transform into its vertices, the same identity-transform trick
+      // the structures use, applied one level up.
+      const flat = variants.place(spec.prop, variants.pick(index, i), spot.lx, base, spot.lz, yaw, scale, frame);
       // Its box, if it gets one, bounces light in its own colours.
-      if (spec.blocking) this.albedoFromMeshes(flat);
-      parts.push(...flat);
+      if (spec.blocking) this.albedoFromParts(flat);
+      parts.push(...admitProp(flat, piece, mint));
 
       if (light) {
         this.lighting.add(
@@ -1644,10 +1680,11 @@ export class MapBuilder {
         );
       }
       // Beside the light and on the same terms: the prop's own position, taken
-      // here because nothing downstream still has one. `flatten` above bakes
-      // this placement into the vertices and the merge then takes the mesh
-      // away entirely, so an emitter that is not recorded on this line has no
-      // second chance to be — see `AmbienceSystem`.
+      // here because nothing downstream still has one. `variants.place` above
+      // stands every part at this placement, the merge bakes it into the
+      // vertices and then takes the mesh away entirely, so an emitter that is
+      // not recorded on this line has no second chance to be — see
+      // `AmbienceSystem`.
       if (sound) {
         this.ambience.add(
           spot.x,
@@ -1670,32 +1707,18 @@ export class MapBuilder {
           z: spot.lz,
           rotY: yaw,
         };
-        // The region's own frame, so the editor can turn the field as a unit.
-        if (item) item.localBoxes.push(box);
-        if (item) {
-          colliders.push(this.collider(`${spec.prop}-col`, box, origin, rot));
-        } else {
-          // Recorded now and given geometry at the end of the region: the
-          // burial test the NEXT prop runs reads `boxIndex`, so the box cannot
-          // wait, and a mesh per box is what `clusterColliders` exists to
-          // avoid. Nothing between here and there touches meshes.
-          this.pendingCluster.push(this.boxes.length);
-          this.recordBox(box, origin, rot);
-        }
+        // Recorded now and grouped at the end of the scatter: the burial test
+        // the NEXT prop runs reads `boxIndex`, so the box cannot wait, and
+        // the grouping is locality across every region (`clusterColliders`).
+        this.pendingCluster.push(this.boxes.length);
+        this.collider(box, origin, rot);
       }
     }
 
-    // As in `placeStructures`: off the editor, `BlockMerge` merges it again.
-    const again = !item;
-    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, { again })) {
-      merged.rotation.y = rot;
-      merged.position.addInPlace(origin);
-      if (item) {
-        tag(merged, { list: "scatter", index });
-        item.visuals.push(merged);
-      } else {
-        blocks.add(spec.x, spec.z, merged);
-      }
+    // As in `placeStructures`: `BlockMerge` merges it again.
+    for (const merged of mergeByMaterial(parts, `${spec.prop}-field`, { mint })) {
+      place(merged.part, origin, rot);
+      blocks.add(spec.x, spec.z, merged);
     }
   }
 
@@ -1880,21 +1903,6 @@ export class MapBuilder {
     return Math.abs(lx) <= b.w / 2 + pad && Math.abs(lz) <= b.d / 2 + pad;
   }
 
-  /**
-   * Drawn, never tested. Unpickable and non-colliding so it stays out of every
-   * ray pick and the collision broadphase; frozen because none of it moves.
-   */
-  private markVisual(mesh: Mesh): void {
-    mesh.isPickable = false;
-    mesh.checkCollisions = false;
-    mesh.freezeWorldMatrix();
-    for (const child of mesh.getChildMeshes()) {
-      child.isPickable = false;
-      child.checkCollisions = false;
-      child.freezeWorldMatrix();
-    }
-  }
-
   /** Where a builder's local `BoxSpec` lands once the placement is applied. */
   private worldBoxOf(
     box: BoxSpec,
@@ -1918,11 +1926,11 @@ export class MapBuilder {
     // explicit `porous: false` on 820-odd boxes is a field in every baked
     // tuple to say nothing.
     if (box.porous) world.porous = true;
-    // **Glass IMPLIES porous, and on the box rather than only in the metadata.**
-    // A pane is `porous` exactly — a body walks into it, a round goes through —
-    // and `collider()` says so on the mesh, which is what the two pick
-    // predicates read. But four things read the BOX and not the mesh, and every
-    // one of them was wrong while this line was missing: `CoverMap` baked hard
+    // **Glass IMPLIES porous, and on the box.** A pane is `porous` exactly — a
+    // body walks into it, a round goes through — and the box is all there is
+    // to say so on (the collider MESH that also said it, for the old pick
+    // predicates, went at `BABYLON_EXIT.md` X5.3e). Four things read the BOX
+    // and were wrong while this line was missing: `CoverMap` baked hard
     // cover behind a window, the AO bake was the only reader that had its own
     // term for glass, the collision bake carried neither flag, and the server
     // therefore rebuilt an intact pane as a solid wall — eating rounds the
@@ -1935,69 +1943,27 @@ export class MapBuilder {
     return world;
   }
 
-  /** The box itself, placed. Flags are the caller's — the two kinds differ. */
-  private boxMesh(name: string, world: WorldBox): Mesh {
-    const mesh = MeshBuilder.CreateBox(
-      name,
-      { width: world.w, height: world.h, depth: world.d },
-      this.scene,
-    );
-    mesh.position.set(world.cx, world.cy, world.cz);
-    mesh.rotation.set(world.rotX, world.rotY, 0);
-    mesh.isVisible = false;
-    mesh.isPickable = true;
-    return mesh;
-  }
-
-  /** Tested, never drawn. The only geometry that carries `solid`. */
-  private collider(
-    name: string,
-    box: BoxSpec,
-    origin?: Vector3,
-    parentRotY = 0,
-  ): Mesh {
-    const world = this.recordBox(box, origin, parentRotY);
-    const mesh = this.boxMesh(name, world);
-    this.item?.colliders.push(mesh);
-    mesh.checkCollisions = true;
-    // `porous` rides in the metadata rather than being answered by leaving
-    // `solid` off, because the two questions have different answers and both
-    // are asked of this mesh: it IS the solid world to a body (movement, the
-    // ground probe) and is not there at all to a round. The flag is carried onto
-    // the `WorldBox`, which is what `RayWorld` reads; dropping `solid` instead
-    // would let the player fall through a fence top their own capsule is still
-    // being held out of.
-    //
-    // A breakable pane is `porous` and says so twice: once for the predicates,
-    // which need nothing new to get glass right, and once as `glass` for the
-    // three readers that must skip a pane rather than merely pass a round
-    // through it (`CoverMap`, the AO bake, and the bake that reaches the
-    // server). The caller stamps the pane INDEX on top — see `paneGroup`.
-    mesh.metadata = box.glass
-      ? { solid: true, porous: true, glass: true }
-      : box.porous
-        ? { solid: true, porous: true }
-        : { solid: true };
-    mesh.freezeWorldMatrix();
-    return mesh;
-  }
-
   /**
    * Records one collider box in `boxes` and in the build-time index, and hands
-   * back its world form — everything `collider()` does except mint the mesh.
+   * back its world form. Tested, never drawn — and no mesh: a collider is the
+   * `WorldBox` and nothing else (`BABYLON_EXIT.md` X5.3e).
    *
-   * **Split out so a mesh can be made LATER, or made once for many boxes**, and
-   * the order matters: `findSpot`'s burial test reads `boxIndex` as it places,
-   * so a prop's box has to be indexed before the next prop is sampled, whatever
-   * happens to its geometry afterwards. See `clusterColliders`.
+   * **The only place a `WorldBox` enters `boxes`** — which is the property the
+   * queries (`RayWorld`, `CollisionField`), the bake, the nav grid and the AO
+   * all rest on. A box's `porous` and `glass` ride on it from its `BoxSpec`
+   * (`worldBoxOf`): a fence's coarse run IS the solid world to a body and is
+   * not there at all to a round, and a breakable pane is `porous` and `glass`
+   * both — `glass` for the three readers that must skip a pane rather than
+   * merely pass a round through it (`CoverMap`, the AO bake, and the bake that
+   * reaches the server); the pane names its box by index (`WorldPane.box`, see
+   * `paneGroup`).
    *
-   * `collider()` is still the only place a collider MESH is made from a single
-   * box, and this is still the only place a `WorldBox` enters `boxes` — which
-   * is the property the bake, the nav grid and the AO all rest on.
+   * **And the order matters**: `findSpot`'s burial test reads `boxIndex` as it
+   * places, so a scatter prop's box is recorded here before the next prop is
+   * sampled, and grouped only at the end (`clusterColliders`).
    */
-  private recordBox(box: BoxSpec, origin?: Vector3, parentRotY = 0): WorldBox {
+  private collider(box: BoxSpec, origin?: Vector3, parentRotY = 0): WorldBox {
     const world = this.worldBoxOf(box, origin, parentRotY);
-    this.item?.boxes.push(this.boxes.length);
     this.boxes.push(world);
     // Beside the box and never anywhere else, which is what keeps the two
     // lists parallel — see `GameMap.colliderAlbedo`.
@@ -2033,10 +1999,11 @@ export class MapBuilder {
     terrain: TerrainField,
   ): void {
     const reach = CONFIG.grass.heightMax * MAX_HEIGHT_SCALE;
+    const world = new Matrix();
     for (const m of s.meshes) {
       if (s.freeform.has(m)) continue;
-      const pos = m.getVerticesData(VertexBuffer.PositionKind);
-      if (!pos || pos.length < 3) continue;
+      const pos = m.geometry.positions;
+      if (pos.length < 3) continue;
       let x0 = Infinity;
       let y0 = Infinity;
       let z0 = Infinity;
@@ -2056,7 +2023,7 @@ export class MapBuilder {
       }
       // Row-vector convention: a point is `v * M`, so rows 0-2 are the part's
       // own axes (scaled) in the structure's frame and row 3 its position.
-      const M = m.computeWorldMatrix(true).m;
+      const M = worldMatrixOf(m, world).m;
       const lx = (x0 + x1) / 2;
       const ly = (y0 + y1) / 2;
       const lz = (z0 + z1) / 2;
@@ -2124,19 +2091,19 @@ export class MapBuilder {
 
   /**
    * Sets the albedo the next boxes are recorded in to the average paint of
-   * `meshes`, each weighted by its bounding box's surface — a stand-in for
+   * `parts`, each weighted by its bounding box's surface — a stand-in for
    * how much of the structure it is, and plenty for light that is about to be
    * averaged over a whole hemisphere. A mesh with no single colour (a ground
    * texture, glazing) says nothing; a structure where nothing says anything
    * is `NEUTRAL_ALBEDO`. It must never KEEP the hint, which is whatever the
    * last structure or prop was painted — or the floor, for the first one.
    */
-  private albedoFromMeshes(meshes: readonly Mesh[]): void {
+  private albedoFromParts(parts: readonly Part[]): void {
     let r = 0;
     let g = 0;
     let b = 0;
     let total = 0;
-    for (const m of meshes) {
+    for (const m of parts) {
       const c = this.mats.albedoOf(m.material);
       if (!c) continue;
       const e = halfExtentsOf(m);
@@ -2154,51 +2121,37 @@ export class MapBuilder {
   }
 
   /**
-   * Turns already-recorded boxes into collider meshes MERGED BY LOCALITY —
-   * one mesh per `CLUSTER` square of ground rather than one per box.
+   * Groups already-recorded boxes BY LOCALITY — one group per `CLUSTER`
+   * square of ground rather than one per box — into `boxGroups`, and makes no
+   * mesh (`BABYLON_EXIT.md` X5.3e: each group was merged into one collider
+   * mesh until then, and the groups are the same, byte for byte).
    *
-   * **This is the fence lesson at forest scale, and the numbers are the same
-   * ones.** A `pickWithRay` costs per MESH before it costs per triangle: a
-   * predicate call, a world-matrix inverse and a bounding test each, and the
-   * game used to fire such rays every frame against every solid mesh on the map
-   * — the hitscan on every shot, sixteen bots' LOS, the grenade, the death cam,
-   * a tank's chase camera.
+   * **This was the fence lesson at forest scale.** A `pickWithRay` cost per
+   * MESH before it cost per triangle — a predicate call, a world-matrix inverse
+   * and a bounding test each — and the game fired such rays every frame
+   * against every solid mesh on the map: the hitscan on every shot, sixteen
+   * bots' LOS, the grenade, the death cam, a tank's chase camera. Greyfen's
+   * five belts were 354 loose tree boxes out of 696 solid meshes; merged per
+   * 12 m square the same 950 trees were ~120 meshes.
    *
    * **NONE OF THOSE IS A PICK ANY MORE** (`RayWorld`, `ENGINE_UPGRADE.md` wall
-   * 2), so the frame no longer cares how these are grouped. Three things do,
-   * and they are why this stays: the editor still picks meshes, the server
-   * still stands them up, and the grouping rides to it as
-   * `MapCollision.boxGroups` — a decision this side made that the other side
-   * has to reproduce. `colliderBoxes` keeps one entry per prop however the
-   * meshes are grouped, which is why nothing derived from geometry — the ray
-   * queries now included — can tell either way. Greyfen's five belts were 354
-   * loose tree boxes out of
-   * 696 solid meshes, so half of every ray in the game was already being spent
-   * on trees — and a jungle dense enough to be worth the name needs three
-   * times that. Merged per 12 m square the same 950 trees are ~120 meshes, so
-   * the map gets a forest and the ray budget gets *cheaper* than it was.
-   *
-   * **Locality is the whole of it.** `struts()` merges per fence for the
-   * reason this merges per square: one mesh around every tree on the map would
-   * wrap one bounding box around the whole valley, and then every ray fired
-   * anywhere would test every trunk. A square is what a region has instead of a
-   * placement — a belt is 78 x 40 m of scattered props with no natural unit
-   * inside it — and 12 m is a few trees across, which is the same handful a
-   * fence holds.
+   * 2), and no collider is a mesh, so nothing in a frame cares how these are
+   * grouped. One thing does, and it is why this stays: the grouping rides to
+   * the server as `MapCollision.boxGroups`, and it is the order a body's sweep
+   * breaks a tie in on BOTH sides — `RayWorld`'s rank, every box no group
+   * names first and then each group's boxes in order — a decision this side
+   * made once that the other side has to reproduce. So the buckets, their
+   * order (first box seen) and each bucket's order (box index) are
+   * load-bearing for MOVEMENT, and `merge:hash` holds them as data.
    *
    * The boxes stay in `boxes`, one per prop, because everything derived from
    * geometry reads that list and a cluster is not a shape: the nav grid, the
-   * cover bake, the obstacle field and the AO all still see individual trunks.
-   * What is merged is only what a ray meets. The grouping is carried on
-   * `boxGroups` so the SERVER can rebuild the same meshes from the bake — a
-   * flat list cannot say which boxes were one cluster, exactly as with
-   * `rayGroups`.
-   *
-   * The editor never gets here: it needs one mesh per box so `repositionItem`
-   * can walk colliders and boxes in step, which is the same reason it skips the
-   * visual `BlockMerge` and the strut merge.
+   * cover bake, the obstacle field, the AO and the ray queries all still see
+   * individual trunks. Nothing grouped is porous or glass: only the scatter's
+   * blocking props come here, and they are plain boxes — glass has to stay
+   * addressable one pane at a time.
    */
-  private clusterColliders(name: string, indices: readonly number[]): Mesh[] {
+  private clusterColliders(indices: readonly number[]): void {
     const buckets = new Map<string, number[]>();
     for (const i of indices) {
       const box = this.boxes[i];
@@ -2207,36 +2160,12 @@ export class MapBuilder {
       if (bucket) bucket.push(i);
       else buckets.set(key, [i]);
     }
-    const out: Mesh[] = [];
-    for (const [key, group] of buckets) {
-      const parts = group.map((i, j) =>
-        this.boxMesh(`${name}-col${key}-${j}`, this.boxes[i]),
-      );
-      // A single box is a merge of one: cheaper to keep the mesh than to run
-      // it through `MergeMeshes` for nothing.
-      const mesh =
-        parts.length === 1
-          ? parts[0]
-          : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-      if (!mesh) continue;
-      mesh.name = `${name}-cluster${key}`;
-      mesh.isVisible = false;
-      mesh.isPickable = true;
-      mesh.checkCollisions = true;
-      // Nothing clustered is porous or glass — see the caller, which refuses to
-      // group anything whose metadata is not plain `solid`. One mesh cannot
-      // carry two answers, and glass has to stay addressable one pane at a time.
-      mesh.metadata = { solid: true };
-      mesh.freezeWorldMatrix();
-      this.boxGroups.push(group);
-      out.push(mesh);
-    }
-    return out;
+    for (const group of buckets.values()) this.boxGroups.push(group);
   }
 
   /**
-   * One placement's glazing: the merged sheet meshes, plus a collider for each
-   * pane that is `breakable`.
+   * One placement's glazing: the merged sheet surfaces, plus a collider box
+   * for each pane that is `breakable`.
    *
    * **The merge is what makes a city's worth of glass affordable at all.**
    * Glazing is the one ALPHA-BLENDED thing in the world, and a transparent
@@ -2263,67 +2192,71 @@ export class MapBuilder {
    * registration anywhere to revoke — and `bakeVertexShading` writes the COLOUR buffer, so the bake is
    * untouched by a later position rewrite and may still run last.
    *
-   * A breakable pane's collider is an ordinary `collider()` box, one mesh each,
+   * A breakable pane's collider is an ordinary `collider()` box, one each,
    * which is affordable for the same reason the flag is rare: there is a room
-   * behind twenty-four sheets on this map and behind none of the rest. Breaking one
-   * is then two property writes rather than vertex surgery — see `GlassSystem`.
+   * behind twenty-four sheets on this map and behind none of the rest. Breaking
+   * one is then one write rather than vertex surgery — the box out of every
+   * query, `RayWorld.remove` (see `GlassSystem`) — beside the picture's
+   * collapse (`GlassFx`).
    */
   private paneGroup(
     name: string,
     s: Structure,
+    /** `s.paneMeshes`, admitted (`admitStructure`) — index for index. */
+    paneSurfaces: readonly WorldSurface[],
     origin: Vector3,
     parentRotY: number,
-    placement: number,
-  ): { visuals: PaneGroup[]; colliders: Mesh[] } {
-    const visuals: PaneGroup[] = [];
-    const colliders: Mesh[] = [];
+    mint: Mint,
+  ): PaneSurfaceGroup[] {
+    const visuals: PaneSurfaceGroup[] = [];
 
     // Grouped by material and kept in declaration order within a group, because
     // the vertex ranges below are read off that order and nothing else records
     // it. Panes carry no exemptions, so unlike `mergeByMaterial` there is no
     // second key — a pane that ever needs one owes this method the same nesting.
-    const groups = new Map<Material, number[]>();
-    for (const [j, mesh] of s.paneMeshes.entries()) {
-      const mat = mesh.material;
-      // As in `mergeByMaterial`: skipped means kept, and a kept part owes the
-      // upload the merge would have done for it.
-      if (!mat) {
-        uploadPart(mesh);
-        continue;
-      }
+    const groups = new Map<MaterialKey, number[]>();
+    for (const [j, surface] of paneSurfaces.entries()) {
+      const mat = surface.part.material;
+      // As in `mergeByMaterial`: a part with no material draws nothing, and
+      // is dropped.
+      if (!mat) continue;
       const group = groups.get(mat);
       if (group) group.push(j);
       else groups.set(mat, [j]);
     }
 
     for (const [mat, members] of groups) {
-      // Vertex counts are read BEFORE the merge and never assumed. A box is 24
-      // positions today and the arithmetic would be right, but `MergeMeshes`
-      // disposes its sources — so a wrong guess here is unrecoverable and
-      // silent, and it would break the wrong pane rather than throwing.
-      const parts: Mesh[] = [];
+      // Vertex counts are read off each member and never assumed. A box is 24
+      // positions today and the arithmetic would be right, but a wrong guess
+      // here is silent: it would break the wrong pane rather than throwing.
+      const parts: Part[] = [];
       const ranges: { start: number; count: number }[] = [];
       let cursor = 0;
       for (const j of members) {
-        const mesh = s.paneMeshes[j];
-        const count = mesh.getTotalVertices();
+        const part = paneSurfaces[j].part;
+        const count = part.geometry.vertexCount;
         ranges.push({ start: cursor, count });
         cursor += count;
-        parts.push(mesh);
+        parts.push(part);
       }
-      const merged =
-        parts.length === 1
-          ? // The group-of-one exception `MergeMeshes` will not handle, and the
-            // same hand-bake `mergeByMaterial` does: the caller composes a
-            // transform onto what it gets back, so an unbaked mesh would have
-            // its own position clobbered rather than added to.
-            uploadPart(parts[0]).bakeCurrentTransformIntoVertices()
-          : Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-      if (!merged) continue;
-      merged.name = `${name}-${mat.name}`;
-      merged.material = mat;
-      merged.rotation.y = parentRotY;
-      merged.position.addInPlace(origin);
+      // The group-of-one exception, and the same hand-bake `mergeByMaterial`
+      // does: the caller composes a transform onto what it gets back, so an
+      // unbaked part would have its own position clobbered rather than added
+      // to. A lone surface keeps its birth and its piece; a merge is born now
+      // and carries its members' pieces (`mergeSurfaces`).
+      let merged: WorldSurface;
+      if (parts.length === 1) {
+        merged = paneSurfaces[members[0]];
+        bakePartTransform(merged.part);
+      } else {
+        merged = mergeSurfaces(
+          members.map((j) => paneSurfaces[j]),
+          mint,
+        );
+      }
+      merged.part.name = `${name}-${mat.name}`;
+      merged.part.material = mat;
+      place(merged.part, origin, parentRotY);
 
       const paneIndices: number[] = [];
       for (const [k, j] of members.entries()) {
@@ -2359,11 +2292,9 @@ export class MapBuilder {
         // about it: a sheet worth breaking is one with a room behind it, which
         // is a body's barrier for as long as it stands.
         //
-        // It records its own place in `colliderBoxes` on the pane,
-        // which is what the server and the fingerprint name it by; the mesh
-        // carries the pane index back the other way, which is what
-        // `GlassSystem` finds it with. Neither side can be derived from the
-        // other — `colliders` holds struts and terrain that `boxes` does not.
+        // It records its own place in `colliderBoxes` on the pane, which is
+        // what the server, the fingerprint and `GlassSystem`'s break name it
+        // by — the one link between the two, and the box all there is of it.
         const spawned: BoxSpec = {
           w: spec.w,
           h: spec.h,
@@ -2375,81 +2306,38 @@ export class MapBuilder {
           glass: true,
         };
         pane.box = this.boxes.length;
-        const mesh = this.collider(`${name}-col`, spawned, origin, parentRotY);
-        mesh.metadata.pane = index;
-        if (this.item) {
-          tag(mesh, { list: "placements", index: placement });
-          this.item.localBoxes.push(spawned);
-        }
-        colliders.push(mesh);
+        this.collider(spawned, origin, parentRotY);
       }
       // `block` is empty here and filled by `PaneBlocks.finish`, the same way
       // this method leaves `WorldPane.group` at -1 for it: a placement does not
       // know which block it will be merged under, and these per-placement
       // groups never reach `GameMap` — only `finish`'s output does.
-      visuals.push({ mesh: merged as Mesh, panes: paneIndices, block: "" });
+      visuals.push({ surface: merged, panes: paneIndices, block: "" });
     }
-    return { visuals, colliders };
+    return visuals;
   }
 
   /**
    * One placement's `strut`s: the ray geometry that stands where the timber is
-   * drawn — a fence's posts and rails — as ONE collider mesh.
+   * drawn — a fence's posts and rails — as ONE group of `rayGroups`, and no
+   * mesh (`BABYLON_EXIT.md` X5.3e: each group was merged into one collider
+   * mesh until then, and the groups are the same, box for box).
    *
-   * **The merge is the whole reason this can afford to be honest.** A pick
-   * costs per MESH far more than it costs per triangle: it runs the predicate,
-   * inverts a world matrix and tests a bounding box before a triangle is ever
-   * considered. Measured against Hollowmere's fences, 161 loose post and rail
-   * boxes cost every ray in the game about 17% — the ground probe included,
-   * and that is the most expensive single call the game makes per frame —
-   * while the same geometry merged per fence costs the probe 1.4%, a shot
-   * 0.3%, and 7.4% on the rays that actually cross a fence and have triangles
-   * to test. Fourteen meshes, not a hundred and sixty-one.
+   * **The grouping was what let this afford to be honest** while a ray was a
+   * pick: a pick cost per MESH far more than per triangle, and Hollowmere's
+   * 161 loose post and rail boxes cost every ray in the game about 17% where
+   * the same geometry merged per fence cost the probe 1.4% and a shot 0.3% —
+   * fourteen meshes, not a hundred and sixty-one. `RayWorld` answers a ray off
+   * the boxes now and indexes every strut on its own; the GROUPS are kept
+   * because they are what the collision bake carries to the server, which
+   * rebuilds the same list from them.
    *
    * These emit no `WorldBox` and are not in `boxes`: navigation, cover, the
    * obstacle field and the AO bake read a fence's coarse `porous` box instead,
-   * which is the shape they can represent (see `BoxSpec.rayOnly`). They go in
-   * `rayGroups` instead, grouped exactly as merged, because the SERVER has to
-   * rebuild the same geometry from the bake and a flat list would leave it
-   * merging by guesswork.
-   *
-   * The editor gets them unmerged, for the reason it also skips the visual
-   * `BlockMerge`: `repositionItem` walks colliders, local specs and boxes in
-   * step, and one mesh standing for eleven specs cannot be moved that way.
+   * which is the shape they can represent (see `BoxSpec.rayOnly`).
    */
-  private struts(
-    name: string,
-    specs: BoxSpec[],
-    origin: Vector3,
-    parentRotY: number,
-  ): Mesh[] {
-    const worlds = specs.map((s) => this.worldBoxOf(s, origin, parentRotY));
-    this.rayGroups.push(worlds);
-    const parts = worlds.map((w, i) => this.boxMesh(`${name}${i}`, w));
-    for (const part of parts) {
-      part.checkCollisions = false;
-      part.metadata = { solid: true, rayOnly: true };
-    }
-    if (this.item) {
-      for (const part of parts) {
-        part.freezeWorldMatrix();
-        // No `WorldBox` behind a strut, so there is no index to record — but
-        // the slot is kept, because `repositionItem` reads these three arrays
-        // in parallel and `boxes[-1]` is the undefined its guard expects.
-        this.item.boxes.push(-1);
-        this.item.colliders.push(part);
-      }
-      return parts;
-    }
-    const merged = Mesh.MergeMeshes(parts, true, true, undefined, false, false);
-    if (!merged) return [];
-    merged.name = name;
-    merged.isVisible = false;
-    merged.isPickable = true;
-    merged.checkCollisions = false;
-    merged.metadata = { solid: true, rayOnly: true };
-    merged.freezeWorldMatrix();
-    return [merged];
+  private struts(specs: BoxSpec[], origin: Vector3, parentRotY: number): void {
+    this.rayGroups.push(specs.map((s) => this.worldBoxOf(s, origin, parentRotY)));
   }
 }
 
@@ -2459,9 +2347,8 @@ export class MapBuilder {
  *
  * `spec.scale` is an interval, and nothing enforces which end is written
  * first: `scatterRegion` lerps between the two entries and reads the same
- * interval either way, and the editor writes the pair through two independent
- * number fields (`scale min` / `scale max` in `inspect.ts`) that can be left
- * crossed. Every reader that wants the TOP of the range has to sort for it —
+ * interval either way, and a generator may write the pair in either order.
+ * Every reader that wants the TOP of the range has to sort for it —
  * taking `[1]` on faith is silently wrong on a descending pair, and both of
  * the readers below fail in the quiet direction: an under-padded `boxIndex`
  * misses boxes rather than reporting them (the failure its header names), and
@@ -2489,65 +2376,6 @@ function maxScatterClearance(layout: MapLayout): number {
   return max + 1;
 }
 
-/** Appends a fresh, empty item to an editor list and returns it. */
-function newItem(into: EditorItem[]): EditorItem {
-  const item: EditorItem = {
-    visuals: [],
-    colliders: [],
-    boxes: [],
-    localBoxes: [],
-  };
-  into.push(item);
-  return item;
-}
-
-/**
- * Moves and rotates a built item to a new placement, in place — visuals,
- * collider proxies, and the WorldBoxes the nav grid reads.
- *
- * No rebuild is needed for this: a builder assembles at the origin and
- * MapBuilder transforms the result, so a placement's transform is the only
- * thing that changes. Re-running the builder would give the same geometry at a
- * different transform, one hundred times more slowly.
- *
- * Editor-only. It leaves `nav` and `obstacles` stale — they are derived from
- * the boxes at build time and must be rebuilt by the caller when it wants
- * navigation to agree with what is on screen again.
- */
-export function repositionItem(
-  item: EditorItem,
-  boxes: WorldBox[],
-  origin: Vector3,
-  rotY: number,
-): void {
-  for (const m of item.visuals) {
-    m.unfreezeWorldMatrix();
-    m.position.copyFrom(origin);
-    m.rotation.y = rotY;
-    m.freezeWorldMatrix();
-  }
-  for (let i = 0; i < item.colliders.length; i++) {
-    const spec = item.localBoxes[i];
-    const mesh = item.colliders[i];
-    if (!spec || !mesh) continue;
-    const at = rotateY(spec.x, spec.y, spec.z, rotY).addInPlace(origin);
-    const rotX = spec.rotX ?? 0;
-    const ry = (spec.rotY ?? 0) + rotY;
-    mesh.unfreezeWorldMatrix();
-    mesh.position.copyFrom(at);
-    mesh.rotation.set(rotX, ry, 0);
-    mesh.freezeWorldMatrix();
-    const box = boxes[item.boxes[i]];
-    if (box) {
-      box.cx = at.x;
-      box.cy = at.y;
-      box.cz = at.z;
-      box.rotX = rotX;
-      box.rotY = ry;
-    }
-  }
-}
-
 /** A box's four corners, as signs on its two horizontal half-extents. */
 const CORNERS = [
   [-1, -1],
@@ -2555,6 +2383,18 @@ const CORNERS = [
   [1, 1],
   [-1, 1],
 ] as const;
+
+/**
+ * Puts a merged surface's part where its placement stands: turned by `rotY`
+ * and moved by `origin` — what the merge, which works at identity, leaves to
+ * its caller.
+ */
+function place(part: Part, origin: Vector3, rotY: number): void {
+  part.rotation.y = rotY;
+  part.position.x += origin.x;
+  part.position.y += origin.y;
+  part.position.z += origin.z;
+}
 
 /** Rotates a local offset about the Y axis. */
 function rotateY(x: number, y: number, z: number, angle: number): Vector3 {

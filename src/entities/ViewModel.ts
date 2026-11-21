@@ -1,13 +1,37 @@
 /**
  * ViewModel.ts — The first-person weapon: whichever gun is carried and the two
- * gloved arms holding it, parented to the camera, plus every offset that moves
+ * gloved arms holding it, hung from the camera, plus every offset that moves
  * them (hip/ADS pose, sprint carry, the reload and both magazines it handles,
  * the off-hand throw's arm and give, sway, bob, kick).
- * Owns: the on-screen weapon. Nothing else may reparent or pose it.
+ * Owns: the on-screen weapon, and its tree of JOINTS (`tree`, a `ViewTree`).
+ * Nothing else may re-hang or pose it.
  *
  * Invariants:
+ * - **The tree is JOINTS, not nodes, and no mesh has a parent** (`ViewTree`,
+ *   `rigJoints.ts`; `BABYLON_EXIT.md` X4.3b). Every `TransformNode` this file
+ *   and the builders made is a joint made at the same moment (the order is
+ *   what `kit:hash --models` digests); a pivot and an overriding quaternion are
+ *   the joint's (`Joint.setPivotPoint`, `Joint.quaternion`); the camera is the
+ *   tree's root, held off its world. **Every surface is a SEGMENT our
+ *   renderer draws** (`ViewSegment`, `render/ViewDraw.ts`, `BABYLON_EXIT.md`
+ *   X4.3c the opaque parts, X4.3d the optics' two glasses and the kit card)
+ *   and none is a mesh: `drawView` (`Game.tick`, immediately
+ *   before the render) evaluates every surface on and visible, whatever its
+ *   role — what the readers below are stamped by — and our renderer is handed
+ *   each one's matrix. Every write to a joint's
+ *   position, rotation, scaling or quaternion goes through `wrote`, and the
+ *   quaternion handed or taken through `markDirty` too — the dirty flags
+ *   Babylon's render cache read.
+ * - **Every reader answers BABYLON's answer, never a fresh one**:
+ *   `muzzleWorld`, `throwHandWorld`, `ejectPortWorld` and the reload's gravity
+ *   read the tree's `RenderCache` — the world the last render composed for a
+ *   joint drawn in it, a compose off its ancestors' cached worlds only where
+ *   Babylon's cache would have made one. Two of them are command inputs (a
+ *   grenade's release, a rocket's start, `FINDINGS.md` 55), and the owner's
+ *   decision is that they stay Babylon's to the bit until that finding settles
+ *   them, so nothing here may compose a joint itself to read it.
  * - A weapon's AMMUNITION and its ACTION are the only parts of it that may
- *   move on their own, and only because the model merged each into a node of
+ *   move on their own, and only because the model merged each into a joint of
  *   its own — `WeaponParts.magazine` for a weapon loaded through a well,
  *   `warhead` for the one loaded through the bore, and `bolt` and `slide`
  *   for an action a hand works. A rig has at most one of the first two, which
@@ -20,12 +44,12 @@
  *   function of the phase, so nothing in this file integrates it. Two things
  *   exist for it and must outlive a swap like the muzzle does — the SPENT
  *   magazine, a clone of each rig's magazine that falls or is stripped while
- *   the weapon's own node comes back as the fresh one, and a PIVOT on both
+ *   the weapon's own joint comes back as the fresh one, and a PIVOT on both
  *   arms at their own hands, with a quaternion that is identity whenever no
  *   reload is drawn, so a wrist can turn without the forearm swinging round
  *   the weapon's origin. The reload's turn of the weapon is applied about the
  *   FIRING HAND, and that hand's wrist gives some of it back
- *   (`turnAboutHand`). And everything the hands hold hangs off a BODY node
+ *   (`turnAboutHand`). And everything the hands hold hangs off a BODY joint
  *   that takes the inverse of the head's reload look, so the head tips down to
  *   the work without the work tipping with it; it is at identity on every
  *   frame no reload is drawn, which the kit turntable relies on.
@@ -57,13 +81,15 @@
  * - Every weapon is built once and all but the carried one is disabled, the
  *   same trick the optics use: a loadout change is a handful of boolean
  *   writes and a re-derivation, never a rebuild. That is also why the muzzle
- *   and the ejection port are nodes owned HERE rather than the model's — they
- *   have things hanging off them (Player's flash) that must survive a swap.
- * - Everything here is cosmetic WITH ONE EXCEPTION, and it is a read rather
- *   than a write: `throwHandWorld` is where the grenade leaves from, so the
+ *   and the ejection port are joints owned HERE rather than the model's — they
+ *   have things hanging off them (`PlayerView`'s flash) that must survive a swap.
+ * - Everything here is cosmetic WITH TWO EXCEPTIONS, and both are reads rather
+ *   than writes: `throwHandWorld` is where the grenade leaves from, so the
  *   throwing hand's pose is the one thing on this rig that something in the
- *   world is placed by. A grenade that spawned anywhere else is a grenade the
- *   hand did not throw, which is the whole reason the arm exists.
+ *   world is placed by — a grenade that spawned anywhere else is a grenade the
+ *   hand did not throw, which is the whole reason the arm exists — and
+ *   `muzzleWorld` is where a ROCKET starts (for a gun it is the tracer's
+ *   origin and nothing more). Both are answered as above.
  * - Everything else here is cosmetic. It reads the camera; it never writes it,
  *   and it never touches aim, spread or damage.
  * - The per-shot KICK is the displacement of an arrest-and-haul axis Player
@@ -73,43 +99,38 @@
  *   plus the pitch are damped by `recoil.kick.adsMult` while the z travel is
  *   not: the weapon carries the sight, so anything that rotates or laterally
  *   shifts it while aimed takes the reticle off the axis the rounds fly down.
- * - Meshes render in VIEWMODEL_GROUP with the depth buffer cleared first, so
- *   the weapon is never sliced open by the wall the player is standing
- *   against. Anything else attached to it (Player's muzzle flash) must join
- *   that group or it will be hidden behind the gun it belongs to.
- * - Arms are built at the origin and merged per colour before being parented,
- *   the same rule as BuildingKit and the weapon models: MergeMeshes bakes
- *   world matrices, so the merge is only correct at identity.
+ * - The weapon draws AFTER the world, into its depth with no clear — our
+ *   renderer's draw at the end of rendering group 0 (`render/ViewDraw.ts`):
+ *   the kit card first, then the opaque parts in the order Babylon's group-1
+ *   queue drew the meshes (`Game.drawView`), then the glasses, blended, back
+ *   to front — so the frame keeps one depth image of the world and the gun,
+ *   which the ink, the blur, the paper and the glow's occlusion name the gun
+ *   by. Anything else attached to it (Player's muzzle flash) is a segment of
+ *   the same tree or it is drawn in the world's.
+ * - Arms are built at the origin and merged per colour before being hung, the
+ *   same rule as BuildingKit and the weapon models: `mergeParts` bakes world
+ *   matrices, as MergeMeshes did, so the merge is only correct at identity.
+ *   Like the weapons, they are built as `Part`s (`world/parts.ts`) on
+ *   `src/geometry/` buffers: each colour group, the throwing fist's grenade
+ *   and pip and the bottle become SEGMENTS (`toSegment`, `segmentOf`), and so
+ *   does the kit card, each then hung from a joint of the tree; the poses are
+ *   written on the joints.
  * - The loadout screen's turntable (`beginInspect`/`updateInspect`) is the one
  *   pose that is not the carried one, and it is the only thing here that may
- *   write `rotationQuaternion`. While one is set Babylon ignores `rotation`
- *   entirely, so `endInspect` clearing it is what lets the carried pose come
- *   back at all. The turntable also owns the CARD behind the weapon — see
+ *   set the weapon joint's `quaternion`. While one is set the joint ignores
+ *   `rotation` entirely (Babylon's rule, kept), so `endInspect` clearing it is
+ *   what lets the carried pose come back at all. The turntable also owns the CARD behind the weapon — see
  *   `buildKitBackdrop`, whose whole difficulty is where in the frame it is
  *   allowed to be drawn — and it goes up and down with the pose, which is
  *   what keeps it out of every other state in the game.
  */
-import {
-  Color3,
-  Constants,
-  DynamicTexture,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  type Node,
-  Quaternion,
-  Scene,
-  StandardMaterial,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp, hermite, impulse } from "../core/math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildCarbine } from "./CarbineModel";
 import { buildDmr } from "./DmrModel";
 import { buildLmg } from "./LmgModel";
-import { buildMolotov } from "./MolotovModel";
+import { molotovSegments } from "./MolotovModel";
 import type { ThrowableId } from "./throwables";
 import { buildPistol } from "./PistolModel";
 import { buildRifle } from "./RifleModel";
@@ -119,7 +140,6 @@ import { applyFinish, type FinishId } from "./finishes";
 import { DEFAULT_SIGHT, sightSetup, type SightId, type SightSetup } from "./sights";
 import {
   wornSight,
-  type GripSpec,
   type ReloadActionKind,
   type WeaponBuilder,
   type WeaponParts,
@@ -127,7 +147,26 @@ import {
 import { buildMine } from "./MineModel";
 import { buildRpg } from "./RpgModel";
 import { loft, type Ring } from "./facet";
+import { createPlane, createSphere } from "../geometry/primitives";
+import { Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
+import {
+  bakePartTransform,
+  detachPart,
+  mergeParts,
+  Part,
+  PartNode,
+} from "../world/parts";
 import { ReloadGesture, type ReloadInput, type ReloadPose, type ReloadRig } from "./ReloadGesture";
+import type { RenderId } from "../core/renderId";
+import type { Joint } from "./rigJoints";
+import {
+  segmentBounds,
+  segmentOf,
+  toSegment,
+  ViewSegment,
+  ViewTree,
+  type ViewCamera,
+} from "./viewTree";
 import { OWN_KIT } from "./SoldierModel";
 import {
   CARRIED_IDS,
@@ -137,14 +176,6 @@ import {
   type PrimaryWeaponId,
   type WeaponSetup,
 } from "./weapons";
-
-/**
- * Rendering group for everything that hangs off the camera. Babylon clears
- * depth between rendering groups, so group 1 draws over the world instead of
- * intersecting it — the standard fix for a viewmodel clipping through
- * geometry the player walks up to.
- */
-export const VIEWMODEL_GROUP = 1;
 
 /**
  * The model builder for each weapon. The one place the ids in
@@ -168,122 +199,89 @@ const WEAPON_BUILDERS: Record<CarriedId, WeaponBuilder> = {
 };
 
 /**
- * The card the kit screen's turntable stands against: one camera-parented
- * quad, dark, and up only while a weapon is being looked at.
+ * The card the kit screen's turntable stands against: one quad hung from the
+ * camera's joint, dark, and up only while a weapon is being looked at — a
+ * SEGMENT of role `"card"` our renderer draws (`render/ViewDraw.ts`,
+ * `BABYLON_EXIT.md` X4.3d), painted from a canvas of this file's
+ * (`KitCardPicture`).
  *
- * **Its rendering slot is the whole trick, and there is exactly one that
- * works.** The card has to cover the world and then be covered by the weapon,
- * and the two are in different rendering groups — the world in 0, everything
- * on the camera in `VIEWMODEL_GROUP`. Babylon draws a group's opaque meshes
- * first and its BLENDED ones last, so a blended mesh in group 0 with the
- * highest `alphaIndex` in the scene is the last thing drawn before the
- * viewmodel and the first thing the viewmodel draws over. That is why the card
- * is BLENDED rather than flatly opaque: opaque, it would be sorted in among
- * the village.
+ * **Its slot in the frame is the whole trick, and there is exactly one that
+ * works.** The card has to cover the world and then be covered by the weapon.
+ * It is the FIRST of the viewmodel's draws, at the end of rendering group 0 —
+ * after everything of the world's, its blended surfaces included — and the
+ * weapon's opaque parts and the glasses draw over it. Until X4.3d it was a
+ * Babylon mesh in group 0's BLENDED queue with the highest `alphaIndex` in
+ * the scene, which is how Babylon could be made to draw it last before the
+ * weapon (the weapon was in a rendering group of its own then); our draw
+ * states that slot rather than sorting into it, and keeps the mesh's blend.
  *
- * **BLENDED IS A SORTING DEVICE HERE AND NOT A CLAIM OF TRANSLUCENCY, and the
- * frame's alpha channel is where the difference is paid for.** That channel is
- * TRANSLUCENT COVERAGE — "how much got between the pass and the depth this
- * pixel records" — and `CelInk` scales its stroke by `1 - a`, so a plume takes
- * the line work of what is behind it away. Every alpha-blended draw
- * accumulates into it for free, because `ALPHA_COMBINE` blends alpha as
- * (ONE, ONE), and this card is the one blended mesh in the game that must not:
- * it WRITES DEPTH, so it is not in front of the surface this pixel records, it
- * IS that surface, and it covered the whole frustum. Shipped on `ALPHA_COMBINE`
- * at 0.985 it stamped 0.985 of coverage over every pixel of the kit screen and
- * took the ink off the frame — the world's, which is under the card and no
- * loss, and the WEAPON'S OUTLINE with it, which is the one thing the screen
- * exists to show. (The weapon's own pixels write `opaqueAlpha` and were never
- * the problem; a contour straddles the silhouette, and the half of every
- * stroke lying on the card was erased.)
+ * **ITS BLEND IS NOT A CLAIM OF TRANSLUCENCY, and the frame's alpha channel
+ * is where the difference is paid for.** That channel is TRANSLUCENT COVERAGE
+ * — "how much got between the pass and the depth this pixel records" — and
+ * `CelInk` scales its stroke by `1 - a`, so a plume takes the line work of
+ * what is behind it away. Every alpha-blended draw accumulates into it for
+ * free, because `ALPHA_COMBINE` blends alpha as (ONE, ONE), and this card is
+ * the one blended surface in the game that must not: it WRITES DEPTH, so it is
+ * not in front of the surface this pixel records, it IS that surface, and it
+ * covers the whole frustum. Shipped on `ALPHA_COMBINE` at 0.985 it stamped
+ * 0.985 of coverage over every pixel of the kit screen and took the ink off
+ * the frame — the world's, which is under the card and no loss, and the
+ * WEAPON'S OUTLINE with it, which is the one thing the screen exists to show.
+ * (The weapon's own pixels write `opaqueAlpha` and were never the problem; a
+ * contour straddles the silhouette, and the half of every stroke lying on the
+ * card was erased.)
  *
- * **`ALPHA_REPLACE_COLOR` with a fragment alpha of 0 is the pair that says
- * both things at once**, and it is the only blend mode in Babylon's table that
- * can: colour is `SRC` with the destination factor at ZERO — the card replaces
- * the world outright, which is what 0.985 was approximating — while alpha is
+ * **Babylon's `ALPHA_REPLACE_COLOR` with a fragment alpha of 0 is the pair
+ * that says both things at once**, and our draw keeps its factors: colour is
+ * `SRC` with the destination factor at ZERO — the card replaces the world
+ * outright, which is what 0.985 was approximating — while alpha is
  * `srcA + (1 - srcA) * dstA`, which at `srcA = 0` is the destination alpha
- * untouched. So the card leaves the coverage channel exactly as the opaque
- * world wrote it, and the ink reads the stage as what it is: a painted flat
- * with a rifle in front of it. The 0 is doing a second job at the same time —
- * `needAlphaBlending()` is `alpha < 1`, so it is also what keeps the card in
- * the blended queue the slot above depends on. Neither job wants any other
- * value, which is why it is stated here beside the two depth writes rather
- * than offered as a tunable.
+ * untouched. So the card leaves the coverage channel exactly as the world
+ * wrote it, and the ink reads the stage as what it is: a painted flat with a
+ * rifle in front of it. (The 0 did a second job while the card was
+ * Babylon's — `needAlphaBlending()` is `alpha < 1`, which kept it in the
+ * blended queue its slot depended on; our draw needs no such device.)
+ *
+ * Depth is bent both ways, and both are load-bearing. Tested `always`, so a
+ * wall the deploy camera is standing against cannot cut a hole in the bench;
+ * WRITTEN, so the card is the SURFACE every depth reader sees — the ink, the
+ * blur's weapon mask, the glow's occlusion. The weapon, a half-metre from the
+ * lens, still sails through an 8 m stamp.
  *
  * The card is a painted flat, not geometry: nothing may collide with it, pick
- * it, shadow it or bloom it. The one thing it cannot cover is the GLOW LAYER,
- * which is composited over the finished frame rather than drawn into it —
- * `Game`'s emissive selector is where that is dealt with.
+ * it, shadow it or bloom it, and it is drawn unlit — a painted value, where a
+ * lit one would take the bench lamps that are there to light the weapon. The
+ * one thing it cannot cover is the GLOW LAYER, which is composited over the
+ * finished frame rather than drawn into it — `Game.glowAdmits` is where that
+ * is dealt with.
  */
-function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
-  // Square, because the quad is scaled to the frustum every frame and the
-  // gradient is a soft pool that reads the same however it is stretched.
-  const tex = new DynamicTexture("kitBackdrop", { width: 256, height: 256 }, scene);
-
-  const mat = new StandardMaterial("kitBackdrop", scene);
-  // Unlit: the card is a painted value, and a lit one would take the bench
-  // lamps that are there to light the weapon.
-  mat.disableLighting = true;
-  mat.diffuseColor = Color3.Black();
-  mat.specularColor = Color3.Black();
-  mat.emissiveTexture = tex;
-  // Blended for the draw slot, and contributing NOTHING to the frame's
-  // coverage channel. See the header: the mode makes the colour a straight
-  // replace and the 0 keeps the alpha channel the world's, which is what gives
-  // the weapon on the stage the same ink it wears in a round.
-  mat.alphaMode = Constants.ALPHA_REPLACE_COLOR;
-  mat.alpha = 0;
-  // Depth is then bent both ways, and both are load-bearing. `ALWAYS` is what
-  // lets the card ignore the world's depth, so a wall the deploy camera is
-  // standing against cannot cut a hole in the bench. Writing depth makes the
-  // card the SURFACE every depth reader sees — the ink, the blur's weapon mask,
-  // the glow's occlusion — and it is what first covered the moon, while the
-  // disc drew in the viewmodel's group after this one whatever the sorting
-  // said. The disc is a blended mesh in group 0 now and sorts under the card;
-  // the weapon, a half-metre from the lens, still sails through an 8 m stamp.
-  //
-  // `forceDepthWrite`, not the absence of `disableDepthWrite`: setting a blend
-  // mode turns depth writing OFF in the engine, so a blended mesh has to ask.
-  mat.forceDepthWrite = true;
-  mat.depthFunction = Constants.ALWAYS;
-  mat.backFaceCulling = false;
-
-  const card = MeshBuilder.CreatePlane("viewmodel_kitBackdrop", { size: 1 }, scene);
-  card.material = mat;
-  // Last of every blended mesh in the scene, and INFINITY is what that takes:
-  // Babylon's default `alphaIndex` is already `Number.MAX_VALUE`, so any
-  // ordinary large number sorts the card in FRONT of the untouched ones and
-  // the capture skirt — a 28 m cylinder the deploy camera is usually inside —
-  // paints its pane of light straight back over the bench.
-  card.alphaIndex = Number.POSITIVE_INFINITY;
-  card.isPickable = false;
-  // Camera-parented, so its bounds are recomputed against a moving frustum —
-  // the same reason the weapon's own meshes skip the cull test.
-  card.alwaysSelectAsActiveMesh = true;
-  // Read by the Game constructor's scan; it is up before that runs. A flat
-  // painted with an emissive texture is exactly what the glow layer would
+function buildKitBackdrop(): ViewSegment {
+  const card = toSegment(new Part("viewmodel_kitBackdrop", createPlane({ size: 1 })));
+  card.role = "card";
+  // A flat painted from a canvas is exactly what the glow layer would
   // otherwise bloom, and a bloomed backdrop is a bright wash over the weapon.
   card.metadata = { noGlow: true, noInk: true, noShadowCaster: true };
-  card.setEnabled(false);
-
-  // **Painted once HERE, and it is not for the look — the pool this lays down
-  // is never seen.** `updateInspect` repaints from the measured bay before the
-  // card is ever enabled (`poolX`/`poolY` open at a sentinel outside NDC, so
-  // the first kit frame always repaints), and outside that screen nothing
-  // draws this at all. What the upload buys is READINESS: a `DynamicTexture`
-  // is not ready until something calls `update()` on it, so an emissive map
-  // that has never been uploaded makes `StandardMaterial.isReadyForSubMesh`
-  // return false before it builds an effect — and a scene holding one mesh
-  // like that answers `scene.isReady()` FALSE for the life of the process.
-  //
-  // Nothing in `src/` asks, which is why this went unnoticed: what it broke
-  // was `npm run shots`, whose whole gate is that question and which failed on
-  // every map for two minutes at a time saying only "scene never became
-  // ready". Every other `DynamicTexture` in the tree is already uploaded where
-  // it is built; this is that convention, and `VERIFYING.md` has the hunt.
-  paintKitPool(tex, 0, 0);
-  return { card, tex };
+  card.enabled = false;
+  return card;
 }
+
+/**
+ * The card's PICTURE: the canvas its pool of light is painted on, and how
+ * many times it has been painted — what our renderer uploads it by
+ * (`render/ViewDraw.ts`, `BABYLON_EXIT.md` X4.3d: once per paint, as
+ * `DynamicTexture.update` uploaded it). The canvas is made at the FIRST paint
+ * — the first frame of a kit screen — so a build that never raises one (a
+ * round's, `kit:hash`'s) makes none.
+ */
+export interface KitCardPicture {
+  /** 256 square, a `document` canvas as Babylon's `DynamicTexture` made one; null until the first paint. */
+  canvas: HTMLCanvasElement | null;
+  /** Paints so far: 0 is never. */
+  painted: number;
+}
+
+/** The card's canvas, square, because the quad is scaled to the frustum every frame and the gradient is a soft pool that reads the same however it is stretched. */
+const KIT_CARD_SIZE = 256;
 
 /**
  * Moves the card's pool of light to wherever the weapon is standing.
@@ -296,21 +294,27 @@ function buildKitBackdrop(scene: Scene): { card: Mesh; tex: DynamicTexture } {
  * 256-square canvas fill, and the caller only asks when the bay has actually
  * moved.
  */
-function paintKitPool(tex: DynamicTexture, x: number, y: number): void {
+function paintKitPool(picture: KitCardPicture, x: number, y: number): void {
   const b = CONFIG.viewmodel.inspect.backdrop;
-  const ctx = tex.getContext();
+  if (!picture.canvas) {
+    const canvas = document.createElement("canvas");
+    canvas.width = KIT_CARD_SIZE;
+    canvas.height = KIT_CARD_SIZE;
+    picture.canvas = canvas;
+  }
+  const ctx = picture.canvas.getContext("2d")!;
   // The bay's centre is in NDC and the canvas is y-down, which is the one
   // place those two disagree.
-  const cx = ((x + 1) / 2) * 256;
-  const cy = ((1 - y) / 2) * 256;
-  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, 256 * b.poolRadius);
+  const cx = ((x + 1) / 2) * KIT_CARD_SIZE;
+  const cy = ((1 - y) / 2) * KIT_CARD_SIZE;
+  const pool = ctx.createRadialGradient(cx, cy, 0, cx, cy, KIT_CARD_SIZE * b.poolRadius);
   pool.addColorStop(0, b.near);
   pool.addColorStop(1, b.far);
   ctx.fillStyle = b.far;
-  ctx.fillRect(0, 0, 256, 256);
+  ctx.fillRect(0, 0, KIT_CARD_SIZE, KIT_CARD_SIZE);
   ctx.fillStyle = pool;
-  ctx.fillRect(0, 0, 256, 256);
-  tex.update();
+  ctx.fillRect(0, 0, KIT_CARD_SIZE, KIT_CARD_SIZE);
+  picture.painted++;
 }
 
 /** What the weapon needs to know about the player, per frame. */
@@ -520,10 +524,10 @@ export interface InspectParams {
 /** One built weapon and the arms holding it — enabled only while carried. */
 interface WeaponRig {
   /** Parent of everything in this rig; the switch a loadout change throws. */
-  root: TransformNode;
+  root: Joint;
   parts: WeaponParts;
   /** The support arm, which leaves the handguard for the magazine swap. */
-  supportArm: TransformNode;
+  supportArm: Joint;
   /**
    * The TRIGGER arm, which leaves the grip for the bolt knob.
    *
@@ -531,19 +535,19 @@ interface WeaponRig {
    * for the opposite gesture: a reload is worked by the support hand and a bolt
    * is worked by the firing hand, so the two arms need one posable node each or
    * one of the two gestures is a part moving on its own. Every weapon has one
-   * and all but the bolt gun leave it at identity forever, which costs a
-   * `TransformNode` per rig and nothing per frame.
+   * and all but the bolt gun leave it at identity forever, which costs a joint
+   * per rig and nothing per frame.
    */
-  triggerArm: TransformNode;
+  triggerArm: Joint;
   /** This weapon's magazine, or null if it has nothing that comes out. */
-  magazine: TransformNode | null;
+  magazine: Joint | null;
   /**
    * This weapon's loaded ROUND, or null if it is not loaded through the
    * muzzle. The magazine's twin, and exclusive with it: a rig has one of the
    * two at most, which is what lets the two gestures own the support arm
    * without arbitrating for it.
    */
-  warhead: TransformNode | null;
+  warhead: Joint | null;
   /**
    * This weapon's BOLT, or null if its action is not worked by hand.
    *
@@ -551,7 +555,7 @@ interface WeaponRig {
    * bolt gun has a magazine as well — and unlike both of them it never leaves
    * the weapon. See `WeaponParts.bolt` for the one thing its geometry owes.
    */
-  bolt: TransformNode | null;
+  bolt: Joint | null;
   /**
    * The unit axis that magazine leaves along, weapon-local, resolved once from
    * the model's own rake. Straight down for anything standing vertically in
@@ -560,45 +564,57 @@ interface WeaponRig {
   magDrop: Vector3;
   /**
    * A second copy of the magazine — the SPENT one, which falls or is stripped
-   * out while the weapon's own node comes back as the fresh one. The two
+   * out while the weapon's own joint comes back as the fresh one. The two
    * share geometry and materials and are never both moving: they trade on
    * the frame the old magazine first leaves, identical and in one place.
    *
-   * It exists because one node standing in for both magazines made the old
+   * It exists because one joint standing in for both magazines made the old
    * one's exit a deadline: it had to be thrown out of the frame at three
    * times gravity to be gone before the new one came back.
    */
-  spent: TransformNode | null;
+  spent: Joint | null;
   /** This weapon's slide, on the one weapon that has one — see `WeaponParts.slide`. */
-  slide: TransformNode | null;
+  slide: Joint | null;
   /** Everything the reload gesture needs about this rig, or null if it has no magazine. */
   reload: ReloadRig | null;
 }
 
 export class ViewModel {
-  /** Every visible part, for the one visibility switch Player owns. */
-  readonly meshes: Mesh[] = [];
+  /**
+   * The whole viewmodel as JOINTS, the camera's stand-in at its root, and
+   * every surface drawn off it (`BABYLON_EXIT.md` X4.3b-d): segments our
+   * renderer draws, the glasses and the card among them. Nothing here is a
+   * `TransformNode` and nothing has a parent: `drawView` evaluates each, and
+   * every reader answers out of the tree's render cache.
+   */
+  readonly tree: ViewTree;
+  /**
+   * Every visible part, for the one visibility switch Player owns: the
+   * weapon's segments, the optics' glasses among them (the card is switched
+   * by its joint alone).
+   */
+  readonly meshes: ViewSegment[] = [];
   /**
    * The gloved arms, of every weapon — the subset that lets go while the
    * weapon is on the turntable. A forearm cut off at the elbow is a fact of
    * first person that reads fine when the weapon is being carried and reads as
    * a severed arm when it is being turned over on a bench.
    */
-  private readonly arms: Mesh[] = [];
+  private readonly arms: ViewSegment[] = [];
   /** Whether the on-screen weapon is visible at all (Player's switch). */
   private shown = false;
   private inspecting = false;
   /**
-   * The carried weapon's barrel tip and ejection port, as nodes that outlive a
+   * The carried weapon's barrel tip and ejection port, as joints that outlive a
    * loadout change. Player hangs the muzzle flash off the first and throws its
    * brass from the second, so neither may be a child of a rig that can be
    * switched off underneath them.
    */
-  readonly muzzle: TransformNode;
-  readonly ejectPort: TransformNode;
+  readonly muzzle: Joint;
+  readonly ejectPort: Joint;
 
   /** Carries the whole pose; every rig hangs off it. */
-  private readonly weapon: TransformNode;
+  private readonly weapon: Joint;
   /**
    * The BODY the hands belong to, between the camera and everything the hands
    * hold — the weapon and the throwing arm. It sits at identity except through
@@ -613,20 +629,22 @@ export class ViewModel {
    * turns about, so the cancellation is exact in rotation; the two Euler
    * orders differ only in the second order of a degree and a half of roll.
    */
-  private readonly body: TransformNode;
+  private readonly body: Joint;
   /**
-   * The kit screen's backdrop — see `buildKitBackdrop`. Sized to the frustum
-   * by `updateInspect`, so it follows the window without knowing anything
-   * about the screen that raised it.
+   * The kit screen's backdrop — see `buildKitBackdrop` — as the joint its
+   * card is drawn at (the card's own transform moves, so it is written here).
+   * Sized to the frustum by `updateInspect`, so it follows the window without
+   * knowing anything about the screen that raised it.
    */
-  private readonly backdrop: Mesh;
+  private readonly backdrop: Joint;
   /**
-   * The card's own texture, and the bay centre its pool was last painted at.
-   * A sentinel that is outside NDC on both axes, so the first frame of a kit
-   * screen always paints — there is no anchor to inherit from a build any
-   * more.
+   * The card's picture — its canvas and how often it was painted, which our
+   * renderer uploads it by (`Game.drawView`) — and the bay centre its pool was
+   * last painted at. A sentinel that is outside NDC on both axes, so the first
+   * frame of a kit screen always paints — there is no anchor to inherit from a
+   * build any more.
    */
-  private readonly backdropTex: DynamicTexture;
+  readonly kitCard: KitCardPicture = { canvas: null, painted: 0 };
   private poolX = 9;
   private poolY = 9;
   private readonly rigs = {} as Record<CarriedId, WeaponRig>;
@@ -638,18 +656,19 @@ export class ViewModel {
   private readonly mats: CelMaterialFactory;
 
   /**
-   * The throwing arm, and the grenade in its fist. Parented to the CAMERA
-   * rather than to `weapon`: the weapon tips out of the way for the throw, and
-   * a hand that inherited that would be shoved around by the very pose it is
-   * the cause of. Disabled whenever no throw is in flight, which is nearly
-   * always — `setEnabled` rather than `isVisible`, so it composes with (and
-   * cannot be trampled by) `applyMeshVisibility`'s two flags.
+   * The throwing arm, and the grenade in its fist. Hung from the BODY, under
+   * the camera, rather than from `weapon`: the weapon tips out of the way for
+   * the throw, and a hand that inherited that would be shoved around by the
+   * very pose it is the cause of. Switched off whenever no throw is in flight,
+   * which is nearly always — its joint's switch rather than `isVisible`, so it
+   * composes with (and cannot be trampled by) `applyMeshVisibility`'s two
+   * flags.
    */
-  private readonly throwHand: TransformNode;
+  private readonly throwHand: Joint;
   /** Hidden the instant the real grenade leaves; back for the next wind-up. */
-  private readonly throwBall: TransformNode;
+  private readonly throwBall: Joint;
   /** The bottle, when the pouch holds molotovs. The same rule as the frag. */
-  private readonly throwBottle: TransformNode;
+  private readonly throwBottle: Joint;
   /** Which of the two the fist is closed on. */
   private throwKind: ThrowableId = "frag";
   /**
@@ -771,49 +790,46 @@ export class ViewModel {
   private readonly spinPitch = Matrix.Identity();
   private readonly spin = Matrix.Identity();
   /**
-   * The quaternion the node itself holds while inspecting. Handed over once by
-   * `beginInspect` and mutated in place after that — Babylon compares the
-   * object against its own cache, so an in-place write is seen, exactly as it
-   * is for `position`.
+   * The quaternion the weapon joint holds while inspecting. Handed over once
+   * by `beginInspect` and mutated in place after that, each write reported
+   * (`wrote`), exactly as a write to `position` is.
    */
   private readonly spinQ = new Quaternion();
 
-  constructor(scene: Scene, mats: CelMaterialFactory, camera: Node) {
+  constructor(mats: CelMaterialFactory, camera: ViewCamera, renderId: RenderId) {
     const v = CONFIG.viewmodel;
     this.mats = mats;
     this.hipPos = new Vector3(v.hipPos.x, v.hipPos.y, v.hipPos.z);
     this.hipRot = new Vector3(v.hipRot.x, v.hipRot.y, v.hipRot.z);
 
-    this.body = new TransformNode("viewmodel_body", scene);
-    this.body.parent = camera;
-    this.weapon = new TransformNode("viewmodel", scene);
-    this.weapon.parent = this.body;
+    // The camera's stand-in is the tree's root: everything below is a joint
+    // made where a `TransformNode` used to be, in the same order.
+    const tree = new ViewTree(renderId, camera);
+    this.tree = tree;
+    const eye = tree.root!;
+    this.body = tree.joint("viewmodel_body", eye);
+    this.weapon = tree.joint("viewmodel", this.body);
     this.weapon.scaling.setAll(v.scale);
 
-    const kit = buildKitBackdrop(scene);
-    this.backdrop = kit.card;
-    this.backdropTex = kit.tex;
-    this.backdrop.parent = camera;
+    // Its own transform is the one that moves (`updateInspect`), so it is a
+    // joint that is written rather than a fixed local.
+    this.backdrop = tree.hang(buildKitBackdrop(), eye, true);
 
     // Every weapon is built up front. The cost is a set of merged colour
     // groups per weapon sitting disabled — against a rebuild in the middle of
     // a deploy screen, which would drop Player's muzzle flash on the floor and
     // stall the frame it happened on.
     for (const id of CARRIED_IDS) {
-      const root = new TransformNode(`viewmodel_${id}`, scene);
-      root.parent = this.weapon;
-      const parts = WEAPON_BUILDERS[id](scene, mats, `view_${id}`);
-      parts.root.parent = root;
-      const supportArm = new TransformNode(`viewmodel_${id}_supportArm`, scene);
-      supportArm.parent = root;
-      // Both hands hang off a node of their own, so either gesture can take one
-      // off the weapon. Both nodes sit at identity, so a weapon that never
-      // moves a hand is drawn exactly as it was before they existed.
-      const triggerArm = new TransformNode(`viewmodel_${id}_triggerArm`, scene);
-      triggerArm.parent = root;
+      const root = tree.joint(`viewmodel_${id}`, this.weapon);
+      const parts = WEAPON_BUILDERS[id](mats, `view_${id}`, tree, root);
+      const supportArm = tree.joint(`viewmodel_${id}_supportArm`, root);
+      // Both hands hang off a joint of their own, so either gesture can take
+      // one off the weapon. Both sit at identity, so a weapon that never moves
+      // a hand is drawn exactly as it was before they existed.
+      const triggerArm = tree.joint(`viewmodel_${id}_triggerArm`, root);
       const arms = [
-        ...buildArm(scene, mats, `${id}_trigger`, parts.grip, triggerArm),
-        ...buildArm(scene, mats, `${id}_support`, parts.support, supportArm),
+        ...buildArm(mats, tree, `${id}_trigger`, parts.grip, triggerArm),
+        ...buildArm(mats, tree, `${id}_support`, parts.support, supportArm),
       ];
       // Both arms TURN about their own hands — a wrist, not a shoulder — so a
       // hand closed on a magazine tilts with it instead of swinging it round
@@ -822,15 +838,15 @@ export class ViewModel {
       // writes and is identity everywhere else.
       supportArm.setPivotPoint(parts.support.hand);
       triggerArm.setPivotPoint(parts.grip.hand);
-      supportArm.rotationQuaternion = Quaternion.Identity();
-      triggerArm.rotationQuaternion = Quaternion.Identity();
+      supportArm.quaternion = Quaternion.Identity();
+      triggerArm.quaternion = Quaternion.Identity();
       this.meshes.push(...parts.meshes, ...arms);
       this.arms.push(...arms);
       // Straight down is the default, and it is right for anything standing
       // upright in its well — only a raked magazine has to say otherwise.
-      const magDrop = parts.magDrop ? parts.magDrop.clone() : new Vector3(0, -1, 0);
+      const magDrop = parts.magDrop ? new Vector3().copyFrom(parts.magDrop) : new Vector3(0, -1, 0);
       const magazine = parts.magazine ?? null;
-      let spent: TransformNode | null = null;
+      let spent: Joint | null = null;
       let reload: ReloadRig | null = null;
       if (magazine) {
         spent = this.cloneMagazine(magazine, parts);
@@ -857,55 +873,57 @@ export class ViewModel {
     // above. Where a hand grips is the model's business and is why those are
     // per-weapon; a fist closed around a grenade is not holding the gun at all
     // and has nothing to fit.
-    this.throwHand = new TransformNode("viewmodel_throwHand", scene);
-    this.throwHand.parent = this.body;
+    this.throwHand = tree.joint("viewmodel_throwHand", this.body);
     this.throwHand.scaling.setAll(v.scale);
-    this.throwHand.setEnabled(false);
+    this.throwHand.enabled = false;
     const throwArm = buildArm(
-      scene,
       mats,
+      tree,
       "throwHand",
       { hand: Vector3.Zero(), elbow: THROW_ELBOW },
       this.throwHand,
     );
-    const ball = MeshBuilder.CreateSphere(
-      "view_throwGrenade",
-      { diameter: THROW_BALL * 2, segments: 6 },
-      scene,
+    const ball = toSegment(
+      new Part("view_throwGrenade", createSphere({ diameter: THROW_BALL * 2, segments: 6 })),
     );
-    ball.parent = this.throwHand;
+    this.throwBall = tree.hang(ball, this.throwHand);
     ball.position.set(0, 0.04, 0.06);
     ball.material = mats.get("#3f4a33");
-    ball.isPickable = false;
-    const pip = MeshBuilder.CreateSphere(
-      "view_throwGrenadePip",
-      { diameter: THROW_BALL * 0.62, segments: 4 },
-      scene,
+    const pip = toSegment(
+      new Part("view_throwGrenadePip", createSphere({ diameter: THROW_BALL * 0.62, segments: 4 })),
     );
-    pip.parent = ball;
+    tree.hang(pip, this.throwBall);
     // Proud of the body's ink shell, the same rule the thrown grenade's pip and
     // the player's visor slit both follow.
     pip.position.y = THROW_BALL;
     pip.material = mats.getEmissive("#ff5a4f");
     pip.metadata = { noInk: true };
-    pip.isPickable = false;
-    this.throwBall = ball;
     this.meshes.push(...throwArm, ball, pip);
     this.arms.push(...throwArm);
     // The bottle, held by its body with the lit rag up and leaning back over
     // the knuckles — the wick is the one detail that has to be in frame at the
     // cock, because it is what says this one is going to be on fire.
-    this.throwBottle = new TransformNode("view_throwBottle", scene);
-    this.throwBottle.parent = this.throwHand;
+    this.throwBottle = tree.joint("view_throwBottle", this.throwHand);
     this.throwBottle.position.set(0, 0.05, 0.07);
     this.throwBottle.rotation.set(-0.5, 0, 0.35);
     this.throwBottle.scaling.setAll(THROW_BOTTLE);
-    const bottle = buildMolotov(scene, mats, "view_throwMolotov");
-    bottle.mesh.parent = this.throwBottle;
-    const bottleParts = [bottle.mesh, ...bottle.mesh.getChildMeshes<Mesh>(false)];
+    // The bottle is `MolotovModel`'s, the thrown pool's own shape, handed back
+    // as segments with the neck, the cloth and the wick under the body: `hang`
+    // makes each a joint of its own, unparented, in the order they were hung.
+    const bottle = molotovSegments(mats, "view_throwMolotov");
+    const bottleParts: ViewSegment[] = [bottle];
+    const walk = (s: ViewSegment): void => {
+      for (const c of s.children) {
+        if (!(c instanceof ViewSegment)) continue;
+        bottleParts.push(c);
+        walk(c);
+      }
+    };
+    walk(bottle);
+    tree.hang(bottle, this.throwBottle);
     for (const m of bottleParts) m.isVisible = true;
     this.meshes.push(...bottleParts);
-    this.throwBottle.setEnabled(false);
+    this.throwBottle.enabled = false;
 
     const th = v.throw;
     const key = (pos: XYZ, rot: XYZ) => ({
@@ -926,53 +944,71 @@ export class ViewModel {
         .addInPlace(this.throwKeys[2][f]);
     }
 
-    this.muzzle = new TransformNode("viewmodel_muzzle", scene);
-    this.muzzle.parent = this.weapon;
-    this.ejectPort = new TransformNode("viewmodel_ejectPort", scene);
-    this.ejectPort.parent = this.weapon;
+    this.muzzle = tree.joint("viewmodel_muzzle", this.weapon);
+    this.ejectPort = tree.joint("viewmodel_ejectPort", this.weapon);
     this.applyFit();
 
-    for (const m of this.meshes) {
-      // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
-      // used to set `renderOutline` by hand — never through `addOutline`, which
-      // is why it outlived the sweep that took the outline pass out — at
-      // 0.004 m, an order of magnitude finer than the world's, because a
-      // body-width line on parts this small swallows the whole weapon in black.
-      // The ink is a screen-space pass now and inks the gun off the same depth
-      // buffer as everything else; what stands in for the fine width is
-      // `CONFIG.graphics.ink.near`, which scales the ink down over the first
-      // couple of metres. See `shaders/CelInk.ts`.
-      m.renderingGroupId = VIEWMODEL_GROUP;
-      // Bounds of a camera-parented mesh are recomputed from a matrix that
-      // moves with the frustum; skip the cull test rather than race it.
-      m.alwaysSelectAsActiveMesh = true;
-    }
+    // **NO OUTLINE HULL, and this was the LAST one in the game.** The weapon
+    // used to set `renderOutline` by hand — never through `addOutline`, which
+    // is why it outlived the sweep that took the outline pass out — at
+    // 0.004 m, an order of magnitude finer than the world's, because a
+    // body-width line on parts this small swallows the whole weapon in black.
+    // The ink is a screen-space pass now and inks the gun off the same depth
+    // buffer as everything else; what stands in for the fine width is
+    // `CONFIG.graphics.ink.near`, which scales the ink down over the first
+    // couple of metres. See `shaders/CelInk.ts`.
 
     // Start in the hip pose so the first rendered frame is already right.
     this.weapon.position.copyFrom(this.hipPos);
     this.weapon.rotation.copyFrom(this.hipRot);
+    // Every surface's own transform is taken into its joint now the builds
+    // are done — the card's position and scale with the rest, before
+    // `updateInspect` first writes them (`ViewTree.seal`).
+    tree.seal();
   }
 
   /**
-   * The spent magazine: the weapon's own magazine node, cloned. Clones share
-   * the geometry and the materials, so it costs a node and a few meshes that
-   * are switched off unless a magazine is in the air. Its colour groups join
+   * A joint's channels were written — what each Babylon vector's own dirty
+   * flag recorded, which the render cache reproduces (`RenderCache.touch`).
+   * Every write to a joint's position, rotation, scaling or quaternion goes
+   * through here.
+   */
+  private wrote(j: Joint): Joint {
+    this.tree.cache.touch(j);
+    return j;
+  }
+
+  /**
+   * The frame's evaluation (`ViewTree.draw`): every switched-on, visible
+   * surface evaluated as the render evaluated it, whatever its role, and
+   * listed for our renderer (`ViewTree.evaluated`, which `Game.drawView`
+   * hands over).
+   * Called by `Game.drawView` once a frame in every state, after every write
+   * and immediately before the frame's render (`SceneFrame.render`), beside
+   * `drawBodies` and `drawHulls`.
+   */
+  drawView(): void {
+    this.tree.draw();
+  }
+
+  /**
+   * The spent magazine: the weapon's own magazine joint, cloned. Its segments
+   * share the arrays and the materials, so it costs a joint and a few segments
+   * that are switched off unless a magazine is in the air. Its colour groups join
    * the weapon's FINISH list beside the originals', so a repaint reaches both
    * and the magazine that falls out is the colour of the one that went in.
    */
-  private cloneMagazine(magazine: TransformNode, parts: WeaponParts): TransformNode {
-    const spent = new TransformNode(`${magazine.name}_spent`, magazine.getScene());
-    spent.parent = magazine.parent;
-    for (const m of magazine.getChildMeshes<Mesh>(true)) {
-      const copy = m.clone(`${m.name}_spent`, spent);
-      if (!copy) continue;
+  private cloneMagazine(magazine: Joint, parts: WeaponParts): Joint {
+    const spent = this.tree.joint(`${magazine.name}_spent`, magazine.parent);
+    for (const m of this.tree.meshesOn(magazine)) {
+      const copy = cloneSegment(m, `${m.name}_spent`);
+      this.tree.hang(copy, spent);
       copy.metadata = m.metadata;
-      copy.isPickable = false;
       this.meshes.push(copy);
       const group = parts.finish.find((f) => f.mesh === m)?.group;
       if (group) parts.finish.push({ mesh: copy, group });
     }
-    spent.setEnabled(false);
+    spent.enabled = false;
     return spent;
   }
 
@@ -983,13 +1019,14 @@ export class ViewModel {
    * furthest point of it back up the drop axis — the top of the magazine, at
    * the lips, which is the part a fresh one is rocked into the well about.
    */
-  private reloadRig(parts: WeaponParts, magazine: TransformNode, magDrop: Vector3): ReloadRig {
+  private reloadRig(parts: WeaponParts, magazine: Joint, magDrop: Vector3): ReloadRig {
     const min = new Vector3(Infinity, Infinity, Infinity);
     const max = new Vector3(-Infinity, -Infinity, -Infinity);
-    for (const m of magazine.getChildMeshes<Mesh>(true)) {
-      // The node and its meshes sit at identity under the weapon's root, so a
-      // mesh's local box IS the root-local box.
-      const box = m.getBoundingInfo().boundingBox;
+    for (const m of this.tree.meshesOn(magazine)) {
+      // The joint and its segments sit at identity under the weapon's root, so
+      // a segment's local box IS the root-local box — measured as Babylon
+      // measured the mesh it was (`segmentBounds`).
+      const box = segmentBounds(m);
       min.minimizeInPlace(box.minimum);
       max.maximizeInPlace(box.maximum);
     }
@@ -1017,10 +1054,10 @@ export class ViewModel {
     return {
       style,
       action: parts.reload?.action ?? null,
-      support: support.hand.clone(),
-      supportForearm: support.elbow.subtract(support.hand).normalize(),
-      grip: parts.grip.hand.clone(),
-      magHand: parts.magHand ? parts.magHand.clone() : palm.subtract(support.hand),
+      support: copyOf(support.hand),
+      supportForearm: copyOf(support.elbow).subtract(support.hand).normalize(),
+      grip: copyOf(parts.grip.hand),
+      magHand: parts.magHand ? copyOf(parts.magHand) : palm.subtract(support.hand),
       magDrop,
       magMouth: mouth,
       magCenter: center,
@@ -1126,13 +1163,13 @@ export class ViewModel {
     const fitted = this.weaponFit.id;
     for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
-      rig.root.setEnabled(id === fitted);
+      rig.root.enabled = id === fitted;
       // A rail switches one of three on; a fixed sight is part of the weapon
       // and there is nothing to switch — it goes wherever its weapon goes.
       const sights = rig.parts.sights;
       if (sights.kind === "fitted") {
         for (const [key, assembly] of Object.entries(sights.assemblies)) {
-          assembly.root.setEnabled(key === this.fittedSight);
+          assembly.root.enabled = key === this.fittedSight;
         }
       }
     }
@@ -1144,8 +1181,8 @@ export class ViewModel {
     if (parts.sights.kind === "fixed" && parts.sights.eyeRelief !== undefined) {
       this.sight = { ...this.sight, eyeRelief: parts.sights.eyeRelief };
     }
-    this.muzzle.position.copyFrom(parts.muzzle);
-    this.ejectPort.position.copyFrom(parts.ejectPort);
+    this.wrote(this.muzzle).position.copyFrom(parts.muzzle);
+    this.wrote(this.ejectPort).position.copyFrom(parts.ejectPort);
     // A shorter weapon sits closer, or it reads as being held at arm's length;
     // one that hangs below its own bore is carried higher, or it falls off the
     // bottom of the frame. Both offsets are the weapon's, and both are applied
@@ -1180,9 +1217,23 @@ export class ViewModel {
     );
   }
 
-  /** World position of the muzzle (tracer and flash origin). */
+  /**
+   * World position of the muzzle (tracer and flash origin, and the rocket's
+   * start, a command input). Babylon's answer, not a fresh one: the render
+   * cache's (`ViewTree.read`), which is what `getAbsolutePosition` gave.
+   */
   muzzleWorld(): Vector3 {
-    return this.muzzle.getAbsolutePosition().clone();
+    const m = this.tree.read(this.muzzle).m;
+    return new Vector3(m[12], m[13], m[14]);
+  }
+
+  /**
+   * The ejection port's world, into `out` — what `PlayerView` threw its brass
+   * off (`getAbsolutePosition`, then `getWorldMatrix`, which the first read
+   * had just stamped). The render cache's answer, as `muzzleWorld`'s is.
+   */
+  ejectPortWorld(out: Matrix): Matrix {
+    return Matrix.FromArrayToRef(this.tree.read(this.ejectPort).m, 0, out);
   }
 
   setVisible(visible: boolean): void {
@@ -1208,7 +1259,7 @@ export class ViewModel {
     this.swayYaw = 0;
     this.swayPitch = 0;
     this.stow();
-    this.throwHand.setEnabled(false);
+    this.throwHand.enabled = false;
   }
 
   /**
@@ -1226,20 +1277,20 @@ export class ViewModel {
   private stow(): void {
     for (const id of CARRIED_IDS) {
       const rig = this.rigs[id];
-      rig.supportArm.setEnabled(true);
+      rig.supportArm.enabled = true;
       this.restReload(rig, false);
       if (rig.bolt) {
-        rig.bolt.position.setAll(0);
+        this.wrote(rig.bolt).position.setAll(0);
         rig.bolt.rotation.setAll(0);
       }
       if (rig.warhead) {
-        rig.warhead.position.setAll(0);
+        this.wrote(rig.warhead).position.setAll(0);
         rig.warhead.rotation.setAll(0);
-        rig.warhead.setEnabled(true);
+        rig.warhead.enabled = true;
       }
     }
     this.reloadPosed = false;
-    this.body.rotation.setAll(0);
+    this.wrote(this.body).rotation.setAll(0);
   }
 
   /**
@@ -1248,7 +1299,7 @@ export class ViewModel {
    * three deploys ago — the same rule the kit screen's own cursor follows.
    *
    * The pose switches to a quaternion here, and that is not a detail: the
-   * carried pose is Euler and Babylon composes it in the WEAPON's frame, so at
+   * carried pose is Euler and the joint composes it in the WEAPON's frame, so at
    * a side-on yaw the pitch a drag asks for arrives as a roll. A quaternion
    * built yaw-then-pitch keeps the pitch about the camera's own horizontal
    * axis at every yaw, which is what makes a drag feel like a hand on the
@@ -1258,16 +1309,20 @@ export class ViewModel {
     const i = CONFIG.viewmodel.inspect;
     this.inspectYaw = i.baseYaw;
     this.inspectPitch = i.basePitch;
-    this.weapon.rotationQuaternion = this.spinQ;
+    // Babylon's `rotationQuaternion` setter: the quaternion handed over, the
+    // Euler zeroed, the node marked dirty — each reproduced.
+    this.weapon.quaternion = this.spinQ;
+    this.wrote(this.weapon).rotation.setAll(0);
+    this.tree.cache.markDirty(this.weapon);
     this.inspecting = true;
     // The card goes up with the weapon and comes down with it, which is what
     // keeps it out of every other state in the game: there is one way onto the
     // turntable and one way off it.
-    this.backdrop.setEnabled(true);
+    this.backdrop.enabled = true;
     // Nothing here runs `update`, so a throw caught by the kit screen would
     // leave its arm frozen across the turntable for as long as the screen is
     // up — and a reload, a magazine hanging in the air beside the turntable.
-    this.throwHand.setEnabled(false);
+    this.throwHand.enabled = false;
     this.stow();
     this.applyMeshVisibility();
   }
@@ -1276,10 +1331,11 @@ export class ViewModel {
   endInspect(): void {
     // Euler `rotation` is dead while this is set, so dropping it is what lets
     // the hip pose return at all.
-    this.weapon.rotationQuaternion = null;
-    this.weapon.scaling.setAll(CONFIG.viewmodel.scale);
+    this.weapon.quaternion = null;
+    this.tree.cache.markDirty(this.weapon);
+    this.wrote(this.weapon).scaling.setAll(CONFIG.viewmodel.scale);
     this.inspecting = false;
-    this.backdrop.setEnabled(false);
+    this.backdrop.enabled = false;
     this.applyMeshVisibility();
   }
 
@@ -1304,8 +1360,8 @@ export class ViewModel {
    * - The position is the BAY'S CENTRE back-projected to the inspect distance,
    *   so the weapon sits where the DOM says the hole is at any window size,
    *   and the distance is scaled by the live FOV against the hip-fire one so a
-   *   camera left zoomed by the last round frames it the same. (Babylon holds
-   *   the vertical FOV, hence the aspect on x alone.)
+   *   camera left zoomed by the last round frames it the same. (The camera
+   *   holds the vertical FOV, as Babylon's did, hence the aspect on x alone.)
    * - The pivot correction. The node rotates about its own origin, which on a
    *   rifle is the receiver and nowhere near the middle of the model, so a
    *   turntable about it would swing the weapon around the screen. Placing the
@@ -1329,6 +1385,7 @@ export class ViewModel {
     Matrix.RotationXToRef(this.inspectPitch, this.spinPitch);
     this.spinYaw.multiplyToRef(this.spinPitch, this.spin);
     Quaternion.FromRotationMatrixToRef(this.spin, this.spinQ);
+    this.wrote(this.weapon);
 
     // The weapon is pushed back until it fits the bay, and the bay's two axes
     // are asked separately because either can be the tight one: a desktop's
@@ -1365,10 +1422,10 @@ export class ViewModel {
     if (Math.abs(bay.x - this.poolX) > 0.005 || Math.abs(bay.y - this.poolY) > 0.005) {
       this.poolX = bay.x;
       this.poolY = bay.y;
-      paintKitPool(this.backdropTex, bay.x, bay.y);
+      paintKitPool(this.kitCard, bay.x, bay.y);
     }
 
-    this.weapon.position.copyFrom(this.pos);
+    this.wrote(this.weapon).position.copyFrom(this.pos);
     this.weapon.scaling.setAll(v.scale);
 
     // The card, cut to the frustum at its own distance. Derived every frame
@@ -1378,7 +1435,7 @@ export class ViewModel {
     // showing down one side of the stage.
     const b = i.backdrop;
     const cardH = 2 * b.dist * Math.tan(p.fovY / 2) * b.margin;
-    this.backdrop.position.set(0, 0, b.dist);
+    this.wrote(this.backdrop).position.set(0, 0, b.dist);
     this.backdrop.scaling.set(cardH * p.aspect, cardH, 1);
   }
 
@@ -1401,8 +1458,8 @@ export class ViewModel {
     const reloadW = rp ? rp.work : 0;
     // The body takes back what the head does, so the hands stay where they are
     // while the head looks down at them — see `body`.
-    if (rp) this.body.rotation.set(rp.headPitch, 0, -rp.headRoll);
-    else if (this.body.rotation.lengthSquared() > 0) this.body.rotation.setAll(0);
+    if (rp) this.wrote(this.body).rotation.set(rp.headPitch, 0, -rp.headRoll);
+    else if (this.body.rotation.lengthSquared() > 0) this.wrote(this.body).rotation.setAll(0);
     // The launcher's load is the same shape one beat further on: a weight over
     // a phase, gating the aim exactly as the reload's does. The two are never
     // both live — a weapon is loaded through a well or through the bore — so
@@ -1651,7 +1708,7 @@ export class ViewModel {
 
     // --- landing absorb: the hands take the impact after the eye does ---
     // The camera owns the spring and this reads it, the same arrangement as
-    // the bob phase. The weapon is parented to the camera, so it already
+    // the bob phase. The weapon hangs from the camera, so it already
     // travels with the dip; what these two add is the part that SHOWS — a
     // share of the sink again on top of it, and the muzzle dropping (rot.x
     // positive is nose-down, the way the per-shot kick is nose-up) as the
@@ -1767,7 +1824,7 @@ export class ViewModel {
   private applyPose(t: number): void {
     const k = 1 + (this.sight.zoomComp - 1) * t;
     this.pos.addInPlace(this.off.scaleInPlace(k));
-    this.weapon.position.copyFrom(this.pos);
+    this.wrote(this.weapon).position.copyFrom(this.pos);
     this.weapon.rotation.copyFrom(this.rot);
     this.weapon.scaling.setAll(CONFIG.viewmodel.scale * k);
   }
@@ -1799,10 +1856,10 @@ export class ViewModel {
     // arms on screen at once — and hiding it is what motivates the give in
     // `layerThrowGive`: the weapon tips because only the firing hand is still
     // on it.
-    supportArm.setEnabled(!throwing);
+    supportArm.enabled = !throwing;
 
     // --- the throwing arm: the gesture the grenade actually leaves from ---
-    this.throwHand.setEnabled(throwing);
+    this.throwHand.enabled = throwing;
     if (throwing) this.poseThrowHand(p.throwTime);
   }
 
@@ -1847,7 +1904,7 @@ export class ViewModel {
       this.throwKeys[a].pos,
       this.throwKeys[b].pos,
       w,
-      this.throwHand.position,
+      this.wrote(this.throwHand).position,
     );
     Vector3.LerpToRef(
       this.throwKeys[a].rot,
@@ -1861,8 +1918,8 @@ export class ViewModel {
     // whole thing away. The bottle is the same rule, and only one of the two
     // is ever in the hand.
     const held = t < windup;
-    this.throwBall.setEnabled(held && this.throwKind === "frag");
-    this.throwBottle.setEnabled(held && this.throwKind === "molotov");
+    this.throwBall.enabled = held && this.throwKind === "frag";
+    this.throwBottle.enabled = held && this.throwKind === "molotov";
   }
 
   /**
@@ -1876,12 +1933,16 @@ export class ViewModel {
   /**
    * Where the throwing hand is in the world — the release point Game hands to
    * `GrenadeSystem`, so the grenade leaves the hand the player watched cock
-   * back instead of appearing on the camera axis like a muzzle. One frame
-   * stale in the camera's own motion, exactly as the muzzle and the ejection
-   * port are, because the camera has not been updated yet this frame.
+   * back instead of appearing on the camera axis like a muzzle. A command
+   * input, so it is BABYLON's answer, not a fresh one: the render cache's
+   * (`ViewTree.read`) — the world the last render composed for a hand that
+   * was drawn in it, one frame stale in the camera's own motion exactly as
+   * the muzzle and the ejection port are, or a fresh compose off its
+   * ancestors' cached worlds for one that was not (`RenderCache`).
    */
   throwHandWorld(): Vector3 {
-    return this.throwHand.getAbsolutePosition().clone();
+    const m = this.tree.read(this.throwHand).m;
+    return new Vector3(m[12], m[13], m[14]);
   }
 
   /**
@@ -1895,7 +1956,8 @@ export class ViewModel {
    * magazines hang in. A dropped magazine then falls the way the ground says
    * whichever way the weapon is canted and wherever the player is looking, at
    * a real 9.81 m/s² in the model's own units. The matrix is the one the last
-   * render left, a frame old, which a falling magazine cannot show.
+   * render left, a frame old, which a falling magazine cannot show — the
+   * render cache's `getWorldMatrix` answer (`ViewTree.world`), as Babylon's.
    */
   private evaluateReload(p: ViewModelParams, rig: WeaponRig): ReloadPose | null {
     if (!rig.reload || (!p.reloading && p.reloadBlend <= 0.001)) {
@@ -1908,7 +1970,7 @@ export class ViewModel {
     inp.seconds = p.reloadTime;
     inp.live = p.reloading;
     inp.dry = p.reloadDry;
-    rig.parts.root.getWorldMatrix().invertToRef(this.invWorld);
+    this.tree.world(rig.parts.root).invertToRef(this.invWorld);
     Vector3.TransformNormalToRef(this.worldFall, this.invWorld, inp.fall);
     this.reloadPose = this.gesture.evaluate(rig.reload, inp);
     return this.reloadPose;
@@ -1977,34 +2039,33 @@ export class ViewModel {
 
     const mag = rig.magazine;
     if (mag) {
-      mag.position.copyFrom(rp.magPos);
+      this.wrote(mag).position.copyFrom(rp.magPos);
       mag.rotation.copyFrom(rp.magRot);
-      const shown = rp.magShown && !(throwing && rp.magInHand);
-      if (mag.isEnabled(false) !== shown) mag.setEnabled(shown);
+      mag.enabled = rp.magShown && !(throwing && rp.magInHand);
     }
     const spent = rig.spent;
     if (spent) {
-      spent.position.copyFrom(rp.spentPos);
+      this.wrote(spent).position.copyFrom(rp.spentPos);
       spent.rotation.copyFrom(rp.spentRot);
-      if (spent.isEnabled(false) !== rp.spentShown) spent.setEnabled(rp.spentShown);
+      spent.enabled = rp.spentShown;
     }
 
-    rig.supportArm.position.copyFrom(rp.supportPos);
-    rig.supportArm.rotationQuaternion?.copyFrom(rp.supportRot);
+    this.wrote(rig.supportArm).position.copyFrom(rp.supportPos);
+    rig.supportArm.quaternion?.copyFrom(rp.supportRot);
     // The firing hand and the bolt are the CYCLE's while one is running; the
     // two never overlap, but a cycle can begin on the frame a finished reload
     // is still easing out, and that cycle's hand is the one on the knob.
     if (p.cyclePhase >= 1) {
-      rig.triggerArm.position.copyFrom(rp.triggerPos);
-      const turn = rig.triggerArm.rotationQuaternion;
+      this.wrote(rig.triggerArm).position.copyFrom(rp.triggerPos);
+      const turn = rig.triggerArm.quaternion;
       if (turn) rp.triggerRot.multiplyToRef(this.wristQ, turn);
       const bolt = rig.bolt;
       if (bolt && rp.boltLive) {
-        bolt.position.z = -rp.boltDraw;
+        this.wrote(bolt).position.z = -rp.boltDraw;
         bolt.rotation.z = rp.boltTurn;
       }
     }
-    if (rig.slide) rig.slide.position.z = rp.slide;
+    if (rig.slide) this.wrote(rig.slide).position.z = rp.slide;
   }
 
   /**
@@ -2014,18 +2075,18 @@ export class ViewModel {
    * and the throw's, and both write it every frame they run.
    */
   private restReload(rig: WeaponRig, cycling: boolean): void {
-    rig.supportArm.position.setAll(0);
-    rig.supportArm.rotationQuaternion?.copyFromFloats(0, 0, 0, 1);
-    if (!cycling) rig.triggerArm.position.setAll(0);
-    rig.triggerArm.rotationQuaternion?.copyFromFloats(0, 0, 0, 1);
+    this.wrote(rig.supportArm).position.setAll(0);
+    rig.supportArm.quaternion?.copyFromFloats(0, 0, 0, 1);
+    if (!cycling) this.wrote(rig.triggerArm).position.setAll(0);
+    this.wrote(rig.triggerArm).quaternion?.copyFromFloats(0, 0, 0, 1);
     const mag = rig.magazine;
     if (mag) {
-      mag.position.setAll(0);
+      this.wrote(mag).position.setAll(0);
       mag.rotation.setAll(0);
-      if (!mag.isEnabled(false)) mag.setEnabled(true);
+      mag.enabled = true;
     }
-    rig.spent?.setEnabled(false);
-    if (rig.slide) rig.slide.position.z = 0;
+    if (rig.spent) rig.spent.enabled = false;
+    if (rig.slide) this.wrote(rig.slide).position.z = 0;
   }
 
   /**
@@ -2083,10 +2144,10 @@ export class ViewModel {
     const bolt = rig.bolt;
     if (bolt) {
       if (cycling) {
-        bolt.position.z = -draw;
+        this.wrote(bolt).position.z = -draw;
         bolt.rotation.z = turn;
       } else if (bolt.position.z !== 0 || bolt.rotation.z !== 0) {
-        bolt.position.setAll(0);
+        this.wrote(bolt).position.setAll(0);
         bolt.rotation.setAll(0);
       }
     }
@@ -2102,7 +2163,7 @@ export class ViewModel {
     const arm = rig.triggerArm;
     if (w > 0.0001 || arm.position.lengthSquared() > 0) {
       const o = c.cycleHand;
-      arm.position.set(o.x * w, o.y * w, o.z * w - draw);
+      this.wrote(arm).position.set(o.x * w, o.y * w, o.z * w - draw);
     }
   }
 
@@ -2182,12 +2243,10 @@ export class ViewModel {
       this.roundRot.z = l.indexTurn * k;
     }
 
-    round.position.copyFrom(this.roundPos);
+    this.wrote(round).position.copyFrom(this.roundPos);
     round.rotation.copyFrom(this.roundRot);
     // Gated on the phase rather than eased, because a rocket has two places to
-    // be and nothing in between. Written only on the frames it changes: this
-    // runs every frame of the game the launcher is carried, and `setEnabled`
-    // walks the subtree under it.
+    // be and nothing in between.
     //
     // **A throw takes the round with the hand**, and it has to: the throwing
     // hand IS the support hand, so `update` switches that arm off for the
@@ -2197,8 +2256,7 @@ export class ViewModel {
     // one is half a metre of warhead in the middle of it. The two come back
     // together on the same frame, still in each other's company, because the
     // hand's position is this round's position plus a constant.
-    const shown = ph >= l.offerFrom && !throwing;
-    if (round.isEnabled(false) !== shown) round.setEnabled(shown);
+    round.enabled = ph >= l.offerFrom && !throwing;
 
     // The hand. Off the shield as it goes down for the round, carrying it for
     // the whole of the trip up and in, and home again once the motor is
@@ -2208,13 +2266,18 @@ export class ViewModel {
     const w = reach * (1 - ramp(l.handHome[0], l.handHome[1], ph));
     if (w > 0.0001 || arm.position.lengthSquared() > 0) {
       const o = l.loadHand;
-      arm.position.set(
+      this.wrote(arm).position.set(
         (o.x + this.roundPos.x) * w,
         (o.y + this.roundPos.y) * w,
         (o.z + this.roundPos.z) * w,
       );
     }
   }
+}
+
+/** A copy of `v` in `src/math`'s vector — a builder's landmark taken into the pose math. */
+function copyOf(v: Vector3Like): Vector3 {
+  return new Vector3(v.x, v.y, v.z);
 }
 
 function addScaled(
@@ -2229,7 +2292,7 @@ function addScaled(
 
 /**
  * One gloved hand plus the forearm running back out of frame, built at the
- * origin in weapon-local units and merged per colour before being parented —
+ * origin in weapon-local units and merged per colour before being hung —
  * the arm is rigid relative to the weapon (a viewmodel's hands never let go),
  * so there is nothing to animate and every reason to collapse the draw calls.
  * Each weapon gets its own pair, because where a hand sits is the model's
@@ -2256,31 +2319,39 @@ function addScaled(
  * the side the camera sees of a hand on a pistol grip and of one under a
  * handguard), and the thumb goes to whichever end of the knuckle row is nearer
  * the muzzle and the top — the top of a pistol grip, the front of a handguard.
- * Every part is then detached with `setParent(null)` — which folds the frame
- * node's transform into the part's own — BEFORE the merge, because
- * `bakeCurrentTransformIntoVertices` (the one-mesh path, as in MapBuilder)
- * resets the local matrix and would leave a still-parented mesh transformed
- * twice.
+ * Every part is then detached (`detachPart`, Babylon's `setParent(null)`) —
+ * which folds the frame's transform into the part's own — BEFORE the merge,
+ * because `bakePartTransform` (the one-part path, as in MapBuilder) resets the
+ * local matrix and would leave a still-parented part transformed twice.
+ *
+ * The frame is a `PartNode`, a build-time frame that is never in the scene
+ * (a `TransformNode` used to be made here and disposed). The parts are
+ * `facet` lofts, and each colour group becomes a SEGMENT at the merge
+ * (`toSegment`/`segmentOf`; `BABYLON_EXIT.md` X4.3c), hung from the live
+ * joint (`parent`) the caller gives.
  */
 function buildArm(
-  scene: Scene,
   mats: CelMaterialFactory,
+  tree: ViewTree,
   name: string,
-  grip: GripSpec,
-  parent: TransformNode,
-): Mesh[] {
-  const parts = new Map<string, Mesh[]>();
-  const frame = new TransformNode(`view_${name}Frame`, scene);
+  grip: { readonly hand: Vector3Like; readonly elbow: Vector3Like },
+  parent: Joint,
+): ViewSegment[] {
+  const parts = new Map<string, Part[]>();
+  const frame = new PartNode(`view_${name}Frame`);
   const collect = (color: string, part: string, rings: Ring[]) => {
-    const m = loft(`view_${name}${part}`, scene, rings);
-    m.parent = frame;
+    const p = loft(`view_${name}${part}`, rings);
+    p.parent = frame;
     const g = parts.get(color);
-    if (g) g.push(m);
-    else parts.set(color, [m]);
+    if (g) g.push(p);
+    else parts.set(color, [p]);
   };
 
   // --- the frame: +y up the forearm, +z into the palm, x along the knuckles.
-  const toElbow = grip.elbow.subtract(grip.hand);
+  // In `src/math/`'s vectors, which are Babylon's bit for bit: this is
+  // arithmetic for a build-time frame and touches no node.
+  const hand = new Vector3(grip.hand.x, grip.hand.y, grip.hand.z);
+  const toElbow = new Vector3(grip.elbow.x, grip.elbow.y, grip.elbow.z).subtract(hand);
   const len = toElbow.length();
   const ay = toElbow.scale(1 / len);
   const out = Math.sign(grip.elbow.x - grip.hand.x) || 1;
@@ -2289,8 +2360,8 @@ function buildArm(
   // the PALM, so the loft's rings read "d" as back-to-palm thickness.
   const az = back.subtract(ay.scale(Vector3.Dot(back, ay))).normalize().scaleInPlace(-1);
   const ax = Vector3.Cross(ay, az);
-  frame.position.copyFrom(grip.hand);
-  frame.rotation = Vector3.RotationFromAxis(ax, ay, az);
+  frame.position.copyFrom(hand);
+  frame.rotation.copyFrom(Vector3.RotationFromAxis(ax, ay, az));
   // Which end of the knuckle row the index finger — and so the thumb — is at.
   const tx = Math.sign(Vector3.Dot(ax, new Vector3(0, 1, 1))) || 1;
 
@@ -2333,20 +2404,37 @@ function buildArm(
     { y: len, w: 0.13, d: 0.122, k: 0.4 },
   ]);
 
-  const merged: Mesh[] = [];
+  const merged: ViewSegment[] = [];
   for (const [color, group] of parts) {
-    for (const m of group) m.setParent(null);
+    for (const p of group) detachPart(p);
+    const meshName = `view_${name}_${color.slice(1)}`;
     const m =
       group.length === 1
-        ? group[0].bakeCurrentTransformIntoVertices()
-        : Mesh.MergeMeshes(group, true, true);
-    if (!m) continue;
-    m.name = `view_${name}_${color.slice(1)}`;
+        ? toSegment(bakePartTransform(group[0]))
+        : segmentOf(meshName, mergeParts(group));
+    m.name = meshName;
     m.material = mats.get(color);
-    m.parent = parent;
-    m.isPickable = false;
+    tree.hang(m, parent);
     merged.push(m);
   }
-  frame.dispose();
   return merged;
+}
+
+/**
+ * A segment's twin — what `Mesh.clone(name, null)` made of the mesh it was:
+ * the same arrays (shared, as a clone shared its geometry), the same
+ * transform, material, metadata and flags, under a new name.
+ */
+function cloneSegment(m: ViewSegment, name: string): ViewSegment {
+  const copy = segmentOf(name, m.geometry);
+  copy.position.copyFrom(m.position);
+  copy.rotation.copyFrom(m.rotation);
+  copy.scaling.copyFrom(m.scaling);
+  const q = m.rotationQuaternion;
+  if (q) copy.rotationQuaternion = new Quaternion(q.x, q.y, q.z, q.w);
+  copy.material = m.material;
+  copy.metadata = m.metadata;
+  copy.isVisible = m.isVisible;
+  copy.enabled = m.enabled;
+  return copy;
 }

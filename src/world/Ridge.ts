@@ -1,8 +1,9 @@
 /**
  * Ridge.ts — The valley rim: the landform that closes the map's boundary.
- * Owns: the escarpment's shape, and nothing else. Returns VertexData segments;
- * MapBuilder makes the meshes, the same contract TerrainField states for the
- * floor.
+ * Owns: the escarpment's shape, and nothing else. Returns `GeometryBuffer`
+ * segments (`src/geometry/`, no Babylon); MapBuilder files them as surfaces of
+ * the world's record and the adapter makes the meshes, the same contract
+ * TerrainField states for the floor.
  *
  * This file emits NO collider. The four boundary boxes MapBuilder builds are
  * unchanged and are what actually bounds play, which is why NavGrid, CoverMap,
@@ -79,7 +80,7 @@
  * - No non-uniform scaling: these meshes are outlined, and `renderOutline`
  *   extrudes along normals `VertexData.transform` does not renormalise.
  */
-import { VertexData } from "@babylonjs/core";
+import { computeNormalsInto, GeometryBuffer } from "../geometry/buffer";
 import type {
   RidgeMouth,
   RidgePass,
@@ -103,7 +104,7 @@ export type RidgeTone =
   | "leaf"
   | "bark";
 
-/** One merged run of rim, ready for a mesh. */
+/** One merged run of rim, ready for the world's record. */
 export interface RidgeSegment {
   /** Mesh name suffix — `ridge-<key>`. */
   key: string;
@@ -113,7 +114,7 @@ export interface RidgeSegment {
    * `MapBuilder` owns what each one is painted with.
    */
   tone: RidgeTone;
-  data: VertexData;
+  data: GeometryBuffer;
 }
 
 /**
@@ -529,15 +530,13 @@ class TreeAccum {
     return this.indices.length === 0;
   }
 
-  finish(half: number): VertexData {
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.indices = this.indices;
+  finish(half: number): GeometryBuffer {
+    // Into a growing `number[]`, as `VertexData.ComputeNormals` wrote into
+    // one: the same doubles, which the buffer then holds as a Float64Array.
     const normals: number[] = [];
-    VertexData.ComputeNormals(this.positions, this.indices, normals);
-    data.normals = normals;
+    computeNormalsInto(this.positions, this.indices, normals);
     if (import.meta.env.DEV) assertOutsidePlay(this.positions, half);
-    return data;
+    return new GeometryBuffer({ positions: this.positions, normals, indices: this.indices });
   }
 }
 
@@ -771,18 +770,15 @@ class RingAccum {
    * No UVs: `CelMaterialFactory.get()` declares `["position", "normal"]` only,
    * so a UV buffer here would be uploaded and never read.
    */
-  finish(half: number, inwardLimit: number): VertexData {
-    const data = new VertexData();
-    data.positions = this.positions;
-    data.indices = this.indices;
+  finish(half: number, inwardLimit: number): GeometryBuffer {
+    // See `TreeAccum.finish`.
     const normals: number[] = [];
-    VertexData.ComputeNormals(this.positions, this.indices, normals);
-    data.normals = normals;
+    computeNormalsInto(this.positions, this.indices, normals);
     if (import.meta.env.DEV) {
       assertFacesInward(this.positions, normals, this.front, inwardLimit);
       assertOutsidePlay(this.positions, half);
     }
-    return data;
+    return new GeometryBuffer({ positions: this.positions, normals, indices: this.indices });
   }
 }
 

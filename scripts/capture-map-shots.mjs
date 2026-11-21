@@ -56,9 +56,11 @@
  *   canvas presents nothing. Measured on the Windows box, the frame each map
  *   FIRST draws anything on is 67 (Hollowmere), 11 (Greyfen), 14 (Coldharbour)
  *   and 69 (Harrowmead) — so six frames is two blank backdrops, silently
- *   written over two good committed ones. `scene.isReady()` flips on exactly
+ *   written over two good committed ones. `scene.isReady()` flipped on exactly
  *   the frame the map first draws, on all four, so the wait is that and never
- *   a number. Six frames was never wrong on the Chromebook, where six frames
+ *   a number — the page's readiness since `BABYLON_EXIT.md` X6.1h
+ *   (`Game.pending`, the scene's pending data ported), which answers what it
+ *   answered on every frame. Six frames was never wrong on the Chromebook, where six frames
  *   is three wall-clock seconds; it was a duration wearing a frame count's
  *   clothes.
  *
@@ -73,6 +75,12 @@
  * pictures that nothing has happened to with five different ones, in a diff
  * where the sixth is the only one anybody meant. With no ids it does the lot,
  * which is what a fresh checkout and a palette change both want.
+ *
+ * **The frame is asked of the ONE frame adapter since `BABYLON_EXIT.md`
+ * X6.1a** (`scripts/lib/frameAdapter.mjs` since its review, installed as an
+ * init script through `installFrameAdapter`, which honours `REF_NO_SCENE=1`): its draws (`onDrawn`), its readiness (`ready`, the scene's while there
+ * was one, the game's own — `Game.pending` — since X6.1h) and the render size
+ * (`camera()`), so nothing here names `g.scene`.
  */
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -80,6 +88,9 @@ import sharp from "sharp";
 import { launchClient } from "./browser.mjs";
 import { root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
+// The frame — its draws, its readiness — through the ONE frame adapter
+// (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+import { installFrameAdapter } from "./lib/frameAdapter.mjs";
 
 /** The localStorage key `prefs.ts` remembers the chosen map under. */
 const MAP_KEY = "greywatch.map";
@@ -190,6 +201,7 @@ async function captureMap(browser, url, id, vantage) {
       [RENDER_SCALE_KEY, "1"],
     ],
   );
+  await installFrameAdapter(page);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   // The whole window is what a page screenshot takes, so the interface has to
   // go — the round below leaves the deploy screen up over the view.
@@ -211,8 +223,16 @@ async function captureMap(browser, url, id, vantage) {
         const poll = () => (g.state === "deploy" ? resolve() : setTimeout(poll, 50));
         poll();
       });
-      // The place, not the fight: no bodies, no rings, no beacons.
-      for (const bot of g.battle.bots) bot.rig.root.setEnabled(false);
+      // The place, not the fight: no bodies, no rings, no beacons. The bodies
+      // are the round's session's (`g.net.roster`, offline too), and the
+      // roster re-shows a living one every frame the deploy screen draws — so
+      // they are hidden AND drawn no further than 0 m, which is what the
+      // roster hides every body past, each frame, after posing it.
+      const roster = g.net?.roster;
+      if (roster) {
+        roster.setViewDistance(0);
+        for (const body of roster.soldiers) body.setEnabled(false);
+      }
       g.zones.dispose();
 
       const cam = g.cameraSys.camera;
@@ -234,25 +254,29 @@ async function captureMap(browser, url, id, vantage) {
 
       // Readiness first and the settle after it, for the reason in the header:
       // a frame count cannot stand in for a map having compiled its shaders,
-      // and the frame that answers that question is `scene.isReady()`.
+      // and the frame that answers that question is the page's readiness — the
+      // frame adapter's `ready` and `onDrawn` (`lib/frameAdapter.mjs`, X6.1a): the
+      // scene's readiness while there was one, the game's (`Game.pending`)
+      // since X6.1h, and OUR frame's draw since X5.4f.
+      const F = window.__refFrame();
       const readyBy = performance.now() + readyTimeout;
       await new Promise((resolve, reject) => {
-        const seen = g.scene.onAfterRenderObservable.add(() => {
-          if (!g.scene.isReady()) {
+        const off = F.onDrawn(() => {
+          if (!F.ready()) {
             if (performance.now() < readyBy) return;
-            g.scene.onAfterRenderObservable.remove(seen);
+            off();
             reject(new Error("scene never became ready"));
             return;
           }
-          g.scene.onAfterRenderObservable.remove(seen);
+          off();
           resolve();
         });
       });
       await new Promise((resolve) => {
         let n = 0;
-        const seen = g.scene.onAfterRenderObservable.add(() => {
+        const off = F.onDrawn(() => {
           if (++n < frames) return;
-          g.scene.onAfterRenderObservable.remove(seen);
+          off();
           resolve();
         });
       });
@@ -270,8 +294,11 @@ async function captureMap(browser, url, id, vantage) {
   // one — which is the bug `SCALE` exists to fix, so it is checked rather
   // than trusted.
   const backing = await page.evaluate(() => {
-    const e = window.__celshock.scene.getEngine();
-    return [e.getRenderWidth(), e.getRenderHeight()];
+    // The render size the camera is handed, through the frame adapter
+    // (`lib/frameAdapter.mjs`, X6.1a): the scene engine's, which reads the game's
+    // surface since X5.4h (`core/CanvasSurface.ts`), or the surface's own.
+    const c = window.__refFrame().camera();
+    return [c.renderWidth, c.renderHeight];
   });
   await page.close();
   if (backing[0] !== WIDTH * SCALE || backing[1] !== HEIGHT * SCALE) {

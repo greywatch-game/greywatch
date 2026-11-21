@@ -1,0 +1,863 @@
+/**
+ * The physics CLIENTS' oracle: a fixed script of deaths, broken panes and
+ * blasts played through `RagdollSystem`, `DebrisSystem` and
+ * `BlastDebrisSystem` on the real static world, stepped by hand, with every
+ * live body's pose hashed as Havok holds it — in flight, at rest, and on the
+ * frame each one is put away.
+ *
+ * Run with `node plans/physics-ref/clients.mjs [map...]`; `--check` grades
+ * against `plans/physics-ref/ref/clients-<map>.json` rather than replacing
+ * it. A plain run re-banks, exactly as `drop.mjs` does.
+ *
+ * **It exists because `drop.mjs` grades the static world and nothing that
+ * moves in it.** Sixty-four free boxes say whether `PhysicsWorld` built the
+ * ground right, and say nothing about a constraint, an impulse, a teleport, a
+ * re-shaped shard, an evicted corpse or a parked body — which is the whole of
+ * what `BABYLON_EXIT.md` X2.4 moves off Babylon's plugin onto Havok's raw API.
+ * A port that is call-for-call the plugin's is bit-for-bit the plugin's, so
+ * the bar here is BITS: two runs of this script in two processes come back
+ * with the same hash, and a change that must move nothing has to as well.
+ *
+ * **What it plays**, frame by frame at the game's 1/60 (`SCRIPT` below):
+ * nine stand-in corpses (`buildSoldier` rigs, posed at rest on a ring round
+ * the map's first flag) killed by rounds, a frag and a shell — one corpse
+ * more than the pool holds, so the ninth EVICTS the oldest — and one retired
+ * early as the death cam retires its own; five glass bursts cut from the
+ * nearest breakable panes, the fifth stealing a landed burst's slot and every
+ * one of them re-shaping its shards (`DebrisSystem.cut`); four rubble bursts
+ * on earth and on stone, the fourth stealing a landed one's slot; two
+ * half-frames that take NO substep straight after a spawn, so a teleport is
+ * held pending across a frame, and two double frames, so `afterFirstStep`
+ * runs between two substeps of one frame. Then it runs on until every pool
+ * has parked everything it threw.
+ *
+ * **What it hashes**, all through `HP_Body_GetQTransform` (`lib.mjs`), so the
+ * fingerprint is the engine's and survives whatever the clients' own nodes
+ * become:
+ *   - a SNAPSHOT of every live (DYNAMIC) body at `SNAPSHOTS` — in the air,
+ *     landing, around the eviction, and at the end, where nothing may be live;
+ *   - the REST list: each body's last pose before the frame it went static,
+ *     which is where a frozen corpse, a sunk shard and a parked chunk were
+ *     lying when the pool took them back.
+ * Each snapshot keeps its own hash, so a check that fails says WHICH frame
+ * first disagreed, and the run's hash is over all of them.
+ *
+ * **And EVERY pooled body, every frame, parked ones included** (`everyBody`
+ * in the bank, graded apart): whether Havok is simulating it and its raw
+ * `HP_Body_GetQTransform`, bit for bit. The snapshots hash only LIVE bodies,
+ * which is blind to the one failure a park exists to prevent — a body put
+ * away by rewriting its pose without telling the engine is a static box left
+ * lying where it settled (`RagdollSystem.park` measured one), and it is no
+ * longer live. So every parked body must also be exactly AT the park,
+ * `(0, -1000, 0)`, on every frame; one that is not fails the run by name.
+ *
+ * **Before the script, a map change and a teardown, twice** (`cycle`): the
+ * static world cleared and rebuilt off the same map, with the Havok world's
+ * own body count (`HP_World_GetNumBodies`) read after each and required to be
+ * the map's static bodies plus the pools' 174 — the leak a teardown that
+ * dropped a bucket, or released a pooled body, would be. The script then
+ * plays on the REBUILT world, so a rebuilt world is graded as one the clients
+ * land on the same way. (Rebuilding changes the static bodies' handles and so
+ * the solver's contact order: the run's hashes are not the ones banked before
+ * this step was added, which is why it was re-banked on the pre-port tree.)
+ *
+ * **Then the whole script once more in the same page** — `drop.mjs`'s
+ * in-process floor — reported and never graded: the engine has the first
+ * run's history in it, and a parked shard keeps the orientation it last
+ * wore, so a second run is not the same input and does not come back the
+ * same (measured: rest poses up to 2.5 m apart, against bit-identical runs in
+ * two processes).
+ *
+ * **These checks are banked on X4.1b's tree (f554b68)**, not on the pre-port
+ * tree any more: the banks were RE-TAKEN there (below), and this is the first
+ * bank not traceable to fb90b7d. **How X2.4 banked them**, and a recipe that
+ * holds only for a tree BEFORE X4.1b: `lib.mjs`'s helpers reach the engine in
+ * either era, so `git checkout fb90b7d -- src`, a plain run,
+ * `git checkout HEAD -- src`, then `--check` on the port — which came back
+ * identical on every line. Run on a tree past X4.1b, that recipe banks the
+ * old spawn poses and fails the new path from frame 0.
+ *
+ * **And, graded apart from that, the NODES the clients write** (`nodes` in
+ * the bank, added at X2.4 C5 and banked against the parent before that
+ * commit touched a line of source): a digest at the end of EVERY frame over
+ * the raw local transform of each corpse slot's bones, every shard and
+ * chunk mesh, and the nine stand-ins' rig roots and posed joints — parent,
+ * enabled flag, position, Euler, quaternion and scaling, bit for bit. The
+ * joints are `rigJoints.ts`'s since `BABYLON_EXIT.md` X4.1a, not nodes, and
+ * are digested in the same bytes (the parent's name, the rig's switch as the
+ * root's flag, "noquat"); the corpse bones' proxy nodes went at X4.1b, and
+ * each bone's pose array is digested in the bytes its proxy gave, a posed
+ * joint naming the pose it is drawn off; the shard and chunk meshes went at
+ * X4.4c, and each piece is digested in the bytes its mesh gave (its switch,
+ * its pose, its scale). C5 took
+ * the poses off those nodes into plain arrays that a view writes back; this
+ * is what says the views write the SAME transforms the solver's sync used
+ * to, on the same frames, the freeze and the sink included. A failure names
+ * the first frame whose nodes differ. It reads no matrix, so taking it makes
+ * Babylon compute nothing.
+ *
+ * **All three banks were RE-TAKEN at X4.1b**, on the new path, for two
+ * independent reasons. The ENGINE's: a corpse's bones start at the living
+ * pose composed once rather than through the earlier bones' hand-offs, one
+ * to four float32 ulps apart, and Havok carries that into every tumble
+ * after. The NODE digest's RIG half, by construction: it hashes each
+ * stand-in joint's own channels, which the old hand-off (`hold`/`release`)
+ * re-derived and a posed joint leaves alone, and names a frozen joint's
+ * parent, which is now the slot's copy (`…still`) — so that half could not
+ * have stayed even with the physics held equal. The new path was first
+ * graded identical against the old banks' engine half with the old spawn
+ * poses injected — `BABYLON_EXIT.md` X4.1b's note has the run.
+ *
+ * **Recording and injecting the spawn poses** (`--spawns-out=<file>`,
+ * `--spawns-in=<file>`): each offer's twelve bone poses, read at the door of
+ * `RagdollSystem.applyImpulse` before the impulse and the teleport — the
+ * whole of what a living rig hands Havok — written to a file as their raw
+ * float64 bytes, or read back from one and written over the poses there.
+ * `--spawns-in` grades and never banks (it needs `--check`). It is how a
+ * re-take proves what moved before the bank is replaced. A change that moves
+ * the spawn ON PURPOSE (X4.1b's): record on the parent, then
+ * `--check --spawns-in=` on the change against the parent's bank — identical
+ * on the engine and every-body halves says every other input to Havok is the
+ * parent's to the bit. A change that must leave the spawn ALONE and moves the
+ * bank anyway (`FINDINGS.md` 57's fix, which moves the impulse): record on
+ * both sides — two files that are byte-identical say the spawn did not move,
+ * so what moved the bank is the change itself.
+ *
+ * **It also probes one thing it does not grade** (`probe` in the bank): the
+ * chest's angular velocity the instant a corpse is offered, before any step.
+ * `RagdollSystem.applyImpulse` applies the killing impulse at the joint's
+ * WORLD position while the body is still parked at `PARKED_Y`, because the
+ * teleport that brings it to the joint only lands on the next substep — so
+ * the impulse's lever arm is measured from 1 km under the map. See
+ * `FINDINGS.md` for what that reading says.
+ *
+ * **Why it is reproducible, which the bank refuses to assume.** Every input is
+ * fixed: the round is built with nothing allowed into the engine (the game's
+ * own step and every way into the three pools are held off until the script
+ * starts — a bot killed under the deploy screen would otherwise have thrown a
+ * corpse into the world first), the render loop is stopped (the game's
+ * own, `Game.frameLoop.stop`, since `BABYLON_EXIT.md` X5.4g), each pool's
+ * jitter stream is re-seeded by its own `reset`, and every spawn, burst and
+ * step is the script's. What is left is Havok's determinism given identical
+ * calls, which is the instrument `drop.mjs` measured.
+ */
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { bootMap, launchClient, root, startDevServer } from "../webgpu-ref/harness.mjs";
+import { pageHelpers, sha } from "./lib.mjs";
+
+const args = process.argv.slice(2);
+const CHECK = args.includes("--check");
+const named = args.filter((a) => !a.startsWith("--"));
+/**
+ * `--spawns-out=<file>` and `--spawns-in=<file>`: each corpse's spawn poses,
+ * RECORDED or INJECTED (see the header). The file is
+ * `{ "<map>": [offer][bone] }`, each pose its seven float64s as hex, so
+ * nothing JSON would round is lost.
+ */
+const option = (name) => args.find((a) => a.startsWith(`--${name}=`))?.slice(name.length + 3) ?? null;
+const SPAWNS_OUT = option("spawns-out");
+const SPAWNS_IN = option("spawns-in");
+if (SPAWNS_IN && !CHECK) {
+  console.error("--spawns-in grades and never banks: pass --check with it");
+  process.exit(2);
+}
+const injected = SPAWNS_IN ? JSON.parse(readFileSync(SPAWNS_IN, "utf8")) : null;
+/**
+ * The two maps with breakable glass — only the city kit's office and
+ * shophouse glaze a way through (`PaneSpec.breakable`), and they stand on
+ * Coldharbour's streets and Cinderhaven's harbour front, the second on its
+ * 24-a-side roster — and a market town with none, which plays the script
+ * without its glass. Any other map runs on request.
+ */
+const DEFAULT_MAPS = ["coldharbour", "cinderhaven", "harrowmead"];
+const targets = named.length ? named : DEFAULT_MAPS;
+
+/** Frames played, at the game's 1/60 unless `DT` says otherwise. */
+const FRAMES = 600;
+/** The frames whose live bodies are hashed — see the header. */
+const SNAPSHOTS = [1, 2, 6, 14, 15, 30, 49, 50, 51, 72, 120, 121, 151, 240, 420, 600];
+
+const refDir = join(root, "plans", "physics-ref", "ref");
+mkdirSync(refDir, { recursive: true });
+
+/**
+ * Builds the round with nothing let into the physics engine, and stops the
+ * clock. See the header: the game's step and the three pools' doors are held
+ * off from before `startRound` until the script takes over.
+ */
+function quietRound(page) {
+  return page.evaluate(async () => {
+    const g = window.__celshock;
+    g.physics.update = () => {};
+    g.ragdolls.spawn = () => false;
+    g.debris.burst = () => false;
+    g.blastDebris.burst = () => false;
+    g.startRound();
+    await new Promise((res) => {
+      const poll = () => (g.state === "deploy" ? res() : setTimeout(poll, 10));
+      poll();
+    });
+    // The game's own loop since `BABYLON_EXIT.md` X5.4g (`Game.frameLoop`),
+    // whose `stop` is `stopRenderLoop`'s port — the engine's is a no-op
+    // there, the engine running no loop. An older tree has no `stop`.
+    if (g.frameLoop?.stop) g.frameLoop.stop();
+    else g.engine.stopRenderLoop();
+  });
+}
+
+/**
+ * A map change and a teardown, twice, before the script: the static world
+ * cleared (`setMap(null)`, which is what leaving a round does) and built
+ * again off the same map (`setMap(map)`, the next round's — an older tree's
+ * `setMap` took a second, `editor`, argument, which an absent one leaves off), reading after each how many bodies the Havok WORLD holds. Every
+ * reading must be the map's static bodies plus the pools' — a teardown that
+ * dropped a bucket, or a client that released a pooled body, shows here and
+ * nowhere else. Then the script runs on the REBUILT world, so it also says
+ * a rebuilt world is one the clients land on the same way.
+ */
+function cycle(page) {
+  return page.evaluate(() => {
+    const g = window.__celshock;
+    const ref = window.__physref;
+    const pooled = ref.clientBodies(g).length;
+    const read = (step) => ({ step, statics: ref.staticCount(g), world: ref.worldCount(g) });
+    const steps = [read("built")];
+    for (let i = 0; i < 2; i++) {
+      g.physics.setMap(null);
+      steps.push(read("cleared"));
+      g.physics.setMap(g.map);
+      steps.push(read("rebuilt"));
+    }
+    return { era: ref.era(g), pooled, steps };
+  });
+}
+
+/** The whole script, in the page. */
+function play(page, opts) {
+  return page.evaluate(
+    async ([FRAMES, SNAPSHOTS, INJECT]) => {
+      const g = window.__celshock;
+      const ref = window.__physref;
+      // The doors back: own properties shadowing the prototypes' methods.
+      delete g.physics.update;
+      delete g.ragdolls.spawn;
+      delete g.debris.burst;
+      delete g.blastDebris.burst;
+      const M = await import("/src/math/index.ts");
+      const SM = await import("/src/entities/SoldierModel.ts");
+      // The stand-in vector the burst entry points are handed: `src/math`'s,
+      // made as `toBabylon` made Babylon's until `BABYLON_EXIT.md` X6.1f
+      // (`copyFromFloats` into a new vector) — the type the entry points are
+      // declared on since X6.1e, whose `copyFromFloats` and `normalize`
+      // `scripts/math-check.mjs` holds to Babylon's bit for bit. Where the
+      // page still loaded Babylon (until X6.1h) the banks were taken with
+      // Babylon's own vector, from the page's copy; the package left the tree
+      // at X6.1i, and that arm with it.
+      const B3 = (x, y, z) => new M.Vector3().copyFromFloats(x, y, z);
+      const { HK } = ref.hp(g);
+      const bodies = ref.clientBodies(g);
+
+      // Every pool's jitter from its seed, and nothing left in any of them.
+      g.ragdolls.reset();
+      g.debris.reset();
+      g.blastDebris.reset();
+
+      // --- the stage ------------------------------------------------------
+      const hit = {
+        distance: 0,
+        point: new M.Vector3(),
+        normal: new M.Vector3(0, 1, 0),
+        surface: "hard",
+        hull: null,
+      };
+      const down = new M.Vector3(0, -1, 0);
+      const groundAt = (x, z) =>
+        g.map.rays.castBody(new M.Vector3(x, 300, z), down, 600, hit)
+          ? hit.point.y
+          : g.map.terrain.heightAt(x, z);
+      const flag = g.map.controlPoints[0].pos;
+
+      // Nine stand-ins on a 4 m ring round the flag, each on whatever the
+      // world says is under it, facing in toward the flag.
+      class Corpse {
+        constructor(rig, feet) {
+          this.rig = rig;
+          this.position = feet;
+          this.center = new M.Vector3(feet.x, feet.y + rig.centerHeight, feet.z);
+          this.deathFrom = new M.Vector3();
+          this.deathDamage = 0;
+          this.deathKind = "bullet";
+          this.ragdolling = false;
+          this.alive = false;
+        }
+        setEnabled(on) {
+          SM.setRigEnabled(this.rig, on);
+        }
+      }
+      const corpses = [];
+      for (let i = 0; i < 9; i++) {
+        const a = (i / 9) * Math.PI * 2;
+        const x = flag.x + Math.cos(a) * 4;
+        const z = flag.z + Math.sin(a) * 4;
+        const rig = SM.buildSoldier(i % 2);
+        const feet = new M.Vector3(x, groundAt(x, z), z);
+        rig.root.position.set(feet.x, feet.y, feet.z);
+        rig.root.rotation.y = a + Math.PI / 2;
+        SM.setRigEnabled(rig, false);
+        corpses.push(new Corpse(rig, feet));
+      }
+      const kill = (i, kind, damage, fx, fy, fz) => {
+        const c = corpses[i];
+        c.deathKind = kind;
+        c.deathDamage = damage;
+        c.deathFrom.set(c.position.x + fx, c.position.y + fy, c.position.z + fz);
+        return g.ragdolls.spawn(c, B3(c.position.x, c.position.y + 1.6, c.position.z));
+      };
+
+      // The breakable panes nearest the flag, in a fixed order.
+      const panes = g.map.panes
+        .map((p, i) => [Math.hypot(p.cx - flag.x, p.cz - flag.z), i])
+        .sort((a, b) => a[0] - b[0] || a[1] - b[1])
+        .slice(0, 4)
+        .map(([, i]) => g.map.panes[i]);
+      const shatter = (n, du, dv) => {
+        if (panes.length === 0) return null;
+        const p = panes[n % panes.length];
+        // Across the face and up it from the centre, along the face's own
+        // axis — `DebrisSystem.burst`'s convention for which way is across.
+        const c = Math.cos(p.rotY);
+        const s = Math.sin(p.rotY);
+        const alongX = p.w >= p.d;
+        const nx = alongX ? s : c;
+        const nz = alongX ? c : -s;
+        const at = B3(p.cx + du * nz, p.cy + dv, p.cz - du * nx);
+        // In through the face, a little off square.
+        const dir = B3(nx + 0.2 * nz, -0.05, nz - 0.2 * nx).normalize();
+        return g.debris.burst(p, at, dir, at.clone());
+      };
+      const blast = (dx, dz, power, surface) => {
+        const x = flag.x + dx;
+        const z = flag.z + dz;
+        const at = B3(x, groundAt(x, z) + 0.1, z);
+        return g.blastDebris.burst(
+          at,
+          power,
+          { surface, normal: B3(0, 1, 0) },
+          at.clone(),
+        );
+      };
+
+      // --- the spawn poses (`--spawns-out`, `--spawns-in`) --------------------
+      // Each offer's twelve bone poses as `spawn` leaves them, read at the
+      // door of `applyImpulse` — before the impulse and the teleport, so
+      // they are the whole of what the living rig hands Havok. Injected, the
+      // recorded poses are written over them there, into the arrays the
+      // joints are already posed off. An own property shadowing the
+      // prototype's method, taken off again at the end.
+      const spawns = [];
+      const toHex = (pose) => {
+        const b = new Uint8Array(Float64Array.from(pose).buffer);
+        let h = "";
+        for (let i = 0; i < b.length; i++) h += b[i].toString(16).padStart(2, "0");
+        return h;
+      };
+      const fromHex = (h) => {
+        const b = new Uint8Array(h.length / 2);
+        for (let i = 0; i < b.length; i++) b[i] = parseInt(h.slice(i * 2, i * 2 + 2), 16);
+        return new Float64Array(b.buffer);
+      };
+      const impulse = Object.getPrototypeOf(g.ragdolls).applyImpulse;
+      g.ragdolls.applyImpulse = function (slot, subject) {
+        if (INJECT) {
+          const rec = INJECT[spawns.length];
+          if (!rec || rec.length !== slot.bones.length) {
+            throw new Error(`no ${slot.bones.length} recorded poses for offer ${spawns.length}`);
+          }
+          slot.bones.forEach((bone, i) => bone.body.pose.set(fromHex(rec[i])));
+        }
+        spawns.push(slot.bones.map((bone) => toHex(bone.body.pose)));
+        return impulse.call(this, slot, subject);
+      };
+
+      // --- the probe --------------------------------------------------------
+      // What Havok holds for a freshly offered corpse's chest, BEFORE any
+      // step: where the body is and how fast it is turning. Not graded.
+      const probe = {};
+      const chestOf = () => {
+        // The one torso that went live on this offer.
+        for (const [label, id] of bodies) {
+          if (label.endsWith(".torso") && ref.live(HK, id) && !probe.seen?.has(label)) {
+            return [label, id];
+          }
+        }
+        return null;
+      };
+      const readChest = (key, offerResult) => {
+        probe.seen ??= new Set();
+        const found = chestOf();
+        if (!found) return offerResult;
+        const [label, id] = found;
+        probe.seen.add(label);
+        const w = HK.HP_Body_GetAngularVelocity(id)[1];
+        const v = HK.HP_Body_GetLinearVelocity(id)[1];
+        probe[key] = {
+          offered: offerResult,
+          body: label,
+          bodyAt: ref.pose(HK, id).slice(0, 3).map((n) => +n.toFixed(3)),
+          angular: w.map((n) => +n.toFixed(3)),
+          spin: +Math.hypot(...w).toFixed(3),
+          linear: v.map((n) => +n.toFixed(3)),
+          id,
+        };
+        return offerResult;
+      };
+
+      // --- the script ---------------------------------------------------------
+      const DT = { 13: 1 / 120, 14: 1 / 120, 70: 1 / 30, 71: 1 / 30 };
+      const SCRIPT = {
+        0: () => [
+          readChest("bullet", kill(0, "bullet", 34, -8, 1.6, -3)),
+          readChest("blast", kill(1, "blast", 70, 1.5, 0.1, 0.8)),
+          shatter(0, 0, 0),
+          blast(6, 2, 1, "ground"),
+        ],
+        6: () => [shatter(1, 0.3, 0.2), blast(-5, 4, 1.85, "hard")],
+        12: () => kill(2, "bullet", 34, 6, 2.5, 6),
+        // Offered on a frame that takes NO substep: its teleport is pending
+        // until frame 14's.
+        13: () => kill(3, "shell", 120, -1, 0.3, -1.5),
+        18: () => kill(4, "bullet", 60, 0, 1.6, 9),
+        24: () => kill(5, "blast", 40, -2, 0.2, 0),
+        30: () => kill(6, "bullet", 34, 9, 1.6, 0),
+        36: () => kill(7, "blast", 90, 0.5, 0.1, -1),
+        // The ninth: the pool holds eight, none is sinking, so the OLDEST goes.
+        50: () => kill(8, "bullet", 34, -6, 1.6, 5),
+        60: () => shatter(2, -0.2, -0.1),
+        66: () => shatter(3, 0.1, 0.3),
+        // Every slot holds glass; the oldest has landed (2 s against the 1.6
+        // s `shardSteal`), so it is stolen.
+        120: () => shatter(0, -0.4, 0.1),
+        130: () => blast(3, -6, 1, "ground"),
+        // Every slot holds rubble; the oldest has landed (2.5 s), so it goes.
+        150: () => blast(-4, -3, 1, "hard"),
+        // The death cam's early retire, on a corpse that has frozen.
+        200: () => g.ragdolls.retire(corpses[5]) ?? "retired",
+      };
+      // Read after the frame's events and steps, to say the script did what it
+      // says: which corpses the pool still holds, and how many shard shapes
+      // the cuts have asked for (more than the pool's one means `cut`
+      // re-shaped a body).
+      const AUDIT = {
+        49: "before the ninth",
+        51: "after the ninth",
+        201: "after the retire",
+      };
+      const audit = [];
+
+      // --- the nodes ---------------------------------------------------------
+      // Everything the three clients' views are drawn off, in a fixed order:
+      // each corpse slot's bone poses, every shard's mesh, every chunk's
+      // mesh, and each of the nine stand-ins' rig root and posed joints
+      // (`rig.rest`, the build-time list). Digested at the end of every frame
+      // over the raw local transform — parent, own enabled flag, position,
+      // Euler rotation, quaternion and scaling, bit for bit (a -0 is not a
+      // 0) — and nothing that would make Babylon compute a matrix, so reading
+      // it changes nothing it reads.
+      //
+      // A corpse's bones were drawn on pool-owned PROXY nodes until
+      // `BABYLON_EXIT.md` X4.1b, which a view wrote each body's pose onto at
+      // the end of every frame; the joints are drawn straight off the pose
+      // arrays since, so each bone's `body.pose` is digested in the bytes its
+      // proxy gave (no parent, enabled, the pose's position, a zero Euler,
+      // the pose's quaternion, unit scale) — the proxies' half of the digest
+      // reads the same either side of that step, and is what the X4.1b note
+      // compares.
+      const nodeList = [];
+      const poseName = new Map();
+      for (const [i, slot] of g.ragdolls.slots.entries()) {
+        for (const bone of slot.bones) {
+          nodeList.push({ pose: bone.body.pose });
+          poseName.set(bone.body.pose, `ragdoll${i}-${bone.joint}`);
+          poseName.set(bone.still, `ragdoll${i}-${bone.joint}.still`);
+        }
+      }
+      // A shard and a chunk were MESHES the views wrote each body's pose onto
+      // until `BABYLON_EXIT.md` X4.4c; our renderer draws them straight off
+      // the pose since (`poseView.PosedPiece`), so each is digested in the
+      // bytes its mesh gave — no parent, its switch, the pose's position, a
+      // zero Euler, the pose's quaternion, its scale on all three axes — the
+      // same either side of that step, every write onto the mesh having
+      // followed whatever moved the pose.
+      for (const burst of g.debris.bursts) for (const s of burst.shards) nodeList.push(s.mesh ?? { posed: s.piece });
+      for (const burst of g.blastDebris.bursts) for (const c of burst.chunks) nodeList.push(c.mesh ?? { posed: c.piece });
+      // A rig's joints are not nodes since `BABYLON_EXIT.md` X4.1a: they are
+      // `rigJoints.ts`'s, digested below in the bytes a node gave — the
+      // parent's name (or, while a ragdoll poses the joint, the name of the
+      // pose it is drawn off: a bone's body, or the slot's copy of it once
+      // the corpse has frozen), the root's enabled flag as the rig's switch,
+      // a joint's own, and "noquat", which no joint can hold.
+      for (const c of corpses) {
+        nodeList.push({ joint: c.rig.root, rig: c.rig });
+        for (const r of c.rig.rest) nodeList.push({ joint: r.node, rig: null });
+      }
+      const f64 = new Float64Array(1);
+      const u8 = new Uint8Array(f64.buffer);
+      // Two 32-bit FNV/murmur-style lanes over raw bytes: every float is its
+      // eight bytes, so a -0 is not a 0 and nothing JSON would round is lost.
+      const hasher = () => {
+        let h1 = 0x811c9dc5;
+        let h2 = 0x9747b28c;
+        const byte = (b) => {
+          h1 = Math.imul(h1 ^ b, 16777619);
+          h2 = Math.imul(h2 ^ b, 0x5bd1e995);
+          h2 ^= h2 >>> 15;
+        };
+        return {
+          num(x) {
+            f64[0] = x;
+            for (let i = 0; i < 8; i++) byte(u8[i]);
+          },
+          str(t) {
+            for (let i = 0; i < t.length; i++) byte(t.charCodeAt(i) & 0xff);
+            byte(0);
+          },
+          done: () =>
+            (h1 >>> 0).toString(16).padStart(8, "0") + (h2 >>> 0).toString(16).padStart(8, "0"),
+        };
+      };
+      const nodeDigest = () => {
+        const { num, str, done } = hasher();
+        for (const n of nodeList) {
+          if (n.posed) {
+            const piece = n.posed;
+            const p = piece.body.pose;
+            str("-");
+            num(piece.enabled ? 1 : 0);
+            num(p[0]); num(p[1]); num(p[2]);
+            num(0); num(0); num(0);
+            num(p[3]); num(p[4]); num(p[5]); num(p[6]);
+            num(piece.scale); num(piece.scale); num(piece.scale);
+            continue;
+          }
+          if (n.pose) {
+            const p = n.pose;
+            str("-");
+            num(1);
+            num(p[0]); num(p[1]); num(p[2]);
+            num(0); num(0); num(0);
+            num(p[3]); num(p[4]); num(p[5]); num(p[6]);
+            num(1); num(1); num(1);
+            continue;
+          }
+          if (n.joint) {
+            const j = n.joint;
+            str(j.pose ? (poseName.get(j.pose) ?? "pose?") : j.parent ? j.parent.name : "-");
+            num((n.rig ? n.rig.enabled : j.enabled) ? 1 : 0);
+            num(j.position.x); num(j.position.y); num(j.position.z);
+            num(j.rotation.x); num(j.rotation.y); num(j.rotation.z);
+            str("noquat");
+            num(j.scaling.x); num(j.scaling.y); num(j.scaling.z);
+            continue;
+          }
+          str(n.parent ? n.parent.name : "-");
+          num(n.isEnabled(false) ? 1 : 0);
+          const p = n.position;
+          num(p.x); num(p.y); num(p.z);
+          const r = n.rotation;
+          num(r.x); num(r.y); num(r.z);
+          const q = n.rotationQuaternion;
+          if (q) { num(q.x); num(q.y); num(q.z); num(q.w); } else str("noquat");
+          const s = n.scaling;
+          num(s.x); num(s.y); num(s.z);
+        }
+        return done();
+      };
+      const nodeFrames = [];
+      // Every POOLED body, live or parked, at the end of every frame: whether
+      // Havok is simulating it and its raw `HP_Body_GetQTransform`, bit for
+      // bit. The snapshots below hash only the LIVE ones, which is blind to a
+      // park that rewrote a pose without telling the engine — the static box
+      // left lying in the street that `RagdollSystem.park` measured. And
+      // every parked body must be exactly at the park, (0, PARKED_Y, 0).
+      const bodyFrames = [];
+      const unparked = [];
+      let unparkedCount = 0;
+
+      const wanted = new Set(SNAPSHOTS);
+      const snapshots = [];
+      const rest = [];
+      const lastPose = new Map();
+      const wasLive = new Set();
+      const accepted = [];
+      for (let f = 0; f <= FRAMES; f++) {
+        const event = SCRIPT[f];
+        if (event) accepted.push([f, event() ?? null]);
+        const dt = DT[f] ?? 1 / 60;
+        // `Game.stepAftermath`'s order: the engine, then its three clients.
+        g.physics.update(dt);
+        g.ragdolls.update(dt);
+        g.debris.update(dt);
+        g.blastDebris.update(dt);
+
+        const live = [];
+        const every = hasher();
+        for (const [label, id] of bodies) {
+          const isLive = ref.live(HK, id);
+          const [p, q] = HK.HP_Body_GetQTransform(id)[1];
+          every.num(isLive ? 1 : 0);
+          every.num(p[0]); every.num(p[1]); every.num(p[2]);
+          every.num(q[0]); every.num(q[1]); every.num(q[2]); every.num(q[3]);
+          if (isLive) {
+            // `lib.mjs`'s `pose`, off the same read.
+            const pose = [p[0] + 0, p[1] + 0, p[2] + 0, q[0], q[1], q[2], q[3]];
+            lastPose.set(label, pose);
+            wasLive.add(label);
+            live.push([label, pose]);
+          } else {
+            if (p[0] !== 0 || p[1] !== -1000 || p[2] !== 0) {
+              unparkedCount++;
+              if (unparked.length < 8) unparked.push([f, label, p.map((n) => +n.toFixed(3))]);
+            }
+            if (wasLive.has(label)) {
+              // Put away this frame: where it was lying is the REST pose.
+              wasLive.delete(label);
+              rest.push([label, f, lastPose.get(label)]);
+            }
+          }
+        }
+        bodyFrames.push(every.done());
+        nodeFrames.push(nodeDigest());
+        if (AUDIT[f]) {
+          audit.push([f, AUDIT[f], corpses.map((c) => (c.ragdolling ? 1 : 0)).join("")]);
+        }
+        if (wanted.has(f)) {
+          snapshots.push({
+            frame: f,
+            live: live.length,
+            corpses: g.ragdolls.activeCount,
+            shards: g.debris.activeCount,
+            rubble: g.blastDebris.activeCount,
+            bodies: live,
+          });
+        }
+      }
+      delete g.ragdolls.applyImpulse;
+      if (INJECT && spawns.length !== INJECT.length) {
+        throw new Error(`${INJECT.length} offers recorded, ${spawns.length} made`);
+      }
+      delete probe.seen;
+      for (const k of Object.keys(probe)) delete probe[k].id;
+      return {
+        snapshots,
+        rest,
+        probe,
+        accepted,
+        audit,
+        nodeFrames,
+        nodeCount: nodeList.length,
+        bodyFrames,
+        unparked,
+        unparkedCount,
+        shardShapes: g.debris.shapes.size,
+        panes: panes.length,
+        bodies: bodies.length,
+        spawns,
+      };
+    },
+    [opts.frames, opts.snapshots, opts.inject ?? null],
+  );
+}
+
+const vite = await startDevServer(root);
+const browser = await launchClient();
+console.log(
+  `clients: ${FRAMES} frames @ ${vite.url}${CHECK ? "  (check only)" : ""}` +
+    (SPAWNS_IN ? `  (spawn poses injected from ${SPAWNS_IN})` : "") +
+    (SPAWNS_OUT ? `  (spawn poses recorded to ${SPAWNS_OUT})` : "") +
+    "\n",
+);
+
+const problems = [];
+for (const id of targets) {
+  const out = join(refDir, `clients-${id}.json`);
+  const banked = existsSync(out) ? JSON.parse(readFileSync(out, "utf8")) : null;
+  const { page, pageErrors } = await bootMap(browser, vite.url, id);
+  await quietRound(page);
+  await page.evaluate(pageHelpers);
+  const teardown = await cycle(page);
+  const inject = injected ? injected[id] : null;
+  if (injected && !inject) throw new Error(`${SPAWNS_IN} holds no spawn poses for ${id}`);
+  const r = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS, inject });
+  // The same script again in the SAME page, after another teardown — the
+  // in-process floor `drop.mjs` measures. Reported, never graded: the engine
+  // has the first run's history in it.
+  const teardown2 = await cycle(page);
+  const r2 = await play(page, { frames: FRAMES, snapshots: SNAPSHOTS, inject });
+  await page.close();
+  if (SPAWNS_OUT) {
+    // The first run's, merged per map into whatever the file already holds.
+    const all = existsSync(SPAWNS_OUT) ? JSON.parse(readFileSync(SPAWNS_OUT, "utf8")) : {};
+    all[id] = r.spawns;
+    writeFileSync(SPAWNS_OUT, `${JSON.stringify(all)}\n`);
+  }
+
+  const snaps = r.snapshots.map((s) => ({
+    frame: s.frame,
+    live: s.live,
+    hash: sha(s.bodies),
+  }));
+  const restHash = sha(r.rest);
+  const hash = sha({ snaps: snaps.map((s) => s.hash), rest: restHash });
+  // The applied-node digest — graded beside the engine's hash, never folded
+  // into it, so a bank taken before it existed still grades the physics.
+  const nodeHash = sha(r.nodeFrames);
+  // Every pooled body every frame, parked ones included — graded apart, as
+  // the nodes are.
+  const bodyHash = sha(r.bodyFrames);
+  const label = id.padEnd(12);
+  const pad = " ".repeat(12);
+  const firstStatics = teardown.steps[0].statics;
+  for (const t of [teardown, teardown2]) {
+    for (const st of t.steps) {
+      const want = st.statics + t.pooled;
+      if (st.world !== want) {
+        problems.push(`${id}: ${st.step} world holds ${st.world} bodies, want ${st.statics} + ${t.pooled}`);
+      }
+      const wantStatics = st.step === "cleared" ? 0 : firstStatics;
+      if (st.statics !== wantStatics) {
+        problems.push(`${id}: ${st.step} map is ${st.statics} static bodies, want ${wantStatics}`);
+      }
+    }
+  }
+  if (r.unparkedCount) {
+    problems.push(
+      `${id}: ${r.unparkedCount} parked body-frames off the park, first ${JSON.stringify(r.unparked[0])}`,
+    );
+  }
+  // The in-process repeat, against the first run.
+  const snaps2 = r2.snapshots.map((s) => sha(s.bodies));
+  const repeatAt = snaps.findIndex((s, i) => snaps2[i] !== s.hash);
+  const bodyAt2 = r.bodyFrames.findIndex((d, i) => r2.bodyFrames[i] !== d);
+  let repeatWorst = 0;
+  if (r2.rest.length === r.rest.length) {
+    for (let i = 0; i < r.rest.length; i++) {
+      const a = r.rest[i][2];
+      const b = r2.rest[i][2];
+      repeatWorst = Math.max(repeatWorst, Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]));
+    }
+  }
+  const repeat =
+    bodyAt2 < 0
+      ? "identical"
+      : `differs from frame ${bodyAt2}` +
+        (repeatAt >= 0 ? ` (first live snapshot at ${snaps[repeatAt].frame})` : "") +
+        (r2.rest.length === r.rest.length
+          ? `, rest poses up to ${repeatWorst.toFixed(4)} m apart`
+          : `, ${r2.rest.length} put away against ${r.rest.length}`);
+  const last = r.snapshots[r.snapshots.length - 1];
+  const summary =
+    `${r.bodies} pooled bodies, ${r.panes} panes, ${r.shardShapes} shard shapes, ` +
+    `${r.rest.length} put away, ` +
+    `peak ${Math.max(...snaps.map((s) => s.live))} live`;
+  if (last.live) problems.push(`${id}: ${last.live} bodies still live at frame ${last.frame}`);
+  if (pageErrors.length) problems.push(`${id}: ${pageErrors.length} page errors: ${pageErrors[0]}`);
+
+  if (CHECK) {
+    if (!banked) {
+      problems.push(`${id}: nothing banked to compare against`);
+      console.log(`${label} no reference on disk  ${hash}`);
+    } else if (banked.frames !== FRAMES) {
+      problems.push(`${id}: banked over ${banked.frames} frames, ran ${FRAMES}`);
+      console.log(`${label} NOT GRADED — a different script`);
+    } else if (banked.hash === hash) {
+      console.log(`${label} identical  ${hash}  ${summary}`);
+    } else {
+      const first = snaps.find((s, i) => banked.snapshots[i]?.hash !== s.hash);
+      const where = first
+        ? `first at frame ${first.frame} (${first.live} live, banked ${banked.snapshots.find((b) => b.frame === first.frame)?.live})`
+        : `in the rest list (${r.rest.length} against ${banked.rest.count})`;
+      problems.push(`${id}: bits moved, ${where}`);
+      console.log(`${label} MOVED      ${hash} (banked ${banked.hash}), ${where}`);
+    }
+    if (banked && banked.frames === FRAMES) {
+      if (!banked.nodes) {
+        problems.push(`${id}: no node digest banked`);
+        console.log(`${pad} nodes NOT GRADED — nothing banked  ${nodeHash}`);
+      } else if (banked.nodes.hash === nodeHash) {
+        console.log(`${pad} nodes identical  ${nodeHash}  (${r.nodeCount} nodes x ${r.nodeFrames.length} frames)`);
+      } else {
+        const at = r.nodeFrames.findIndex((d, i) => banked.nodes.frames[i] !== d);
+        problems.push(`${id}: applied nodes moved, first at frame ${at}`);
+        console.log(`${pad} nodes MOVED  ${nodeHash} (banked ${banked.nodes.hash}), first at frame ${at}`);
+      }
+      if (!banked.everyBody) {
+        problems.push(`${id}: no every-body digest banked`);
+        console.log(`${pad} every body NOT GRADED — nothing banked  ${bodyHash}`);
+      } else if (banked.everyBody.hash === bodyHash) {
+        console.log(`${pad} every body identical  ${bodyHash}  (${r.bodies} bodies x ${r.bodyFrames.length} frames, parked ones at the park)`);
+      } else {
+        const at = r.bodyFrames.findIndex((d, i) => banked.everyBody.frames[i] !== d);
+        problems.push(`${id}: pooled bodies moved, first at frame ${at}`);
+        console.log(`${pad} every body MOVED  ${bodyHash} (banked ${banked.everyBody.hash}), first at frame ${at}`);
+      }
+      if (banked.teardown && JSON.stringify(banked.teardown) !== JSON.stringify(teardown.steps)) {
+        problems.push(`${id}: the teardown read ${JSON.stringify(teardown.steps)}, banked ${JSON.stringify(banked.teardown)}`);
+      }
+    }
+  } else {
+    writeFileSync(
+      out,
+      `${JSON.stringify(
+        {
+          map: id,
+          frames: FRAMES,
+          hash,
+          snapshots: snaps,
+          rest: { count: r.rest.length, hash: restHash },
+          accepted: r.accepted,
+          audit: r.audit,
+          shardShapes: r.shardShapes,
+          nodes: { count: r.nodeCount, hash: nodeHash, frames: r.nodeFrames },
+          everyBody: { hash: bodyHash, frames: r.bodyFrames },
+          teardown: teardown.steps,
+          era: teardown.era,
+          repeat,
+          probe: r.probe,
+        },
+        null,
+        1,
+      )}\n`,
+    );
+    console.log(`${label} banked ${hash}  ${summary}`);
+    console.log(`${pad} nodes banked ${nodeHash}  (${r.nodeCount} nodes)`);
+    console.log(`${pad} every body banked ${bodyHash}`);
+  }
+  console.log(
+    `${pad} ${teardown.era} tree; teardown ` +
+      teardown.steps.map((t) => `${t.step} ${t.statics}+${teardown.pooled}=${t.world}`).join(", "),
+  );
+  console.log(`${pad} repeat in one process: ${repeat}`);
+  console.log(
+    `${pad} snapshots ${snaps.map((s) => `${s.frame}:${s.live}`).join(" ")}`,
+  );
+  console.log(
+    `${pad} offers ${r.accepted.map(([f, v]) => `${f}:${JSON.stringify(v)}`).join(" ")}`,
+  );
+  console.log(`${pad} corpses held ${r.audit.map(([f, , held]) => `${f}:${held}`).join(" ")}`);
+  for (const [k, p] of Object.entries(r.probe)) {
+    console.log(
+      `${pad} probe ${k}: ${p.body} at [${p.bodyAt}] spinning ${p.spin} rad/s ` +
+        `[${p.angular}], moving [${p.linear}] m/s`,
+    );
+  }
+}
+
+await browser.close();
+vite.stop();
+
+if (problems.length) {
+  console.log("");
+  for (const p of problems) console.log(`  ${p}`);
+  process.exit(1);
+}

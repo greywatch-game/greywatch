@@ -2,9 +2,10 @@
  * net/NetRoster.ts — The other bodies on screen, driven by snapshots.
  * Owns: the `NetSoldier` pool, applying snapshots to it, the mirrored flag and
  * ticket state, the distance LOD, and the target list the local player's own
- * rounds are resolved against. It is the client's replacement for
- * `BattleSystem` in a networked round — same job on screen, none of the job
- * underneath, because no AI runs here.
+ * rounds are resolved against. It is the page's whole picture of the
+ * authority's `BattleSystem` in every round — a server's match and the page's
+ * own alike, every round being a match — the same job on screen and none of
+ * the job underneath, because no AI runs here.
  * Invariants: the pool holds one soldier per slot the ROUND fields, and a
  * slot's soldier is the same object for as long as the map is standing; only
  * its OCCUPANT changes, which is why a human taking a bot's place costs nothing
@@ -17,21 +18,26 @@
  * belonging to the local player is left disabled.
  *
  * **A SLOT IS NOT A POOL INDEX HERE, and that is the one thing to know before
- * touching this file.** The authority's slot table is the ceiling any map may
- * field — forty-eight, so that a rotation never renumbers a player (see
- * `server/Roster.ts`) — while a round fields the standing map's `perTeam` out
- * of each team's block. So on a map fielding eight a side the bodies are slots
- * 0-7 and 24-31, and this class keeps two views of one pool: `soldiers`, dense,
- * for everything that walks the roster, and `bySlot`, sparse, for everything
- * that arrives off the wire holding a slot number. They are built and thrown
- * away together by `setFielded`, which is the only thing that may write either.
+ * touching this file.** The authority's slot table is laid out in two BLOCKS,
+ * one a team, and a round fields the standing map's `perTeam` out of the
+ * front of each. How wide a block is, is the MATCH's: on a server's match it
+ * is the ceiling any map may field (`CONFIG.bots.maxPerTeam`, so that a
+ * rotation never renumbers a player — see `server/Roster.ts`), so on a map
+ * fielding eight a side the bodies are slots 0-7 and 24-31; on a match the
+ * page owns it is the map's own roster, so the
+ * same bodies are 0-7 and 8-15. The welcome says which (`Welcome.blockWidth`,
+ * `setBlockWidth`), and until it has, the ceiling is assumed. So this class
+ * keeps two views of one pool: `soldiers`, dense, for everything that walks
+ * the roster, and `bySlot`, sparse, for everything that arrives off the wire
+ * holding a slot number. They are built and thrown away together by
+ * `setFielded`, and re-addressed together by `setBlockWidth`, the only two
+ * things that may write either.
  */
-import { Scene, Vector3 } from "@babylonjs/core";
+import { Vector3, type Vector3Like } from "../math";
 import { CONFIG, FOG_WALL } from "../config";
 import { NetSoldier } from "../entities/NetSoldier";
-import type { Combatant, Team } from "../entities/Combatant";
+import type { Team } from "../entities/Combatant";
 import { viewerTeam } from "../core/teamView";
-import type { CelMaterialFactory } from "../shaders/CelShader";
 import type { Hittable } from "../systems/CombatSystem";
 import type { ControlPoint } from "../systems/ConquestSystem";
 import type { PointState, SlotState, Snapshot } from "./protocol";
@@ -54,11 +60,11 @@ export class NetRoster {
   /**
    * How far a body is worth drawing — the match's map's, pushed by
    * `Game.installMap` (and again by `wireNet`, for a join into a match already
-   * standing). `BattleSystem.viewDistance` is the same field for the same
-   * reason: past the fog there is nothing to see, and a map with no fog has no
+   * standing). Past the fog there is nothing to see, and a map with no fog has no
    * such distance short of its own far side — which is why a map may now state
    * one outright as `EnvironmentSpec.bodyDrawDistance`, resolved by
-   * `bodyDrawDistanceOf` and pushed to the three body gates together.
+   * `bodyDrawDistanceOf` and pushed to the two body gates together (this
+   * and `RagdollSystem.viewDistance`).
    */
   private viewDistance = FOG_WALL;
 
@@ -70,16 +76,23 @@ export class NetRoster {
   /** Mirrored from the server each snapshot. */
   readonly tickets: [number, number] = [0, 0];
 
+  /**
+   * The authority's slot-table block width a team — team 1's first slot. The
+   * ceiling until a welcome names the match's own (`setBlockWidth`): the only
+   * width a server's match has, and what a welcome that says nothing means.
+   */
+  private blockWidth: number = CONFIG.bots.maxPerTeam;
+
   /** The slot the local player owns, or -1 while spectating. */
   localSlot = -1;
 
   /**
    * Which slots are inside a hull, by slot.
    *
-   * A body in a tank is not drawn: offline `Game.mount` hides the player's
-   * viewmodel and `BattleSystem.setCrewed` takes a bot's rig off the field,
-   * and this is the same statement made from the wire. Without it a crewed
-   * hull drives down the street with its driver standing in the road at the
+   * A body in a tank is not drawn: `Game.mount` hides the player's viewmodel
+   * and, in the core, `VehicleCrew` takes a bot out of the world
+   * (`Bot.shown`), and this is the same statement made from the wire.
+   * Without it a crewed hull drives down the street with its driver standing in the road at the
    * hull's own position, at the hull's own SPEED — which reads as a man being
    * dragged along under the tracks.
    *
@@ -142,14 +155,14 @@ export class NetRoster {
    */
   onStep: (soldier: NetSoldier) => void = () => {};
 
-  constructor(
-    private readonly scene: Scene,
-    private readonly mats: CelMaterialFactory,
-  ) {
-    // What a map that states nothing fields, which is four of the five and is
-    // the only honest guess before a `roundstart` has named one. `Game`
-    // pushes the real number every round.
-    this.buildPool(CONFIG.bots.perTeam);
+  constructor(perTeam: number) {
+    // The map the session is opened for, as `Game` knows it then — the
+    // page's own match is opened ON its map, so this is the round's own
+    // roster and `buildRound`'s `setFielded` finds nothing to rebuild; a
+    // server's is the map the join expects, which the welcome may yet move.
+    // Building the shipped eight here instead built Sarab's and
+    // Cinderhaven's pool twice every offline round.
+    this.buildPool(perTeam);
   }
 
   /**
@@ -193,11 +206,57 @@ export class NetRoster {
       return;
     }
     this.paintedFor = viewerTeam();
-    for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
     this.bySlot.length = 0;
     this.riding.length = 0;
     this.buildPool(perTeam);
+  }
+
+  /**
+   * The match's table is `width` slots a team, as its welcome says
+   * (`Welcome.blockWidth`): every body is RE-ADDRESSED to the slot the authority
+   * numbers it by — `team * width + i` for the `i`th of its team — and nothing
+   * is rebuilt. A no-op at the same width.
+   *
+   * **Re-addressed rather than rebuilt, because the welcome and the round's
+   * build arrive in either order.** `Game.buildRound` sizes the pool
+   * (`setFielded`) off the map, and the welcome comes off the wire whenever
+   * the transport delivers it, before or after that; rebuilding rigs here
+   * would dispose bodies the ragdoll pool may be holding, which `setFielded`
+   * may only do after a reset that only the build performs. A body's address
+   * is the one thing the welcome knows that the build did not, so the address
+   * is the one thing that moves — and `buildPool` reads the width too, so a
+   * pool rebuilt afterwards is numbered the same way.
+   *
+   * What hangs off a SLOT rather than a body goes with the old addressing:
+   * `riding` is cleared (the next snapshot restates it, hull by hull), and
+   * `localSlot` is restated by the roster message the authority sends right
+   * behind every welcome (`applyRoster`) — which is why `NetSession` calls
+   * this first thing in its welcome arm, ahead of anything that reads a slot.
+   */
+  setBlockWidth(width: number): void {
+    const was = this.blockWidth;
+    if (width === was) return;
+    this.blockWidth = width;
+    this.bySlot.length = 0;
+    this.riding.length = 0;
+    // `soldiers` is built team 0 first, each team in slot order, so the
+    // `i`th of a team is its `i`th body here — `buildPool`'s own order. A
+    // body's BLOCK is read off its old address, never off `team`: that is
+    // the occupant's side as the roster last said it, and a slot is in its
+    // block whoever sits in it.
+    const seen = [0, 0];
+    for (const soldier of this.soldiers) {
+      const team = soldier.slot < was ? 0 : 1;
+      soldier.slot = team * width + seen[team]++;
+      this.bySlot[soldier.slot] = soldier;
+    }
+    if (seen[0] > width || seen[1] > width) {
+      // A pool wider than the table: two teams' bodies on one address. Not a
+      // case either host produces — an owned match's table is the map the page
+      // built — so it is said rather than quietly drawn wrong.
+      console.error(`[net] a ${seen[0]}-a-side pool does not fit a table ${width} a side`);
+    }
   }
 
   /**
@@ -216,16 +275,17 @@ export class NetRoster {
   /**
    * `perTeam` bodies a side, at the slots the authority will name them by.
    *
-   * The slot arithmetic is `server/Roster.ts`'s: team 1's block begins at
-   * `CONFIG.bots.maxPerTeam` on every map, and a round fills the first
+   * The slot arithmetic is `server/Roster.ts`'s: team 1's block begins at the
+   * table's block width (`blockWidth` — the ceiling on a server's match, the
+   * map's own roster on one the page owns), and a round fills the first
    * `perTeam` of each block. Getting this wrong is not a crash — it is bodies
    * that never move, because every snapshot would be addressed to a hole.
    */
   private buildPool(perTeam: number): void {
     for (let team = 0; team < 2; team++) {
       for (let i = 0; i < perTeam; i++) {
-        const slot = team * CONFIG.bots.maxPerTeam + i;
-        const soldier = new NetSoldier(this.scene, this.mats, slot, team as Team);
+        const slot = team * this.blockWidth + i;
+        const soldier = new NetSoldier(slot, team as Team);
         // Wired at construction, because a soldier lives exactly as long as
         // the pool it is in — the same lifetime `BattleSystem` gives a bot's
         // own hooks.
@@ -287,17 +347,19 @@ export class NetRoster {
   }
 
   /**
-   * Poses every body for `renderTime`, and applies the same distance LOD
-   * `BattleSystem` applies to bots.
+   * Poses every body for `renderTime`, and applies the distance LOD — the body
+   * draw distance `RagdollSystem` gates its corpses on too, one number pushed
+   * to both (`setViewDistance`). This is the only rig LOD there is, offline
+   * included: every body the page draws is one of these.
    *
    * The LOD is worth keeping even though nothing here is simulated: it is a
-   * DRAWING budget, and sixteen rigs with outlines is the same number of draw
-   * calls whether an FSM or a socket decided where they stand.
+   * DRAWING budget, and a roster of rigs is the same number of draw calls
+   * whether an FSM or a socket decided where they stand.
    *
    * No `dt`, for the reason `NetSoldier.update` gives: nothing on this path
    * integrates against frame time.
    */
-  update(renderTime: number, cameraPos: Vector3): void {
+  update(renderTime: number, cameraPos: Vector3Like): void {
     for (const soldier of this.soldiers) {
       if (soldier.slot === this.localSlot) continue;
       // The two edges the ragdoll pool cares about, read either side of the one
@@ -324,8 +386,8 @@ export class NetRoster {
         soldier.setEnabled(false);
         continue;
       }
-      // A corpse under physics is re-shown here for the same reason
-      // `BattleSystem` re-shows a dead bot every frame inside the fog: the
+      // A corpse under physics is re-shown here because the pool keeps a
+      // ragdolled rig shown inside the fog: the
       // branch above hides whatever walks out of range, and a body that came
       // back into it has no other way home. `NetSoldier.update` cannot do it —
       // it stands aside entirely while the pool owns the rig.
@@ -348,8 +410,8 @@ export class NetRoster {
    * in the man it hit rather than sparking off the wall behind him, and an
    * immediate hitmarker for the server's `hit` event to correct.
    *
-   * The local slot is skipped for the reason `update` and `combatants` skip it
-   * — that body is drawn as a viewmodel, not a soldier — though the team check
+   * The local slot is skipped for the reason `update` skips it — that body
+   * is drawn as a viewmodel, not a soldier — though the team check
    * would drop it anyway, since it is on the shooter's own side by definition.
    */
   hittablesAgainst(team: Team): Hittable[] {
@@ -368,15 +430,7 @@ export class NetRoster {
     return out;
   }
 
-  /** Everything drawable, for the systems that take a combatant list. */
-  combatants(into: Combatant[]): void {
-    for (const soldier of this.soldiers) {
-      if (soldier.slot !== this.localSlot) into.push(soldier);
-    }
-  }
-
   dispose(): void {
-    for (const soldier of this.soldiers) soldier.dispose();
     this.soldiers.length = 0;
     this.bySlot.length = 0;
   }

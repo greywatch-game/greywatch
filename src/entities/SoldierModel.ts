@@ -1,44 +1,80 @@
 /**
  * SoldierModel.ts — The bot rig: ~40 boxes and faceted lofts (`facet.ts` — the
  * body and the rifle; the slung launcher is still boxes) merged down to
- * fourteen meshes and TWO materials, plus
+ * fifteen SEGMENTS a kit — one a joint, and the visor — plus
  * the procedural poser (animateSoldier: a `SoldierPose` — gait in any
- * direction, aim, twist, crouch, the rifle's kick, carry and reload, with both
- * arms solved onto it — posed TransformNode joints, never clips), plus the
- * bone table `RagdollSystem` builds a corpse's rigid bodies from. What DRIVES
- * a pose is `SoldierMotion`'s.
- * Invariants: merging is what keeps 16 bots affordable, and since `KIT_PALETTE`
- * it is per SEGMENT rather than per colour — a segment is one mesh whatever it
- * is painted, so the cost of this rig is JOINTS and no longer colours or boxes.
- * A box is free and a COLOUR is free where the palette carries it and costs its
- * segment a mesh where it does not, which is the one thing to know before
- * painting a new part. Emissive parts
- * (visor) need metadata.noInk and stay outside the palette, which may no more
- * enrol an emissive than `MapBuilder`'s may enrol gloss. Rigs are built once by BattleSystem's pool
- * and re-posed on respawn, never disposed. Posing allocates nothing: it runs
- * for every drawn body every frame. Every joint a pose can reach must stay
+ * direction, aim, twist, crouch, the rifle's kick, carry and reload — solved by
+ * `soldierPose.ts` and written onto the rig's joints by `poseSoldier`, with
+ * both arms solved onto the rifle here; never clips), plus the pins between
+ * the bones `RagdollSystem` builds a corpse's rigid bodies from
+ * (`RAGDOLL_LINKS`; the bones themselves are `soldierBones.ts`', measured
+ * off the box lists here and held Babylon-free there). What DRIVES a pose is
+ * `SoldierMotion`'s; what a pose IS, as numbers, and the skeleton's measures
+ * this rig is built from, are `soldierPose.ts`'s — so the simulation can ask
+ * where a rifle is without a rig.
+ * The geometry is built as `Part`s on `GeometryBuffer`s (`src/geometry/`,
+ * `facet.ts`) and merged a segment at a time (`mergeParts`), ONCE A KIT — the
+ * side a rig wears (`viewTeam`), never once a rig: every rig of one side is
+ * the same drawing (`soldierKits`), and it is never a Babylon mesh.
+ * **The JOINTS are ours** (`rigJoints.ts`, `BABYLON_EXIT.md` X4.1a) and so,
+ * since X4.1d, is the DRAWING: OUR renderer draws every body as an INSTANCE
+ * of its kit (`render/BodyDraw.ts`), a RANK at a time — every body's `r`th
+ * segment nearest the eye, the matte ones in one draw and the visors in
+ * another, so at most two draws a segment for the whole roster — off the
+ * matrices `writeRigDrawing` writes once a frame (`Game.drawBodies`): each
+ * segment's own local times its joint's world, what Babylon composed for the
+ * mesh it was. No rig is a mesh.
+ * The root is a joint and draws nothing: the body's one MEASURE
+ * (`measureRig`, what `WorldCulling` drops a whole rig by) is the capsule it
+ * was, composed off it, and the switch every roster writes is `rig.enabled`
+ * (`setRigEnabled`).
+ * Invariants: merging is what keeps a roster affordable, and since `KIT_PALETTE`
+ * it is per SEGMENT rather than per colour — a segment is one geometry
+ * whatever it is painted, and since X4.1d a segment is a RANK: up to two
+ * draws (matte, visor) for every body of both sides, however many bodies —
+ * and each rank's draw runs to the LONGEST segment any body draws at it,
+ * times the bodies, so a long segment is paid at every rank it lands on (see
+ * the merge note below). A box is free and a COLOUR is free
+ * where the palette carries it — and a matte colour the palette does NOT
+ * carry is REFUSED at the build (`paint`), there being no material of its
+ * own left to give it. The emissive (the visor) stays outside the palette,
+ * a segment of its own drawn by the emissive palette's program with the
+ * visors' own table (`VISOR_COLORS`). Rigs are built by the roster's pool
+ * and re-posed on respawn, never rebuilt inside a round. Posing and writing
+ * the drawing allocate nothing: both run for every drawn body every frame. A
+ * reader of a joint composes it FRESH (`jointPosition`,
+ * `JointTree.computeChain`/`compute`) and never reads a matrix a previous
+ * write left behind. Every joint a pose can reach must stay
  * inside `RAGDOLL_LINKS`, because a body can die at any point of it. `rig.rest` is the hierarchy as built
  * and is the ONLY thing a ragdoll may restore from — see JointRest.
  */
-import {
-  Color3,
-  Matrix,
-  Mesh,
-  MeshBuilder,
-  Quaternion,
-  Scene,
-  TransformNode,
-  Vector3,
-} from "@babylonjs/core";
 import { CONFIG } from "../config";
 import { clamp } from "../core/math";
-import {
-  writePaletteIndex,
-  type CelMaterialFactory,
-} from "../shaders/CelShader";
+import { writePaletteIndex } from "../shaders/CelShader";
+import type { GeometryBuffer } from "../geometry/buffer";
 import type { Team } from "./Combatant";
 import { viewTeam } from "../core/teamView";
 import { loft, type Ring } from "./facet";
+import { createBox } from "../geometry/primitives";
+import { Color3, Matrix, Quaternion, Vector3, type Vector3Like } from "../math";
+import { Joint, JointTree, measureBody, type BodySphere } from "./rigJoints";
+import type { BoneJoint } from "./soldierBones";
+import { mergeParts, Part, PartNode, worldMatrixOf } from "../world/parts";
+import {
+  CENTER_HEIGHT,
+  GUN_AT,
+  HEAD_ABOVE_TORSO,
+  MUZZLE_AT,
+  newSoldierJoints,
+  REST_POSE,
+  SHIN,
+  smooth,
+  solveSoldier,
+  THIGH,
+  TORSO_Y,
+  type SoldierJoints,
+  type SoldierPose,
+} from "./soldierPose";
 // Type-only, so no runtime edge is created — the same import `Vehicle` takes
 // for the same reason. `DamageKind` lives with the shot that carries it.
 import type { DamageKind } from "../systems/CombatSystem";
@@ -48,26 +84,37 @@ import type { DamageKind } from "../systems/CombatSystem";
  * of at once, and detailed enough to be read as a soldier at the range one is
  * usually shot at.
  *
- * Every limb is built from several boxes and then **merged into one mesh per
- * SEGMENT**, the same trick `RifleModel.buildRifle` uses to collapse ~50 boxes
- * into 3. The joints stay as `TransformNode`s above the merged meshes, so
- * procedural animation is unaffected — only the leaf geometry is batched.
+ * Every limb is built from several boxes and then **merged into one geometry
+ * per SEGMENT**, the same trick `RifleModel.buildRifle` uses to collapse ~50
+ * boxes into 3. The joints stay above the merged segments — our own hierarchy
+ * (`rigJoints.ts`) — so procedural animation is unaffected; only the leaf
+ * geometry is batched.
  *
- * **What that merge means for anyone adding detail: geometry is free and so,
- * now, is PAINT.** Forty-odd parts come out as fourteen meshes — torso, head,
- * the visor, two upper arms, two forearms, two legs of three and the rifle —
- * one per JOINT, because `KIT_PALETTE` moved the albedo into `uv2.x` and every
- * matte part of a segment wears one material. It used to be twenty-one, a
- * segment splitting once per colour in it: a torso was three meshes and a head
- * four, and the guidance here was that a fifth colour on the torso cost ~32
- * draws across a roster. **That is no longer true and the advice has
- * inverted** — a colour in the palette is as free as a box, and the only paint
- * that still costs a mesh is a colour missing from `KIT_PALETTE` or an
- * EMISSIVE, which cannot join it. Pouches, a bedroll, a kneepad, an antenna
- * and the helmet band are now all free. The two forearms are paid for by a
- * JOINT rather than a colour, which is the one axis the palette does not
- * touch: the elbow is what puts both hands on the rifle, and a part hung off
- * its own joint cannot merge with one that is not.
+ * **What that merge means for anyone adding detail: geometry is free and so
+ * is PAINT.** Forty-odd parts come out as fifteen segments — torso, head, the
+ * visor, two upper arms, two forearms, two legs of three, the rifle and the
+ * slung launcher — one per JOINT, because `KIT_PALETTE` moved the albedo into
+ * `uv2.x` and every matte part of a segment wears one material. It used to be
+ * twenty-one meshes, a segment splitting once per colour in it. **Since
+ * `BABYLON_EXIT.md` X4.1d a segment is a RANK, not a mesh a body**: our
+ * renderer draws the whole roster a rank at a time (each body's segments
+ * sorted nearest the eye, as Babylon's queue drew a rig's meshes; rank `r` is
+ * every body's `r`th), the matte segments of a rank in one draw and the
+ * visors in another — so a frame is at most two draws a segment however many
+ * bodies, and a NEW JOINT or a new segment is a new rank: up to two more draws
+ * every frame. And a rank's draw runs to the longest segment ANY body has at
+ * that rank, times the bodies, the rest of each instance's corners drawn as
+ * nothing — and since every segment can land at every rank, a segment's
+ * corners are paid at every rank some body draws it: GROWING THE LONGEST
+ * segment (the torso's 1,056 corners, against a body's 5,352) multiplies
+ * across the ranks, up to ~14.8k vertex invocations a body where 5,352 are
+ * real. The only paint that is not free is an EMISSIVE, which cannot join the
+ * palette and is a segment of its own (the visor), drawn by its own program —
+ * a matte colour missing from `KIT_PALETTE` is refused at the build. Pouches, a
+ * bedroll, a kneepad, an antenna and the helmet band are all free. The two
+ * forearms are paid for by a JOINT rather than a colour, which is the one axis
+ * the palette does not touch: the elbow is what puts both hands on the rifle,
+ * and a part hung off its own joint cannot merge with one that is not.
  *
  * The player has no rig at all — the camera is inside the head, and there is no
  * own-body to draw. The one thing that stands a player's body up is the death
@@ -112,8 +159,9 @@ const GUN = "#2b2b33";
  * here**, because the friend/foe colour is a rule the deploy map, the flag
  * markers and the killfeed all share: a soldier painted in a fifth colour of
  * its own would be the one body on the field wearing the wrong side's marker.
- * The other three are ART and live here for the reason `RAGDOLL_BONES` does —
- * they belong with the box lists they are painted onto.
+ * The other three are ART and live here — they belong with the box lists they
+ * are painted onto, which `RAGDOLL_BONES` (`soldierBones.ts`) is measured
+ * off.
  */
 export interface SoldierKit {
   /** Plate carrier, helmet and thighs: the hard shell, and most of the body. */
@@ -166,72 +214,56 @@ export const OWN_KIT: SoldierKit = KITS[0];
 /**
  * Every MATTE colour a rig is painted in, in slot order — the kit palette.
  *
- * **This is what makes a segment one mesh instead of one per colour.**
- * `mergeByColor` groups by the `Material` INSTANCE, so a torso carrying a
- * shell, webbing and an accent was three meshes and a head was four; with the
- * albedo moved into `uv2.x` and read out of `celPalette` every matte part of a
- * segment wears the one `getBodyCel` material and merges into one mesh. The
- * rig goes from **21 meshes and 11 materials to 14 and 2**, and both halves
- * are worth having — the paint-palette measurement (`docs/rendering.md`) put
- * a draw that reuses a bound material at ~2.3 us against ~6.3 for one that
- * switches. It is exactly the
- * trick that took the village from 416 meshes to 90, which is where the whole
- * argument is written down.
+ * **This is what makes a segment one geometry instead of one per colour.**
+ * A segment merges by MATERIAL, so a torso carrying a shell, webbing and an
+ * accent was three meshes and a head was four; with the albedo moved into
+ * `uv2.x` and read out of `celPalette` every matte part of a segment wears the
+ * one kit material and merges into one. The rig went from **21 meshes and 11
+ * materials to 14 and 2** — the paint-palette measurement
+ * (`docs/rendering.md`) put a draw that reuses a bound material at ~2.3 us
+ * against ~6.3 for one that switches — and since `BABYLON_EXIT.md` X4.1d to
+ * draws a RANK for every body of both sides, at most two a segment however
+ * many bodies (the rig's note above has what a segment costs). It is exactly
+ * the trick that took the village from 416 meshes to 90, which is where the
+ * whole argument is written down.
  *
  * It is DECLARED rather than discovered, unlike the map's, because a kit is a
- * fixed handful of hexes and a rig pool is built one body at a time: a palette
- * accumulated as the merge met colours would not be complete until the last
- * rig, and the first would already have been drawn. Declaring it also makes
- * the failure benign — a colour missing from this list is not in `KIT_SLOT`,
- * so that part keeps its own per-hex material and merges exactly as it did
- * before, which is `MAX_PALETTE`'s own overflow rule arriving from the other
- * end. **A new colour on the model therefore belongs here as well as on the
- * part**, or it silently costs its segment a mesh again.
+ * fixed handful of hexes the material is born holding
+ * (`CelMaterialFactory.bodyCelRecipe`). **A new colour on the model belongs
+ * here as well as on the part**, or the build REFUSES it (`paint`): a matte
+ * colour off the palette had its own per-hex material until X4.1d, and a rig
+ * has no material of its own to give it any more.
  *
  * The visor is absent on purpose: it is EMISSIVE, which is shader behaviour
  * rather than a uniform, and the palette may no more enrol it than
- * `MapBuilder`'s may enrol gloss or glazing.
- *
- * **A DEV build says so out loud** (`paint`), because the failure this list
- * has is the quiet kind: the body is the right colour either way and all that
- * moves is the mesh count.
+ * `MapBuilder`'s may enrol gloss or glazing. It has a table of its own
+ * (`VISOR_COLORS`).
  */
 const KIT_PALETTE: readonly string[] = [
   GUN,
   ...KITS.flatMap((kit) => [kit.armor, kit.suit, kit.webbing, kit.accent]),
 ];
 
-/** Hex to its 1-based slot in `KIT_PALETTE`. 0 — absent — means "own material". */
+/** Hex to its 1-based slot in `KIT_PALETTE`. Absent is a colour the build refuses. */
 const KIT_SLOT: ReadonlyMap<string, number> = new Map(
   KIT_PALETTE.map((hex, i) => [hex.toLowerCase(), i + 1]),
 );
 
 /**
- * Hexes a DEV build has already complained about, so the warning below is one
- * line rather than one per part per rig — `buildSoldier` runs for every body
- * in the pool and paints forty-odd parts each time.
+ * `KIT_PALETTE` as the factory takes it (`bodyCelRecipe`). Built once: the
+ * kit never moves.
  */
-const warnedOffPalette = new Set<string>();
-
-/** `KIT_PALETTE` as the factory takes it. Built once: the kit never moves. */
-const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
+export const KIT_COLORS: readonly Color3[] = KIT_PALETTE.map((hex) =>
   Color3.FromHexString(hex),
 );
 
-/** Which joint a ragdoll bone hangs off. Keys into `SoldierRig`. */
-export type BoneJoint =
-  | "torso"
-  | "head"
-  | "shoulderL"
-  | "shoulderR"
-  | "elbowL"
-  | "elbowR"
-  | "hipL"
-  | "hipR"
-  | "kneeL"
-  | "kneeR"
-  | "ankleL"
-  | "ankleR";
+/**
+ * Each side's visor colour, by the VIEW (`KITS`' order): the visors' own
+ * emissive table (`bodyEmissiveRecipe`), a kit's visor's `uv2.x` its 1-based
+ * slot here — what `getEmissive(kit.visor)`'s `emissiveColor` held until
+ * `BABYLON_EXIT.md` X4.1d, and what `GlowRules` reads a visor's bloom off.
+ */
+export const VISOR_COLORS: readonly Color3[] = KITS.map((kit) => Color3.FromHexString(kit.visor));
 
 /**
  * Every joint the rig poses, bone or not.
@@ -260,61 +292,9 @@ const POSED_JOINTS = [
 
 type PosedJoint = (typeof POSED_JOINTS)[number];
 
-/**
- * The leg, in segments, measured off the box lists in `buildSoldier`.
- *
- * The knee sits at the bottom of the thigh box and the ankle at the bottom of
- * the shin box, so at rest every one of these joints is at zero and the drawn
- * leg is exactly what it was before the joints existed. `LEG_SPAN` is the hip's
- * height above the ankle standing, which is what the crouch's inverse kinematics
- * solves against — it is not the leg's full length, because the boot hangs
- * below the ankle and is rigid.
- *
- * **The leg has to REACH THE GROUND, and nothing typed checks that it does.**
- * The rig's root stands `centerHeight` (0.9) over the feet and the hips hang
- * 0.02 below `body`, so a standing hip is 0.88 m up — and `LEG_SPAN` plus the
- * sole's 0.07 under the ankle has to be exactly that. It was 0.34 + 0.32 for
- * the whole life of the rig, and every soldier in the game stood 0.15 m off the
- * floor (measured in a round: the lowest vertex of every standing bot, 0.11 to
- * 0.18 above its feet). The head and the torso were right — they are where the
- * eye and the hit sphere are — so it is the legs that were short, not the body
- * that was high. Retune any of the four and re-measure.
- */
-const THIGH = 0.415;
-const SHIN = 0.395;
-const LEG_SPAN = THIGH + SHIN;
-
-/** The head joint's height above the torso joint. Moves with the box lists. */
-const HEAD_ABOVE_TORSO = 0.52;
-
-/**
- * How far a full crouch takes the body DOWN, and it is read from the eye rather
- * than authored here.
- *
- * This is the number that makes the pose honest. `Player.syncCombatant` drops
- * the eye and the hit sphere by the same half metre on the same blend, and the
- * sphere's top therefore keeps its standing relation to the eye — so a crouched
- * body drawn any shallower than the eye fell is a helmet standing above a sphere
- * that no longer reaches it, which is the visible-but-unhittable failure
- * `config/player.ts` spends its longest comment preventing. Deriving it here
- * means the two cannot drift: retune the crouch and the pose follows.
- *
- * `player.height / 2 - player.crouchCenterHeight` is the same 0.5 m from the
- * sphere's side, and the pair being equal is the invariant, not a coincidence.
- */
-const CROUCH_DROP = CONFIG.camera.eyeHeight - CONFIG.player.crouchEyeHeight;
-
-/**
- * Forward lean of the spine at full crouch, radians.
- *
- * Kept modest deliberately. A deeper lean would buy some of the drop for free —
- * the head hangs `HEAD_ABOVE_TORSO` off the spine, so pitching it lowers the
- * helmet without folding the legs — but it swings the head FORWARD by the same
- * geometry, and past ~30 degrees that carries it outside the very sphere it is
- * supposed to sit in. At 0.3 rad the head lands 0.15 m forward of the axis and
- * 0.64 m from the sphere's centre, inside a radius of 0.7 with room to spare.
- */
-const CROUCH_LEAN = 0.3;
+// The leg's segments, the head's place on the spine, the crouch's drop and
+// lean, the torso's and the rifle's joints and the muzzle are `soldierPose.ts`'s:
+// the pose is solved there, off the same numbers this rig is built from.
 
 /** Where the shoulder joints hang off the torso joint. */
 const SHOULDER_X = 0.28;
@@ -328,9 +308,6 @@ const UPPER_ARM = 0.29;
 const FOREARM = 0.26;
 const HAND = 0.05;
 
-/** The rifle's joint in the torso's frame. */
-const GUN_AT: [number, number, number] = [0.1, 0.22, 0.22];
-
 /**
  * Where each fist closes, in the RIFLE's frame: the right on the pistol grip,
  * the left under the receiver just ahead of the magazine. The left is not on
@@ -342,19 +319,12 @@ const GRIP_R: [number, number, number] = [0, -0.1, -0.11];
 const GRIP_L: [number, number, number] = [0, -0.07, 0.1];
 
 /**
- * The sign that turns an elbow's bend into `rotation.x`, READ off Babylon's own
- * matrix — what `rotation.x` does to a limb hanging down its own -y — rather
+ * The sign that turns an elbow's bend into `rotation.x`, READ off the matrix
+ * arithmetic (`src/math`, Babylon's bits) — what `rotation.x` does to a limb hanging down its own -y — rather
  * than argued from a handedness that is easy to get backwards.
  */
 const ELBOW_SIGN =
   Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationX(1)).z > 0 ? 1 : -1;
-
-/**
- * Which way `rotation.z` on a hip carries the foot: +1 if a positive roll moves
- * the boot toward +x. Read off the matrix for `ELBOW_SIGN`'s reason.
- */
-const ROLL_TO_X =
-  Vector3.TransformCoordinates(new Vector3(0, -1, 0), Matrix.RotationZ(1)).x > 0 ? 1 : -1;
 
 /**
  * The elbow poles, in the torso's frame: the right elbow back and out, tucked
@@ -435,115 +405,6 @@ function solveArm(
   _q.toEulerAnglesToRef(shoulder);
   return ELBOW_SIGN * Math.acos(clamp(fu, -1, 1));
 }
-
-/**
- * One rigid body's box, in its joint's own frame.
- *
- * These are ART constants and live here rather than in `CONFIG` for the reason
- * the file header gives: they are measured off the box lists below and have to
- * move when those move. A mass is not quite art, but it is meaningless away
- * from the extents it goes with, so the pair stays together — what `CONFIG`
- * owns is the sim (impulse, gravity, corpse life), not the skeleton.
- *
- * The extents are the union of each limb's STRUCTURAL boxes, not a fitted hull:
- * a bot is a stack of blocks and a box per limb is exactly the right fidelity
- * for one. What is left out is kit — a radio antenna, a helmet's peak, a
- * respirator, a shroud, a glove — because a collider fatter than the body makes
- * a corpse hover, which is the same tell `terrainSlab` documents from the other
- * side, and none of those is what a body lands on.
- */
-export interface BoneSpec {
-  joint: BoneJoint;
-  /** Full extents (not half), in the joint's frame. */
-  size: [number, number, number];
-  /** Box centre in the joint's frame — a limb hangs BELOW its joint. */
-  center: [number, number, number];
-  mass: number;
-}
-
-/**
- * The ragdoll's twelve bones, derived from the segment box lists below. Extents
- * are the union of a joint's boxes, trimmed inside the silhouette — see
- * `BoneSpec` for what that leaves out and why.
- *
- * **The legs are three bones apiece — thigh, shin and boot — because a body can
- * die crouched.** They were one rigid 0.72 m segment from hip to sole until
- * they had to be: a folded leg is that shape nowhere, so `RagdollSystem.spawn`
- * refused a body caught mid-crouch outright and the tween took it, which meant
- * the one stance a player holds while being shot at was also the one stance
- * that could not fall over. The three boxes here are the three the leg is
- * DRAWN from, hung off the same hip, knee and ankle the crouch bends, so the
- * collider now agrees with the mesh in every pose the rig can hold rather than
- * only in the standing one. There is still no spine. The arm was one welded
- * bone until it was given an elbow to put both hands on the rifle, and it is
- * two now, upper arm and forearm, hung off the same shoulder and elbow.
- *
- * The three masses split the leg's old 15 where the leg's own weight is
- * (8/5/2), and the arm's old 5 splits 3/2, so the body still totals 80 kg and
- * every number in `CONFIG.bots.death.impulse` means what it did when it was
- * tuned.
- *
- * **The rifle is deliberately NOT a bone.** It stays parented to `torso` and
- * rides that body for free. Giving it one would drop it out of hands that
- * cannot open — a fist has no finger to let go with — so the weapon would fall
- * away while two fists stayed cupped around nothing, which reads as a bug
- * rather than as a dropped weapon. What a corpse does instead is let its arms
- * fall off the rifle, which is what a body does.
- */
-export const RAGDOLL_BONES: readonly BoneSpec[] = [
-  // Chest: the carrier, the pack and the bandolier, y in [-0.03, 0.49]. The
-  // collar reaches 0.54 and the antenna off the pack 0.79; neither is body.
-  { joint: "torso", size: [0.42, 0.52, 0.3], center: [0, 0.23, -0.03], mass: 34 },
-  // Helmet, face and visor, y in [-0.025, 0.245] with the neck trimmed off
-  // below. Neither side's face — a
-  // Valeguard peak, a Redline respirator and shroud — is inside this box.
-  { joint: "head", size: [0.26, 0.26, 0.27], center: [0, 0.105, 0], mass: 6 },
-  // Upper arm: shoulder to elbow, the pauldron trimmed off the top of it.
-  {
-    joint: "shoulderL",
-    size: [0.13, 0.33, 0.13],
-    center: [0, -0.14, 0],
-    mass: 3,
-  },
-  {
-    joint: "shoulderR",
-    size: [0.13, 0.33, 0.13],
-    center: [0, -0.14, 0],
-    mass: 3,
-  },
-  // Forearm and glove, y in [-0.35, 0.035], the fingertips trimmed.
-  {
-    joint: "elbowL",
-    size: [0.1, 0.36, 0.1],
-    center: [0, -0.16, 0],
-    mass: 2,
-  },
-  {
-    joint: "elbowR",
-    size: [0.1, 0.36, 0.1],
-    center: [0, -0.16, 0],
-    mass: 2,
-  },
-  // Thigh: hip to knee, y in [-THIGH, 0].
-  { joint: "hipL", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
-  { joint: "hipR", size: [0.17, THIGH, 0.18], center: [0, -THIGH / 2, 0], mass: 8 },
-  // Shin: knee to ankle, y in [-SHIN, 0].
-  { joint: "kneeL", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
-  { joint: "kneeR", size: [0.15, SHIN, 0.15], center: [0, -SHIN / 2, 0], mass: 5 },
-  // Boot: the one bone that is mostly forward of its joint, not below it.
-  {
-    joint: "ankleL",
-    size: [0.17, 0.08, 0.24],
-    center: [0, -0.02, 0.03],
-    mass: 2,
-  },
-  {
-    joint: "ankleR",
-    size: [0.17, 0.08, 0.24],
-    center: [0, -0.02, 0.03],
-    mass: 2,
-  },
-];
 
 /**
  * One bone's pin to the bone it hangs off: which one that is, where it hangs in
@@ -673,8 +534,8 @@ export const RAGDOLL_LINKS: Readonly<Partial<Record<BoneJoint, BoneLink>>> = {
   },
   // The ankle's range is set by the DRAWN crouch rather than by anatomy. The
   // squat this rig holds puts the shin near horizontal with the boot flat, so
-  // `poseLegs` dorsiflexes the foot to -1.39 rad — further than an ankle goes,
-  // and exactly where a crouched body has to be thrown from.
+  // `solveSoldier`'s legs dorsiflex the foot to -1.39 rad — further than an
+  // ankle goes, and exactly where a crouched body has to be thrown from.
   ankleL: {
     parent: "kneeL",
     pivot: [0, -SHIN, 0],
@@ -700,31 +561,80 @@ export const RAGDOLL_LINKS: Readonly<Partial<Record<BoneJoint, BoneLink>>> = {
  * slightly wrong is one that walks around subtly broken for the rest of the
  * session. Snapshotting at construction rather than at death is what makes
  * that impossible to get wrong: the rest pose can never have drifted, because
- * nothing has run yet when it is taken.
+ * nothing has run yet when it is taken. The PARENT needs no snapshot: a
+ * joint's parent is fixed at build (`Joint.parent`), and what a ragdoll moves
+ * is its POSE (`Joint.pose`), which `resetSoldierPose` clears.
  */
 export interface JointRest {
-  node: TransformNode;
-  parent: TransformNode;
+  node: Joint;
   position: Vector3;
 }
 
+/**
+ * One SEGMENT of a rig and the joint it hangs off: what a mesh of it was
+ * until `BABYLON_EXIT.md` X4.1d, its geometry now its KIT's
+ * (`soldierKits`) and drawn by our renderer at `local` times the joint's
+ * world (`writeRigDrawing`).
+ */
+export interface RigSegment {
+  readonly joint: Joint;
+  /** The segment's own transform in its joint's frame — its kit's, composed once. */
+  readonly local: Matrix;
+}
+
+/**
+ * One segment of a kit's DRAWING: its geometry in its own frame, its local
+ * transform in its joint's frame, and whether it is the visor (emissive).
+ * Every rig of one side draws these, in this order (`RigSegment`).
+ */
+export interface KitSegment {
+  readonly name: string;
+  readonly geometry: GeometryBuffer;
+  readonly local: Matrix;
+  readonly emissive: boolean;
+}
+
+/**
+ * One side's drawing, built ONCE (`soldierKits`): its segments in a rig's
+ * order, each one's bounding-sphere centre in its own frame — the midpoint of
+ * its vertices' extent, as Babylon's `BoundingSphere` made it of the mesh it
+ * was, which is what a body's segments are ORDERED by (Babylon's
+ * front-to-back queue, `Game.bodyPull`) and a visor's bloom is faded by
+ * (`GlowRules`) — and which segment the visor is.
+ */
+export interface KitDrawing {
+  readonly segments: readonly KitSegment[];
+  readonly centres: readonly Vector3[];
+  readonly visor: number;
+}
+
 export interface SoldierRig {
-  /** Invisible transform the rig hangs from; positioned at the body centre. */
-  root: Mesh;
-  body: TransformNode;
-  torso: TransformNode;
-  head: TransformNode;
-  shoulderL: TransformNode;
-  shoulderR: TransformNode;
+  /**
+   * Every joint below, parents first: OUR hierarchy (`rigJoints.ts`), each
+   * world matrix a float32 array the rig owns. Our renderer draws the body off
+   * them, and Babylon had no node of this rig (`BABYLON_EXIT.md` X4.1a).
+   */
+  tree: JointTree;
+  /**
+   * The joint the rig hangs from: the body centre. Positioned and turned by
+   * whoever places the body (`NetSoldier`, `DeathCam`); never drawn. Its own
+   * `enabled` is NOT the body's switch: `rig.enabled` (`setRigEnabled`) is.
+   */
+  root: Joint;
+  body: Joint;
+  torso: Joint;
+  head: Joint;
+  shoulderL: Joint;
+  shoulderR: Joint;
   /**
    * Elbows. The arm is two segments hung off the shoulder, and both are solved
    * onto the rifle — see `solveArm` — so the hands are ON the weapon rather
    * than beside it. Both are ragdoll bones.
    */
-  elbowL: TransformNode;
-  elbowR: TransformNode;
-  hipL: TransformNode;
-  hipR: TransformNode;
+  elbowL: Joint;
+  elbowR: Joint;
+  hipL: Joint;
+  hipR: Joint;
   /**
    * Knees and ankles. They exist for the crouch — every body that takes one is
    * posed through them and a standing body holds them all at zero — and the
@@ -733,25 +643,40 @@ export interface SoldierRig {
    * the floor. Both are ragdoll bones as well, which is what lets a body die
    * crouched: see `RAGDOLL_BONES`.
    */
-  kneeL: TransformNode;
-  kneeR: TransformNode;
-  ankleL: TransformNode;
-  ankleR: TransformNode;
-  /** The rifle held across the chest. A ragdoll bone of its own. */
-  gun: TransformNode;
+  kneeL: Joint;
+  kneeR: Joint;
+  ankleL: Joint;
+  ankleR: Joint;
+  /** The rifle held across the chest. Carried by the torso, not a bone. */
+  gun: Joint;
   /**
-   * The rocket launcher slung across the back — disabled on every rig until a
-   * bot is told it carries one, which `BattleSystem` decides per squad.
+   * The rocket launcher slung across the back — switched off on every rig
+   * until a body is told it carries one: `BattleSystem` decides per squad
+   * (`Bot.launcher`), the authority says so on the roster
+   * (`SlotOccupant.launcher`), and `NetSession` switches it on through
+   * `NetSoldier.setLauncher` (`setLauncher` here).
    *
    * Deliberately NOT a ragdoll bone and deliberately not in `RAGDOLL_BONES`:
    * it is welded to the torso, so it falls with the body under Havok as part
-   * of the chest and needs no joint of its own. See `Bot.launcher`.
+   * of the chest and needs no joint of its own.
    */
-  launcher: TransformNode;
+  launcher: Joint;
   /** Muzzle landmark, for tracer origins. */
-  muzzle: TransformNode;
-  /** Every drawn mesh, for LOD visibility and outline toggling. */
-  meshes: Mesh[];
+  muzzle: Joint;
+  /**
+   * The side it was painted for: its KIT, by the VIEW (`viewTeam` at the
+   * build) — which drawing it is an instance of (`soldierKits`). Never moves:
+   * a change of side is a rebuild (`NetRoster.setFielded`, `DeathCam.prepare`).
+   */
+  readonly kit: number;
+  /** Every segment, in its kit's order, with the joint each hangs off — see `RigSegment`. */
+  readonly segments: readonly RigSegment[];
+  /**
+   * Whether the body is in the world: the one switch every roster, the death
+   * cam and the culling read (`setRigEnabled`). It was the root MESH's own
+   * enabled flag until the root stopped being a mesh.
+   */
+  enabled: boolean;
   /** Height of the body centre above the feet. */
   centerHeight: number;
   /** Where every ragdoll bone joint sits when alive — see `JointRest`. */
@@ -759,24 +684,26 @@ export interface SoldierRig {
 }
 
 /**
- * Everything `RagdollSystem` needs of a body it is about to throw. `Bot`
- * satisfies it structurally and so does the player's corpse stand-in, which is
- * the whole point: the pool has no business knowing which of the two it holds.
+ * Everything `RagdollSystem` needs of a body it is about to throw. A body off
+ * the wire (`NetSoldier`) satisfies it structurally (a `Bot` itself has no rig
+ * to throw), and so does the player's corpse stand-in, which is the
+ * whole point: the pool has no business knowing which of them it holds. The
+ * three vectors are `Vector3Like`, so either library's satisfies them.
  *
  * It lives HERE rather than in `RagdollSystem` because it is a fact about a
  * soldier rig, and because the alternative is `DeathCam` importing a type from
  * another system — the one thing the wiring rules in CLAUDE.md forbid. Nothing
  * implementing it has to import it either; TypeScript's structural typing is
- * what keeps `Bot` free of any knowledge that a physics engine exists.
+ * what keeps `NetSoldier` free of any knowledge that a physics engine exists.
  */
 export interface RagdollSubject {
   readonly rig: SoldierRig;
   /** The body's feet, used once for the distance gate at the moment of death. */
-  readonly position: Vector3;
+  readonly position: Vector3Like;
   /** The body's centre of mass, which the killing impulse is aimed away from. */
-  readonly center: Vector3;
+  readonly center: Vector3Like;
   /** Where the killing blow came from: a shooter's eye, or a blast centre. */
-  readonly deathFrom: Vector3;
+  readonly deathFrom: Vector3Like;
   /** How much of it there was, which scales the throw. */
   readonly deathDamage: number;
   /**
@@ -791,7 +718,7 @@ export interface RagdollSubject {
   readonly deathKind: DamageKind;
   /**
    * Set by the pool for as long as it owns the joints. Whoever poses this rig
-   * has to leave it alone in that window, or two writers fight over one node.
+   * has to leave it alone in that window, or two writers fight over one joint.
    */
   ragdolling: boolean;
   /** A live body is released immediately — the pool's self-defence guard. */
@@ -805,7 +732,8 @@ export interface RagdollSubject {
  *
  * `rotZ` is `weaponKit.box`'s parameter under its own name and exists for one
  * part — the bandolier, which has to cross the chest rather than hang down it.
- * A rotation is safe where a scale is not: `MergeMeshes` bakes world matrices,
+ * A rotation is safe where a scale is not: the merge (`mergeParts`, which is
+ * `MergeMeshes`' arithmetic) bakes world matrices,
  * and a rotation carries normals across unit-length while a non-uniform scale
  * hands `renderOutline` a shell that is fat on the squashed axis.
  */
@@ -906,106 +834,103 @@ function faceParts(kit: SoldierKit): SegmentLoft[] {
       ];
 }
 
-/** Builds one soldier in the given team's kit. */
-export function buildSoldier(
-  scene: Scene,
-  mats: CelMaterialFactory,
-  team: Team,
-): SoldierRig {
+/**
+ * Builds one soldier in the given team's kit: its joints, and its segments
+ * hung off them — the DRAWING is its kit's, built once a side
+ * (`soldierKits`), so a rig after the first of its side builds joints and
+ * nothing else.
+ */
+export function buildSoldier(team: Team): SoldierRig {
   // The kit is the VIEWER's read of this side rather than the authority's
   // index for it: the local player's own side wears amber whichever slot a
   // match seated them in. See `core/teamView.ts`.
-  const kit = KITS[viewTeam(team)];
-  const centerHeight = 0.9;
-  const root = MeshBuilder.CreateCapsule(
-    "bot",
-    { height: 1.8, radius: 0.4 },
-    scene,
-  );
-  root.isVisible = false;
-  root.isPickable = false;
+  return buildRig(viewTeam(team));
+}
 
-  const meshes: Mesh[] = [];
-  const body = new TransformNode("bot-body", scene);
-  body.parent = root;
+/** `buildSoldier` in the kit of `view` — the one `soldierKits` asks a drawing of. */
+function buildRig(view: number): SoldierRig {
+  const kit = KITS[view];
+  const centerHeight = CENTER_HEIGHT;
+  // The joints are OURS (`rigJoints.ts`, X4.1a): a tree of local channels
+  // whose world matrices the rig owns, named as the nodes were. The root is
+  // never drawn; what `WorldCulling` measures a whole body by is the capsule
+  // it used to be (`measureRig`).
+  const tree = new JointTree();
+  const root = tree.add("bot", null);
 
-  // The one material every matte part of this rig wears, whatever colour it is
-  // painted. See `KIT_PALETTE` for what that is worth and why the list is
-  // declared rather than discovered.
-  const kitCel = mats.getBodyCel(KIT_COLORS);
+  // The side's drawing, if an earlier rig of it built it; else this build
+  // builds it, segment by segment, as it hangs them.
+  const drawing = kitDrawings[view];
+  const building: KitSegment[] | null = drawing ? null : [];
+  const segments: RigSegment[] = [];
+  const body = tree.add("bot-body", root);
 
   /**
-   * Paints one part, through the kit palette where the colour is in it.
-   *
-   * The slot goes into `uv2.x` and the part wears the shared material, so
-   * `mergeByColor` — which groups by the material INSTANCE and is otherwise
-   * untouched by any of this — collapses every matte part of a segment into
-   * one mesh. A colour the palette does not carry keeps its own per-hex
-   * material and groups on its own, exactly as everything did before, which
-   * is what makes a missing entry cost a draw rather than a wrong colour.
-   *
-   * **Which is exactly why a DEV build says it out loud.** The part is painted
-   * correctly either way, so nothing on screen reports this and the only
-   * symptom is a segment that splits — one more mesh per body, times the
-   * roster, on the walk `WorldCulling` exists for. Once per hex: this runs for
-   * every part of every rig in the pool.
+   * Hangs the next segment of the kit off `joint`: the kit's own, or — while
+   * this build builds the kit — the one `make` builds, its geometry and its
+   * local transform in the joint's frame, composed once.
    */
-  const paint = (m: Mesh, color: string): void => {
-    const slot = KIT_SLOT.get(color.toLowerCase());
-    if (slot === undefined) {
-      if (import.meta.env.DEV && !warnedOffPalette.has(color.toLowerCase())) {
-        warnedOffPalette.add(color.toLowerCase());
-        console.warn(
-          `[soldier] ${color} is painted on a rig but is not in KIT_PALETTE;` +
-            " that part keeps its own material and costs its segment a mesh." +
-            " Add it to the palette, or leave it if it is meant to be an" +
-            " emissive, which cannot join one.",
-        );
-      }
-      m.material = mats.get(color);
-      return;
-    }
-    writePaletteIndex(m, slot);
-    m.material = kitCel;
+  const hang = (joint: Joint, make: () => KitSegment): void => {
+    const i = segments.length;
+    const seg = building ? make() : drawing!.segments[i];
+    if (building) building.push(seg);
+    segments.push({ joint, local: seg.local });
   };
 
   /**
-   * Builds one limb from a list of boxes, merges it per colour, and parents the
-   * results to a joint. Offsets are relative to the joint, so the merge can
-   * happen at identity and the joint carries the animation.
+   * Paints one part through the kit palette: its slot into `uv2.x`, which the
+   * kit material reads (`celPalette`, its own). **A matte colour the palette
+   * does not carry is REFUSED** — until `BABYLON_EXIT.md` X4.1d such a part
+   * kept a per-hex material of its own and cost its segment a mesh, and our
+   * renderer draws every body with the ONE kit material, so there is nothing
+   * left to give it. It cannot reach a player: the kit is module constants,
+   * so the first rig any build makes throws, in every build.
+   */
+  const paint = (p: Part, color: string): void => {
+    const slot = KIT_SLOT.get(color.toLowerCase());
+    if (slot === undefined) {
+      throw new Error(
+        `[soldier] ${color} is painted on a rig but is not in KIT_PALETTE: add it to the palette ` +
+          "(an emissive cannot join one, and is a segment of its own, as the visor is)",
+      );
+    }
+    writePaletteIndex(p.geometry, slot);
+  };
+
+  /**
+   * Builds one limb from a list of boxes, merges it, and hangs it off a joint.
+   * Offsets are relative to the joint, so the merge can happen at identity and
+   * the joint carries the animation. The pieces are `Part`s — geometry, a
+   * transform in the joint's frame and a paint — and what the merge makes of
+   * them is the segment (`mergeSegment`): built only while this build builds
+   * the kit.
    */
   const segment = (
     name: string,
-    parent: TransformNode,
+    parent: Joint,
     boxes: SegmentPart[],
   ): void => {
-    const parts: Mesh[] = [];
-    for (let i = 0; i < boxes.length; i++) {
-      const part = boxes[i];
-      if (!Array.isArray(part)) {
-        const m = loft(`${name}${i}`, scene, part.rings);
-        if (part.at) m.position.set(...part.at);
-        if (part.rot) m.rotation.set(...part.rot);
-        paint(m, part.color);
-        parts.push(m);
-        continue;
+    hang(parent, () => {
+      const parts: Part[] = [];
+      for (let i = 0; i < boxes.length; i++) {
+        const part = boxes[i];
+        if (!Array.isArray(part)) {
+          const p = loft(`${name}${i}`, part.rings);
+          if (part.at) p.position.set(...part.at);
+          if (part.rot) p.rotation.set(...part.rot);
+          paint(p, part.color);
+          parts.push(p);
+          continue;
+        }
+        const [w, h, d, x, y, z, color, rotZ = 0] = part;
+        const p = new Part(`${name}${i}`, createBox({ width: w, height: h, depth: d }));
+        p.position.set(x, y, z);
+        p.rotation.z = rotZ;
+        paint(p, color);
+        parts.push(p);
       }
-      const [w, h, d, x, y, z, color, rotZ = 0] = part;
-      const m = MeshBuilder.CreateBox(
-        `${name}${i}`,
-        { width: w, height: h, depth: d },
-        scene,
-      );
-      m.position.set(x, y, z);
-      m.rotation.z = rotZ;
-      paint(m, color);
-      parts.push(m);
-    }
-    for (const merged of mergeByColor(parts, name)) {
-      merged.parent = parent;
-      merged.isPickable = false;
-      meshes.push(merged);
-    }
+      return mergeSegment(parts, name);
+    });
   };
 
   // --- torso: plate carrier, webbing, pack, and the team's bandolier ---
@@ -1015,9 +940,8 @@ export function buildSoldier(
   // as a stack of cubes beside a world of faceted trees and gabled roofs. It
   // carries three colours — armor, webbing, accent — and is ONE mesh however
   // many parts it is cut from and however many of them it is painted in.
-  const torso = new TransformNode("bot-torso", scene);
-  torso.parent = body;
-  torso.position.y = 0.1;
+  const torso = tree.add("bot-torso", body);
+  torso.position.y = TORSO_Y;
   segment("bot-torso-m", torso, [
     // The shell: waist, ribs, the broad chest, and the slope into the collar.
     {
@@ -1111,9 +1035,8 @@ export function buildSoldier(
   // and the visor now sits UNDER that rim on a face of its own rather than
   // being painted across the helmet's front — which is the one change that
   // turns the head from a block into a helmet on somebody.
-  const head = new TransformNode("bot-head", scene);
-  head.parent = torso;
-  head.position.y = 0.52;
+  const head = tree.add("bot-head", torso);
+  head.position.y = HEAD_ABOVE_TORSO;
   segment("bot-head-m", head, [
     {
       color: kit.armor,
@@ -1156,18 +1079,16 @@ export function buildSoldier(
       ],
     },
   ]);
-  // The visor protrudes past the face so the ink cannot swallow it.
-  const visor = MeshBuilder.CreateBox(
-    "bot-visor",
-    { width: 0.15, height: 0.04, depth: 0.05 },
-    scene,
-  );
-  visor.parent = head;
-  visor.position.set(0, 0.058, 0.118);
-  visor.material = mats.getEmissive(kit.visor);
-  visor.metadata = { noInk: true };
-  visor.isPickable = false;
-  meshes.push(visor);
+  // The visor protrudes past the face so the ink cannot swallow it. EMISSIVE,
+  // so a segment of its own outside the kit palette: its colour is a slot in
+  // the visors' table (`VISOR_COLORS`, by the view), and it carries no ink
+  // by the glow's mask, which it is drawn into (`noInk`'s intent).
+  hang(head, () => {
+    const p = new Part("bot-visor", createBox({ width: 0.15, height: 0.04, depth: 0.05 }));
+    p.position.set(0, 0.058, 0.118);
+    writePaletteIndex(p.geometry, view + 1);
+    return { name: "bot-visor", geometry: p.geometry, local: worldMatrixOf(p, new Matrix()), emissive: true };
+  });
 
   // --- arms: an upper arm under a team pauldron, an elbow, a forearm and a
   // gloved hand, both hands solved onto the rifle ---
@@ -1225,13 +1146,11 @@ export function buildSoldier(
     },
   ];
 
-  const arm = (side: "L" | "R", x: number): [TransformNode, TransformNode] => {
-    const shoulder = new TransformNode(`bot-sh${side}`, scene);
-    shoulder.parent = torso;
+  const arm = (side: "L" | "R", x: number): [Joint, Joint] => {
+    const shoulder = tree.add(`bot-sh${side}`, torso);
     shoulder.position.set(x, SHOULDER_Y, 0);
     segment(`bot-arm${side}`, shoulder, upperArm(Math.sign(x)));
-    const elbow = new TransformNode(`bot-el${side}`, scene);
-    elbow.parent = shoulder;
+    const elbow = tree.add(`bot-el${side}`, shoulder);
     elbow.position.y = -UPPER_ARM;
     segment(`bot-fore${side}`, elbow, foreArm());
     return [shoulder, elbow];
@@ -1240,8 +1159,7 @@ export function buildSoldier(
   const [shoulderR, elbowR] = arm("R", SHOULDER_X);
 
   // --- rifle: one merged block held across the chest ---
-  const gun = new TransformNode("bot-gun", scene);
-  gun.parent = torso;
+  const gun = tree.add("bot-gun", torso);
   gun.position.set(...GUN_AT);
   // Nine parts and still one mesh, because they are all one colour — the
   // cheapest detail on the whole model, on the part of it that is held out in
@@ -1302,23 +1220,21 @@ export function buildSoldier(
     },
     [0.02, 0.05, 0.02, 0, 0.065, 0.44, GUN],
   ]);
-  const muzzle = new TransformNode("bot-muzzle", scene);
-  muzzle.parent = gun;
-  muzzle.position.set(0, 0.01, 0.56);
+  const muzzle = tree.add("bot-muzzle", gun);
+  muzzle.position.set(...MUZZLE_AT);
 
-  // --- the launcher, slung across the back. Off on every rig until a bot says
-  // otherwise, and one bot in each squad does ---
+  // --- the launcher, slung across the back. Off on every rig until the
+  // roster says otherwise, and it does for one bot in each squad ---
   //
   // **It is worn rather than held**, and that is the honest shape as well as
   // the cheap one: an AT gunner carries a rifle and a tube, and the tube is
   // over their shoulder until there is armour to point it at. What it buys is
   // the thing a player actually needs, which is being able to tell WHICH body
   // in a squad is the one that can hurt the tank they are sitting in — from
-  // the side, at range, in one silhouette. It is a `TransformNode` of its own
-  // so that enabling it is one write and costs nothing on the fifteen rigs
-  // that do not have one.
-  const launcher = new TransformNode("bot-launcher", scene);
-  launcher.parent = torso;
+  // the side, at range, in one silhouette. It is a joint of its own so that
+  // enabling it is one switch and costs nothing on the fifteen rigs that do
+  // not have one.
+  const launcher = tree.add("bot-launcher", torso);
   launcher.position.set(-0.08, 0.26, -0.2);
   // Canted across the back: down to the left and tipped out from the spine, so
   // it reads as slung rather than as a plank bolted on.
@@ -1329,7 +1245,7 @@ export function buildSoldier(
     [0.2, 0.2, 0.16, 0, 0, 0.46, GUN],
     [0.09, 0.13, 0.14, 0, -0.1, -0.12, GUN],
   ]);
-  launcher.setEnabled(false);
+  launcher.enabled = false;
 
   // --- legs ---
   /**
@@ -1345,10 +1261,7 @@ export function buildSoldier(
    * webbing), so the plate on the thigh, the kneepad and the toe cap are
    * silhouette that costs nothing and a leg is still three meshes.
    */
-  const leg = (
-    name: string,
-    hip: TransformNode,
-  ): [TransformNode, TransformNode] => {
+  const leg = (name: string, hip: Joint): [Joint, Joint] => {
     segment(name, hip, [
       {
         color: kit.armor,
@@ -1368,8 +1281,7 @@ export function buildSoldier(
         ],
       },
     ]);
-    const knee = new TransformNode(`${name}-knee`, scene);
-    knee.parent = hip;
+    const knee = tree.add(`${name}-knee`, hip);
     knee.position.y = -THIGH;
     segment(name, knee, [
       {
@@ -1389,8 +1301,7 @@ export function buildSoldier(
         ],
       },
     ]);
-    const ankle = new TransformNode(`${name}-ankle`, scene);
-    ankle.parent = knee;
+    const ankle = tree.add(`${name}-ankle`, knee);
     ankle.position.y = -SHIN;
     segment(name, ankle, [
       {
@@ -1416,18 +1327,17 @@ export function buildSoldier(
     return [knee, ankle];
   };
 
-  const hipL = new TransformNode("bot-hipL", scene);
-  hipL.parent = body;
+  const hipL = tree.add("bot-hipL", body);
   hipL.position.set(-0.12, -0.02, 0);
   const [kneeL, ankleL] = leg("bot-legL", hipL);
 
-  const hipR = new TransformNode("bot-hipR", scene);
-  hipR.parent = body;
+  const hipR = tree.add("bot-hipR", body);
   hipR.position.set(0.12, -0.02, 0);
   const [kneeR, ankleR] = leg("bot-legR", hipR);
 
 
   const rig: SoldierRig = {
+    tree,
     root,
     body,
     torso,
@@ -1445,7 +1355,10 @@ export function buildSoldier(
     gun,
     muzzle,
     launcher,
-    meshes,
+    kit: view,
+    segments,
+    // On, as a node is built — every owner switches it at once.
+    enabled: true,
     centerHeight,
     rest: [],
   };
@@ -1453,108 +1366,215 @@ export function buildSoldier(
   // authored above rather than whatever a previous life left behind.
   rig.rest = POSED_JOINTS.map((key: PosedJoint) => {
     const node = rig[key];
-    return {
-      node,
-      parent: node.parent as TransformNode,
-      position: node.position.clone(),
-    };
+    return { node, position: node.position.clone() };
   });
+  if (building) kitDrawings[view] = kitDrawingOf(building);
   return rig;
 }
 
 /**
- * Everything a pose is a function of. `SoldierMotion` fills one per body per
- * frame from the body's own motion; `REST_POSE` is a body standing still with
- * the rifle up.
- *
- * Every field is a number a remote client can arrive at from what it is sent,
- * which is what keeps a bot and a person drawn by the same rules: the gait from
- * ground actually covered, the kick and the reload from the `fire` and `reload`
- * events the authority already broadcasts. The one exception is `ready`'s
- * `alert` input, which only an offline bot passes — see `SoldierMotion`.
- */
-export interface SoldierPose {
-  /**
-   * Gait phase, radians, advanced by distance. The LEFT boot's place along the
-   * line of travel is `sin(phase)` — so it lands at pi/2 and the right one at
-   * 3pi/2, which is the footfall test `SoldierMotion.step` makes.
-   */
-  phase: number;
-  /** 0..1, how much of a gait to play. */
-  moving: number;
-  /** 0 walk .. 1 run: knee drive, lean, flight and cadence. */
-  run: number;
-  /**
-   * The hip's swing either side of vertical along the line of travel, radians.
-   * Sized from the step so a planted boot slides as little as a leg that is
-   * not IK'd to the ground can manage.
-   */
-  stride: number;
-  /**
-   * Which way the body is travelling, relative to where its FEET point:
-   * 0 forward, +pi/2 to its right, pi backward. What turns one gait into a
-   * strafe and a backpedal.
-   */
-  heading: number;
-  /** Aim pitch, radians, positive UP — `EntityState.pitch`'s sign. */
-  aim: number;
-  /** Upper-body yaw off the feet, radians. */
-  twist: number;
-  /** 0 standing .. 1 fully crouched. */
-  crouch: number;
-  /** 0 low ready .. 1 shouldered. */
-  ready: number;
-  /** 0..1, the rifle carried across the chest at a sprint. */
-  carry: number;
-  /** 0..1, how much of the last round's kick is still in the body. */
-  kick: number;
-  /** Progress through a magazine change, 0..1; exactly 0 when not changing one. */
-  reload: number;
-}
-
-/** A body standing still, rifle shouldered — what a reset poses. */
-export const REST_POSE: Readonly<SoldierPose> = {
-  phase: 0,
-  moving: 0,
-  run: 0,
-  stride: 0,
-  heading: 0,
-  aim: 0,
-  twist: 0,
-  crouch: 0,
-  ready: 1,
-  carry: 0,
-  kick: 0,
-  reload: 0,
-};
-
-/**
  * Puts every joint back to the transform `buildSoldier` gave it.
  *
- * This is the ONLY correct reset after anything that re-parented or
- * quaternion-posed the rig, and `animateSoldier(rig, REST_POSE)` is not a
- * substitute for it. That call writes Euler channels and the rifle's place in
- * the torso — and nothing else. It never touches a `parent`, a
- * `rotationQuaternion`, a `scaling`, or the position of any joint but `body`
- * and `gun`. A ragdoll leaves residue in every one of those.
+ * This is the ONLY correct reset after anything that took the rig out of its
+ * own hands, and `animateSoldier(rig, REST_POSE)` is not a substitute for it.
+ * That call writes Euler channels and the rifle's place in the torso — and
+ * nothing else. It never touches a POSE, a `scaling`, or the position of any
+ * joint but `body` and `gun`. A ragdoll leaves its residue in the first of
+ * those: it draws the bones off its bodies' poses (`Joint.pose`), and the rest
+ * is restored too because anything that ever wrote them is worth undoing on
+ * the one path every reuse goes through.
  *
- * The quaternion is the load-bearing line. While one is set Babylon ignores
- * `rotation` entirely — the trap `ViewModel`'s inspect turntable documents from
- * the other side — so a quaternion left behind by a corpse freezes the
- * respawned bot in its death pose for the rest of the round, with its position
- * still updating correctly underneath.
+ * The pose is the load-bearing line. While one is set the joint takes its
+ * world from the pose array and not from the rig, so a pose left behind by a
+ * corpse draws the respawned bot's limbs where the corpse lay — or, once the
+ * pool parks that body, a kilometre under the map — for the rest of the
+ * round, with its root still updating correctly underneath. (Until X4.1b it
+ * was a HOLDER, the pool's proxy node the joint hung on, and when the joints
+ * were nodes it was a leaked `rotationQuaternion`, which Babylon let win over
+ * `rotation`; a joint has no quaternion to leak.)
  */
 export function resetSoldierPose(rig: SoldierRig): void {
-  for (const { node, parent, position } of rig.rest) {
-    // A direct assignment, never setParent: setParent preserves the WORLD
-    // transform, which is the opposite of what a reset wants.
-    node.parent = parent;
-    node.rotationQuaternion = null;
+  for (const { node, position } of rig.rest) {
+    node.pose = null;
     node.rotation.setAll(0);
     node.position.copyFrom(position);
     node.scaling.setAll(1);
   }
   animateSoldier(rig, REST_POSE);
+}
+
+/**
+ * Switches a body in or out of the world: the rig's own switch, the one every
+ * roster, the death cam, the culling and the drawing read. A segment hung
+ * under a joint that is itself switched off (the launcher) stays undrawn
+ * while it is on (`writeRigDrawing`).
+ */
+export function setRigEnabled(rig: SoldierRig, on: boolean): void {
+  rig.enabled = on;
+}
+
+/** Whether the rig carries its slung launcher — see `SoldierRig.launcher`. */
+export function setLauncher(rig: SoldierRig, on: boolean): void {
+  rig.launcher.enabled = on;
+}
+
+/** Whether every joint from `j` up its tree is switched on. */
+function jointOn(j: Joint): boolean {
+  for (let at: Joint | null = j; at; at = at.parent) if (!at.enabled) return false;
+  return true;
+}
+
+// Scratch for `writeRigDrawing` and `writeRigCentres`.
+const _meshWorld = new Matrix();
+
+/**
+ * Composes the rig's joints and writes its DRAWING into `out` from `at`: each
+ * segment's world matrix, sixteen floats in its kit's order — the segment's
+ * own local times its joint's world, what Babylon composed for the mesh it
+ * was (`BABYLON_EXIT.md` X4.1d; X4.1a for the arithmetic) — and sixteen
+ * zeros for a segment under a joint switched off (the launcher), which the
+ * drawing draws as nothing.
+ *
+ * **Called once a frame for every body the frame draws, after every write
+ * and before the render** (`Game.drawBodies`, inside the render span, where
+ * Babylon composed these until X4.1a). The rig's own switch is the caller's
+ * to have asked. Allocates nothing.
+ */
+export function writeRigDrawing(rig: SoldierRig, out: Float32Array, at: number): void {
+  rig.tree.compute();
+  const segments = rig.segments;
+  for (let s = 0; s < segments.length; s++) {
+    const seg = segments[s];
+    const o = at + s * 16;
+    if (!jointOn(seg.joint)) {
+      out.fill(0, o, o + 16);
+      continue;
+    }
+    seg.local.multiplyToRef(seg.joint.world, _meshWorld);
+    out.set(_meshWorld.m, o);
+  }
+}
+
+/**
+ * Where each of the rig's segments stands, off the drawing `writeRigDrawing`
+ * just wrote at `at`: its bounding sphere's centre in the world, three
+ * doubles a segment into `out` from `outAt` — what Babylon's
+ * `boundingSphere.centerWorld` held for the segment's mesh, which its
+ * front-to-back queue sorted the mesh by and `GlowRules` faded the visor's
+ * bloom by. NaN for a segment switched off (a zero matrix), which nothing
+ * draws.
+ */
+export function writeRigCentres(rig: SoldierRig, drawing: Float32Array, at: number, out: Float64Array, outAt: number): void {
+  const centres = kitDrawings[rig.kit]!.centres;
+  for (let s = 0; s < centres.length; s++) {
+    const o = outAt + s * 3;
+    if (drawing[at + s * 16 + 15] === 0) {
+      out[o] = out[o + 1] = out[o + 2] = Number.NaN;
+      continue;
+    }
+    Matrix.FromArrayToRef(drawing, at + s * 16, _meshWorld);
+    Vector3.TransformCoordinatesToRef(centres[s], _meshWorld, _centre);
+    out[o] = _centre.x;
+    out[o + 1] = _centre.y;
+    out[o + 2] = _centre.z;
+  }
+}
+
+const _centre = new Vector3();
+
+/**
+ * A joint's world position, fresh — what `computeWorldMatrix(true)` then
+ * `getAbsolutePosition()` read off a node: the float32 translation row.
+ */
+export function jointPosition<T extends { set(x: number, y: number, z: number): unknown }>(
+  rig: SoldierRig,
+  joint: Joint,
+  out: T,
+): T {
+  const m = rig.tree.computeChain(joint).m;
+  out.set(m[12], m[13], m[14]);
+  return out;
+}
+
+/**
+ * The body's one MEASURE, this frame: the world sphere of the capsule its root
+ * stood for (`rigJoints.measureBody`) — what `WorldCulling` drops a whole body
+ * by, off a fresh compose of the root, as the capsule's forced matrix was.
+ */
+export function measureRig(rig: SoldierRig, out: BodySphere): BodySphere {
+  return measureBody(rig.tree.computeChain(rig.root), out);
+}
+
+/**
+ * The rig as `WorldCulling` files a pooled body (its `PooledBody`, met
+ * structurally so neither file names the other): the switch and the measure.
+ * Made once per rig per install, never per frame.
+ */
+export function pooledBody(rig: SoldierRig): {
+  readonly enabled: boolean;
+  measure(out: BodySphere): void;
+} {
+  return {
+    get enabled() {
+      return rig.enabled;
+    },
+    measure: (out) => {
+      measureRig(rig, out);
+    },
+  };
+}
+
+/**
+ * Each side's DRAWING, by the view, once a rig of that side has been built —
+ * see `soldierKits`.
+ */
+const kitDrawings: (KitDrawing | null)[] = KITS.map(() => null);
+
+/**
+ * Every side's drawing, by the VIEW (`KITS`' order): what our renderer draws
+ * every body as an instance of (`render/BodyDraw.ts`). Built here, once, the
+ * first time a side is asked for — building a rig of it — and the same
+ * objects for the life of the page: a kit is module constants.
+ */
+export function soldierKits(): readonly KitDrawing[] {
+  return KITS.map((_, view) => {
+    if (!kitDrawings[view]) buildRig(view);
+    return kitDrawings[view]!;
+  });
+}
+
+/** A segment's drawing out of its merged parts: the merge at identity, or one part in its own frame. */
+function mergeSegment(parts: Part[], name: string): KitSegment {
+  // A group of ONE was never merged — it kept its own transform, as the mesh
+  // `drawnMesh` made of the part did; a merge stands at identity, composed as
+  // a node at rest composes (the same bits `Matrix.Identity` holds).
+  if (parts.length === 1) {
+    return { name, geometry: parts[0].geometry, local: worldMatrixOf(parts[0], new Matrix()), emissive: false };
+  }
+  return { name, geometry: mergeParts(parts), local: worldMatrixOf(new PartNode(name), new Matrix()), emissive: false };
+}
+
+/**
+ * A kit's drawing out of the segments its first rig built: where the visor
+ * is, and its bounding sphere's centre in its own frame — the midpoint of its
+ * vertices' extent, as Babylon's `BoundingSphere` made it of the mesh's.
+ */
+function kitDrawingOf(segments: readonly KitSegment[]): KitDrawing {
+  const visor = segments.findIndex((s) => s.emissive);
+  if (visor < 0) throw new Error("[soldier] a kit with no visor");
+  const centres = segments.map((seg) => {
+    // `extractMinAndMax` over the positions as the mesh was handed them,
+    // then `BoundingSphere.reConstruct`'s `max.addToRef(min).scale(0.5)`.
+    const p = seg.geometry.positions;
+    const min = new Vector3(Number.MAX_VALUE, Number.MAX_VALUE, Number.MAX_VALUE);
+    const max = new Vector3(-Number.MAX_VALUE, -Number.MAX_VALUE, -Number.MAX_VALUE);
+    for (let i = 0; i < p.length; i += 3) {
+      min.minimizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+      max.maximizeInPlaceFromFloats(p[i], p[i + 1], p[i + 2]);
+    }
+    return max.addToRef(min, new Vector3()).scaleInPlace(0.5);
+  });
+  return { segments, centres, visor };
 }
 
 /**
@@ -1583,18 +1603,7 @@ const RELOAD_KEYS: readonly (readonly [number, 0 | 1, number, number, number])[]
   [1, 0, ...GRIP_L],
 ];
 
-/** How far into a reload the rifle is canted and the head is down, 0..1. */
-function reloadEnvelope(p: number): number {
-  if (p <= 0 || p >= 1) return 0;
-  return smooth(p / 0.1) * (1 - smooth((p - 0.82) / 0.16));
-}
-
-/** Smoothstep on [0, 1], clamped. */
-function smooth(t: number): number {
-  const x = clamp(t, 0, 1);
-  return x * x * (3 - 2 * x);
-}
-
+const _solved = newSoldierJoints();
 const _gunM = new Matrix();
 const _handL = new Vector3();
 const _handR = new Vector3();
@@ -1617,101 +1626,58 @@ function reloadKey(
 }
 
 /**
- * Poses the rig. Purely procedural, like every other animation in the game —
- * there are no clips, and a new behaviour means new numbers rather than new art.
- * What each field means is `SoldierPose`'s; what drives them is
- * `SoldierMotion`'s.
+ * Poses the rig: solves `p` (`soldierPose.ts`'s `solveSoldier`) and writes it
+ * onto the joints (`poseSoldier`). What each field means is `SoldierPose`'s;
+ * what drives them is `SoldierMotion`'s.
+ */
+export function animateSoldier(rig: SoldierRig, p: Readonly<SoldierPose>): void {
+  poseSoldier(rig, solveSoldier(p, _solved));
+}
+
+/**
+ * Writes a SOLVED pose onto the rig's joints, and solves the arms onto it.
  *
- * **The feet point along `root`'s yaw, the torso along that plus `twist`**, and
- * the legs step along `heading` relative to the feet, so a body can look one
- * way, face its hips another and travel a third without any of the three being
- * drawn wrong. That split is the whole of strafing and backpedalling: a person's
- * feet point where they look (`Match` sends their `bodyYaw` as their yaw), so
- * the legs are what has to step sideways and backwards.
+ * Every channel `solveSoldier` decides is written here and nothing else is,
+ * so a rig posed from `j` holds exactly the numbers `soldierMuzzleToRef`
+ * replays — which is what lets the simulation ask where the rifle is without
+ * asking the rig.
  *
  * **The rifle is posed first and the hands follow it** — `solveArm` runs against
  * wherever this pose put the grips — so a kick, a lowered carry and a canted
  * reload all keep both fists where they belong without either being authored
- * per case. The AIM is split so the bore points where the body looks: the spine
- * takes 55% of it and the rifle the rest inside the torso's frame, and the
- * rifle cancels the lean the spine takes for the crouch and the gait, which it
- * used to inherit — a crouched body pointed its rifle 17 degrees into the
- * floor, and a positive aim pitched the spine DOWN.
+ * per case.
  */
-export function animateSoldier(rig: SoldierRig, p: Readonly<SoldierPose>): void {
+function poseSoldier(rig: SoldierRig, j: Readonly<SoldierJoints>): void {
   // This posed a DEATH too, on a `dead` progress argument no caller passes any
   // more: the collapse tween that stood in wherever the ragdoll pool refused a
   // body. Havok is required and the pool refuses nothing the player can see, so
   // the only bodies that reach a death without a solver are ones already past
   // the fog wall, and they are not drawn. See `Bot.update`'s dead branch.
   rig.body.rotation.x = 0;
-
-  const lean = CROUCH_LEAN * p.crouch;
-  const drop = crouchDrop(p.crouch);
-  // A deep squat cannot swing its legs through a stride, so the gait is damped
-  // toward a shuffle as the body folds — which is also what the stance costs in
-  // speed (`player.crouchMoveMult`), arrived at from the animation side.
-  const gait = p.moving * (1 - 0.45 * p.crouch);
-  rig.body.position.y = poseLegs(rig, drop, p, gait);
-
-  const fwd = Math.cos(p.heading);
-  const side = Math.sin(p.heading);
-  const u = Math.sin(p.phase);
-  const reload = reloadEnvelope(p.reload);
-  const carry = p.carry;
-  const low = (1 - p.ready) * (1 - carry);
-  const aim = clamp(p.aim, -1.2, 1.2);
-
-  // --- spine ---
-  // Lean into the pace (forward only: nobody leans into a backpedal), take the
-  // kick back through the chest, and pitch 55% of the aim here. Positive
-  // `rotation.x` tips the spine FORWARD — it is the crouch's lean — so an aim
-  // UP is a negative one.
-  const gaitLean = gait * (0.03 + 0.2 * p.run * Math.max(0, fwd)) + carry * 0.06;
-  rig.torso.rotation.x = -aim * 0.55 + gaitLean + lean - 0.05 * p.kick;
-  // The shoulders counter-rotate against the leading leg, and roll into a
-  // sideways step, both more at a run.
-  const counter = -0.06 * gait * (0.35 + p.run) * u * fwd;
-  rig.torso.rotation.y = p.twist + counter;
-  rig.torso.rotation.z = -side * 0.08 * gait * (0.3 + p.run);
-  // The head takes a share of the twist on top, so the helmet leads the
-  // shoulders; it holds the horizon against the gait's counter-rotation; and it
-  // takes back most of the leans, so a hunkered or running body's visor — the
-  // friend/foe read at range — still faces where it is going. It drops to look
-  // at the rifle through a reload.
-  rig.head.rotation.y = p.twist * 0.35 - counter;
-  rig.head.rotation.z = -rig.torso.rotation.z * 0.7;
-  // Clamped inside the ragdoll's neck range, which a body can die at any
-  // point of (`RAGDOLL_LINKS`).
-  rig.head.rotation.x = clamp(-aim * 0.45 - lean * 0.6 - gaitLean * 0.8 + 0.35 * reload, -0.48, 0.48);
-
-  // --- rifle, in the torso's frame ---
-  // Rest is `GUN_AT` with the bore along the torso's +z. Then: the aim's
-  // remainder and the spine's leans cancelled, so the bore holds the look;
-  // muzzle down at low ready; slung across the chest at a sprint; the kick
-  // straight back down the stock with the muzzle climbing; and canted over
-  // toward the left hand for a reload.
-  const gx = -aim * 0.45 - lean - gaitLean + 0.05 * p.kick
-    + low * 0.4 + carry * 0.55 - p.kick * 0.2 + reload * 0.5;
-  const gy = -low * 0.15 - carry * 0.75 - reload * 0.25;
-  const gz = carry * 0.35 + reload * 0.55;
-  rig.gun.rotation.set(gx, gy, gz);
-  rig.gun.position.set(
-    GUN_AT[0] - carry * 0.06 - reload * 0.04,
-    GUN_AT[1] - low * 0.02 - carry * 0.06 + reload * 0.02,
-    GUN_AT[2] - p.kick * 0.05 - carry * 0.06 - low * 0.02 - reload * 0.05,
-  );
-  // TransformNode composes its Euler as yaw-pitch-roll, and so does this.
-  Matrix.RotationYawPitchRollToRef(gy, gx, gz, _gunM);
+  rig.hipL.rotation.set(j.hipLX, 0, j.hipLZ);
+  rig.hipR.rotation.set(j.hipRX, 0, j.hipRZ);
+  rig.kneeL.rotation.x = j.kneeL;
+  rig.kneeR.rotation.x = j.kneeR;
+  rig.ankleL.rotation.x = j.ankleL;
+  rig.ankleR.rotation.x = j.ankleR;
+  rig.body.position.y = j.bodyY;
+  rig.torso.rotation.set(j.torsoX, j.torsoY, j.torsoZ);
+  rig.head.rotation.set(j.headX, j.headY, j.headZ);
+  rig.gun.rotation.set(j.gunX, j.gunY, j.gunZ);
+  rig.gun.position.set(j.gunPX, j.gunPY, j.gunPZ);
+  // A joint composes its Euler as yaw-pitch-roll (as `TransformNode` did),
+  // and so does this.
+  Matrix.RotationYawPitchRollToRef(j.gunY, j.gunX, j.gunZ, _gunM);
 
   // --- hands ---
   onRifle(rig, GRIP_R[0], GRIP_R[1], GRIP_R[2], _handR);
-  if (p.reload > 0 && p.reload < 1) {
+  const reload = j.reload;
+  if (reload > 0 && reload < 1) {
     let i = 0;
-    while (i < RELOAD_KEYS.length - 2 && p.reload > RELOAD_KEYS[i + 1][0]) i++;
+    while (i < RELOAD_KEYS.length - 2 && reload > RELOAD_KEYS[i + 1][0]) i++;
     const a = RELOAD_KEYS[i];
     const b = RELOAD_KEYS[i + 1];
-    const t = smooth((p.reload - a[0]) / (b[0] - a[0]));
+    const t = smooth((reload - a[0]) / (b[0] - a[0]));
     reloadKey(rig, a, _keyA);
     reloadKey(rig, b, _keyB);
     Vector3.LerpToRef(_keyA, _keyB, t, _handL);
@@ -1720,172 +1686,4 @@ export function animateSoldier(rig: SoldierRig, p: Readonly<SoldierPose>): void 
   }
   rig.elbowL.rotation.x = solveArm(-SHOULDER_X, _handL, POLE_L, rig.shoulderL.rotation);
   rig.elbowR.rotation.x = solveArm(SHOULDER_X, _handR, POLE_R, rig.shoulderR.rotation);
-}
-
-/**
- * How far the HIPS drop for a given stance blend.
- *
- * Not the same as how far the eye drops, and the difference is the spine: the
- * head hangs `HEAD_ABOVE_TORSO` off the torso joint, so pitching that joint by
- * `CROUCH_LEAN * crouch` already lowers the helmet by
- * `HEAD_ABOVE_TORSO * (1 - cos lean)` before a knee bends at all. Take that off
- * and the head lands exactly `CROUCH_DROP * crouch` down — which is exactly
- * where the eye and the centre of the hit sphere went.
- */
-function crouchDrop(crouch: number): number {
-  const lean = CROUCH_LEAN * crouch;
-  return CROUCH_DROP * crouch - HEAD_ABOVE_TORSO * (1 - Math.cos(lean));
-}
-
-/**
- * Folds both legs to the stance, steps them through the gait on top, and
- * returns where `body` has to stand for the planted boot to stay on the ground.
- *
- * **The stance is two-link inverse kinematics**, because it has to hold at
- * every point of the blend and not only at its ends: the boots are planted, so
- * the knee and the ankle are whatever the hip height says they are, and a
- * crouch caught halfway is as correct as one at rest. `psi` is the thigh's angle
- * off vertical from the law of cosines, the shin takes whatever angle puts the
- * ankle back under the hip, and the ankle cancels the shin so the boot stays
- * flat. At `drop === 0` every term is zero — the chain is straight.
- *
- * **The gait is per leg, off the one phase, half a turn apart** — see
- * `stepLeg`.
- *
- * **The HEIGHT is read off whichever leg reaches further**, which is the
- * planted one: `body` is set so that leg's ankle is exactly where a standing
- * ankle is. That is the whole of the bob and no number of its own — a walk rises
- * over the straight leg at mid-stance and dips at the double support where both
- * legs are spread, a run sinks into the loaded knee — and on top of it a run
- * floats a little through the flight before each strike. With no gait this is
- * `-drop` exactly, so the crouch's head height is untouched.
- */
-function poseLegs(rig: SoldierRig, drop: number, p: Readonly<SoldierPose>, gait: number): number {
-  let thigh = 0;
-  let knee = 0;
-  let shin = 0;
-  if (drop > 0) {
-    // Hip height above the ankle. Clamped off the fully-folded end, where the
-    // triangle degenerates and `acos` starts returning NaN rather than an
-    // angle; at the crouch this game asks for it is 0.33 m against a floor of
-    // 0.03, so the clamp is a guard and never a limit.
-    const span = Math.max(LEG_SPAN - drop, Math.abs(THIGH - SHIN) + 0.01);
-    const psi = Math.acos(
-      clamp((THIGH * THIGH + span * span - SHIN * SHIN) / (2 * THIGH * span), -1, 1),
-    );
-    shin = Math.asin(clamp((THIGH * Math.sin(psi)) / SHIN, -1, 1));
-    thigh = -psi;
-    knee = shin + psi;
-  }
-  if (gait < 1e-3) {
-    rig.hipL.rotation.set(thigh, 0, 0);
-    rig.hipR.rotation.set(thigh, 0, 0);
-    rig.kneeL.rotation.x = knee;
-    rig.kneeR.rotation.x = knee;
-    rig.ankleL.rotation.x = -shin;
-    rig.ankleR.rotation.x = -shin;
-    return -drop;
-  }
-  const fwd = Math.cos(p.heading);
-  const side = Math.sin(p.heading);
-  const reachL = stepLeg(rig.hipL, rig.kneeL, rig.ankleL, -1, p.phase, thigh, knee, fwd, side, p, gait);
-  const reachR = stepLeg(rig.hipR, rig.kneeR, rig.ankleR, 1, p.phase + Math.PI, thigh, knee, fwd, side, p, gait);
-  const u = Math.sin(p.phase);
-  return -(LEG_SPAN - Math.max(reachL, reachR)) + gait * p.run * 0.04 * u * u;
-}
-
-/**
- * One leg through the gait at `phi`. `out` is -1 for the left leg and +1 for
- * the right — which way is OUTBOARD. Returns the hip's height above the ankle
- * this pose leaves, for `poseLegs`' planted-leg test.
- *
- * `u = sin(phi)` is the boot's place along the line of travel and
- * `cos(phi) > 0` is its swing, when it is travelling forward through the air.
- * Along travel the hip swings by `stride`, decomposed onto the feet's frame by
- * `heading` — pitch for the part of the step that is forward or back, roll for
- * the part that is sideways, and a sideways step that would cross one boot
- * through the other is cut to a third, which is how a sidestep is taken. The
- * knee folds through the swing to clear the ground (much further at a run,
- * which also drives the thigh up) and gives a little under the load of the
- * stance, and the ankle keeps a planted boot flat and pushes off the toe at the
- * end of the stance.
- */
-function stepLeg(
-  hip: TransformNode,
-  kneeJ: TransformNode,
-  ankle: TransformNode,
-  out: number,
-  phi: number,
-  thigh0: number,
-  knee0: number,
-  fwd: number,
-  side: number,
-  p: Readonly<SoldierPose>,
-  gait: number,
-): number {
-  const u = Math.sin(phi);
-  const c = Math.cos(phi);
-  const swing = Math.max(0, c);
-  const stance = Math.max(0, -c);
-  const run = p.run;
-  // Along travel: the stride, plus a run's knee drive carrying the thigh up
-  // through the middle of the swing. The drive is a forward thing only.
-  const along = gait * (p.stride * u + run * 0.5 * swing * swing * Math.max(0, fwd));
-  // Negative `rotation.x` carries a boot forward (it is the crouch's `-psi`).
-  const hx = thigh0 - along * fwd;
-  // Sideways: the part that would carry this boot inboard, across the other
-  // one, is cut to a third.
-  let lat = along * side;
-  if (lat * out < 0) lat *= 0.35;
-  const hz = ROLL_TO_X * clamp(lat, -0.4, 0.4);
-  // The knee and the ankle are clamped inside their ragdoll ranges
-  // (`RAGDOLL_LINKS`): a body can die at any point of a stride, and a crouch
-  // already takes both most of the way there before the gait adds its fold.
-  const kx = Math.min(2.65, knee0 + gait * (
-    (0.95 + 1.05 * run) * Math.pow(swing, 1.4) + (0.08 + 0.32 * run) * stance
-  ));
-  hip.rotation.set(hx, 0, hz);
-  kneeJ.rotation.x = kx;
-  // Flat while planted, dangling a little through the swing, and pushing off
-  // the toe as the boot leaves the ground behind the body.
-  const toe = Math.max(0, -u);
-  ankle.rotation.x = clamp(
-    -(hx + kx) * (1 - 0.35 * swing) + gait * (0.25 + 0.25 * run) * toe * toe,
-    -1.45,
-    0.55,
-  );
-  return (THIGH * Math.cos(hx) + SHIN * Math.cos(hx + kx)) * Math.cos(hz);
-}
-
-/**
- * Merges a limb's boxes into one mesh per MATERIAL, at identity.
- *
- * It keys on the material instance and always did; what changed under it is
- * how many a limb has. `paint` puts every matte part on the one `getBodyCel`
- * material, so this now yields one mesh per segment where it used to yield
- * one per colour — which is why the palette needed no change here at all. The
- * name is kept because the split it makes is still the one a caller reasons
- * about: two parts merge unless something about their PAINT stops them.
- */
-function mergeByColor(parts: Mesh[], name: string): Mesh[] {
-  const groups = new Map<unknown, Mesh[]>();
-  for (const m of parts) {
-    const key = m.material;
-    const g = groups.get(key);
-    if (g) g.push(m);
-    else groups.set(key, [m]);
-  }
-  const out: Mesh[] = [];
-  for (const group of groups.values()) {
-    const mat = group[0].material;
-    const merged =
-      group.length === 1
-        ? group[0]
-        : Mesh.MergeMeshes(group, true, true, undefined, false, false);
-    if (!merged) continue;
-    merged.name = name;
-    merged.material = mat;
-    out.push(merged as Mesh);
-  }
-  return out;
 }

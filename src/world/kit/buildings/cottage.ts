@@ -4,7 +4,6 @@
  * Part of the buildings set: follows the contract in kit/core.ts; the set's
  * files are listed in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -95,7 +94,6 @@ import {
  * stops on a window, since a ruined cottage is still a solid block.
  */
 export function buildCottage(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
@@ -103,7 +101,7 @@ export function buildCottage(
   const w = p.width ?? 7;
   const d = p.depth ?? 6;
   const h = p.height ?? 3.4;
-  const b = new Build(scene, mats, "cottage");
+  const b = new Build(mats, "cottage");
   const t = 0.35;
   const open = p.enterable === true;
   const ruined = p.ruined === true;

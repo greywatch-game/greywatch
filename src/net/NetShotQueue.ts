@@ -46,8 +46,8 @@ export interface PendingShot {
  * The PICTURE of a burst somebody else fired, PUT IN A QUEUE rather than
  * drawn when the event lands.
  *
- * Offline a tracer is `CombatSystem.fire` throwing one off as it resolves
- * the round, because this machine resolves every round in the village. In a
+ * Offline a tracer is `CombatSystem.fire` raising one (`onRound`, drawn by
+ * `CombatFx`) as it resolves the round, because this machine resolves every round in the village. In a
  * match it resolves exactly one shooter's — its own — so every other body
  * fired a round that made a noise, moved a minimap blip and left the barrel
  * as nothing at all: the tell that says WHERE fire is coming from, which is
@@ -56,7 +56,7 @@ export interface PendingShot {
  * **It is a queue because an event is not a frame.** Server messages are
  * dispatched off the socket, so a shot is queued whenever a packet lands and
  * in whatever state the game is in — and a tracer is a streak
- * `CombatSystem.update` flies out of the barrel and hides again. Spawned in a
+ * `CombatFx.update` flies out of the barrel and hides again. Spawned in a
  * state that does not step it, it is not a missing effect but a HAUNTING: a
  * lit dot hanging in the air where the muzzle was, one per shot, for the rest
  * of the round (see `docs/multiplayer.md`). A sound can be fired from anywhere

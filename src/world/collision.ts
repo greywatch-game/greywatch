@@ -11,14 +11,20 @@
  * built (`src/ui/mapPlan.ts`). Only the server EXPANDS them into a world; the
  * interface reads the tuples and draws them.
  *
- * Why the data exists: the server simulates under Babylon's NullEngine, which
- * has no canvas, so `DynamicTexture` throws and `MapBuilder` (which reaches one
- * through `floorMaterial`) cannot run there. It rebuilds the solid world from
- * these boxes instead. That is sound because `MapBuilder.collider()` is the one
- * place a collider is made and a `WorldBox` records everything
- * `MeshBuilder.CreateBox` needs to reproduce it — so both sides end up picking
- * against the same geometry with the same predicates from `solid.ts`, rather
- * than against two implementations that can drift. That includes `porous`,
+ * **Every host of the simulation core reads it**:
+ * `Match` — a server's, or the page's own local match offline — `simulate`
+ * and `corecheck` all build the core's world (`buildSimWorld`) off the
+ * COMMITTED bake, which is why `npm run build` refuses one older than its
+ * layout. `scripts/bake-collision.mjs` is what writes it, off a built map.
+ *
+ * Why the data exists: the server simulates with no Babylon and no canvas,
+ * and `MapBuilder` builds meshes and reaches a
+ * canvas through `floorMaterial`, so it cannot run there. The server
+ * rebuilds the solid world from these boxes instead, as data. That is sound
+ * because `MapBuilder.collider()` is the one place a collider is made and a
+ * `WorldBox` records everything a ray or a sweep asks of it — so both sides
+ * answer every query off the same geometry through the same `RayWorld`,
+ * rather than through two implementations that can drift. That includes `porous`,
  * which is a flag on the box and therefore part of the geometry: a server that
  * dropped it would rebuild a world whose fences stop rounds the client sent
  * through them.
@@ -86,36 +92,40 @@ export interface MapCollision {
   boxes: readonly CollisionBox[];
   /**
    * The `strut` boxes — ray geometry with no body behind it — **grouped as the
-   * client merged them**, one inner array per collider mesh.
+   * client groups them**, one inner array per placement (`GameMap.rayGroups`;
+   * one collider mesh each until `BABYLON_EXIT.md` X5.3e).
    *
    * Separate from `boxes` because these are not the solid world: nothing
    * derived from geometry may see them (see `BoxSpec.rayOnly`), and `boxes` is
    * exactly the list `NavGrid`, `CoverMap` and `ObstacleField` are handed. The
-   * grouping is baked rather than a flat list because the server merges each
-   * group into one mesh the way the client does, and merging every fence on
-   * the map into a single mesh would put one bounding box around the whole
-   * village — every ray in the process would then pay for every fence's
-   * triangles.
+   * grouping is baked rather than a flat list because it was what the server
+   * merged each group into one mesh by while a ray was a pick — merging every
+   * fence on the map into a single mesh would have put one bounding box around
+   * the whole village. `RayWorld` indexes every strut on its own now, on both
+   * sides, and the groups ride on unchanged.
    */
   rayGroups: readonly (readonly CollisionBox[])[];
   /**
-   * Which `boxes` the client merged into one collider mesh each, as indices
-   * into that array — a scatter region's props, grouped by locality.
+   * Which `boxes` the client groups together, as indices into that array — a
+   * scatter region's props, grouped by locality (one merged collider mesh
+   * each until `BABYLON_EXIT.md` X5.3e).
    *
    * The mirror of `rayGroups` and not its twin: these boxes ARE the solid
    * world and ARE in `boxes`, so the nav grid, the cover bake and the obstacle
    * field see every one of them separately. The grouping says nothing about
-   * the world and everything about what a RAY meets — a pick costs per mesh
-   * before it costs per triangle, and a jungle belt is hundreds of one-metre
-   * trunks that no structure builder would ever have made separately.
+   * the world's shape: it is the order the client's collider meshes were made
+   * in while they were meshes, and what still reads it is a body's SWEEP,
+   * whose ties go by that order
+   * (`RayWorld`'s rank) — so the authority's hulls break them as the client's
+   * do. It began as a pick budget, when a pick cost per mesh and a jungle belt
+   * was hundreds of one-metre trunks.
    *
-   * Every index that appears here is left out of the one-mesh-per-box pass, so
-   * a box belongs to exactly one mesh either way. Boxes named by no group are
-   * their own mesh, which is every collider a structure builds.
+   * Every index that appears here is ranked after every box named by no
+   * group, so a box belongs to exactly one place in that order either way.
+   * Boxes named by no group are every collider a structure builds.
    *
    * Optional so a map baked before clustering existed still loads: absent
-   * reads as a map whose every box is its own mesh, which is what the bake
-   * always produced.
+   * reads as a map with no group, which is what the bake always produced.
    */
   boxGroups?: readonly (readonly number[])[];
   /**
@@ -167,9 +177,9 @@ export function toRayGroups(collision: MapCollision): WorldBox[][] {
  * Expands the baked panes into the `WorldPane`s `GlassSystem` sweeps against.
  *
  * The two vertex fields come back as zeroes rather than being made up, and that
- * is honest rather than lossy: they address a merged mesh, the server has none,
- * and `paneGroups` is empty there for the same reason. Anything reading them on
- * this side is reading a mesh it does not have.
+ * is honest rather than lossy: they address a merged glazing surface, the
+ * server has none, and `paneGroups` is empty there for the same reason.
+ * Anything reading them on this side is reading a surface it does not have.
  */
 export function toWorldPanes(collision: MapCollision): WorldPane[] {
   return (collision.panes ?? []).map(

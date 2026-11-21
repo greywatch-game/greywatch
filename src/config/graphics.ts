@@ -3,13 +3,14 @@
  * Owns: glow, outlines, shadows, fog, block visibility and the post chain,
  * plus tracer/spark pool sizes. Contract: `docs/rendering.md`.
  * Gotcha: several values here look like bugs if you 'fix' them — image
- * processing off, rendering group 1, the shadow window. Read the contract.
+ * processing off, the shadow window. Read the contract.
  */
 
 export const graphics = {
   /**
    * The render-scale ladder, as a fraction of the display's NATIVE pixels —
-   * `engine.setHardwareScalingLevel(1 / (devicePixelRatio * scale))`.
+   * `surface.setHardwareScalingLevel(1 / (devicePixelRatio * scale))`
+   * (`core/CanvasSurface.ts`, Babylon's engine's until `BABYLON_EXIT.md` X5.4h).
    *
    * Native rather than CSS pixels because CSS pixels are not a resolution: on a
    * 2x panel one CSS pixel is four real ones, so a ladder in CSS terms means
@@ -55,6 +56,23 @@ export const graphics = {
    * which the deadline holds by itself — see `FrameCap`.
    */
   frameCapSlackMs: 4,
+  /**
+   * How soon after a lost graphics device a SECOND loss is read as a device
+   * that will not hold, in seconds — `core/deviceLoss.ts`, `BABYLON_EXIT.md`
+   * X5.4i. A loss RELOADS the page to the menu; a second inside this window
+   * of the first puts the boot's "No graphics device" plate up instead of
+   * reloading again, so a device that dies on every boot cannot loop the page.
+   *
+   * It has to cover a whole reload and some menu after it, or a device that
+   * dies a few seconds into every boot loops anyway: the boot is the bundle
+   * (cached by the service worker), Havok's ~2 MB, the match host and the
+   * constructor — seconds on a desktop and up to some twenty on a slow phone —
+   * and the frames before the menu is drawn. A minute is that three times over
+   * with room to spare, and still short enough that a loss after ordinary play
+   * — a driver update, a laptop swapping GPUs, a single TDR mid-round — gets
+   * the reload it can use rather than a dead end.
+   */
+  deviceLossWindow: 60,
   /** Emissive glow (neon, reticle, tracers) — `GlowPass`'s bloom strength. */
   glowIntensity: 1.15,
   /**
@@ -469,8 +487,8 @@ export const graphics = {
      * whole thing a screen-space smear cannot do.
      *
      * **It is held well below what real haze measures, and the constraint is
-     * the 8-BIT CHAIN rather than the air.** `DefaultRenderingPipeline` is
-     * built with `hdr = false` (see `Dither.ts`), so whatever the forward lobe
+     * the 8-BIT CHAIN rather than the air.** Every target of the post chain is
+     * `rgba8unorm` (see `Dither.ts`), so whatever the forward lobe
      * returns has to fit in the same 0..1 the village is drawn in — there is no
      * tonemapper downstream to pull a highlight back. Measured off the phase
      * function: g 0.68 is **54x** brighter looking into the moon than across
@@ -613,7 +631,7 @@ export const graphics = {
     nearNormalBiasTexels: 1.3,
     /**
      * How many pixels the shadow edge is cut across — see `shadowTap` in
-     * `shaders/wgsl/includes.ts`. Every map's lookup is the depth compare
+     * `shaders/wgsl/chunks.ts`. Every map's lookup is the depth compare
      * over the 4x4 texels round the receiver, weighted by a cubic B-spline
      * (four `textureGather`s), and the edge is that smooth field's 0.5
      * contour rather than a step on the map's grid. It is thresholded by a
@@ -770,8 +788,8 @@ export const graphics = {
    *
    * **A zero is OFF, not a tiny map**, and off is a bound 1x1 texture that
    * reads fully lit rather than a generator with nothing in it — every
-   * material that declares a shadow sampler must still have one BOUND
-   * (`SHADOW_SAMPLER_NAMES`), and a depth pass with nothing to draw is still a
+   * program that declares a shadow map must still have one BOUND
+   * (the frame's `FRAME_TEXTURES`), and a depth pass with nothing to draw is still a
    * pass. What each map's absence costs the picture:
    * - `sun` 0: the moon casts nothing inside the window. Past it the volume's
    *   own sun test still answers (`giFarShadow`) when bounce light is on.
@@ -1298,8 +1316,9 @@ export const graphics = {
      * **A BODY is measured once off its rig ROOT and drops WHOLE**, which is
      * what lets this reach a soldier at all — see `WorldCulling.offer`. A
      * per-mesh verdict decapitated one instead of removing him, and a pool was
-     * exempt outright until the root answered the question once for all
-     * fourteen meshes. **Anything EMISSIVE is still exempt**, because bloom
+     * exempt outright until the root answered the question once for the whole
+     * body (`WorldCulling.drawsBody`, which our renderer's drawing of bodies
+     * reads since `BABYLON_EXIT.md` X4.1d). **Anything EMISSIVE is still exempt**, because bloom
      * makes a sub-pixel emitter visible far past its own size and this game
      * has a night map full of lit windows — but a body's own visor is the
      * BODY's and goes with it.
@@ -1322,6 +1341,141 @@ export const graphics = {
      * 0 disables it.
      */
     minPixels: 3,
+    /**
+     * How a BODY leaves at the two gates that take it off whole — the
+     * distance (`bodyDrawDistance`) and the size gate above — instead of
+     * popping (`BABYLON_EXIT.md` X4.1e, `PERF_PLAN.md` A4): a screen-door
+     * dither, its share of drawn pixels the body's FADE (`WorldCulling
+     * .bodyFade`). A fade built for one gate misses the other, so both ramp
+     * here and a body takes the lesser.
+     */
+    bodyFade: {
+      /**
+       * The share of the map's `bodyDrawDistance` a body fades over, ending
+       * one measure-radius short of it — so the fade reaches zero before the
+       * roster's own switch can take the body off, and a fade above 0 is
+       * only ever on a body that switch still shows (`WorldCulling.offer`
+       * argues the radius, and the one frame of eye lag it holds up to).
+       * 0.1 is 30 m on Sarab, 42 on Cinderhaven and 7.8 on the 78 m valleys.
+       */
+      distance: 0.1,
+      /**
+       * How many times `minPixels` a body's projected diameter must be for it
+       * to be drawn whole; between that and `minPixels` it fades, linearly in
+       * pixels. 1.5 is 3 to 4.5 px: on Coldharbour from ~540 m to the 810 m
+       * drop on a 1080-tall viewport, and from ~190 m to 290 m on a phone's
+       * 384.
+       */
+      size: 1.5,
+    },
+    /**
+     * A HULL's detail tier (`BABYLON_EXIT.md` X4.2c, `PERF_PLAN.md` A3): the
+     * projected DIAMETER, in CSS pixels as `minPixels` is, of a hull's whole
+     * MEASURE (`vehicleRig.HullMeasure`, one sphere a hull) under which it
+     * draws its REDUCED set — every segment its model's `DETAIL` list names
+     * left out (the tank's links, road wheels and cupola ring, the truck's
+     * weapon-station yoke; nothing of the helicopter's). A SWAP, never a
+     * drop: the hull stays, and the size gate above still answers per
+     * segment for whatever is drawn (decided 2026-10-31). Off while the
+     * warm-up stands, so the full set is the one it shows.
+     *
+     * **32 is where the largest detail part stops reading as a part.** At 32
+     * px a tank's measure (11.1 m across) puts its idler, the biggest disc in
+     * the set (0.72 m), at ~2 px and a road wheel's hub (0.56 m) at ~1.6;
+     * the links are sub-pixel from far nearer. Photographed full against
+     * reduced on Sarab's open ground (X4.2c) — a light hub pixel or two at
+     * the nose, a darker run along the bottom, and the truck's 1-5 pixels; by
+     * 48 the tank's change is 100-110 and by 64 the road wheels are a row of
+     * dots that visibly go. **The evidence for 32 is the PHONE's viewport**,
+     * where the swap (~141 m) is nearly unfogged: 33-48 pixels of a tank at
+     * up to 98-139/255 across 24-32 px, no knee, and no visible step in the
+     * walk through it. The 3440x1440 figures (21-25 pixels at 32) mostly
+     * measure FOG — the swap is ~527 m there, where Sarab's fog ramp
+     * (150-560 m) is ~92% along, ~85% fog on screen (the cel shader mixes in
+     * the ramp's square) — and are not that evidence. A desktop
+     * player on Cinderhaven (fog 80-1,250 m) meets the swap at ~395-527 m
+     * under only 7-15% fog, so it looks like the phone's photographs, not
+     * the 3440 ones. Where it falls: a tank at ~527 m and a truck at ~348 m
+     * on a 1440-tall viewport at the hip field, ~395 and ~260 m at 1080, ~141
+     * and ~93 m on a phone's 384 — the swap comes NEARER exactly where a
+     * pixel is bigger, as the gate above does.
+     *
+     * **There is no hysteresis band at the swap, accepted** (the project
+     * owner, 2026-10-31): a hull sitting at its swap distance toggles its
+     * reduced set on every crossing — a phone player strafing ~4 m around
+     * 141 m from a parked tank sees a ~48 px twinkle at its nose — as the
+     * per-segment gate above toggles a part, which has no band either.
+     *
+     * 0 disables it (the full set always).
+     */
+    hullDetail: 32,
+    /**
+     * How a HULL leaves at its map's draw distance (`EnvironmentSpec
+     * .hullDrawDistance`, `BABYLON_EXIT.md` X4.2d) instead of popping: the
+     * bodies' screen door (`bodyFade`), its share of drawn pixels the hull's
+     * FADE (`WorldCulling.hullFade`), measured off the hull's whole MEASURE
+     * (`vehicleRig.measureHull`). At the distance ONLY — there is no
+     * whole-hull size edge (decided 2026-10-31: a hull's parts keep leaving
+     * at the per-segment gate above, one by one, as they always have). Off
+     * while the warm-up stands, and on a map that states no distance, which
+     * is every shipped map.
+     */
+    hullFade: {
+      /**
+       * The share of the map's `hullDrawDistance` a hull fades over, ending AT
+       * it — a hull has no switch at range for the fade to beat, as the
+       * roster's is for a body (`bodyFade.distance`), so the ramp ends where
+       * the distance does, measured to the measure's centre. The bodies'
+       * tenth, for the bodies' reason: long enough to read as a thinning
+       * rather than a pop — 42 m at 420, where a tank on the road (~15 m/s)
+       * takes ~3 s to cross it and the helicopter at its 32 m/s ~1.3 s — and
+       * one number a player meets for both.
+       */
+      distance: 0.1,
+      /**
+       * Metres of SLACK in the gun-reach floor (`hullDrawFloor`,
+       * `world/environment.ts`): how far a hull's MUZZLE can stand from its
+       * own measure's centre, which is what the fade is measured to. Measured
+       * (`BABYLON_EXIT.md` X4.2d, every turret and cupola swept through its
+       * whole traverse): the tank's main gun 7.68 m with its turret turned to
+       * the rear, its cupola gun 3.54, the helicopter's chin gun 5.98 and the
+       * truck's station 2.37 — the farthest is the tank's, and 8 carries it. The floor's other term —
+       * how far a VIEWER's eye stands from what of him a round can hit, the
+       * chase camera at its worst — is derived from the kinds' own numbers,
+       * not stated here. **This one is not derived, so it is GUARDED**: a dev
+       * build sweeps every kind's muzzles and gunner's sight through their
+       * whole traverse whenever the hull kits are built and THROWS if one
+       * reaches past this (`entities/vehicleModels.ts`' `checkMuzzleReach`,
+       * X4.2d's post-commit review; today's worst 7.683 m, 7.729 bounded
+       * between samples) — so a longer barrel or a fourth kind's gun owes it
+       * a raise, and the first dev boot says so.
+       */
+      muzzle: 8,
+    },
+  },
+  /**
+   * How our renderer cuts the blocks it draws (`render/WorldBlocks.ts`,
+   * `BABYLON_EXIT.md` X3.3b): into CLUSTERS, culled
+   * per frame on the GPU and drawn with one plain draw per material.
+   */
+  clusters: {
+    /**
+     * The most triangles a cluster holds. A cluster is a run of one piece's
+     * triangles in their own order, so it is this many or the piece's
+     * remainder. Smaller is a finer frustum cull and more work for the scan;
+     * B1 asked for 128-256.
+     */
+    triangles: 128,
+    /**
+     * Where the cull's NEAR-FIRST bands end, metres from the eye to the
+     * centre of a cluster's SURFACE (never the cluster's own box, so a
+     * surface's clusters keep their order as the eye moves): the surviving
+     * clusters of a material are written band by band, nearest first, the
+     * fourth band being everything past the last number. An order chosen while the list is written anyway, never a sort,
+     * so a later depth-ordered draw can let the GPU skip hidden pixels
+     * (`BABYLON_EXIT.md`, "What this plan does not do"). Exactly three, rising.
+     */
+    nearBands: [24, 64, 160],
   },
   /**
    * The cubes behind the glazing: what `ReflectionSystem` bakes per map
@@ -1335,16 +1489,20 @@ export const graphics = {
   reflection: {
     /**
      * Face resolution, and it is a PER-PROBE cost now that there is a probe
-     * per glazed block: 6 x 128 x 128 of RGBA8 plus its mip chain is ~520 KB,
-     * so Coldharbour's 37 come to ~19 MB held for the process.
+     * per glazed block: 6 x 128 x 128 of RGBA8 plus its mip chain is 512 KiB
+     * (`ProbeBake.cube`), so Coldharbour's 39 come to ~19.5 MiB held for the
+     * process — the pool is never destroyed.
      *
      * 128 rather than the 256 the single map-wide cube could afford, and the
      * trade is the right way round: a reflection that is Fresnel-weighted,
      * tinted and hazed cannot show the detail 256 buys, while WHERE it is
      * baked from decides whether the building opposite is in it at all.
-     * Resolution is also not what the bake costs — 37 probes are 222 face
-     * renders of ~325 merged meshes, and that is draw calls rather than
-     * pixels.
+     * Resolution is also not what the bake costs: each face is a cull of the
+     * map's clusters on the GPU and one plain draw a material group over its
+     * survivors (`render/ProbeBake.ts`), spent `probesPerFrame` a frame
+     * under the building card — Coldharbour's 39 drain in 5 frames of 5-6 ms
+     * (`docs/rendering.md`). It was draw calls a mesh a face on Babylon's
+     * `ReflectionProbe`s, which X3.7c deleted.
      */
     size: 128,
     /**
@@ -1358,27 +1516,29 @@ export const graphics = {
     strength: 0.9,
     /**
      * How far a probe's bake reaches, in metres, measured to the near side of
-     * a mesh's bounding sphere.
+     * a surface's bounding sphere (`ProbeJob.reach`, tested by the face's
+     * cull: `PROBE_SPHERE_REACH`).
      *
-     * **The bake is `probes x 6 faces x render list`, and this is the only
-     * term that is the MAP's rather than the glazing's.** A probe standing in
-     * a street does not need the far side of a 1500 m map in its cube: what a
-     * pane in a city actually shows is the building opposite, and a merged
-     * block a kilometre away contributes a few pixels of haze at the cost of a
-     * draw call in every one of six faces.
+     * **The bake is `probes x 6 faces x what each face draws`, and this is
+     * the only term that is the MAP's rather than the glazing's.** A probe
+     * standing in a street does not need the far side of a 1500 m map in its
+     * cube: what a pane in a city actually shows is the building opposite,
+     * and a block a kilometre away contributes a few pixels of haze at the
+     * cost of its clusters' triangles in every one of six faces (a draw call
+     * of its own in each, on Babylon's bake, until X3.7c).
      *
      * **800 m is past the play square's diagonal on the five smaller maps**
      * (Harrowmead's 400 m square is 566 m corner to corner), and on Sarab,
      * whose 900 m square is 1,273 m across, it is past that map's `fogEnd` of
      * 560 — so on all six, everything this drops was already being drawn as
      * flat fog colour. **Cinderhaven is the exception**: a 1500 m square,
-     * 2,121 m across, under a `fogEnd` of 1,250, so a mesh between 800 and
+     * 2,121 m across, under a `fogEnd` of 1,250, so a surface between 800 and
      * 1,250 m from a probe is cut out of the bake while it would still have
      * drawn partly through the fog. That is the one shipped map where this
      * radius takes something a player could see out of a reflection.
      *
      * What it costs on a map with no fog is finding 10's objection: a culled
-     * mesh does not fade, it vanishes, and the cube's alpha going to 0 is
+     * surface does not fade, it vanishes, and the cube's alpha going to 0 is
      * where the shader puts sky. At 800 m, on a reflection that is
      * Fresnel-weighted and mixed at 0.9, that hole is at the horizon of a
      * picture of a street. The measurement to beat it with is in
@@ -1386,8 +1546,9 @@ export const graphics = {
      * bake almost linearly.
      *
      * The test is to the near side of the bounding SPHERE and not to the
-     * centre, which is what keeps a landform in: a rim mesh has an enormous
-     * radius and its centre is nowhere near anything.
+     * centre, which is what keeps a landform in: a rim run has an enormous
+     * radius and its centre is nowhere near anything. A scatter instance is
+     * reached by its own sphere.
      */
     radius: 800,
     /**
@@ -1406,39 +1567,34 @@ export const graphics = {
      * 160 MiB at `size` 128 is 320 probes. Coldharbour asks for 40 and the
      * 900 m proving ground for 265, so **nothing in the tree today groups
      * anything** and this is a bounded worst case rather than a live lever.
-     * It is stated as memory because memory is what it protects; the draw cost
-     * of a probe is `drawsPerFrame`'s business.
+     * It is stated as memory because memory is what it protects; what a
+     * frame of the bake costs is `probesPerFrame`'s business.
      */
     poolBudgetMiB: 160,
     /**
-     * How many face draws one FRAME of the bake may issue before the rest of
-     * it waits for the next one.
+     * How many probes one frame of the bake records (`render/ProbeBake.ts`,
+     * `BABYLON_EXIT.md` X3.6c) — what stops a bake being ONE frame, and a
+     * count of PROBES because what a face costs is a cull of the map and a
+     * pass over its survivors, a draw a material group, whatever the probe
+     * reaches: six of them and the mips. It is also the culls' slot count
+     * (six a probe), held by the bake's view only while a bake drains.
      *
-     * **A bake is a build step, and this is what stops it being one frame.**
-     * Every probe is refresh-once, so before this they all landed on the frame
-     * after the install: Coldharbour's 40 probes over 175 meshes each are
-     * 41,934 draws and cost ~2.3 s in that one frame, and the 900 m proving
-     * ground asks for **1,373,340**. At that point the frame does not merely
-     * run long — the D3D12 device is LOST inside it on
-     * `ID3D12Device::CreateDescriptorHeap` and Babylon's attempt to recreate
-     * it fails too, at both extents S0 measured. That is a resource ceiling
-     * reached inside one command submission, so a slower bake fails
-     * identically and only a SMALLER one does not.
+     * **A bake issued in one frame is a lost device**, which is why it is
+     * spread at all: Babylon's bake, which drew a probe's whole list per
+     * face, put Coldharbour's 40 probes into one frame of 41,934 draws and
+     * ~2.3 s, and the 900 m proving ground's 1,373,340 draws lost the D3D12
+     * device inside that one command submission
+     * (`ID3D12Device::CreateDescriptorHeap`) — the draw budget that spread it
+     * went with Babylon's bake at X3.7c.
      *
-     * **50,000 is just over Coldharbour's whole bake and that is the whole
-     * derivation**: the largest thing that ships still completes on the frame
-     * it always did, so no shipped map's glass moves and the banked reference
-     * frames cannot either. The proving ground spends the same budget over ten
-     * frames of ~2.8 s. Lower would be smoother and is what the Chromebook
-     * wants (`VERIFYING.md`); it would also take Coldharbour off its one
-     * frame, which is the property this number is chosen to keep.
-     *
-     * A probe costing more than the whole budget still goes, on a frame of its
-     * own rather than never, and a frame already committed to re-baking a
-     * probe whose meshes were not ready spends that against this first — see
-     * `ReflectionSystem.releaseBatch`.
+     * **8 is a frame the desktop does not notice**: measured on the Windows
+     * box (2026-10-23, frame start to the queue's work done), a frame of 8
+     * probes is 5-6 ms where an idle one is 1-3, and Coldharbour's 39 drain in
+     * 5 frames and ~41 ms of wall clock — the one ~2.3 s frame Babylon's bake
+     * spent on them is gone. More a frame buys nothing a building card can
+     * show; fewer only stretches the card on the one map with many probes.
      */
-    drawsPerFrame: 50_000,
+    probesPerFrame: 8,
     /**
      * How many frames the building card will wait WITHOUT the outstanding
      * probe count going down before it gives up and lets the rest of the bake
@@ -1450,13 +1606,13 @@ export const graphics = {
      * scene still renders, so it is the one place in the state machine those
      * frames can be spent without the player in them; what it costs is that
      * the card is up for as long as the bake takes, which at 1500 m is 47
-     * frames — 44.8 seconds of them before `faceOf` cut the draws and 10.6
-     * after.
+     * frames — 44.8 seconds of them on Babylon's bake before its per-face
+     * cull and 10.6 after (that bake went at X3.7c).
      *
      * **This cap is a WEDGE detector and not a timeout**, which is why it
-     * counts stalled frames rather than elapsed ones. A probe re-bakes in full
-     * until every mesh in its list has a compiled material, so a material that
-     * never compiles is a queue that never drains — and that is
+     * counts stalled frames rather than elapsed ones. A released probe waits
+     * for a frame on which every group the bake draws can draw, so a pipeline
+     * that never settles is a queue that never drains — and that is
      * indistinguishable from a slow machine by any wall clock. 120 frames is
      * long past the two or three a legitimate re-bake takes and short enough
      * that a wedge is a pause rather than a hang. The state machine has no
@@ -1480,30 +1636,24 @@ export const graphics = {
    * The pipeline warm-up: the last thing the building card covers, after the
    * reflection bake has drained (`Game.bakeWait`, `core/PipelineWarmup.ts`).
    *
-   * WebGPU compiles a render pipeline the first time a draw needs one, and the
-   * frame that draw lands on pays for it — 139 ms on the spawn frame on
-   * Coldharbour on the Windows box, 1,268 ms on a phone (`FINDINGS.md` 16). So
-   * the card stands the camera at every place a life can start and draws the
-   * WHOLE map from there, frustum and cull cells off, until a frame compiles
-   * nothing; the pipelines that frame would have built are then cached before
-   * the round can see them.
+   * A pipeline compiled on the frame that first needs it costs that frame —
+   * 139 ms on the spawn frame on Coldharbour on the Windows box, 1,268 ms on a
+   * phone (`FINDINGS.md` 16), when Babylon compiled them on first draw. Ours
+   * are asked ahead and compile off the frame, so the card only WAITS for them
+   * — the round's declared list (`Game.roundPipelines`) and the map's — and
+   * draws nothing for their sake (the vantages it stood at every spawn and
+   * flag went at `BABYLON_EXIT.md` X5.4c).
    */
   warmup: {
     /**
-     * Frames at one vantage that must compile nothing before the next one is
-     * stood at. Two, because a material whose effect was not ready on the
-     * first frame is skipped by that frame's draw rather than compiled, and
-     * shows up on the second.
+     * The most the card waits for our renderer's pipelines
+     * (`render/PipelineCache.ts`), in milliseconds. Long, as the bake's drain
+     * is, and for the same reason: a pipeline of ours still compiling past it
+     * is a group of the world drawn by NOBODY until it lands — a hole, not a
+     * hitch — so this is a backstop for a compile that never settles, never a
+     * budget.
      */
-    quietFrames: 2,
-    /** The most frames spent at one vantage, quiet or not. */
-    maxFramesPerVantage: 8,
-    /**
-     * The backstop on the whole warm-up, in milliseconds. A warm-up that runs
-     * out simply stops: whatever it did not reach compiles in the round, as
-     * all of it did before this existed.
-     */
-    capMs: 8_000,
+    oursCapMs: 90_000,
   },
   /**
    * Albedo weathering on flat cel colours — a slow value drift over world space

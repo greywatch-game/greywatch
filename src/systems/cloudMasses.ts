@@ -7,8 +7,9 @@
  * random source of its own — which is `glassFracture.ts`'s shape, and for its
  * reason: the only thing a reader needs to trust about it is its output.
  * Owns: where each cloud stands on the ring, how it is piled, and which way
- * every facet faces. Owns no colour, no light and no drift — `Sky` and
- * `shaders/CloudShader.ts` are those.
+ * every facet faces. Owns no colour, no light and no drift — `Sky` states the
+ * colours and turns the ring, `shaders/CloudShader.ts` holds the values and
+ * `shaders/wgsl/cloud.ts` is the light.
  * Invariants: every triangle's winding and its stored normal agree and point
  * OUT of the lump it came from, and its smooth normals ride with its corners
  * through any re-winding; a degenerate facet is dropped rather than

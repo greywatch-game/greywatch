@@ -26,7 +26,7 @@ Then load the reference that fits:
 - **[craft.md](craft.md)** — how to draw detail that reads in this cel look,
   and the specific mistakes that have already been made. Always.
 - **[new-model.md](new-model.md)** — registering a new kind, choosing its
-  colliders, params, editor wiring, placing it. Only for a new builder.
+  colliders, params, placing it. Only for a new builder.
 
 ## The procedure
 
@@ -70,7 +70,7 @@ about to be placed widely is budgeted for the count it will have.
 the user knows something the count does not. Otherwise state the tier chosen
 and why (count and role) before drawing, and check the result against it with
 `shots.mjs --stats`. Also check the total: placements × vertices on the
-busiest map. Past ~+500 k scene vertices on one map, measure the round's
+busiest map. Past ~+500 k world vertices on one map, measure the round's
 install time as well as the frame rate (`perf.mjs` prints it) — the cottage
 rework cost Cinderhaven 2 s of install for +720 k.
 
@@ -191,9 +191,11 @@ node .claude/skills/model-detail/scripts/perf.mjs --map <id> --at x,z,rotY --r <
 git stash; node .../perf.mjs <same args>; git stash pop
 ```
 
-Report vertices per model (from `--stats`) against the tier, scene vertices,
-active meshes and fps at each vantage. Run-to-run spread is ~3%. The recent
-bar: draw calls and active meshes unchanged, fps inside the spread. More than a couple of draw calls, or fps outside the spread, needs
+Report vertices per model (from `--stats`) against the tier, world vertices,
+and the world's draws and fps at each vantage — both counts our renderer's
+(`perf.mjs`' header: Babylon's scene held no mesh in a round, so its own
+counts read 0, and it is gone since X6.1h). Run-to-run spread is ~3%. The recent bar: the world's draws
+unchanged, fps inside the spread. More than a couple of draw calls, or fps outside the spread, needs
 a reason in the commit or a cheaper drawing.
 
 ### 8. Commit (when asked)

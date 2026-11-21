@@ -3,14 +3,108 @@
  *
  * Owns: nothing but a report and, when asked, one JSON file. Every map in the
  * registry (the shipped seven and the DEV-only proving ground) is built by the
- * real client in a real browser, and every mesh the build hands the world is
- * hashed in list order: `GameMap.visuals`, `colliders` and `terrainColliders`
- * — name, material name, metadata, transform, the flags the world layer reads
+ * real client in a real browser, and every surface and mesh the build hands
+ * the world is hashed in list order: the world's SURFACES (`GameMap.world`,
+ * one a record, each with the mesh `GameMap.visuals` holds of it, if any —
+ * see "A surface with no mesh" below) — name, material name, metadata,
+ * transform, the flags the world layer reads
  * (`isVisible`, `isPickable`, `checkCollisions`, rendering group), vertex,
  * index and submesh counts, `geometry.delayLoadState`, and a hash of every
- * vertex buffer and of the index buffer. Beside them, the three plain lists a
- * build derives from its parts: `colliderBoxes`, `colliderAlbedo` and
- * `partBoxes`.
+ * vertex buffer and of the index buffer. Beside them, the plain lists a build
+ * derives from its parts: `colliderBoxes`, `colliderAlbedo` and `partBoxes`
+ * (hashed), and three that say how the merged meshes are WIRED to the rest of
+ * the map (kept as data): `panes` (every `WorldPane` field), `paneGroups` (each
+ * as `[surface index, panes, block]`) — and a third, `pieces`:
+ * `GameMap.world.pieces`, the PIECE table (each layout item a piece id names,
+ * as `[list, index]`, `ItemRef`). (A fourth, `editorItems`, each layout item's
+ * `visuals` on the map editor's build and `null` on a shipped one, was retired
+ * with the editor at `BABYLON_EXIT.md` X5.3c, row "X5.3, retire the editor": a
+ * baseline that holds it as `null` compares as a baseline without it.)
+ *
+ * **And the collider DATA** (`BABYLON_EXIT.md` X5.3a): `boxGroups` kept as
+ * data — the `colliderBoxes` indices each scatter cluster groups, which is
+ * the order a SWEEP breaks a tie in on both sides — and `rayGroups` (a hash
+ * of each strut group's boxes) and `terrainGeometry` (a hash of each floor
+ * block's positions and indices, `PhysicsWorld`'s floor) hashed, an entry a
+ * group or a block. **They are the whole of a collider since X5.3e**, which
+ * stopped making collider meshes and RETIRED the two mesh lists this file
+ * kept beside them (`colliders`, `terrainColliders`; row "X5.3, the collider
+ * meshes"): a baseline that holds them compares everything else it has, the
+ * mesh lists said and not compared — X5.3a's data was taken as their
+ * BEFORE for exactly that. A list that differs is named with its FIRST
+ * differing entry (`boxGroups[12]`), and with both lengths when its length
+ * moved.
+ *
+ * **Each VISUAL also records its piece ranges** (`pieces`, from the record
+ * `GameMap.world` keeps beside it: `[piece, vertexStart, vertexCount,
+ * indexStart, indexCount]` per range), which say which layout item each span
+ * of a merged mesh came from — what a destructible building will need, and
+ * what nothing else in this file can see moving (`world/worldGeometry.ts`).
+ *
+ * **Each VISUAL's ARRAYS are hashed off its RECORD too** (`arrays`, `arrayIndex`
+ * — `BABYLON_EXIT.md` X3.7a), through the DEV sink `world/worldGeometry.ts`
+ * hands each surface's arrays to as they are released (`SurfaceSink`,
+ * `window.__surfaceSink`, installed before the page boots): every attribute
+ * under the vertex kind Babylon names it by, in the type Babylon was handed
+ * it in — a `Float32Array` as its own bits, anything else as doubles, the
+ * indices included — so a surface's record hashes are the very strings its
+ * mesh's buffers hash to. **Every run checks the two halves agree** wherever
+ * a visual has a mesh's buffers to compare (a failure, named `arrays≠buffers`),
+ * against no baseline at all; that is what lets a later baseline lean on the
+ * record's hashes alone for a surface no mesh is made of (X3.7b). A visual
+ * whose arrays never reached the sink fails the run too, counted apart.
+ *
+ * **And its record's BOUNDS** (`bounds`: `SurfaceRecord.bounds`' ten numbers,
+ * box then sphere, hashed as their f64 bits), which `WorldCulling` grows its
+ * cells from. **Every run also checks them against the mesh's own bounding
+ * info bit for bit** (`minimumWorld`/`maximumWorld`, `centerWorld`/
+ * `radiusWorld`; a failure, named `bounds≠mesh`), over EVERY surface that has
+ * a mesh — which on a shipped build (all at identity but the odd loose mesh)
+ * left `boundsOf`'s transformed path untested, and none has one since X6.1g. **That coverage is
+ * `scripts/bounds-check.mjs`'s since `BABYLON_EXIT.md` X5.3a** — `boundsOf`
+ * against Babylon's `BoundingInfo` over every kind at seeded off-identity
+ * transforms, in Node — the `--editor` arm that used to give it being retired
+ * with the editor (X5.3c).
+ *
+ * **A surface with no mesh** (`BABYLON_EXIT.md` X3.7b: our renderer draws it
+ * in every pass, and Babylon was made none — on a shipped build every surface
+ * but the glazing and the fires) is fingerprinted off its RECORD alone: its
+ * name, material, metadata, counts, piece ranges, bounds and the arrays the
+ * sink hashed, and `mesh: false`; a surface WITH a mesh says `mesh: true`.
+ * Compared with a baseline that holds a mesh of it (X3.7a's, which records
+ * no `mesh` field), only those fields are compared — the arrays against the
+ * baseline's, which X3.7a proved equal to its mesh's buffers — and every
+ * mesh field it has no mesh to hold is not a difference; the run says how
+ * many surfaces of each map have no mesh rather than failing on them.
+ * **Against a baseline that records `mesh` (X3.7b's on), a surface that
+ * GAINS or LOSES its mesh is a difference** (`mesh` moved), whatever else
+ * matches — a fire made meshless would otherwise pass on its record alone.
+ * **A build that makes no mesh at all** (`BABYLON_EXIT.md` X6.1g: no
+ * `GameMap.visuals`, no `SurfaceRecord.visual`) is fingerprinted the same
+ * way, every surface `mesh: false` — which is what a shipped build already
+ * said of every surface since X4.6e, so its fingerprint does not move.
+ * A surface WITH a mesh is compared field for field as before, its
+ * `sceneRank` against the baseline's ranks re-ranked over the surfaces that
+ * still have one (and that had one in the scene: a baseline rank of -1 takes
+ * no slot).
+ *
+ * **A map that fails to build is a failure on every run** — whatever any
+ * baseline says — and the build is watched for a page error rather than
+ * waited out: a surface our renderer cannot hold THROWS in a DEV build
+ * (held by `BlockHandover.refuse`, thrown at the install once the world has
+ * been failed — a page error out of `buildRound`, the page going on to the
+ * menu), so this is what refuses a map that has one.
+ * `--foliage <rung>` builds at that crown rung (`Settings.foliage`: `low`,
+ * `medium`, `high`), which is how that refusal is asked of every rung.
+ *
+ * **Four per-mesh fields describe the UPLOAD rather than the geometry**, because
+ * a merge that moves onto arrays and uploads at the end can get each wrong
+ * without moving a vertex: `sceneRank` (the mesh's rank within its list by its
+ * index in `scene.meshes` — creation order, which was the order `WorldCulling`
+ * offered candidates in and so reached the glow mask and the transparent
+ * tie-breaks), `positionUpdatable` (whether the position buffer is writable,
+ * which `GlassFx` needs on a pane block holding a breakable pane),
+ * `hasVertexAlpha` and `frozen` (`isWorldMatrixFrozen`).
  *
  * **It is the other half of `npm run kit:hash`, and the half `FINDINGS.md` 26
  * said did not exist.** `kit:hash` proves a builder emits the same PARTS and
@@ -26,29 +120,42 @@
  *   npm run merge:hash -- --against before.json
  *
  * A pure refactor must come back with nothing changed. **Take the "before" on
- * the same machine and the same Babylon**: the hashes are of floats a browser
+ * the same machine and the same engine code**: the hashes are of floats a browser
  * computed, and nothing promises another GPU vendor's or another engine
  * version's bake reaches the same bits.
  *
  * Flags: `--maps a,b` limits it to those map ids (with `--against`, only those
- * maps of the file are compared); `--editor` fingerprints the EDITOR's build
- * instead (`Game.buildEditorMap`, run over the round's: nothing block-merged,
- * every mesh one layout item's) — the other path out of `mergeByMaterial`,
- * which a shipped build never takes, so it owes a baseline of its own and is
- * never compared with one taken without the flag; `--out file` writes the
- * fingerprint;
+ * maps of the file are compared); `--out file` writes the
+ * fingerprint; `--foliage <rung>` (above);
  * `--against file` compares and exits 1 on any difference, naming the list,
  * the index, the mesh and the fields that moved. A map that fails to build is
  * recorded as its error, so a build broken by the change is a difference too.
+ * A field or a list the "before" file did not record is not a difference, so an
+ * older baseline still compares everything it has. `info` (the scene's mesh and
+ * geometry counts) is reported when it moves but never fails the run: it counts
+ * what the scene holds besides the map. `--profile` prints the build's phases
+ * (`window.__buildProfile()`, `world/buildProfile.ts`) per map, and they are
+ * never written or compared: a duration is not a fingerprint. (`--editor`, the
+ * map editor's build, is retired with the editor — X5.3c — and a baseline
+ * taken with it is refused rather than compared.)
  *
  * Boots the dev server and the GPU-capable Chromium the other browser scripts
  * use (`dev-server.mjs`, `browser.mjs`) — read `VERIFYING.md` first if it
  * times out at the boot gate.
+ *
+ * **What the scene holds is asked of the ONE frame adapter since
+ * `BABYLON_EXIT.md` X6.1a** (`scripts/lib/frameAdapter.mjs` since its review,
+ * installed as an init script through `installFrameAdapter`, which honours
+ * `REF_NO_SCENE=1`): a mesh's rank in `scene.meshes` (every one -1 with no scene, which
+ * holds no mesh) and the `info` counts (`null` with none).
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { launchClient } from "./browser.mjs";
 import { DEV_MAPS, MAPS, root } from "./collision-hash.mjs";
 import { startDevServer } from "./dev-server.mjs";
+// What the scene holds, through the ONE frame adapter
+// (`BABYLON_EXIT.md` X6.1a), which answers with or without a scene.
+import { installFrameAdapter } from "./lib/frameAdapter.mjs";
 
 const MAP_KEY = "greywatch.map";
 
@@ -61,9 +168,14 @@ function arg(name) {
 }
 
 const only = arg("--maps")?.split(",");
-const editor = process.argv.includes("--editor");
+if (process.argv.includes("--editor")) {
+  console.error("merge:hash: --editor is retired with the map editor (BABYLON_EXIT.md X5.3c)");
+  process.exit(2);
+}
+const foliage = arg("--foliage");
 const outFile = arg("--out");
 const againstFile = arg("--against");
+const profile = process.argv.includes("--profile");
 
 /**
  * Runs IN THE PAGE. Kept free of closures over this module, because
@@ -104,6 +216,11 @@ function fingerprintMap() {
     return "f64:" + hashWords(new Uint32Array(f.buffer));
   };
   const num = (x) => (x === undefined || x === null ? null : +x.toFixed(9));
+  // A record's bounds in one order, box then sphere, and their f64 bits' hash.
+  const boundsWords = (b) => [
+    b.minX, b.minY, b.minZ, b.maxX, b.maxY, b.maxZ, b.centerX, b.centerY, b.centerZ, b.radius,
+  ];
+  const hashBounds = (words) => hashArray(Float64Array.from(words));
   const vec = (v) => (v ? [num(v.x), num(v.y), num(v.z)] : null);
   // Metadata as stable JSON: keys sorted, anything that is not plain data
   // (a Mesh, a function) named by its type rather than walked.
@@ -117,7 +234,28 @@ function fingerprintMap() {
     return out;
   };
 
-  const meshRecord = (m) => {
+  // Where each mesh stands in the scene's list — its creation order, since
+  // `removeMesh` splices and so keeps the survivors' order. A Map, because an
+  // `indexOf` per mesh is quadratic over a list of thousands.
+  // Babylon's meshes through the frame adapter (`lib/frameAdapter.mjs`, X6.1a): none
+  // with no scene, where every mesh's rank is -1 (there is no mesh to rank).
+  const sceneIndex = new Map();
+  (window.__refFrame().babylon()?.scene.meshes ?? []).forEach((m, i) => sceneIndex.set(m, i));
+  // A mesh's rank within its own LIST by that index: which of the list's
+  // meshes was made before which, without the absolute index that every pool
+  // or sky mesh made earlier would shift. -1 for a mesh not in the scene.
+  const sceneRanks = (list) => {
+    const at = list.map((m) => sceneIndex.get(m) ?? -1);
+    const order = at
+      .map((v, i) => [v, i])
+      .filter(([v]) => v >= 0)
+      .sort((x, y) => x[0] - y[0]);
+    const rank = at.map(() => -1);
+    order.forEach(([, i], r) => (rank[i] = r));
+    return rank;
+  };
+
+  const meshRecord = (m, sceneRank) => {
     const geo = m.geometry;
     const kinds = m.getVerticesDataKinds ? [...m.getVerticesDataKinds()].sort() : [];
     const buffers = {};
@@ -142,10 +280,15 @@ function fingerprintMap() {
       indices: m.getTotalIndices(),
       subMeshes: m.subMeshes ? m.subMeshes.length : 0,
       delayLoadState: geo ? geo.delayLoadState : null,
-      // Whether the mesh is on the DEVICE. A part that reaches the world draws
-      // nothing and throws nothing (`world/parts.ts`), so this is checked on
-      // its own below, against no baseline at all.
+      // Whether the mesh is on the DEVICE. A mesh whose buffers were
+      // postponed and never created draws
+      // nothing and throws nothing, so this is checked on its own below,
+      // against no baseline at all.
       onDevice: Boolean(geo?.getVertexBuffer("position")?.getBuffer()),
+      sceneRank,
+      positionUpdatable: geo?.getVertexBuffer("position")?.isUpdatable() ?? null,
+      hasVertexAlpha: m.hasVertexAlpha,
+      frozen: m.isWorldMatrixFrozen,
       buffers,
       index: hashArray(m.getIndices(false, true)),
     };
@@ -163,26 +306,169 @@ function fingerprintMap() {
         )
       : null;
 
+  const records = (list) => {
+    const rank = sceneRanks(list);
+    return list.map((m, i) => meshRecord(m, rank[i]));
+  };
+  // One entry a SURFACE, in list order: its mesh's record where it has one
+  // (`SurfaceRecord.visual`), its own record's fields where it has none —
+  // and every surface's piece ranges, bounds and the arrays' hashes, off the
+  // sink (`installSink`) — each absent on a build older than it. A build
+  // older than X3.7b names no visual: its records are aligned with
+  // `visuals`, one for one.
+  const surfaces = map.world?.surfaces;
+  const sunk = window.__surfaceHashes;
+  // A build that makes NO mesh (`BABYLON_EXIT.md` X6.1g on: no `visuals`
+  // and no `SurfaceRecord.visual`) has every surface on its record alone.
+  const meshList = map.visuals ?? [];
+  const visualOf = (r, i) =>
+    !map.visuals ? -1 : r && typeof r.visual === "number" ? r.visual : i;
+  const meshRecords = records(meshList);
+  const visuals = (surfaces ?? meshList).map((s, i) => {
+    const v = surfaces ? visualOf(s, i) : i;
+    const out =
+      v >= 0
+        ? { ...meshRecords[v], mesh: true }
+        : {
+            name: s.name,
+            material: s.material ? s.material.name : null,
+            metadata: JSON.stringify(plain(s.metadata ?? null)),
+            vertices: s.vertexCount,
+            indices: s.indexCount,
+            mesh: false,
+          };
+    if (surfaces) {
+      out.pieces = s.pieces.map((p) => [
+        p.piece, p.vertexStart, p.vertexCount, p.indexStart, p.indexCount,
+      ]);
+    }
+    if (sunk) {
+      out.arrays = sunk[i]?.arrays ?? null;
+      out.arrayIndex = sunk[i]?.index ?? null;
+    }
+    const b = surfaces?.[i]?.bounds;
+    if (b) out.bounds = hashBounds(boundsWords(b));
+    return out;
+  });
+  // The record's bounds against the mesh's bounding info, bit for bit — a
+  // check rather than a fingerprint, so kept out of `visuals` (no baseline
+  // ever records the mesh's half): see the header.
+  const boundsCheck = { compared: 0, offIdentity: 0, unequal: [] };
+  if (surfaces) {
+    surfaces.forEach((s, i) => {
+      const v = visualOf(s, i);
+      const m = v >= 0 ? map.visuals[v] : null;
+      const b = s.bounds;
+      if (!b || !m) return;
+      const info = m.getBoundingInfo();
+      const box = info.boundingBox;
+      const sphere = info.boundingSphere;
+      const mine = [
+        box.minimumWorld.x, box.minimumWorld.y, box.minimumWorld.z,
+        box.maximumWorld.x, box.maximumWorld.y, box.maximumWorld.z,
+        sphere.centerWorld.x, sphere.centerWorld.y, sphere.centerWorld.z,
+        sphere.radiusWorld,
+      ];
+      boundsCheck.compared++;
+      if (!m.getWorldMatrix().isIdentity()) boundsCheck.offIdentity++;
+      const theirs = boundsWords(b);
+      if (!mine.every((x, k) => Object.is(x, theirs[k]))) boundsCheck.unequal.push([i, m.name]);
+    });
+  }
   return {
-    visuals: map.visuals.map(meshRecord),
-    colliders: map.colliders.map(meshRecord),
-    terrainColliders: map.terrainColliders.map(meshRecord),
+    visuals,
     lists: {
       colliderBoxes: boxes(map.colliderBoxes),
       colliderAlbedo: hashArray(map.colliderAlbedo ?? null),
       partBoxes: boxes(map.partBoxes ?? null),
+      // Kept as DATA rather than hashed: short, and a difference is worth
+      // reading. Every field of a pane, in its own order.
+      panes: (map.panes ?? []).map((p) => [
+        p.w, p.h, p.d, p.cx, p.cy, p.cz, p.rotY,
+        p.vertexStart, p.vertexCount, p.group, p.box,
+      ]),
+      // A group's SURFACE index: its record's (`PaneGroup.record`) since
+      // BABYLON_EXIT.md X4.6e, where a round's group has no mesh; its mesh's
+      // before, which was that same index (and `PaneGroup.mesh` is gone since
+      // X5.3e, so the record is the one answer).
+      paneGroups: (map.paneGroups ?? []).map((pg) => [pg.record, [...pg.panes], pg.block]),
+      pieces: map.world ? map.world.pieces.map((p) => [p.list, p.index]) : null,
+      // The collider DATA (BABYLON_EXIT.md X5.3a), and since X5.3e the whole
+      // of a collider: `boxGroups` as DATA — the `colliderBoxes` indices each
+      // scatter cluster groups, the sweeps' tie order — and the strut groups
+      // and the floor's blocks HASHED, a group or a block an entry, so a
+      // difference names which.
+      boxGroups: map.boxGroups ? map.boxGroups.map((grp) => [...grp]) : null,
+      rayGroups: map.rayGroups ? map.rayGroups.map((grp) => boxes(grp)) : null,
+      terrainGeometry: map.terrainGeometry
+        ? map.terrainGeometry.map((t) => [hashArray(t.positions), hashArray(t.indices)])
+        : null,
     },
     // Not compared: what the scene holds besides the map (pools, the sky,
     // the viewmodel) is not this script's business, but a change that leaks
     // meshes or geometries out of the merge shows up here first.
+    // Through the frame adapter (X6.1a): null with no scene, which holds nothing.
     info: {
-      sceneMeshes: g.scene.meshes.length,
-      sceneGeometries: g.scene.geometries.length,
+      sceneMeshes: window.__refFrame().counts()?.meshes ?? null,
+      sceneGeometries: window.__refFrame().counts()?.geometries ?? null,
     },
+    boundsCheck,
   };
 }
 
-async function buildOne(browser, url, id, editor) {
+/**
+ * Runs IN THE PAGE before it boots: the DEV sink every surface's arrays pass
+ * through as they are released (`SurfaceSink`), hashed there and then — the
+ * arrays are not kept — into `window.__surfaceHashes`, by the surface's index
+ * in its build's list (`GameMap.world.surfaces` order). The hashing is
+ * `fingerprintMap`'s `hashArray`, applied to what the adapter handed Babylon
+ * (`world/parts.ts`'s `vertexDataOf`, until X6.1g) — or would have, for a
+ * surface it made no mesh of: a `Float32Array` as itself, any other array as the doubles of the
+ * plain array Babylon held.
+ */
+function installSink() {
+  const hashWords = (words) => {
+    let a = 0x811c9dc5;
+    let b = 0x9747b28c;
+    for (let i = 0; i < words.length; i++) {
+      const w = words[i];
+      a = Math.imul(a ^ w, 0x01000193);
+      b = Math.imul(b ^ w, 0x5bd1e995) ^ (b >>> 13);
+    }
+    return (
+      (a >>> 0).toString(16).padStart(8, "0") +
+      (b >>> 0).toString(16).padStart(8, "0") +
+      ":" +
+      words.length
+    );
+  };
+  const asBabylon = (arr) => {
+    if (!arr) return null;
+    if (arr instanceof Float32Array) {
+      return hashWords(new Uint32Array(arr.buffer, arr.byteOffset, arr.byteLength / 4));
+    }
+    const f = arr instanceof Float64Array ? arr : Float64Array.from(arr);
+    return "f64:" + hashWords(new Uint32Array(f.buffer, f.byteOffset, f.byteLength / 4));
+  };
+  // Babylon's vertex kinds, by the buffer field each is uploaded from.
+  const KINDS = [
+    ["position", "positions"],
+    ["normal", "normals"],
+    ["uv", "uvs"],
+    ["uv2", "uvs2"],
+    ["color", "colors"],
+  ];
+  window.__surfaceHashes = [];
+  window.__surfaceSink = (index, geometry) => {
+    const arrays = {};
+    for (const [kind, field] of KINDS) {
+      if (geometry[field]) arrays[kind] = asBabylon(geometry[field]);
+    }
+    window.__surfaceHashes[index] = { arrays, index: asBabylon(geometry.indices) };
+  };
+}
+
+async function buildOne(browser, url, id) {
   const page = await browser.newPage();
   try {
     page.on("pageerror", (e) => console.error(`  [page] ${e.message}`));
@@ -190,6 +476,20 @@ async function buildOne(browser, url, id, editor) {
       ([key, value]) => window.localStorage.setItem(key, value),
       [MAP_KEY, id],
     );
+    if (foliage) {
+      await page.addInitScript((rung) => window.localStorage.setItem("greywatch.setting.foliage", rung), foliage);
+    }
+    // A build that throws — a surface our renderer cannot hold, in a DEV
+    // build (`BlockHandover.install`) — is a failure at once, not a wait.
+    await page.addInitScript(() => {
+      window.__buildErrors = [];
+      window.addEventListener("error", (e) => window.__buildErrors.push(String(e.message)));
+      window.addEventListener("unhandledrejection", (e) =>
+        window.__buildErrors.push(String(e.reason?.message ?? e.reason)),
+      );
+    });
+    await page.addInitScript(installSink);
+    await installFrameAdapter(page);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await page.waitForFunction(() => Boolean(window.__celshock), null, { timeout: 60_000 });
     await page.evaluate(async (deadlineMs) => {
@@ -199,6 +499,7 @@ async function buildOne(browser, url, id, editor) {
       await new Promise((resolve, reject) => {
         const poll = () => {
           if (g.state === "deploy") return resolve();
+          if (window.__buildErrors.length > 0) return reject(new Error(window.__buildErrors[0]));
           if (performance.now() > until) {
             return reject(new Error(`never reached deploy (state "${g.state}")`));
           }
@@ -207,35 +508,56 @@ async function buildOne(browser, url, id, editor) {
         poll();
       });
     }, DEPLOY_TIMEOUT_MS);
-    if (editor) {
-      // The editor's own rebuild, over the floor the round just fetched — the
-      // same synchronous `installMap({ editor: true })` F2 ends in, without
-      // the editor's UI. Private, and reached anyway: this is a DEV page.
-      // Braced so it returns nothing: the `GameMap` it hands back is a scene
-      // graph, and Playwright would try to serialise it.
-      await page.evaluate(() => {
-        window.__celshock.buildEditorMap();
-      });
-    }
     const print = await page.evaluate(fingerprintMap);
-    print.editor = editor;
+    if (profile) {
+      // Printed now and never stored: see the header.
+      const phases = await page.evaluate(() => window.__buildProfile?.() ?? []);
+      for (const p of phases) {
+        console.log(`  ${id} ${p.label.padEnd(24)} ${p.ms.toFixed(1).padStart(9)} ms`);
+      }
+    }
     return print;
   } catch (e) {
-    return { error: String(e.message ?? e).split("\n")[0], editor };
+    return { error: String(e.message ?? e).split("\n")[0] };
   } finally {
     await page.close();
   }
 }
 
-/** The fields of two mesh records that differ, by name. */
+/**
+ * `before`'s scene ranks over the first `n` entries, re-ranked among those
+ * `after` still holds a mesh of (`mesh !== false`) and that were in the
+ * scene before (a rank of -1, which takes no slot), in the same order — or
+ * null when every one still has a mesh. A surface with none ranks -1.
+ */
+function reRanked(before, after, n) {
+  if (!after.some((m) => m.mesh === false)) return null;
+  const kept = [];
+  for (let i = 0; i < n; i++) if (after[i].mesh !== false && before[i].sceneRank >= 0) kept.push(i);
+  kept.sort((x, y) => before[x].sceneRank - before[y].sceneRank);
+  const out = new Array(n).fill(-1);
+  kept.forEach((i, r) => (out[i] = r));
+  return out;
+}
+
+/**
+ * The fields of two mesh records that differ, by name. An `after` with no
+ * mesh (`mesh: false`) is compared on the fields it holds alone — its
+ * record's — and its arrays against the baseline's (see the header); `mesh`
+ * itself is compared wherever both sides record it, so a surface that
+ * gained or lost its mesh is a difference.
+ */
 function fieldsThatMoved(a, b) {
   const moved = [];
+  const meshless = b.mesh === false;
   for (const k of new Set([...Object.keys(a), ...Object.keys(b)])) {
     // A field an older fingerprint did not record is not a difference.
     if (!(k in a)) continue;
-    if (k === "buffers") {
-      for (const kind of new Set([...Object.keys(a.buffers), ...Object.keys(b.buffers)])) {
-        if (a.buffers[kind] !== b.buffers[kind]) moved.push(`buffer:${kind}`);
+    // Nor is a mesh field a surface with no mesh cannot hold.
+    if (meshless && !(k in b)) continue;
+    if (k === "buffers" || (k === "arrays" && a.arrays && b.arrays)) {
+      for (const kind of new Set([...Object.keys(a[k]), ...Object.keys(b[k])])) {
+        if (a[k][kind] !== b[k][kind]) moved.push(`${k === "buffers" ? "buffer" : "array"}:${kind}`);
       }
     } else if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) {
       moved.push(k);
@@ -243,6 +565,9 @@ function fieldsThatMoved(a, b) {
   }
   return moved;
 }
+
+/** What `compare` says without failing: a baseline's retired lists (see there). */
+const notes = [];
 
 function compare(before, after) {
   const lines = [];
@@ -253,33 +578,79 @@ function compare(before, after) {
       lines.push(`${id}: not in the "before" file`);
       continue;
     }
-    if (Boolean(a.editor) !== Boolean(b.editor)) {
-      lines.push(`${id}: an ${a.editor ? "editor" : "shipped"} build against an ${b.editor ? "editor" : "shipped"} one`);
+    // A baseline of the map editor's build (`--editor`, retired at X5.3c) is
+    // another path out of the merge and is never compared with a shipped one.
+    if (a.editor) {
+      lines.push(`${id}: the "before" file is an editor build's, which no run takes any more`);
       continue;
     }
     if (a.error || b.error) {
       if (a.error !== b.error) lines.push(`${id}: build ${a.error ?? "ok"} -> ${b.error ?? "ok"}`);
       continue;
     }
-    for (const list of ["visuals", "colliders", "terrainColliders"]) {
+    // The collider MESH lists, retired at BABYLON_EXIT.md X5.3e: a baseline
+    // that holds them is said, never compared — the collider DATA in `lists`
+    // is what a collider is now (see the header).
+    const retired = ["colliders", "terrainColliders"].filter((list) => Array.isArray(a[list]));
+    if (retired.length > 0) {
+      notes.push(
+        `${id}: the "before" file's collider-mesh lists (${retired.map((l) => `${l} ${a[l].length}`).join(", ")}) ` +
+          "are retired (X5.3e) — not compared; the collider data is",
+      );
+    }
+    for (const list of ["visuals"]) {
       if (a[list].length !== b[list].length) {
         lines.push(`${id}.${list}: ${a[list].length} meshes -> ${b[list].length}`);
       }
       const n = Math.min(a[list].length, b[list].length);
+      // The baseline's scene ranks, re-ranked over the surfaces that still
+      // have a mesh — the ones `b`'s ranks are among (see the header).
+      const ranks = list === "visuals" ? reRanked(a[list], b[list], n) : null;
       let shown = 0;
       let differing = 0;
       for (let i = 0; i < n; i++) {
-        const moved = fieldsThatMoved(a[list][i], b[list][i]);
+        const before = ranks && b[list][i].mesh !== false ? { ...a[list][i], sceneRank: ranks[i] } : a[list][i];
+        const moved = fieldsThatMoved(before, b[list][i]);
         if (moved.length === 0) continue;
         differing++;
-        if (shown++ < 8) {
+        if (shown < 8) {
+          shown++;
           lines.push(`${id}.${list}[${i}] ${b[list][i].name}: ${moved.join(", ")}`);
         }
       }
       if (differing > shown) lines.push(`${id}.${list}: ...and ${differing - shown} more`);
     }
     for (const k of Object.keys(b.lists)) {
-      if (a.lists[k] !== b.lists[k]) lines.push(`${id}.${k}: changed`);
+      // A list an older fingerprint did not record is not a difference.
+      if (!(k in a.lists)) continue;
+      const before = a.lists[k];
+      const after = b.lists[k];
+      if (JSON.stringify(before) === JSON.stringify(after)) continue;
+      // A list of entries (a group, a block, a piece) names the FIRST entry
+      // that differs, and both lengths when they moved; anything else is
+      // reported as changed.
+      if (Array.isArray(before) && Array.isArray(after)) {
+        let i = 0;
+        while (i < before.length && i < after.length && JSON.stringify(before[i]) === JSON.stringify(after[i])) i++;
+        const len = before.length !== after.length ? ` (${before.length} entries -> ${after.length})` : "";
+        lines.push(`${id}.${k}[${i}]: the first entry that differs${len}`);
+      } else {
+        lines.push(`${id}.${k}: changed`);
+      }
+    }
+  }
+  return lines;
+}
+
+/** `info` lines that moved: reported, never a failure (see the header). */
+function infoThatMoved(before, after) {
+  const lines = [];
+  for (const id of Object.keys(after)) {
+    const a = before[id]?.info;
+    const b = after[id]?.info;
+    if (!a || !b) continue;
+    for (const k of Object.keys(b)) {
+      if (k in a && a[k] !== b[k]) lines.push(`${id}.info.${k}: ${a[k]} -> ${b[k]} (not a failure)`);
     }
   }
   return lines;
@@ -295,13 +666,15 @@ try {
   browser = await launchClient();
   for (const id of ids) {
     const t0 = Date.now();
-    result[id] = await buildOne(browser, vite.url, id, editor);
+    result[id] = await buildOne(browser, vite.url, id);
     const r = result[id];
     console.log(
       r.error
         ? `${id}: FAILED — ${r.error}`
-        : `${id}: ${r.visuals.length} visuals, ${r.colliders.length} colliders, ` +
-            `${r.terrainColliders.length} terrain (${((Date.now() - t0) / 1000).toFixed(1)} s)`,
+        : `${id}: ${r.visuals.length} surfaces (${r.visuals.filter((m) => m.mesh !== false).length} meshes); ` +
+            `colliders: ${r.lists.boxGroups?.length ?? "-"} box groups, ` +
+            `${r.lists.rayGroups?.length ?? "-"} strut groups, ${r.lists.terrainGeometry?.length ?? "-"} floor blocks ` +
+            `(${((Date.now() - t0) / 1000).toFixed(1)} s)`,
     );
   }
 } finally {
@@ -309,13 +682,33 @@ try {
   await vite.stop();
 }
 
+// A map that did not build is a failure whatever any baseline says: a
+// surface our renderer cannot hold throws in a DEV build, and this is where
+// that refuses the map (see the header).
+for (const [id, r] of Object.entries(result)) {
+  if (!r.error) continue;
+  console.log(`${id}: REFUSED — the build failed: ${r.error}`);
+  process.exitCode = 1;
+}
+
+// The surfaces each map made no mesh of — our renderer's, whole — said, not
+// failed on.
+for (const [id, r] of Object.entries(result)) {
+  if (r.error) continue;
+  const meshless = r.visuals.filter((m) => m.mesh === false).length;
+  if (meshless > 0) {
+    console.log(`${id}: ${meshless} of ${r.visuals.length} surfaces have no mesh (our renderer's) — compared off their records`);
+  }
+}
+
 // Every mesh handed to the world must be on the device, whatever any baseline
-// says — the one failure the hashes above cannot see.
+// says — the one failure the hashes above cannot see. A surface with no mesh
+// at all is not one: it is our renderer's.
 let stranded = 0;
 for (const [id, r] of Object.entries(result)) {
   if (r.error) continue;
-  for (const list of ["visuals", "colliders", "terrainColliders"]) {
-    const parts = r[list].filter((m) => m.vertices > 0 && !m.onDevice);
+  for (const list of ["visuals"]) {
+    const parts = r[list].filter((m) => m.mesh !== false && m.vertices > 0 && !m.onDevice);
     stranded += parts.length;
     for (const m of parts.slice(0, 5)) {
       console.log(`${id}.${list}: ${m.name} is a PART — it will draw nothing`);
@@ -324,6 +717,58 @@ for (const [id, r] of Object.entries(result)) {
 }
 if (stranded > 0) process.exitCode = 1;
 
+// Every visual's record hashes must be its mesh's buffers' — the same arrays,
+// read before the release and after the upload — whatever any baseline says.
+// A visual with no arrays at all is counted apart: it was never compared.
+let unequal = 0;
+let compared = 0;
+let missing = 0;
+for (const [id, r] of Object.entries(result)) {
+  if (r.error) continue;
+  r.visuals.forEach((m, i) => {
+    if (!m.arrays) {
+      missing++;
+      if (missing <= 5) console.log(`${id}.visuals[${i}] ${m.name}: no arrays reached the sink`);
+      return;
+    }
+    // A surface with no mesh has no buffers to compare: its arrays are
+    // compared with a baseline's instead (see the header).
+    if (m.mesh === false || !m.onDevice) return;
+    compared++;
+    const kinds = new Set([...Object.keys(m.arrays), ...Object.keys(m.buffers)]);
+    const moved = [...kinds].filter((k) => m.arrays[k] !== m.buffers[k]);
+    if (m.arrayIndex !== m.index) moved.push("index");
+    if (moved.length === 0) return;
+    unequal++;
+    if (unequal <= 5) console.log(`${id}.visuals[${i}] ${m.name}: arrays≠buffers (${moved.join(", ")})`);
+  });
+}
+console.log(
+  `record arrays: ${compared - unequal} of ${compared} visuals equal to their mesh's buffers` +
+    (missing > 0 ? `; ${missing} visuals had no arrays reach the sink` : ""),
+);
+if (unequal > 0 || missing > 0) process.exitCode = 1;
+
+// Every visual's record bounds must be its mesh's bounding info, bit for bit,
+// whatever any baseline says — the transformed path included (see the header).
+let boundsCompared = 0;
+let boundsOff = 0;
+let boundsUnequal = 0;
+for (const [id, r] of Object.entries(result)) {
+  if (r.error || !r.boundsCheck) continue;
+  boundsCompared += r.boundsCheck.compared;
+  boundsOff += r.boundsCheck.offIdentity;
+  for (const [i, name] of r.boundsCheck.unequal) {
+    boundsUnequal++;
+    if (boundsUnequal <= 5) console.log(`${id}.visuals[${i}] ${name}: bounds≠mesh`);
+  }
+}
+console.log(
+  `record bounds: ${boundsCompared - boundsUnequal} of ${boundsCompared} visuals equal to their mesh's ` +
+    `bounding info (${boundsOff} off identity)`,
+);
+if (boundsUnequal > 0) process.exitCode = 1;
+
 if (outFile) {
   writeFileSync(outFile, JSON.stringify(result));
   console.log(`wrote ${outFile}`);
@@ -331,6 +776,8 @@ if (outFile) {
 if (againstFile) {
   const before = JSON.parse(readFileSync(againstFile, "utf8"));
   const lines = compare(before, result);
+  for (const l of notes) console.log(l);
+  for (const l of infoThatMoved(before, result)) console.log(l);
   if (lines.length === 0) {
     console.log(`identical to ${againstFile} on ${ids.join(", ")}`);
   } else {

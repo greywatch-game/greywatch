@@ -6,7 +6,6 @@
  * variation comes from the params, never `Math.random()`. Never imports
  * another builder.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import {
   Build,
@@ -50,11 +49,10 @@ import {
  * them on the ground is `rotY` and what is standing next to them.
  */
 export function buildGranary(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
 ): Structure {
-  const b = new Build(scene, mats, "granary");
+  const b = new Build(mats, "granary");
   const w = p.width ?? 8;
   const d = p.depth ?? 7;
   const tall = p.height ?? 5.2;

@@ -3,7 +3,6 @@
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
-import { Scene } from "@babylonjs/core";
 import type { CelMaterialFactory } from "../../../shaders/CelShader";
 import { mulberry32 } from "../../rng";
 import {
@@ -64,12 +63,11 @@ import {
  * `CONFORMS_TO_TERRAIN`.
  */
 export function buildShed(
-  scene: Scene,
   mats: CelMaterialFactory,
   p: BuildParams = {},
   ctx?: BuildCtx,
 ): Structure {
-  const b = new Build(scene, mats, "shed");
+  const b = new Build(mats, "shed");
   const w = p.width ?? 3.4;
   const d = p.depth ?? 2.8;
   const h = p.height ?? 2.6;

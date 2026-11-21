@@ -13,6 +13,26 @@
  * eighth cel variant failing to compile on the one map that carries it, because
  * a material that never binds costs a draw and no diagnostic.
  *
+ * **It compiled the cel material TWICE, once per renderer, until X5.4h.** Since
+ * `BABYLON_EXIT.md` X5.4h the scene stands on a `NullEngine`
+ * (`src/core/SceneEngine.ts`): there is no Babylon backend to compile a
+ * material against, so Babylon's half is SKIPPED (each material's define set is
+ * still read, which is what our half is asked to build) and said so; and since
+ * X6.1c there is no Babylon material at all — a material is a key of ours
+ * (`shaders/MaterialKey.ts`) and its define set is its RECIPE's
+ * (`CelMaterialFactory.celRecipe`), so Babylon's half is RETIRED and its
+ * stand-in mesh with it. At a parent before X5.4h it runs as below. Both bodies,
+ * the vertex stage's and the fragment's, are one text each
+ * (`shaders/wgsl/chunks.ts`) with two readers, Babylon's material and our own
+ * `src/render/`, and each declares what the bodies read its own way — so a
+ * shape this page's factory compiled is also assembled by
+ * `render/celVertex.ts` and `render/celFragment.ts` and built into a pipeline
+ * by our own `PipelineCache` (`oursCheck`). Only the TAKEN surfaces' variants
+ * draw with those modules — the shapes a map's blocks wear (`BABYLON_EXIT.md`
+ * X3.3c) and since X3.5 its landform, the bumped ground among them — which
+ * is exactly why every shape is compiled here: an unused module is one nobody
+ * else would ever find broken.
+ *
  * **A frame count is not coverage, so this asks the FACTORY rather than the
  * frame.** Every cel material in the game comes from one cache, so the check
  * is: walk it, ask each material for its effect, and assert the effect is ready
@@ -36,10 +56,15 @@
  * effect meshes are the meshes that carry NO vertex colour buffer, and they are
  * the half of the cel shader a frozen reference frame never holds (`bank.mjs`
  * disables every rig before it places a camera). Playing is how they get built.
+ *
+ * **The page's materials and Babylon's half are asked of the frame adapter since
+ * X6.1a** (`harness.mjs`): every material on the page (`materials()`, the
+ * factory's) and the pictures' cache key (`pictureKey()`).
  */
 import {
   assertNoTranspiler,
   bootMap,
+  hardLimit,
   installRound,
   launchClient,
   MAP_IDS,
@@ -53,16 +78,18 @@ const HEADED = args.includes("--headed");
 const LIST = args.includes("--list");
 const maps = args.filter((a) => !a.startsWith("--"));
 const MAPS = maps.length > 0 ? maps : MAP_IDS;
+hardLimit(1800);
 
 /**
- * The cel variants the four shipped maps must between them compile, keyed by
+ * The cel variants the shipped maps must between them compile, keyed by
  * the define set that makes each a separate effect.
  *
- * Seven materials and five shapes: matte, glossy and translucent are one
- * compiled effect wearing three sets of uniforms, and the other four are each
- * their own. A map missing one of these is not an error — Hollowmere has no
- * glazed block — which is why the requirement is on the UNION over every map
- * asked for, and why a run over a single map only reports.
+ * Seven shapes: matte, glossy and translucent are one compiled effect wearing
+ * three sets of uniforms, and the cloth (`CEL_SMOOTH`), the paletted world
+ * (`CEL_PALETTE`), the two glazings and the two grounds are each their own.
+ * A map missing one of these is not an error — Hollowmere has no glazed
+ * block — which is why the requirement is on the UNION over every map asked
+ * for, and why a run over a single map only reports.
  *
  * **This list rots the moment a variant is retired and the rot is a FAILING
  * GATE**, which is worth knowing because it has already happened once: the
@@ -73,6 +100,8 @@ const MAPS = maps.length > 0 ? maps : MAP_IDS;
  */
 const WANTED = [
   "",
+  "CEL_SMOOTH",
+  "CEL_PALETTE",
   "CEL_GLASS",
   "CEL_GLASS+CEL_GLASS_BACKED",
   "CEL_GROUND_TEX",
@@ -95,6 +124,238 @@ const HOOK = () => {
   };
 };
 
+/**
+ * OUR renderer's half of the same shapes (`BABYLON_EXIT.md` X3.1, X3.3a):
+ * every cel shape this page's factory compiled, assembled by
+ * `render/celVertex.ts` and `render/celFragment.ts` into plain WGSL with
+ * explicit bind groups and built into a real pipeline by our own
+ * `PipelineCache` — the call `render/WorldBlocks.ts` makes, against
+ * `FRAME_TARGETS` — on a device of its own so nothing of Babylon's stands
+ * between the modules and the driver.
+ *
+ * **The layout is EXPLICIT, made from the bindings the assembly reports**,
+ * not `"auto"`: an auto layout keeps only what the body happens to use, so it
+ * would pass a declaration list that disagrees with the module, and it would
+ * count against the per-stage limits only what is used rather than what is
+ * bound. The bumped ground is at 16 of 16 sampled textures and 16 of 16
+ * samplers; one more on either side of the split fails here, by name. There
+ * is no vertex buffer: since X3.5b the stage PULLS its attributes out of
+ * storage, so its six storage arrays count against the vertex stage's limit,
+ * on this device's DEFAULT limits.
+ *
+ * **And the compute cull those draws read (X3.3b)**: `render/wgsl/
+ * clusterCull.ts` compiled and each of its three entry points built into a
+ * compute pipeline on an `"auto"` layout — on the device here, not through
+ * the cache, but as `PipelineCache.compute` builds them for the cull — one
+ * more row, the same on every map. The instance cull's four entry points
+ * (`render/wgsl/instanceCull.ts`, X3.4b, expanded at X3.5b) are a row of
+ * their own beside the cluster cull's. Since X3.5b one vertex stage draws
+ * the blocks and the scatter alike, so each shape is built once — and once
+ * more as its SCATTER twin, which a group drawing scatter wears, binding the
+ * instance cull's list and source beside the arrays (eight storage buffers
+ * in a palette variant, the default limit).
+ *
+ * **And the pipeline STATES the world draws them in (X3.5).** A pipeline is
+ * its fixed-function state as well as its modules, and `WorldBlocks` asks for
+ * a recipe's with its `depthBias` — the ROADS' (`ROAD_DEPTH_UNITS`), since
+ * X3.5 took the landform, and anything else this page's factory made with a
+ * `zOffsetUnits`. So every (shape, bias) a cel material that keeps a recipe
+ * carries is built once more with that bias as `WorldBlocks`
+ * states it — or the first frame to draw a road is the first to try it.
+ *
+ * **And the emissive PALETTE's two programs (`render/emissiveWorld.ts`,
+ * X3.6c-e)**, at every depth bias a palette material on the page carries
+ * (`CelMaterialFactory.emissiveRecipe`): the main pass's and a probe face's
+ * (`emissiveWorld(FRAME_TARGETS)`, `WorldBlocks.askPalette`'s state) and the
+ * glow MASK's twin (`emissiveWorld(GLOW_TARGETS, true)`, no depth written,
+ * `WorldBlocks.glowView`'s) — and, since X4.6e's review, the cel stage's
+ * PLACED twin (`celPlacedVertex`) over the glazing's two shapes in the four
+ * states `GlassDraw` asks (backed and see-through, either winding, at
+ * `GLASS_DEPTH_BIAS`), and the four fade programs (`fadePrograms`, `FadeDraw`)
+ * in the states `FadeDraw` asks them in (`FADE_STATES`), since X4.7c the
+ * ash's three (`particlePipelines`: the update, and the draw at both blends)
+ * and since X4.7d the rotor wash's two (its update and its STANDARD draw)
+ * — every map's main pass draws its lit windows
+ * with the first (`BABYLON_EXIT.md` X3.7a), so a failed one is a failed round
+ * once the fallback is gone (X3.7b). A map with no palette builds neither.
+ * The biases are read off EVERY material on the page (`scene.materials`), the
+ * palette's being a plain `Material` with no Babylon program since X3.7c.
+ */
+async function oursCheck({ shapes, biased, paletteBiases }) {
+  const { celFragment } = await import("/src/render/celFragment.ts");
+  const { celVertex, celPlacedVertex } = await import("/src/render/celVertex.ts");
+  const { fadePrograms } = await import("/src/render/fadeProgram.ts");
+  const { FADE_STATES } = await import("/src/render/FadeDraw.ts");
+  const { GLASS_DEPTH_BIAS } = await import("/src/render/GlassDraw.ts");
+  // As `GlassDraw` states its four: `ALPHA_COMBINE` for the see-through.
+  const seeThroughBlend = {
+    color: { srcFactor: "src-alpha", dstFactor: "one-minus-src-alpha", operation: "add" },
+    alpha: { srcFactor: "one", dstFactor: "one", operation: "add" },
+  };
+  const backedState = { depthBias: GLASS_DEPTH_BIAS };
+  const seeThroughState = { depthBias: GLASS_DEPTH_BIAS, depthWrite: false, blend: seeThroughBlend };
+  const glassBuilds = [
+    { shape: "CEL_GLASS+CEL_GLASS_BACKED", placed: backedState },
+    { shape: "CEL_GLASS+CEL_GLASS_BACKED", placed: { ...backedState, reversed: true } },
+    { shape: "CEL_GLASS", placed: seeThroughState },
+    { shape: "CEL_GLASS", placed: { ...seeThroughState, reversed: true } },
+  ];
+  const { PipelineCache } = await import("/src/render/PipelineCache.ts");
+  const { FRAME_TARGETS, GLOW_TARGETS } = await import("/src/render/targets.ts");
+  const { emissiveWorld } = await import("/src/render/emissiveWorld.ts");
+  const { CONFIG } = await import("/src/config/index.ts");
+  const { listStride } = await import("/src/render/scatterList.ts");
+  // The scatter list's stride, as `WorldBlocks` takes it.
+  const stride = listStride(CONFIG.graphics.clusters.triangles);
+  const adapter = await navigator.gpu.requestAdapter();
+  const device = await adapter.requestDevice();
+  const cache = new PipelineCache(device);
+  const out = [];
+  // Every shape at no bias, then each biased (shape, bias) the page carries,
+  // then every shape's scatter twin.
+  // Then the palette's two programs at each bias (see the header).
+  const builds = [
+    ...shapes.map((shape) => ({ shape, depthBias: 0, scatter: null })),
+    ...biased.map(({ shape, depthBias }) => ({ shape, depthBias, scatter: null })),
+    ...shapes.map((shape) => ({ shape, depthBias: 0, scatter: stride })),
+    ...paletteBiases.map((depthBias) => ({ palette: "main", depthBias, scatter: null })),
+    ...paletteBiases.map((depthBias) => ({ palette: "glow", depthBias, scatter: null })),
+    ...glassBuilds.map(({ shape, placed }) => ({ shape, depthBias: 0, scatter: null, placed })),
+    ...Object.keys(FADE_STATES).map((fade) => ({ fade, depthBias: 0, scatter: null })),
+  ];
+  for (const { shape, palette, depthBias, scatter, placed, fade } of builds) {
+    const kind =
+      `${palette ? `palette ${palette} ` : ""}${fade ? `fade ${fade} ` : ""}${placed ? "placed " : ""}` +
+      `${scatter === null ? "" : "scatter "}${depthBias === 0 ? "" : `bias ${depthBias} `}`;
+    const defines = shape ? shape.split("+") : [];
+    const targets = palette === "glow" || fade === "mask" ? GLOW_TARGETS : FRAME_TARGETS;
+    // As `WorldBlocks` states each: the mask writes no depth. A fade's is `FadeDraw`'s own.
+    const state = fade
+      ? FADE_STATES[fade]
+      : placed
+        ? placed
+        : palette === "glow"
+        ? depthBias === 0
+          ? { depthWrite: false }
+          : { depthWrite: false, depthBias }
+        : depthBias === 0
+          ? undefined
+          : { depthBias };
+    let vm;
+    let fm;
+    try {
+      if (palette) {
+        ({ vertex: vm, fragment: fm } = emissiveWorld(targets, palette === "glow"));
+      } else if (fade) {
+        ({ vertex: vm, fragment: fm } = fadePrograms(fade));
+      } else if (placed) {
+        vm = celPlacedVertex(defines, FRAME_TARGETS);
+        fm = celFragment(defines, FRAME_TARGETS);
+      } else {
+        vm = celVertex(defines, FRAME_TARGETS, scatter);
+        fm = celFragment(defines, FRAME_TARGETS);
+      }
+    } catch (e) {
+      out.push({ error: `${kind}${String(e?.message ?? e)}`, source: "" });
+      continue;
+    }
+    device.pushErrorScope("validation");
+    let built = "";
+    try {
+      await cache.get({
+        vertex: vm,
+        vertexEntry: "main",
+        fragment: fm,
+        fragmentEntry: "main",
+        targets,
+        // As `WorldBlocks.ask` states it: no state at all for no bias.
+        state,
+      });
+    } catch (e) {
+      built = String(e?.message ?? e);
+    }
+    const scope = await device.popErrorScope();
+    const errorsOf = async (m, code) => {
+      const info = await device.createShaderModule({ label: m.label, code }).getCompilationInfo();
+      return [...info.messages]
+        .filter((x) => x.type === "error")
+        .map((e) => `${m.label} ${e.lineNum}:${e.linePos} ${e.message}`);
+    };
+    const vErrors = await errorsOf(vm, vm.code);
+    const fErrors = await errorsOf(fm, fm.code);
+    const all = [...vErrors, ...fErrors, built, scope?.message].filter(Boolean);
+    out.push({
+      error: all.length > 0 ? `${kind}${fm.label}: ${all.join("; ")}` : "",
+      source: [vErrors.length > 0 ? vm.code : "", fErrors.length > 0 ? fm.code : ""]
+        .filter(Boolean)
+        .join("\n// ---- fragment ----\n"),
+    });
+  }
+  const { CLUSTER_CULL_WGSL } = await import("/src/render/wgsl/clusterCull.ts");
+  const { instanceCullWgsl } = await import("/src/render/wgsl/instanceCull.ts");
+  const instanceEntries = ["cullInstances", "cullRecords", "prefix", "expand"];
+  const culls = [
+    ["cluster cull", CLUSTER_CULL_WGSL, ["cullClusters", "prefix", "scatter"]],
+    ["instance cull", instanceCullWgsl(stride), instanceEntries],
+  ];
+  for (const [label, code, entries] of culls) {
+    device.pushErrorScope("validation");
+    const module = device.createShaderModule({ label, code });
+    const info = await module.getCompilationInfo();
+    const errors = [...info.messages]
+      .filter((x) => x.type === "error")
+      .map((e) => `${e.lineNum}:${e.linePos} ${e.message}`);
+    for (const entryPoint of entries) {
+      try {
+        await device.createComputePipelineAsync({ layout: "auto", compute: { module, entryPoint } });
+      } catch (e) {
+        errors.push(`${entryPoint}: ${String(e?.message ?? e)}`);
+      }
+    }
+    const scope = await device.popErrorScope();
+    if (scope) errors.push(scope.message);
+    out.push({
+      error: errors.length > 0 ? `[${label}]: ${errors.join("; ")}` : "",
+      source: errors.length > 0 ? code : "",
+    });
+  }
+  // The ASH's three (X4.7c): the update and the draw at both blends, built
+  // through our cache as `ParticleDraw` asks them (`particlePipelines`), every
+  // map, whatever its own field's blend — a map change can flip it; and the
+  // ROTOR WASH's two (X4.7d): its update, on its explicit layout, and its draw.
+  const { particlePipelines } = await import("/src/render/particleProgram.ts");
+  const particles = await import("/src/shaders/wgsl/particles.ts");
+  {
+    const errors = [];
+    const sources = [
+      ["particles-update-box", particles.PARTICLE_UPDATE_BOX],
+      ["particles-render-vertex", particles.PARTICLE_RENDER_VERTEX],
+      ["particles-render-fragment", particles.PARTICLE_RENDER_FRAGMENT],
+      ["particles-update-ring", particles.PARTICLE_UPDATE_RING],
+      ["particles-ring-render-vertex", particles.PARTICLE_RING_RENDER_VERTEX],
+    ];
+    device.pushErrorScope("validation");
+    for (const [label, code] of sources) {
+      const info = await device.createShaderModule({ label, code }).getCompilationInfo();
+      for (const e of info.messages) if (e.type === "error") errors.push(`${label} ${e.lineNum}:${e.linePos} ${e.message}`);
+    }
+    try {
+      const asked = particlePipelines(cache);
+      await Promise.all([asked.box.update, asked.box.render.add, asked.box.render.standard, asked.ring.update, asked.ring.render.standard]);
+    } catch (e) {
+      errors.push(String(e?.message ?? e));
+    }
+    const scope = await device.popErrorScope();
+    if (scope) errors.push(scope.message);
+    out.push({
+      error: errors.length > 0 ? `[particles]: ${errors.join("; ")}` : "",
+      source: errors.length > 0 ? sources.map(([, code]) => code).join("\n// ----\n") : "",
+    });
+  }
+  device.destroy();
+  return out;
+}
+
 const seen = new Set();
 const failures = [];
 
@@ -111,75 +372,93 @@ for (const id of MAPS) {
 
   const out = await page.evaluate(async () => {
     const g = window.__celshock;
-    const frame = () =>
-      new Promise((res) => {
-        const seen = g.scene.onAfterRenderObservable.add(() => {
-          g.scene.onAfterRenderObservable.remove(seen);
-          res();
-        });
-      });
+    // The frame adapter (`harness.mjs`, X5.4a), installed by `bootMap`.
+    const F = window.__refFrame();
     // Everything that carries no vertex colour buffer is built by PLAYING:
     // the viewmodel, the rigs, the ink twins and the effect meshes.
     g.spawnPlayer();
     await new Promise((res) => setTimeout(res, 2500));
 
-    // Any mesh currently drawn with a cel material stands in for all of them.
-    // Every cel variant is built from the same attribute list, so one mesh is
-    // enough to ASK any of them to compile — which is the whole point: the
-    // factory outlives a mesh, and a pooled rig that never deployed leaves its
-    // paint in the cache with no draw behind it to have compiled it.
-    const probe = g.scene.meshes.find(
-      (m) =>
-        m.material &&
-        m.material.name.startsWith("cel-") &&
-        m.getTotalVertices() > 0,
-    );
-    if (!probe) throw new Error("no cel-material mesh to compile against");
+    // (A hidden mesh of Babylon's stood here as the thing each Babylon cel
+    // variant was asked to compile against, until `BABYLON_EXIT.md` X6.1c: no
+    // material is Babylon's since, and Babylon's half was skipped since X5.4h.)
 
     // The one variant no shipped map mints: a ground albedo with no height map
     // beside it. Both call sites pass a bump today, so `CEL_GROUND_TEX` alone
     // would go uncompiled for the life of the project and rot unnoticed — the
     // exact failure this script exists for. Minting it here is a page that is
     // about to be thrown away asking the factory a question.
+    // Its albedo is any ground's PICTURE (the cobbles', painted once a factory and
+    // shared): since `BABYLON_EXIT.md` X5.4d a ground's texture is our renderer's,
+    // made off a `Picture` (`TextureMaker`), and no Babylon material holds one.
     const anyGround = [...g.mats.cache.values()].find((m) =>
       m.name.startsWith("cel-ground-"),
     );
     if (anyGround) {
-      g.mats.getGroundTextured(
-        "smoke-flat",
-        anyGround._textures.baseColorTex,
-        1,
-      );
+      const { getCobblestoneTexture } = await import("/src/world/textures.ts");
+      // The pictures' cache key through the adapter (X6.1a): the factory since X6.1d.
+      g.mats.getGroundTextured("smoke-flat", getCobblestoneTexture(F.pictureKey()), 1);
     }
 
-    const shaders = [...g.scene.materials].filter(
-      (m) => m._options && Array.isArray(m._options.defines),
-    );
-    // WebGPU compiles a pipeline asynchronously, so readiness is polled rather
-    // than read: `isReady` is what ASKS for the compile as well as what reports
-    // it, and the first call on a variant nothing has drawn always says no.
-    let pending = shaders;
-    for (let i = 0; i < 240 && pending.length > 0; i++) {
-      pending = pending.filter((m) => !m.isReady(probe));
-      if (pending.length > 0) await frame();
-    }
+    // Every cel material — every key the factory keeps a cel RECIPE for: its
+    // variant is the recipe's `defines` (`BABYLON_EXIT.md` X6.1c, when the
+    // Babylon `ShaderMaterial`s, whose `_options.defines` this read, became
+    // keys of ours; the same set, since the factory built both from one
+    // variant list). The fire was always left out (`FlameMaterial`, no
+    // Babylon program since X5.3d), and has no cel recipe.
+    // Every material on the page, through the adapter (X6.1a): the factory's.
+    const variantOf = (m) => g.mats.celRecipe(m)?.defines ?? null;
+    const shaders = F.materials().filter((m) => variantOf(m) !== null);
+    // Babylon's half — each Babylon material asked `isReady` until its effect
+    // compiled — is RETIRED: skipped since X5.4h (a `NullEngine`), and no
+    // material is Babylon's since X6.1c. What compiles is ours (`oursCheck`).
+    const babylonGpu = false;
+    const pending = [];
 
     const materials = [];
     const cel = new Set();
+    // Each (shape, bias) a material our renderer could draw carries — a recipe
+    // with a depth bias (X3.5's roads) — for `oursCheck`'s pipeline states.
+    const biased = new Map();
+    // Each depth bias a palette material carries, for its two programs —
+    // asked of EVERY material on the page, not the cel keys above: the
+    // palette's has no cel recipe (a plain `Material` from X3.7c, a key of
+    // ours since X6.1c), so the walk above never meets it.
+    const paletteBiases = new Set();
+    for (const mat of F.materials()) {
+      const palette = g.mats.emissiveRecipe(mat);
+      if (palette) paletteBiases.add(palette.depthBias);
+    }
+    // And each bias the palette our renderer CUT carries (`WorldBlocks`'
+    // palette groups, the glowing and the quiet): what the walk above must
+    // have found, or the page has a palette whose programs this script never
+    // built — and would pass, as X3.7c's first run did. Read off the
+    // handover's own blocks, so it cannot drift from what draws; a renamed
+    // field fails loudly rather than reading as no palette.
+    const blocks = g.handover?.blocks;
+    if (!(blocks?.paletteGroups instanceof Map) || !(blocks?.quietPaletteGroups instanceof Map)) {
+      throw new Error("shaders.mjs: g.handover.blocks has no paletteGroups/quietPaletteGroups to read the cut palette off");
+    }
+    const cutBiases = new Set();
+    for (const groups of [blocks.paletteGroups, blocks.quietPaletteGroups]) {
+      for (const recipe of groups.keys()) cutBiases.add(recipe.depthBias);
+    }
     for (const mat of shaders) {
-      const effect = mat.getEffect?.();
-      const defines = mat._options.defines
-        .map((d) => String(d).replace("#define ", "").trim())
-        .filter(Boolean)
-        .sort();
+      const defines = [...variantOf(mat)].sort();
       const isCel = mat.name.startsWith("cel-");
       if (isCel) cel.add(defines.join("+"));
+      const recipe = g.mats.celRecipe(mat);
+      if (recipe && recipe.depthBias !== 0) {
+        // In the recipe's own order, as `WorldBlocks` assembles it.
+        const shape = recipe.defines.join("+");
+        biased.set(`${shape}|${recipe.depthBias}`, { shape, depthBias: recipe.depthBias });
+      }
       materials.push({
         name: mat.name,
         defines: defines.join("+"),
         cel: isCel,
         ready: !pending.includes(mat),
-        error: effect?.getCompilationError?.() || "",
+        error: "",
       });
     }
 
@@ -197,19 +476,57 @@ for (const id of MAPS) {
         });
       }
     }
-    return { materials, cel: [...cel].sort(), modules, moduleCount: window.__modules.length };
+    return {
+      materials,
+      cel: [...cel].sort(),
+      biased: [...biased.values()],
+      paletteBiases: [...paletteBiases].sort((a, b) => a - b),
+      cutBiases: [...cutBiases].sort((a, b) => a - b),
+      modules,
+      moduleCount: window.__modules.length,
+      babylonGpu,
+    };
   });
 
   for (const v of out.cel) seen.add(v);
+  const ours = await page.evaluate(oursCheck, {
+    shapes: out.cel,
+    biased: out.biased,
+    paletteBiases: out.paletteBiases,
+  });
+  const badOurs = ours.filter((o) => o.error);
 
+  // The palette's discovery: every bias the cut palette carries must be one
+  // `oursCheck` built both programs at — none found while the page has
+  // palette groups is the silent pass this exists to refuse.
+  const unbuilt = out.cutBiases.filter((b) => !out.paletteBiases.includes(b));
+  if (unbuilt.length > 0) {
+    failures.push(
+      `${id}: the cut palette carries biases [${out.cutBiases.join(", ")}] but palette programs were built at ` +
+        `[${out.paletteBiases.join(", ")}] — bias ${unbuilt.join(", ")} never compiled`,
+    );
+  }
   const badMats = out.materials.filter((m) => !m.ready || m.error);
   const celCount = out.materials.filter((m) => m.cel).length;
-  const status = badMats.length === 0 && out.modules.length === 0 ? "ok" : "FAIL";
+  const status =
+    badMats.length === 0 && out.modules.length === 0 && badOurs.length === 0 && unbuilt.length === 0
+      ? "ok"
+      : "FAIL";
   console.log(
     `${id.padEnd(13)} ${String(celCount).padStart(3)} cel materials  ` +
       `${String(out.moduleCount).padStart(3)} modules  ` +
-      `${out.cel.length} variants  ${status}`,
+      `${out.cel.length} variants  ${ours.length - badOurs.length}/${ours.length} ours ` +
+      `(palette biases [${out.paletteBiases.join(", ")}], cut [${out.cutBiases.join(", ")}])  ${status}` +
+      (out.babylonGpu ? "" : "  (Babylon's half skipped: no Babylon backend, X5.4h)"),
   );
+  for (const o of badOurs) {
+    failures.push(`${id}: ours ${o.error}`);
+    if (o.source) {
+      const line = Number(/\]: (\d+):/.exec(o.error)?.[1] ?? 0);
+      const numbered = o.source.split("\n").map((l, i) => `${String(i + 1).padStart(4)}  ${l}`);
+      failures.push(numbered.slice(Math.max(0, line - 3), line + 2).join("\n"));
+    }
+  }
   if (LIST) {
     for (const v of out.cel) console.log(`    [${v || "(no defines)"}]`);
   }

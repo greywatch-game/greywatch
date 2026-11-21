@@ -9,7 +9,7 @@
  * skip — a mixer that writes ten of eleven faders and says "saved" is worse
  * than one that will not write at all.
  * Gotcha: dev-only. Reachable solely through the dynamic import() in
- * `Game.toggleMixer`, exactly as `src/editor/` is.
+ * `Game.toggleMixer`, exactly as `src/viewer/` is.
  */
 
 import {
@@ -134,9 +134,8 @@ export function patchMix(
  * Deliberately a fetch rather than a `?raw` import: a raw import is resolved
  * once when this chunk loads, so the second save of a session would re-apply
  * this session's first save on top of a baseline that no longer exists on
- * disk. The editor's save has the same rule and solves it by re-scanning what
- * it just wrote; asking the server each time is the same guarantee with
- * nothing to remember.
+ * disk. Asking the server each time is the guarantee, with nothing to
+ * remember.
  */
 export async function readMixSource(): Promise<
   { ok: true; source: string } | { ok: false; error: string }
@@ -157,7 +156,7 @@ export async function readMixSource(): Promise<
   }
 }
 
-/** Posts the patched file back. Shares the endpoint and the shape of `editor/save.ts`'s `post`. */
+/** Posts the patched file back through the dev write endpoint (`vite.config.ts`, the mixer's one row). */
 export async function writeMixSource(
   source: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {

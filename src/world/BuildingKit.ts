@@ -4,9 +4,9 @@
  * kit/ (core.ts = Build accumulator + palette + contract, buildings/,
  * city/, desert/, harbour/, japan/, structures/,
  * terrain.ts).
- * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER set
- * metadata.solid, checkCollisions, or isPickable — MapBuilder owns the
- * visual/collider split. A builder may take a BuildCtx to read the world it is
+ * Invariants: builders assemble AT THE ORIGIN, UNROTATED and NEVER make a
+ * collider — they declare `BoxSpec`s, and MapBuilder owns the visual/collider
+ * split (`collider()`). A builder may take a BuildCtx to read the world it is
  * about to land in (the road bends onto the ground), but still returns
  * origin-local geometry. Collider top faces must stay within
  * CONFIG.nav.stepHeight of adjacent ground; ramp colliders need rotX.
@@ -217,8 +217,9 @@ export type BuilderKind = keyof typeof BUILDERS;
 
 /**
  * Kinds whose geometry is a function of the ground under them, so moving one
- * is a rebuild rather than a translate. The editor's drag path patches meshes
- * in place, which is correct for everything else and stale for these.
+ * is a rebuild rather than a translate. (The map editor's drag path patched
+ * meshes in place, which was correct for everything else and stale for these;
+ * a build reads the list still.)
  *
  * **Declaring a `BuildCtx` parameter on a builder is what puts it here**: a
  * builder that reads the ground and is missing from this set is drawn against

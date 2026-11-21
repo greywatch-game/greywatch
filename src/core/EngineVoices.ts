@@ -29,7 +29,7 @@
  * a field (`docs/audio.md`, the two faders).
  * Never: a recording — see `docs/audio.md`.
  */
-import type { Vector3 } from "@babylonjs/core";
+import type { Vector3 } from "../math";
 import { CONFIG, type MixChannel } from "../config";
 import type { AudioCore, MixBus } from "./sfxCore";
 

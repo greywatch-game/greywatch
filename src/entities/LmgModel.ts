@@ -12,7 +12,7 @@
  * sight's base bridges to the front station at exactly the rail's height —
  * see `MOUNT`. The carry handle is FOLDED down the left flank for that reason.
  */
-import { Scene, TransformNode, Vector3 } from "@babylonjs/core";
+import { Vector3 } from "../math";
 import type { CelMaterialFactory } from "../shaders/CelShader";
 import { buildOptics, ironSightFloor, type OpticMount } from "./optics";
 import {
@@ -25,6 +25,8 @@ import {
   WeaponBuild,
   type WeaponParts,
 } from "./weaponKit";
+import type { Joint } from "./rigJoints";
+import type { ViewSegment, ViewTree } from "./viewTree";
 
 /**
  * Top face of the rail, and the highest in the kit. A belt-fed receiver is
@@ -132,12 +134,13 @@ const MAG_HAND = new Vector3(-0.052, -0.05, -0.28);
  * `docs/weapons.md`'s procedural-models section.
  */
 export function buildLmg(
-  scene: Scene,
   mats: CelMaterialFactory,
   prefix: string,
+  view: ViewTree,
+  parent: Joint | null,
 ): WeaponParts {
-  const root = new TransformNode(`${prefix}_lmg`, scene);
-  const b = new WeaponBuild(scene, mats, prefix, root);
+  const root = view.joint(`${prefix}_lmg`, parent);
+  const b = new WeaponBuild(mats, prefix, view, root);
   const f = BORE_Y;
 
   // --- receiver: a stamped steel box, riveted, the bore through its middle ---
@@ -525,19 +528,18 @@ export function buildLmg(
 
   // The LMG itself is finished. Merge it before any optic is built, so a
   // sight's parts can never end up inside the weapon's colour groups.
-  const meshes = b.merge("lmg", root);
+  const meshes: ViewSegment[] = b.merge("lmg", root);
 
   // --- the box and its belt: a container, not a magazine ---
   // The M249's 200-round box: taller at the back than the front, the lid
   // clipped over the top and the belt leaving by the top left corner.
   //
-  // It is this weapon's `magazine`, merged into a node of its own so the
+  // It is this weapon's `magazine`, merged into a joint of its own so the
   // reload can drop it — and the BELT goes with it rather than staying behind,
   // because a belt is fed from the box it is coiled in. Swapping the container
   // and leaving a run of brass hanging out of the feed would be a reload that
   // loaded nothing.
-  const magazine = new TransformNode(`${prefix}_magazine`, scene);
-  magazine.parent = root;
+  const magazine = b.joint(`${prefix}_magazine`, root);
   const BX = -0.006;
   b.slab("boxBody", POLYMER, [
     [-0.036, -0.046],
@@ -614,7 +616,6 @@ export function buildLmg(
 
   const optics = buildOptics(b, MOUNT, prefix);
   meshes.push(...optics.meshes);
-  b.disposePivots();
 
   return {
     root,

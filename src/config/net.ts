@@ -36,6 +36,31 @@ export const net = {
   reconnectMax: 8,
 
   /**
+   * How long a match SERVER may say nothing at all before this client calls
+   * the connection dead and reconnects, in seconds (`Connection`'s silence
+   * timer; a socket only — `ClientTransport.watched`).
+   *
+   * A socket can stay OPEN with nothing coming through it: a network that
+   * died without a goodbye (a phone moving between Wi-Fi and cellular, a
+   * laptop waking) or a server whose loop has wedged, which nginx's hour-long
+   * `proxy_read_timeout` holds open on this side. The browser shows a page
+   * no ping, so the one thing a client can watch is whether anything ARRIVES.
+   *
+   * It is one flat number above the longest silence a HEALTHY server keeps,
+   * because `Connection` does not know what phase a round is in: snapshots
+   * come twenty times a second, but the round-over card is 8 s of none
+   * (`ROUND_OVER_MS`), and a world build — the next map, or a new match's
+   * first — is one synchronous job the server sends nothing through. Too
+   * short calls a healthy rotation a dead server and rejoins mid-build; too
+   * long is a frozen screen for that long. Measured 2026-10-12 on the Windows
+   * box, the server's world build is 0.15–0.75 s (Harrowmead to Cinderhaven,
+   * `npm run simulate`'s "world built"), so a healthy server's longest quiet
+   * is about nine seconds — the card, then the build. Twenty leaves a slower
+   * server CPU twice that.
+   */
+  silenceTimeout: 20,
+
+  /**
    * How long a hitmarker this client PREDICTED stands in for the authority's
    * `hit`, in seconds.
    *
@@ -52,6 +77,48 @@ export const net = {
    * mistakes, which is what sets the direction of this number.
    */
   hitCreditWindow: 0.5,
+
+  /**
+   * How many SECONDS of the page's own `advance`s may be unanswered before
+   * it stops handing the match the frame's time to STEP and hands it over as
+   * HELD instead (`Game.updateWorld`, `LocalMatch.behind`).
+   *
+   * The page never waits for its own match — an advance is posted and its
+   * answer read whenever it lands — so on a device where a step costs the
+   * match more than a frame costs the page, nothing else would stop the queue
+   * between them growing for the length of the round, and with it how far
+   * behind the page's picture the fight is. So this is a bound on that lag,
+   * on top of `interpDelay`: a frame posts only what fits under it, and the
+   * rest of the frame passes the match's clock without a step
+   * (`Match.hold`). A host that cannot keep up therefore plays the fight
+   * SLOWER than real time, never more than this far behind it.
+   *
+   * 0.15 is three frames at the wire's `dt` clamp (`MAX_FRAME_DT`, 50 ms):
+   * on a host keeping pace, the answers to the last frame or two may still
+   * be in flight when a frame posts, and none of that may cost a step. On a
+   * 60 Hz page it is about nine frames, which absorbs a hitch on either side.
+   * It was a COUNT of calls until C4's third review, and the count let each
+   * folded call grow to the accumulator's cap — four calls, a second of fight
+   * behind the picture, on exactly the device it was there for.
+   *
+   * The benchmark is exempt: it posts one advance per STEP and holds nothing
+   * back, since its fight must be the same however slowly a device runs it.
+   */
+  localSlack: 0.15,
+
+  /**
+   * How many times a page may REPLACE its own match host after losing one
+   * (`LocalOwner.rehost`, `MatchHost.replace`) before it stops trying and
+   * asks for a reload.
+   *
+   * A lost host is a Worker that died or wedged — out of memory, a loop —
+   * and most such deaths are the moment's, so a fresh Worker plays the next
+   * round. A death that is the BUILD's (one map or seed that kills the host
+   * every time) would replace a host on every round, or every ten seconds
+   * in the menu if it dies idle; this bounds that, and past it the reload is
+   * the honest answer. Two leaves room for one unlucky repeat.
+   */
+  localRehosts: 2,
 
   /**
    * Where a round trip stops reading as fine, and where it starts reading as a

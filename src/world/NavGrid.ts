@@ -22,7 +22,7 @@
  * match ObstacleField. Too coarse to be the only collision test — see
  * ObstacleField.
  */
-import { Vector3 } from "@babylonjs/core";
+import type { Vector3Like, Vector3Ref } from "../math";
 import { CONFIG } from "../config";
 import {
   clampToTopFace,
@@ -146,9 +146,9 @@ export class NavGrid {
    * than a constant (see `MapLayout.surfaces`), and a bound on what the
    * rasteriser will keep rather than the stride of anything.
    *
-   * Public because the editor rebuilds this grid from a `GameMap` and has no
-   * layout in hand: reading it back off the grid it is replacing is what keeps
-   * the rebuild the same shape as the build.
+   * Public because a reader with a `GameMap` and no layout in hand (the map
+   * editor's rebuild, while there was one) read it back off the grid, which
+   * kept a rebuild the same shape as the build.
    */
   readonly maxSurfaces: number;
   private readonly origin: number;
@@ -261,7 +261,7 @@ export class NavGrid {
   }
 
   /**
-   * Raw internals, for the map editor's overlay and validation passes.
+   * Raw internals, for the map viewer's plan and validation passes.
    *
    * Returns LIVE references, not copies — the arrays total ~600 KB and copying
    * them per redraw would cost more than everything the caller does with them.
@@ -272,7 +272,7 @@ export class NavGrid {
    * `walkable` is what the flood fill reached; a surface with `counts > 0`
    * that is neither `blocked` nor `walkable` is standable ground nothing can
    * get to — a sealed courtyard or a deck out of step range, which is exactly
-   * what the editor wants to draw in red.
+   * what the viewer draws in red.
    */
   debugSnapshot(): {
     dim: number;
@@ -391,8 +391,8 @@ export class NavGrid {
    * The `<= step` test below is also the map's slope limit, and terrain leans
    * on it: with cellSize 1.5 and stepHeight 0.6 a graded bank is walkable up to
    * a gradient of 0.4 (~22 deg) and severs itself above that. Nothing else
-   * enforces it, which is why the editor validates a terrain rect's skirt
-   * against the same ratio.
+   * enforces it, which is why the viewer's `validate` checks the floor against
+   * the same ratio (`terrainGrade`).
    *
    * ## Why blocked surfaces are decided FIRST
    *
@@ -662,7 +662,7 @@ export class NavGrid {
    * edge, and relax the fields over what that added. **The fields are part of
    * it and are no longer the caller's to defer** — a caller that had to
    * remember them is a caller that can forget them, and the authority DID:
-   * `HeadlessGame` never drained the deferral at all, so a break relinked the
+   * `SimCore` never drained the deferral at all, so a break relinked the
    * server's graph and left all seven of its fields describing the wall.
    *
    * Returns the number of surfaces that became walkable, which is 0 for the
@@ -866,7 +866,7 @@ export class NavGrid {
   }
 
   /** World centre of a surface's cell. */
-  positionOf(surface: number, into: Vector3): Vector3 {
+  positionOf<T extends Vector3Ref>(surface: number, into: T): T {
     const cell = this.surfaceCell[surface];
     return into.set(
       this.toWorld(cell % this.dim),
@@ -890,7 +890,7 @@ export class NavGrid {
    * FASTER either — see ENGINE_UPGRADE.md S4, which took the reading. It is
    * here for what it does not allocate.
    */
-  buildField(name: string, goal: Vector3, radius: number): FlowField {
+  buildField(name: string, goal: Vector3Like, radius: number): FlowField {
     const dist = new Uint16Array(this.surfaceCount).fill(FLOW_UNREACHED);
     const queue = new Int32Array(this.surfaceCount);
     let tail = 0;
@@ -938,7 +938,7 @@ export class NavGrid {
    * neighbouring surface with the lowest remaining distance. Returns a zero
    * vector at the goal or when stranded.
    */
-  steer(field: FlowField, pos: Vector3, into: Vector3): Vector3 {
+  steer<T extends Vector3Ref>(field: FlowField, pos: Vector3Like, into: T): T {
     into.setAll(0);
     const here = this.surfaceAt(pos.x, pos.y, pos.z);
     if (here < 0) return into;
@@ -977,7 +977,7 @@ export class NavGrid {
    * blend cuts the corner without ever aiming hard through it, and the caller's
    * stuck watchdog covers what is left.
    */
-  steerAhead(field: FlowField, pos: Vector3, steps: number, into: Vector3): Vector3 {
+  steerAhead<T extends Vector3Ref>(field: FlowField, pos: Vector3Like, steps: number, into: T): T {
     into.setAll(0);
     let here = this.surfaceAt(pos.x, pos.y, pos.z);
     if (here < 0) return into;
@@ -1023,7 +1023,7 @@ export class NavGrid {
   }
 
   /** True when a field can reach the surface under `pos` at all. */
-  reachable(field: FlowField, pos: Vector3): boolean {
+  reachable(field: FlowField, pos: Vector3Like): boolean {
     const s = this.surfaceAt(pos.x, pos.y, pos.z);
     return s >= 0 && field.dist[s] !== FLOW_UNREACHED;
   }

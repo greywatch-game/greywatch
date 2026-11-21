@@ -396,12 +396,6 @@ export class InputManager {
   pointerLocked = false;
   gamepadConnected = false;
   /**
-   * Held: the modifier key. No gameplay meaning — the map editor uses it to
-   * suspend grid snapping. Read per frame rather than latched so a keyup lost
-   * to a window blur cannot leave it stuck on (blur clears the key set).
-   */
-  altHeld = false;
-  /**
    * True this frame when any pad axis (past the deadzone) or button is
    * active. This is what lets aim assist tell "player is driving the pad"
    * apart from "pad is idle on the desk while the mouse does the aiming".
@@ -625,9 +619,9 @@ export class InputManager {
     });
     // The wheel. Passive, and deliberately not prevented: nothing on this page
     // scrolls (the canvas fills the viewport and `#hud` is fixed), so the
-    // browser default is already a no-op where it matters — while the map
-    // editor's inspector is a panel full of number inputs that a wheel is
-    // supposed to be able to scroll past. Accumulated rather than read as an
+    // browser default is already a no-op where it matters — while a dev
+    // panel (the viewer's, the mixer's) is a column a wheel is supposed to be
+    // able to scroll. Accumulated rather than read as an
     // event, because a trackpad delivers a dozen of these per frame.
     //
     // `deltaMode` is normalised here rather than at the read: the same gesture
@@ -819,7 +813,6 @@ export class InputManager {
       this.crouchLatched ||
       this.keys.has("ControlLeft") ||
       this.keys.has("ControlRight");
-    this.altHeld = this.keys.has("AltLeft") || this.keys.has("AltRight");
     // Back / View button (6 on the standard mapping is LT, 8 is Back).
     // Latched by the control layer for the reason ADS is: Tab is held by a
     // finger with nothing else to do, and no thumb here has one to spare.
@@ -1198,14 +1191,16 @@ const BOUND_CODES = new Set([
   "ShiftRight",
   "ControlLeft",
   "ControlRight",
+  // Read by nothing since the map editor went (`BABYLON_EXIT.md` X5.3c); kept
+  // so Alt's browser default (focusing the menu bar) stays suppressed.
   "AltLeft",
   "AltRight",
 ]);
 
 /**
  * True when the key is going into a form control, in which case the browser's
- * default IS the wanted behaviour. The editor's inspector is full of text and
- * number inputs, and the bound set covers Tab, Enter, Space, the arrows and
+ * default IS the wanted behaviour. A dev panel (the mixer's) holds number
+ * inputs, and the bound set covers Tab, Enter, Space, the arrows and
  * most of the alphabet a name is spelled with.
  */
 function isTyping(target: EventTarget | null): boolean {

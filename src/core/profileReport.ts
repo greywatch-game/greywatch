@@ -24,15 +24,9 @@
  *    graphics and the context rows were pushed by `Game` into the ring.
  */
 import { CONFIG } from "../config";
+import { buildStamp } from "../ui/buildStamp";
 import { onePercentLow } from "./frameStats";
 import { P, PARENT_OF, PHASES, ROOTS, SLOTS, type Phase } from "./profilePhases";
-
-/**
- * How much of a creation's define set a COMPACT report carries, in characters.
- * A cel variant's set runs to several hundred, and the compact form is sized to
- * survive a phone's clipboard; the download carries every one whole.
- */
-const DEFINES_CAP = 160;
 
 /**
  * The duration a frame has to reach before the browser reports it at all.
@@ -47,47 +41,6 @@ const DEFINES_CAP = 160;
  * idle" when the truth is that nobody looked.
  */
 const LOAF_FLOOR_MS = 50;
-
-/**
- * Whether this browser can measure a WHOLE FRAME's GPU time at all, which is a
- * different question from whether the adapter has `timestamp-query`.
- *
- * **Babylon brackets the whole command encoder with
- * `GPUCommandEncoder.writeTimestamp`, and Chrome exposes that method only
- * behind `--enable-unsafe-webgpu`** — while the FEATURE itself, and the
- * `timestampWrites` pass descriptor the MAIN PASS counter is written with, need
- * no flag at all. So on a stock browser the adapter reports the feature,
- * `enableGPUTimingMeasurements` takes, `gpuTimeInFrameForMainPass` appears and
- * `available` is therefore TRUE — while `WebGPUDurationMeasure.stop` returns a
- * literal 0, which `endFrame` accepts because `duration >= 0`. The counter then
- * records a real measurement of ZERO on every frame: 747 of them over one
- * measured session, against 626 genuine samples with the flag. `over` filters
- * every one of them out on `> 0` and the report says `samples: 0`.
- *
- * **Which is indistinguishable from "the GPU took no time", and that is the
- * whole reason this exists.** It is the third fact in the row `loaf.supported`
- * and `memory.heapLive` already state — "nobody asked", "the adapter refused"
- * and "this browser cannot express the answer" are three different things and
- * none of them is a reading. It cost a capture taken to settle `FINDINGS.md`
- * #1: `?gpu` armed, the feature present, `available` true, and the one
- * question the flag exists to answer came back empty.
- *
- * The METHOD is absent from `@webgpu/types` — it was removed from the spec,
- * which is why Chrome keeps it behind a flag — so the prototype is cast rather
- * than typed. **It is reached through `globalThis` rather than named**, which
- * is not style: `server/tsconfig.json` narrows `types` to `["node"]` and still
- * includes `../src`, so the bare identifier is undeclared in the authority's
- * typecheck even though it is declared in the client's — and it is undefined
- * at RUNTIME there too, under `NullEngine`.
- */
-function gpuFrameMeasurable(): boolean {
-  const ctor = (
-    globalThis as unknown as {
-      GPUCommandEncoder?: { prototype?: { writeTimestamp?: unknown } };
-    }
-  ).GPUCommandEncoder;
-  return typeof ctor?.prototype?.writeTimestamp === "function";
-}
 
 /**
  * What a pipeline-or-module creation was, and the byte the ring stores for it.
@@ -119,15 +72,15 @@ export interface CreationEvent {
    */
   frameMs: number;
   /**
-   * Babylon's label for a render pipeline: its colour and depth formats, sample
-   * count and texture state, which is as close as the DEVICE gets to saying
-   * which pass it was for. Empty for whatever Babylon creates unlabelled.
+   * The descriptor's label: our renderer names every pipeline and module it
+   * makes for its program, which is as close as the DEVICE gets to saying
+   * which draw it was for. Empty for whatever is created unlabelled. Until
+   * report version 38 a render pipeline built through Babylon's cache also
+   * carried the `effect` it was for and its `defines` (a patch on Babylon's
+   * descriptor builder); no Babylon pipeline is made at all since X5.4h, and both
+   * are gone.
    */
   label: string;
-  /** The shader name, for a render pipeline built through Babylon's cache. */
-  effect: string;
-  /** That effect's define set — the variant. Truncated in a compact report. */
-  defines: string;
   /** Time inside the create call itself, which is not the compile. */
   callMs: number;
 }
@@ -239,22 +192,20 @@ export interface HitchFrame {
   loafScriptMs: number;
   loafRenderMs: number;
   /**
-   * GPU time for the main pass on this frame, **0 where none resolved** — see
-   * `ProfileReport.gpu`. A hitch whose wall clock is a quarter of a second
-   * over a GPU time of a few milliseconds is not waiting on the GPU.
-   */
-  gpuMs: number;
-  /**
    * Whole-frame GPU time on this frame, **0 where this frame was not one of
    * the sampled ones** — which is most of them. Where it is non-zero it is the
    * number that matters: a 240 ms wall clock over 3 ms of GPU is not the GPU.
+   * (Until report version 38 a hitch also carried `gpuMs`, Babylon's main
+   * pass, and Babylon's counters — `drawCalls`, `activeMeshes`,
+   * `meshWalkMs`, `renderTargetsMs`, `particlesMs` — every one idle since
+   * `BABYLON_EXIT.md` X5.4f.)
    */
   gpuFrameMs: number;
-  drawCalls: number;
-  activeMeshes: number;
-  meshWalkMs: number;
-  renderTargetsMs: number;
-  particlesMs: number;
+  /**
+   * Our culls' GPU time on this frame, **0 where it was not measured** —
+   * see `ProfileReport.gpu.cull`. Report version 18.
+   */
+  gpuCullMs: number;
   /**
    * Pipelines and shader modules created ON this frame, and on it plus the
    * `CONFIG.profiling.creationLead` frames before it.
@@ -293,6 +244,26 @@ export interface ProfileSegment {
 }
 
 /**
+ * One size the window's rows were drawn at — `ProfileReport.viewport`.
+ *
+ * `expected` is the canvas `resize` (Babylon's, ported) makes of that window
+ * at the scaling level in force: the CSS size over the level, truncated, as
+ * `setSize` does. **`matched` false is a canvas that did not follow its
+ * window**, which is a different workload from the one the window implies —
+ * a stale canvas drawn at more rows, or fewer, than the screen shows.
+ */
+export interface ViewportSize {
+  /** The window's CSS size, `innerWidth`x`innerHeight` as last read (a `resize`, or each second). */
+  window: string;
+  /** The canvas's backing store — never a bound render target. */
+  backingStore: string;
+  expected: string;
+  /** `backingStore` within a pixel of `expected` on both axes. */
+  matched: boolean;
+  frames: number;
+}
+
+/**
  * One labelled stretch of a benchmark, or one group of them — the figures a
  * run is compared on. Milliseconds throughout.
  *
@@ -317,11 +288,52 @@ export interface SegmentStat {
   tick: number;
   tickP95: number;
   render: number;
-  drawCalls: number;
-  activeMeshes: number;
+  /** (Babylon's `drawCalls` and `activeMeshes` were beside `render` until report version 38.) */
   gpuFrame: number;
   gpuSamples: number;
+  /**
+   * Our culls' GPU time over the rows of the stretch that got a reading, and
+   * how many did — `gpu.cull`'s, as `gpuFrame` is `gpu.frame`'s. Its rows are
+   * not `gpuFrame`'s, so the two are read side by side as means, never as a
+   * share taken row by row. Report version 18.
+   */
+  gpuCull: number;
+  gpuCullSamples: number;
+  /**
+   * The backing store most of the stretch's rows were drawn at, how many
+   * sizes its rows saw (`ViewportSize`'s pairs: over 1 is a stretch that was
+   * resized under it), and how many of its rows drew a canvas that did not
+   * match its window. Report version 18.
+   */
+  backingStore: string;
+  sizes: number;
+  staleFrames: number;
+  /**
+   * The simulation core's step over the rows that ran one — the `fight` and
+   * its lead, never a vantage or the path, which step nothing — or null where
+   * no row did. Report version 14.
+   */
+  sim: SimSegment | null;
 }
+
+/**
+ * The `sim` span and its children over a segment's rows (report version 14):
+ * the frames that ran a step, the span's mean over those frames, and each
+ * child's mean over the SAME frames — so the children read as shares of
+ * `mean` and a child the step did not reach on a frame counts that frame as 0.
+ * The children are `PARENT_OF`'s, so a phase added under `sim` appears here
+ * by itself.
+ */
+export interface SimSegment {
+  frames: number;
+  mean: number;
+  phases: Record<string, number>;
+}
+
+/** The phases nested directly under `sim`, in `PHASES` order. */
+const SIM_CHILDREN: readonly Phase[] = PHASES.filter(
+  (name) => (PARENT_OF as Readonly<Record<string, Phase>>)[name] === "sim",
+);
 
 /**
  * What a benchmark says about its own run (`?bench=<map>`), pushed by `Game`
@@ -345,6 +357,133 @@ export interface BenchFacts {
    * their `fight` segments are not comparable.
    */
   fight: { hash: string; events: number; steps: number; roundEnded: boolean };
+}
+
+/**
+ * Our renderer's take of the map's blocks when the capture was taken — or,
+ * for a HALTED ring (a benchmark's), when it halted
+ * (`systems/BlockHandover.ts`, `BABYLON_EXIT.md` X3.3) — read through the
+ * reader `Game` pushes, at the capture or the halt and never per frame. `drawn` is the
+ * main pass's draws of ours last frame, which `counters.drawCalls` (Babylon's
+ * own counter) did not see. Before report version 20 it carried
+ * `handedBack` too, how many taken surfaces went back to Babylon's main pass;
+ * since X3.7b nothing goes back (a world ours cannot draw is the menu,
+ * `Game.worldFailed`), and the field is gone.
+ */
+export interface BlockFacts {
+  taken: number;
+  clusters: number;
+  groups: number;
+  drawn: number;
+}
+
+/**
+ * Our renderer's BODIES on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/BodyDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.1d) — read through the reader `Game` pushes, as
+ * `blocks` is and never per frame. `drawn` is the main pass's body draws (a
+ * RANK of every body each, matte or visor), `masked` the glow mask's, and
+ * `instances` the bodies drawn. None of them is in `counters.drawCalls`,
+ * which is Babylon's counter and since X4.1d counts no body: a capture from
+ * before it counted fourteen draws a body there.
+ */
+export interface BodyFacts {
+  drawn: number;
+  masked: number;
+  instances: number;
+}
+
+/**
+ * Our renderer's HULLS on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/HullDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.2b) — read as `bodies` is. `drawn` is the main pass's
+ * hull draws (a RANK of every hull each) and `instances` the hulls drawn.
+ * Neither is in `counters.drawCalls`, which since X4.2b counts no hull: a
+ * capture from before it counted a draw a hull mesh there (25 a tank, 26 a
+ * truck, 20 a helicopter, the size gate's drops aside).
+ */
+export interface HullFacts {
+  drawn: number;
+  instances: number;
+}
+
+/**
+ * Our renderer's WEAPON on the last frame before the capture — or, for a
+ * HALTED ring, before the halt (`render/ViewDraw.ts`' `stats`,
+ * `BABYLON_EXIT.md` X4.3c, X4.3d) — read as `bodies` is. `drawn` is the main
+ * pass's draws of the viewmodel's segments (one a segment, as Babylon drew one
+ * a mesh: the opaque parts, and since report version 24 the kit card and an
+ * optic's glass) and `masked` the glow mask's. Neither is in
+ * `counters.drawCalls`, which since X4.3c counts no opaque part of the weapon
+ * and since X4.3d nothing of it at all: a capture from before either counted
+ * the same draws there.
+ */
+export interface ViewFacts {
+  drawn: number;
+  masked: number;
+}
+
+/**
+ * Our renderer's effect POOLS on the last frame before the capture — or, for
+ * a HALTED ring, before the halt (`render/PoolDraw.ts`' `stats`, both draws,
+ * `BABYLON_EXIT.md` X4.4b) — read as `bodies` is. `drawn` is the main pass's
+ * draws of the pieces (a RANK of every piece each, its cel segments and its
+ * unlit ones apart) and of the bullet marks (one draw for all the marks),
+ * `masked` the glow mask's, `instances` the pieces drawn — tracers, cases,
+ * thrown and laid bodies, rockets — and `marks` the marks. Since report
+ * version 27 (`BABYLON_EXIT.md` X4.4c) `drawn` and `masked` also count the
+ * blast's draws (a batch of billows each, `render/BlastDraw.ts`) and the
+ * debris's (one rank: every glass shard and rubble chunk drawn), `billows`
+ * the billows drawn and `debris` the shards and chunks. Since report
+ * version 28 (`BABYLON_EXIT.md` X4.4d) they count the FIRES' draws too —
+ * every world fire and molotov flame drawn, one draw each and one mask draw
+ * each that glows (`render/FlameDraw.ts`) — and `fires` says how many. Since
+ * report version 29 (`BABYLON_EXIT.md` X4.5b) `drawn` counts the cloud ring's
+ * one draw too (`render/CloudDraw.ts`), no pool, and `clouds` says whether it
+ * was. Since report version 30 (`BABYLON_EXIT.md` X4.5c) `drawn` counts the dome's
+ * and the moon's too and `masked` the moon's bloom (`render/SkyDraw.ts`), no pool
+ * either, and `sky` says how many were drawn. Since report version 34
+ * (`BABYLON_EXIT.md` X4.6e) `drawn` counts the backed glazing's draws (a pane
+ * group each, `render/GlassDraw.ts`) and `glass` says how many; since
+ * version 35 the see-through glazing's too, and the fades' (a spark, a dust
+ * disc, a scorch or a blob each, `render/FadeDraw.ts`), `masked` the sparks'
+ * blooms, and `fades` says how many; since version 37 (`BABYLON_EXIT.md`
+ * X4.7c) `drawn` counts the ASH's draws too (a field each, `render/ParticleDraw.ts`
+ * — no pool, and never in the mask) and `particles` says how many. None
+ * is in `counters.drawCalls`, which since X4.4b counts no tracer, mark,
+ * case, thrown or laid body, since X4.4c no billow, shard or chunk,
+ * since X4.4d no fire, since X4.5b no ring, since X4.5c no dome and no moon,
+ * since X4.6e no pane, spark, disc, scorch or blob, and since X4.7c no mote
+ * field: a capture from before any of them counted a draw a mesh (or a
+ * particle system) there.
+ */
+export interface PoolFacts {
+  drawn: number;
+  masked: number;
+  instances: number;
+  marks: number;
+  /** Absent before report version 27. */
+  billows?: number;
+  /** Absent before report version 27. */
+  debris?: number;
+  /** Absent before report version 28. */
+  fires?: number;
+  /** Absent before report version 29. */
+  clouds?: number;
+  /** Absent before report version 30. */
+  sky?: number;
+  /** Absent before report version 31. */
+  zones?: number;
+  /** Absent before report version 32. */
+  grass?: number;
+  /** Absent before report version 33. */
+  water?: number;
+  /** Absent before report version 34. */
+  glass?: number;
+  /** Absent before report version 35. */
+  fades?: number;
+  /** Absent before report version 37. */
+  particles?: number;
 }
 
 export interface ProfileGraphics {
@@ -399,6 +538,14 @@ export interface ProfileGraphics {
 /** What a capture hands back. JSON by construction — this is the artefact. */
 export interface ProfileReport {
   version: number;
+  /**
+   * Which build took the capture — the commit and the day, as `index.html`
+   * was stamped (`ui/buildStamp.ts`), so `+` on a commit is a working tree
+   * with changes and `dev` the dev server. Read off the document, which is
+   * the build the service worker actually served. Absent before report
+   * version 25.
+   */
+  build: string;
   takenAt: string;
   reason: string;
   /** The map the ring was recorded on, pushed by `Game`. */
@@ -411,11 +558,22 @@ export interface ProfileReport {
    * version 12.
    */
   seed: number | null;
+  /**
+   * Where the page's own local match stepped its core (`MatchHost.mode`):
+   * `worker` — its step on another thread,
+   * `sim` a root beside `frame` — or `page`, the step on this one. Null where
+   * nothing pushed it. Absent before report version 15.
+   */
+  simMode: "worker" | "page" | null;
   device: {
     userAgent: string;
     devicePixelRatio: number;
+    /** The window's CSS size AT SAVE — `viewport` is what the rows saw. */
     window: string;
-    /** Backing-store size, which is the render scale already spent. */
+    /**
+     * Backing-store size AT SAVE, which is the render scale already spent.
+     * It says nothing about the frames: `viewport` does.
+     */
     backingStore: string;
     hardwareConcurrency: number;
     /** `navigator.deviceMemory` where the browser has it. */
@@ -435,10 +593,42 @@ export interface ProfileReport {
    */
   graphics: (ProfileGraphics & { inForceSeconds: number }) | null;
   /**
+   * Every size the window's rows were drawn at, most frames first — one
+   * entry for a capture nothing resized, and any `matched: false` is a
+   * canvas that never followed its window. Absent before report version 18,
+   * where only `device`'s at-save reading existed.
+   */
+  viewport: ViewportSize[];
+  /**
    * The benchmark that recorded this ring, or null for a ring nobody scripted.
    * Absent before report version 13.
    */
   bench: BenchFacts | null;
+  /**
+   * Our renderer's take of the blocks at the capture, or null where nothing
+   * pushed a reader. Absent before report version 17.
+   */
+  blocks: BlockFacts | null;
+  /**
+   * Our renderer's bodies at the capture, or null where nothing pushed a
+   * reader. Absent before report version 21.
+   */
+  bodies: BodyFacts | null;
+  /**
+   * Our renderer's hulls at the capture, or null where nothing pushed a
+   * reader. Absent before report version 22.
+   */
+  hulls: HullFacts | null;
+  /**
+   * Our renderer's effect pools at the capture, or null where nothing pushed
+   * a reader. Absent before report version 26.
+   */
+  pools: PoolFacts | null;
+  /**
+   * Our renderer's weapon at the capture, or null where nothing pushed a
+   * reader. Absent before report version 23.
+   */
+  view: ViewFacts | null;
   /**
    * The ring's labelled stretches, in the order they were reached, and the
    * same rows rolled up by group — null where no row carried a label. Absent
@@ -532,14 +722,13 @@ export interface ProfileReport {
     gcEvents: number;
     gcPerSec: number;
   };
-  counters: {
-    drawCalls: number;
-    activeMeshes: number;
-    meshWalkMs: number;
-    renderTargetsMs: number;
-    /** The GPU clouds and the mote field, which no phase covers. */
-    particlesMs: number;
-  };
+  /*
+   * `counters` — Babylon's `SceneInstrumentation` (the draw count, the active
+   * meshes, the mesh walk, the render-target and particle times) — was here
+   * until report version 38. Every one was Babylon's and idle once the scene
+   * stopped rendering (`BABYLON_EXIT.md` X5.4f); our renderer's draws are
+   * counted by `blocks`, `bodies`, `hulls`, `view` and `pools`.
+   */
   /**
    * What the BROWSER said about the same frames, which is the only thing in
    * this report that is not this instrument's own measurement.
@@ -584,7 +773,7 @@ export interface ProfileReport {
     worst: LoafFrame[];
   };
   /**
-   * What the GPU spent on the main pass, where the boot asked for it.
+   * What the GPU spent, where the boot asked for it.
    *
    * **`requested` and `available` are two questions and a capture answers
    * both**, the rule `loaf.supported` and `memory.heapLive` already state:
@@ -593,51 +782,61 @@ export interface ProfileReport {
    * `main.ts`, which is the only place it can act, because a device's features
    * are fixed when it is created.
    *
-   * **It is the MAIN PASS only.** Shadow maps, the glow's targets and the
-   * reflection bake are render targets with counters of their own that this
-   * does not read, so a frame whose GPU cost is in a target reads low here.
+   * **Both counters are OUR timestamp queries** since report version 38
+   * (`BABYLON_EXIT.md` X5.4g): pass descriptors' stamps, which need the
+   * device's `timestamp-query` and no browser flag.
    */
   gpu: {
+    /** `?gpu` was in the URL. */
     requested: boolean;
+    /** The frame's GPU timer was built: `?gpu`, and a device with `timestamp-query`. */
     available: boolean;
     /**
-     * Whether this browser can express a whole-frame answer — see
-     * `gpuFrameMeasurable`. **False with `frame.samples: 0` means the reading
-     * was impossible, not that the GPU was idle**, and on Chrome that is the
-     * ordinary case: it needs `--enable-unsafe-webgpu` on the command line,
-     * which `available` does not. `mainPass` is unaffected either way.
+     * Whether a whole-frame answer could be expressed at all. **Since report
+     * version 38 it is `available`**: the frame's stamps are our passes'.
+     * Before it `gpu.frame` was Babylon's `writeTimestamp` around its two
+     * encoders, which Chrome keeps behind `--enable-unsafe-webgpu`, so on a
+     * stock browser this was false and `frame.samples` 0 with `available`
+     * true — the reading impossible, never a GPU that was idle.
      */
     frameMeasurable: boolean;
     /**
-     * The WHOLE frame's GPU time, which is the one to read. Sampled rather than
-     * continuous — only one measurement is in flight at a time — so `samples`
-     * is the denominator and the mean is over those rows, never over the
-     * window. **Read it against `frameMeasurable` and never alone.**
+     * The WHOLE frame's GPU time, which is the one to read: from before the
+     * frame's first pass starts to after its last pass ends, the frame's one
+     * encoder bracketed by two empty passes of the timer's own
+     * (`render/FrameTimer.ts`; Babylon's encoders bracketed by
+     * `writeTimestamp` until report version 38, the same span). Sampled rather
+     * than continuous — only one measurement is in flight at a time — so
+     * `samples` is the denominator and the mean is over those rows, never over
+     * the window. (`mainPass`, Babylon's main-pass counter beside it, timed
+     * nothing once the canvas's pass was ours, `BABYLON_EXIT.md` X5.4f, and
+     * was retired with report version 38.)
      */
     frame: { samples: number; meanMs: number; p95Ms: number; maxMs: number };
     /**
-     * The MAIN PASS only, which in this pipeline is **the final full-screen
-     * quad** and not the scene: the world renders into post-process targets, so
-     * this reads in the tens of MICROSECONDS and is not a claim about the GPU
-     * being idle. Kept because it is measured per frame and attributed exactly,
-     * which `frame` above cannot be, so it is the cross-check rather than the
-     * answer.
+     * OUR renderer's culls — the cluster cull's and the instance cull's
+     * compute passes, each stamped at its own start and end and summed
+     * (`render/PassTimer.ts`) — which are part of `frame`: they are recorded
+     * into the frame's one encoder, inside its timer. Sampled, one reading in
+     * flight at a time, so `samples` is the denominator, as for `frame`, on
+     * rows of its own. `timed` says a timer was built at all (`?gpu` on a
+     * device with `timestamp-query`); timed with `samples: 0` is a window in
+     * which nothing was culled (the menu) or no reading landed. Report
+     * version 18.
      */
-    mainPass: { frames: number; meanMs: number; p95Ms: number; maxMs: number };
+    cull: { timed: boolean; samples: number; meanMs: number; p95Ms: number; maxMs: number };
   };
   /**
    * What was COMPILED during the window, and whether the slow frames sat on it.
    *
    * **`observed` first, for the reason every other probe here ships its own
    * availability**: a window with no creations in it is a finding only where
-   * the hook was installed. `named` says whether Babylon's descriptor builder
-   * was found to name them; after a Babylon upgrade a capture with `observed`
-   * true and `named` false means the internal moved, not that nothing had a
-   * name.
+   * the hook was installed. (`named`, whether Babylon's descriptor builder was
+   * found to name them by effect, went with that naming at report version 38:
+   * a creation is named by its label alone.)
    */
   pipelines: {
     observed: boolean;
-    named: boolean;
     render: number;
     compute: number;
     modules: number;
@@ -665,19 +864,10 @@ export interface ProfileReport {
     /** Collections per frame, and the used heap in MB. See `memory`. */
     gc: number[];
     heapMb: number[];
-    /**
-     * Babylon's two counters, per frame.
-     *
-     * **They are here because the means alone cannot answer the question they
-     * are most often asked.** `counters.drawCalls` is one number for the whole
-     * window and a hitch record carries its own — so a draw count that RAMPS
-     * across a second, which is what a batch of pipelines coming into view
-     * looks like, was visible only as five disconnected hitch records and had
-     * to be inferred. With the series it is a line you can lay against
-     * `frameMs`.
+    /*
+     * Babylon's two counters per frame, `drawCalls` and `activeMeshes`, were
+     * here until report version 38, and `gpuMs` (Babylon's main pass) below.
      */
-    drawCalls: number[];
-    activeMeshes: number[];
     /**
      * The long animation frame on each row, 0 where there was none — see
      * `ProfileReport.loaf`. Laid against `frameMs` it is the whole reading:
@@ -686,17 +876,16 @@ export interface ProfileReport {
      */
     loafMs: number[];
     /**
-     * GPU time for the main pass per row, **0 where no reading resolved for
-     * that frame** rather than where the GPU was idle. Lay it against
-     * `frameMs`: a wall clock that rises while this stays flat is not the GPU.
-     */
-    gpuMs: number[];
-    /**
      * Whole-frame GPU time on the rows that were measured, **0 on the rest —
      * which is most of them**, because only one measurement is in flight at a
      * time. Not a curve; a scatter. See `ProfileReport.gpu`.
      */
     gpuFrameMs: number[];
+    /**
+     * Our culls' GPU time on the rows that were measured, 0 on the rest — a
+     * scatter, as `gpuFrameMs` is, on rows of its own. Report version 18.
+     */
+    gpuCullMs: number[];
     /**
      * Pipelines (render and compute) and shader modules created per frame.
      * Laid against `frameMs` this is the first-use question asked of the whole
@@ -757,15 +946,21 @@ export interface ProfileRing {
   readonly py: Float32Array;
   readonly pz: Float32Array;
   readonly botsAlive: Uint16Array;
-  readonly drawCalls: Uint32Array;
-  readonly activeMeshes: Uint32Array;
-  readonly meshWalkMs: Float32Array;
-  readonly rttMs: Float32Array;
-  readonly particlesMs: Float32Array;
+  /** Per row: the backing store, the window's CSS size and the scaling level — `FrameProfile.canvasW`. */
+  readonly canvasW: Uint16Array;
+  readonly canvasH: Uint16Array;
+  readonly windowW: Uint16Array;
+  readonly windowH: Uint16Array;
+  readonly scaleAt: Float64Array;
   /** Per row: an index into `segments` plus one, 0 for none. */
   readonly segmentAt: Uint8Array;
   readonly segments: readonly ProfileSegment[];
   readonly bench: BenchFacts | null;
+  readonly blocks: BlockFacts | null;
+  readonly bodies: BodyFacts | null;
+  readonly hulls: HullFacts | null;
+  readonly pools: PoolFacts | null;
+  readonly view: ViewFacts | null;
   readonly heapMb: Float32Array | null;
   readonly gcAt: Uint8Array;
   readonly loafMs: Float32Array;
@@ -773,8 +968,8 @@ export interface ProfileRing {
   readonly loafScriptMs: Float32Array;
   readonly loafRenderMs: Float32Array;
   readonly loafHead: Uint8Array;
-  readonly gpuMs: Float32Array;
   readonly gpuFrameMs: Float32Array;
+  readonly gpuCullMs: Float32Array;
   readonly madeRender: Uint16Array;
   readonly madeCompute: Uint16Array;
   readonly madeModules: Uint16Array;
@@ -783,12 +978,9 @@ export interface ProfileRing {
   readonly logKind: Uint8Array;
   readonly logMs: Float32Array;
   readonly logLabel: readonly string[];
-  readonly logEffect: readonly string[];
-  readonly logDefines: readonly string[];
   readonly logCursor: number;
   readonly logFilled: number;
   readonly createObserved: boolean;
-  readonly createNamed: boolean;
   readonly loafSupported: boolean;
   readonly loafWorst: readonly LoafRecord[];
   readonly heapLive: boolean;
@@ -801,16 +993,16 @@ export interface ProfileRing {
   readonly overheadUs: number;
   readonly mapId: string;
   readonly seed: number | null;
+  readonly simMode: "worker" | "page" | null;
   readonly graphics: ProfileGraphics | null;
   readonly graphicsAt: number;
   readonly gpuRequested: boolean;
-  /**
-   * Whether the engine carries a main-pass GPU counter at all — asked of the
-   * engine by the recorder, which is the half that holds Babylon's internals.
-   */
+  /** Whether the frame's GPU timer was built — see `ProfileReport.gpu`. */
   readonly gpuAvailable: boolean;
-  /** The engine, for the backing store's size. Null where there is no scene. */
-  readonly engine: {
+  /** Whether our renderer built a pass timer — see `ProfileReport.gpu.cull`. */
+  readonly cullTimed: boolean;
+  /** The canvas, for the backing store's size. Null where none was handed over. */
+  readonly surface: {
     getRenderWidth(): number;
     getRenderHeight(): number;
   } | null;
@@ -854,11 +1046,9 @@ export function buildReport(
     frameMs: [],
     gc: [],
     heapMb: [],
-    drawCalls: [],
-    activeMeshes: [],
     loafMs: [],
-    gpuMs: [],
     gpuFrameMs: [],
+    gpuCullMs: [],
     pipelines: [],
     modules: [],
     segment: [],
@@ -870,11 +1060,9 @@ export function buildReport(
       series.frameMs.push(round(frames[k]));
       series.gc.push(r.gcAt[i]);
       series.heapMb.push(r.heapMb ? round(r.heapMb[i], 2) : 0);
-      series.drawCalls.push(r.drawCalls[i]);
-      series.activeMeshes.push(r.activeMeshes[i]);
       series.loafMs.push(round(r.loafMs[i]));
-      series.gpuMs.push(round(r.gpuMs[i], 3));
       series.gpuFrameMs.push(round(r.gpuFrameMs[i], 3));
+      series.gpuCullMs.push(round(r.gpuCullMs[i], 4));
       series.pipelines.push(r.madeRender[i] + r.madeCompute[i]);
       series.modules.push(r.madeModules[i]);
       series.segment.push(r.segmentAt[i] - 1);
@@ -962,11 +1150,155 @@ export function buildReport(
     // and every row labelled with what it was showing (`?bench=<map>`). Not a
     // change to any existing field: a v12 capture reads the same, and simply
     // has no labels.
-    version: 13,
+    // 14: `sim` and its five children — the simulation core's step, timed by
+    // the core itself (`SimCore.timeSteps`) and filed by `Game` — in the tree,
+    // the phase table and every hitch, plus `SegmentStat.sim`; and `conquest`
+    // is GONE from the tree, its work being `simConquest` now. Before this, the
+    // offline step was inside `world` and named by nothing,
+    // so a v13 capture's `world` holds the whole simulation unattributed and
+    // its `conquest` was never entered. Nothing else changed meaning.
+    // 15: `sim` is a ROOT, beside `frame` and `present` (with the
+    // core in a Worker its step runs on another thread and
+    // is filed against the frame that takes its answer in), and gains
+    // `simPublish`; `world` gains `simWait` and `simSync`, the page's half
+    // of the hop (and `SimSegment.hop`, their means over a segment's stepped
+    // frames); and `simMode` says which thread the step ran on. A v14
+    // capture's `sim` is inside `world` and its fill is in `sim`'s remainder.
+    // 16: simPublish, simWait, simSync and sim.hop gone; sim is the local
+    // Match's step, over the owner channel (the
+    // page is a match client of its own local match, so there is no frame to
+    // publish, no Worker to wait on and no mirror to sync). `bots` is gone
+    // with them: it was the old host's picture of the core's bots, and the
+    // bodies are the wire's now, posed under `net`. Nothing else changed
+    // meaning: a v15 capture's `sim` and its five children read the same.
+    // 17: `blocks`, our renderer's take of the map's blocks at the capture —
+    // its draws are not in `counters.drawCalls`, which is Babylon's counter.
+    // Nothing else changed meaning.
+    // 18: `gpu.cull` — our renderer's culls' GPU time, off timestamps on
+    // their own compute passes — with `gpuCullMs` in the series and on every
+    // hitch, and `SegmentStat.gpuCull`/`gpuCullSamples`. And a GPU reading
+    // is cleared when the ring laps its row, as the LoAF's has been since
+    // v9: before it a row not measured on this lap kept the last lap's, so a
+    // v17 capture over a ring that had lapped could carry `gpu.frame` and
+    // `gpu.mainPass` readings from outside its window. And `viewport`,
+    // with `SegmentStat.backingStore`/`sizes`/`staleFrames`: the size every
+    // row was DRAWN at and the window it was drawn in. Before it the only
+    // size was `device`'s, read at save, and a canvas that had not followed
+    // its window could not be told from one that had.
+    // 19: a HALTED ring's `blocks` is read as it halted — a benchmark's last
+    // frame — not at the capture. Before it a benchmark saved after its map
+    // was torn down read the menu's `taken: 0` (2026-10-21's phone
+    // captures). Nothing else changed meaning.
+    // 20: `blocks.handedBack` gone (`BABYLON_EXIT.md` X3.7b): nothing of the
+    // world goes back to Babylon any more, which is made no mesh of it, and a
+    // world our renderer cannot draw takes the round to the menu instead.
+    // 21: `bodies`, our renderer's body draws on the last frame (or the
+    // halt's). Since `BABYLON_EXIT.md` X4.1d no body is in
+    // `counters.drawCalls` (Babylon's), so a v20 capture from an X4.1d
+    // build shows the bodies' draws gone from it and nothing in their place.
+    // Nothing else changed meaning.
+    // 22: `hulls`, our renderer's hull draws on the last frame (or the
+    // halt's). Since `BABYLON_EXIT.md` X4.2b no hull is in
+    // `counters.drawCalls` either. Nothing else changed meaning.
+    // 23: `view`, our renderer's draws of the weapon's opaque parts on the
+    // last frame (or the halt's), and its glow-mask draws. Since
+    // `BABYLON_EXIT.md` X4.3c none of them is in `counters.drawCalls`; the
+    // `drawOverlay` span holds the optics' glass alone, the weapon's own draws
+    // recorded at the end of group 0, inside `drawWorld`. Nothing else
+    // changed meaning.
+    // 24: `drawOverlay` RETIRED (`BABYLON_EXIT.md` X4.3d): the optics' glass
+    // and the kit card are our renderer's too, so no rendering group above 0
+    // holds anything, and the span recorded nothing; `drawWorld` is every
+    // group's, which is group 0's. `view` counts the card and the glasses
+    // beside the opaque parts, none of them in `counters.drawCalls`. A v23
+    // capture's `drawOverlay` was the glass (and nothing on a kit screen
+    // with no optic); nothing else changed meaning.
+    // 25: `build`, the commit and day the page was stamped with. Before it a
+    // capture said nothing of which code drew it, and a phone's had to be
+    // matched to a deploy by its `takenAt`. Nothing else changed meaning.
+    // 26: `pools`, our renderer's draws of the effect pools' pieces and the
+    // bullet marks on the last frame (or the halt's). Since
+    // `BABYLON_EXIT.md` X4.4b no tracer, mark, spent case, thrown or laid
+    // body is in `counters.drawCalls` (Babylon's), so a v25 capture from an
+    // X4.4b build shows their draws gone from it and nothing in their place.
+    // Nothing else changed meaning.
+    // 27: `pools.billows` and `pools.debris`, and the blast's and the
+    // debris's draws in `pools.drawn` and `pools.masked`: since
+    // `BABYLON_EXIT.md` X4.4c no billow, glass shard or rubble chunk is in
+    // `counters.drawCalls`. Nothing else changed meaning.
+    // 28: `pools.fires`, and the fires' draws in `pools.drawn` and
+    // `pools.masked`: since `BABYLON_EXIT.md` X4.4d no world fire and no
+    // molotov flame is in `counters.drawCalls`. Nothing else changed meaning.
+    // 29: `pools.clouds`, and the cloud ring's one draw in `pools.drawn`:
+    // since `BABYLON_EXIT.md` X4.5b it is not in `counters.drawCalls`. Nothing
+    // else changed meaning.
+    // 30: `pools.sky`, the dome's and the moon's draws in `pools.drawn` and the
+    // moon's bloom in `pools.masked`: since `BABYLON_EXIT.md` X4.5c none is in
+    // `counters.drawCalls`. Nothing else changed meaning.
+    // 31: `pools.zones`, the rings' and the flags' draws, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6b none is in `counters.drawCalls`. Nothing else
+    // changed meaning.
+    // 32: `pools.grass`, the blades' and the turf's draws, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6c none is in `counters.drawCalls`. Nothing else
+    // changed meaning.
+    // 33: `pools.water`, a draw a body of water, in `pools.drawn` too: since
+    // `BABYLON_EXIT.md` X4.6d none is in `counters.drawCalls`. Nothing else changed
+    // meaning.
+    // 34: `pools.glass`, a draw a backed pane group, in `pools.drawn` too:
+    // since `BABYLON_EXIT.md` X4.6e none is in `counters.drawCalls`. Nothing
+    // else changed meaning.
+    // 35: `pools.glass` counts the see-through pane groups too, and
+    // `pools.fades` — a draw a spark, dust disc, scorch or blob — in
+    // `pools.drawn` too, the sparks' blooms in `pools.masked`: since
+    // `BABYLON_EXIT.md` X4.6e's second commit none is in `counters.drawCalls`.
+    // Nothing else changed meaning.
+    // 36: `drawWorld` is the camera's DRAW PHASE up to the glow's work
+    // (`BABYLON_EXIT.md` X4.7b), no longer the rendering groups: it is
+    // entered on every frame the camera draws, whichever path told our
+    // renderer's points. A v35 capture's `drawWorld` is group 0 alone, and
+    // absent on a frame Babylon visited no group (the menu, a frame with
+    // nothing of Babylon's in group 0); on a frame it did visit one, v36 adds
+    // the rendering manager's own walk and, on such a frame the glow skips,
+    // the seam's `after` observer and `FrameDepth`'s identity test (both gone
+    // or changed since, `BABYLON_EXIT.md` X5.4e) — nothing measurable. Nothing
+    // else changed meaning.
+    // 37: `pools.particles`, a draw a particle field of ours (the ash, since
+    // `BABYLON_EXIT.md` X4.7c), in `pools.drawn` too and no longer in
+    // `counters.drawCalls`, where Babylon's draw of the field was. Its update is a prepare's
+    // compute pass, outside the main pass and outside `drawWorld` (no longer a
+    // dispatch ending the main pass inside group 0, which ran our queued opaque
+    // recording there), and it is not in `gpu.cull`, being no cull. Nothing else
+    // changed meaning.
+    // 38: Babylon's instruments RETIRED (`BABYLON_EXIT.md` X5.4g, the loop and
+    // its clocks ours): `counters` and its five figures, `drawCalls`/
+    // `activeMeshes` in `segments` and `series`, every hitch's `gpuMs`,
+    // `drawCalls`, `activeMeshes`, `meshWalkMs`, `renderTargetsMs` and
+    // `particlesMs` — Babylon's `SceneInstrumentation` and its active meshes,
+    // which nothing raised once the scene stopped rendering (X5.4f) — and
+    // `gpu.mainPass` with `series.gpuMs`, Babylon's main-pass counter, which
+    // timed no pass of Babylon's after X5.4f; `pipelines.named` and a
+    // creation's `effect` and `defines`, Babylon's effect a pipeline built
+    // through its cache was named by (no Babylon pipeline is made after the
+    // boot); and the `shadowPass` phase, which nothing opened after X5.3d.
+    // `gpu.frame` is OURS — two empty passes of our frame timer bracketing
+    // the frame's one encoder, from before its first pass to after its last
+    // (`render/FrameTimer.ts`), where it was Babylon's `writeTimestamp`
+    // around its two encoders, the same span — so it needs no browser flag,
+    // and `gpu.frameMeasurable` is `gpu.available`, the timer built. `present`
+    // is the span around the frame's one `queue.submit` of ours
+    // (`core/FrameLoop.ts`), where it was Babylon's `endFrame`; and `drawWorld`
+    // and `glow` are bracketed by the frame itself (`SceneFrame`), where the
+    // recorder hung them off the frame's observables — neither bracket moved.
+    // The frame's delta (the wall clock a row reads) is the loop's own port of
+    // Babylon's `getDeltaTime`. A v37 capture reads the same in every field
+    // left; its retired ones are Babylon's and read 0 from X5.4f on.
+    version: 38,
+    build: buildStamp(),
     takenAt: new Date().toISOString(),
     reason,
     map: r.mapId,
     seed: r.seed,
+    simMode: r.simMode,
     tree: PARENT_OF,
     roots: [...ROOTS],
     device: deviceFacts(r),
@@ -977,9 +1309,15 @@ export function buildReport(
           inForceSeconds: round((performance.now() - r.graphicsAt) / 1000, 1),
         }
       : null,
+    viewport: viewportSizes(r, ringRows(first, n, cap)),
     bench: r.bench
       ? { ...r.bench, vantages: [...r.bench.vantages], path: { ...r.bench.path }, fight: { ...r.bench.fight } }
       : null,
+    blocks: r.blocks ? { ...r.blocks } : null,
+    bodies: r.bodies ? { ...r.bodies } : null,
+    hulls: r.hulls ? { ...r.hulls } : null,
+    pools: r.pools ? { ...r.pools } : null,
+    view: r.view ? { ...r.view } : null,
     segments: segmentFacts(r, first, n, cap),
     clock: {
       grainMs: round(r.grainMs, 4),
@@ -1010,7 +1348,6 @@ export function buildReport(
     loaf: loafFacts(r, first, n, cap),
     gpu: gpuFacts(r, first, n, cap),
     pipelines: creationFacts(r, first, n, cap, full),
-    counters: counterMeans(r, first, n, cap),
     phases,
     hitches: worstHitches(r),
     series: full ? series : undefined,
@@ -1133,23 +1470,16 @@ function creationFacts(
       if (frameAt[(first + mid) % cap] <= t) lo = mid;
       else hi = mid - 1;
     }
-    const defines = r.logDefines[at];
     recent.push({
       ago: round(Math.max(0, newest - t) / 1000, 2),
       kind: CREATED[r.logKind[at]],
       frameMs: lo < n ? round(r.frameMs[(first + lo) % cap]) : 0,
       label: r.logLabel[at],
-      effect: r.logEffect[at],
-      defines:
-        full || defines.length <= DEFINES_CAP
-          ? defines
-          : defines.slice(0, DEFINES_CAP - 1) + "…",
       callMs: round(r.logMs[at], 3),
     });
   }
   return {
     observed: r.createObserved,
-    named: r.createNamed,
     render,
     compute,
     modules,
@@ -1210,13 +1540,28 @@ function segmentStat(
   let ticks = 0;
   let render = 0;
   let renders = 0;
-  let draws = 0;
-  let meshes = 0;
   let gpu = 0;
   let gpuN = 0;
+  let cull = 0;
+  let cullN = 0;
+  const sizes = viewportSizes(r, at);
+  let stale = 0;
+  for (const v of sizes) if (!v.matched) stale += v.frames;
+  let sim = 0;
+  let sims = 0;
+  const kids = new Float64Array(SIM_CHILDREN.length);
   for (let k = 0; k < m; k++) {
     const i = at[k];
     wall[k] = r.frameMs[i];
+    const c = i * SLOTS + P.sim;
+    if (r.entered[c] === 1) {
+      sim += r.durMs[c];
+      sims++;
+      for (let j = 0; j < SIM_CHILDREN.length; j++) {
+        const q = i * SLOTS + P[SIM_CHILDREN[j]];
+        if (r.entered[q] === 1) kids[j] += r.durMs[q];
+      }
+    }
     const f = i * SLOTS + P.frame;
     if (r.entered[f] === 1) tick[ticks++] = r.durMs[f];
     const g = i * SLOTS + P.render;
@@ -1224,11 +1569,13 @@ function segmentStat(
       render += r.durMs[g];
       renders++;
     }
-    draws += r.drawCalls[i];
-    meshes += r.activeMeshes[i];
     if (r.gpuFrameMs[i] > 0) {
       gpu += r.gpuFrameMs[i];
       gpuN++;
+    }
+    if (r.gpuCullMs[i] > 0) {
+      cull += r.gpuCullMs[i];
+      cullN++;
     }
   }
   const w = stats(wall, m);
@@ -1250,39 +1597,69 @@ function segmentStat(
     tick: t ? round(t.mean) : 0,
     tickP95: t ? round(t.p95) : 0,
     render: renders > 0 ? round(render / renders) : 0,
-    drawCalls: Math.round(draws / m),
-    activeMeshes: Math.round(meshes / m),
     gpuFrame: gpuN > 0 ? round(gpu / gpuN, 3) : 0,
     gpuSamples: gpuN,
+    gpuCull: cullN > 0 ? round(cull / cullN, 4) : 0,
+    gpuCullSamples: cullN,
+    backingStore: sizes.length > 0 ? sizes[0].backingStore : "?",
+    sizes: sizes.length,
+    staleFrames: stale,
+    sim:
+      sims > 0
+        ? {
+            frames: sims,
+            mean: round(sim / sims),
+            phases: Object.fromEntries(
+              SIM_CHILDREN.map((name, j) => [name, round(kids[j] / sims)]),
+            ),
+          }
+        : null,
   };
 }
 
-function counterMeans(
-  r: ProfileRing,
-  first: number,
-  n: number,
-  cap: number,
-): ProfileReport["counters"] {
-  let draws = 0;
-  let meshes = 0;
-  let walk = 0;
-  let rtt = 0;
-  let particles = 0;
-  for (let k = 0; k < n; k++) {
-    const i = (first + k) % cap;
-    draws += r.drawCalls[i];
-    meshes += r.activeMeshes[i];
-    walk += r.meshWalkMs[i];
-    rtt += r.rttMs[i];
-    particles += r.particlesMs[i];
+/** The window's rows in ring order, oldest first. Capture-time only. */
+function ringRows(first: number, n: number, cap: number): number[] {
+  const at: number[] = [];
+  for (let k = 0; k < n; k++) at.push((first + k) % cap);
+  return at;
+}
+
+/**
+ * Every (window, backing store, expected) the given rows were drawn at, most
+ * frames first — `ViewportSize`. A row with no engine read 0 and is skipped.
+ * Capture-time only.
+ */
+function viewportSizes(r: ProfileRing, at: readonly number[]): ViewportSize[] {
+  const byKey = new Map<string, ViewportSize>();
+  for (const i of at) {
+    const cw = r.canvasW[i];
+    const ch = r.canvasH[i];
+    const level = r.scaleAt[i];
+    if (cw === 0 || ch === 0 || level <= 0) continue;
+    const ww = r.windowW[i];
+    const wh = r.windowH[i];
+    // `AbstractEngine.resize` hands `setSize` the CSS size over the level,
+    // and `setSize` truncates (`| 0`) — ported as written since X5.4h
+    // (`core/CanvasSurface.ts`). The canvas's own CSS box is what it
+    // measures; the window stands in for it because `#game-canvas` fills the
+    // page, and a pixel of slack absorbs the two roundings.
+    const ew = (ww / level) | 0;
+    const eh = (wh / level) | 0;
+    const key = `${ww}x${wh} ${cw}x${ch} ${ew}x${eh}`;
+    const seen = byKey.get(key);
+    if (seen) {
+      seen.frames++;
+      continue;
+    }
+    byKey.set(key, {
+      window: `${ww}x${wh}`,
+      backingStore: `${cw}x${ch}`,
+      expected: `${ew}x${eh}`,
+      matched: Math.abs(cw - ew) <= 1 && Math.abs(ch - eh) <= 1,
+      frames: 1,
+    });
   }
-  return {
-    drawCalls: Math.round(draws / n),
-    activeMeshes: Math.round(meshes / n),
-    meshWalkMs: round(walk / n),
-    renderTargetsMs: round(rtt / n),
-    particlesMs: round(particles / n),
-  };
+  return [...byKey.values()].sort((a, b) => b.frames - a.frames);
 }
 
 /**
@@ -1299,7 +1676,7 @@ function gpuFacts(
   n: number,
   cap: number,
 ): ProfileReport["gpu"] {
-  const over = (src: Float32Array | null) => {
+  const over = (src: Float32Array | null, digits = 3) => {
     let count = 0;
     if (src) {
       const scratch = new Float64Array(n);
@@ -1311,31 +1688,33 @@ function gpuFacts(
         const s = stats(scratch, count);
         return {
           n: count,
-          meanMs: round(s.mean, 3),
-          p95Ms: round(s.p95, 3),
-          maxMs: round(s.max, 3),
+          meanMs: round(s.mean, digits),
+          p95Ms: round(s.p95, digits),
+          maxMs: round(s.max, digits),
         };
       }
     }
     return { n: 0, meanMs: 0, p95Ms: 0, maxMs: 0 };
   };
   const whole = over(r.gpuFrameMs);
-  const main = over(r.gpuMs);
+  // A cull is tens of microseconds: a tenth of one is the grain worth keeping.
+  const cull = over(r.gpuCullMs, 4);
   return {
     requested: r.gpuRequested,
     available: r.gpuAvailable,
-    frameMeasurable: gpuFrameMeasurable(),
+    frameMeasurable: r.gpuAvailable,
     frame: {
       samples: whole.n,
       meanMs: whole.meanMs,
       p95Ms: whole.p95Ms,
       maxMs: whole.maxMs,
     },
-    mainPass: {
-      frames: main.n,
-      meanMs: main.meanMs,
-      p95Ms: main.p95Ms,
-      maxMs: main.maxMs,
+    cull: {
+      timed: r.cullTimed,
+      samples: cull.n,
+      meanMs: cull.meanMs,
+      p95Ms: cull.p95Ms,
+      maxMs: cull.maxMs,
     },
   };
 }
@@ -1443,13 +1822,8 @@ function worstHitches(r: ProfileRing): HitchFrame[] {
       loafBlockMs: round(r.loafBlockMs[i]),
       loafScriptMs: round(r.loafScriptMs[i]),
       loafRenderMs: round(r.loafRenderMs[i]),
-      gpuMs: round(r.gpuMs[i], 3),
       gpuFrameMs: round(r.gpuFrameMs[i], 3),
-      drawCalls: r.drawCalls[i],
-      activeMeshes: r.activeMeshes[i],
-      meshWalkMs: round(r.meshWalkMs[i]),
-      renderTargetsMs: round(r.rttMs[i]),
-      particlesMs: round(r.particlesMs[i]),
+      gpuCullMs: round(r.gpuCullMs[i], 4),
       createdOn: madeAt(r, i),
       createdNear: madeNear(r, i),
       phases,
@@ -1559,15 +1933,8 @@ export function buildTrace(r: ProfileRing, maxFrames: number): string {
           "}",
       );
     }
-    parts.push(
-      '{"name":"draws","ph":"C","pid":1,"tid":1,"ts":' +
-        base.toFixed(1) +
-        ',"args":{"drawCalls":' +
-        r.drawCalls[i] +
-        ',"activeMeshes":' +
-        r.activeMeshes[i] +
-        "}}",
-    );
+    // (A `draws` counter track, Babylon's draw count and active meshes, rode
+    // here until report version 38.)
     if (r.heapMb) {
       parts.push(
         '{"name":"heapMb","ph":"C","pid":1,"tid":1,"ts":' +
@@ -1612,13 +1979,13 @@ export function buildTrace(r: ProfileRing, maxFrames: number): string {
 
 function deviceFacts(r: ProfileRing): ProfileReport["device"] {
   const nav = navigator as Navigator & { deviceMemory?: number };
-  const engine = r.engine;
+  const surface = r.surface;
   return {
     userAgent: navigator.userAgent,
     devicePixelRatio: window.devicePixelRatio || 1,
     window: `${window.innerWidth}x${window.innerHeight}`,
-    backingStore: engine
-      ? `${engine.getRenderWidth()}x${engine.getRenderHeight()}`
+    backingStore: surface
+      ? `${surface.getRenderWidth()}x${surface.getRenderHeight()}`
       : "?",
     hardwareConcurrency: navigator.hardwareConcurrency || 0,
     deviceMemoryGb: nav.deviceMemory ?? null,

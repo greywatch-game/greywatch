@@ -1,0 +1,30 @@
+{
+ "hollowmere": {
+  "steps": 480,
+  "exact": "b5c58e5f5a71d5ea"
+ },
+ "greyfen": {
+  "steps": 2400,
+  "exact": "52604831fde22b8e"
+ },
+ "coldharbour": {
+  "steps": 480,
+  "exact": "c06e9dc96e3ebdd4"
+ },
+ "harrowmead": {
+  "steps": 480,
+  "exact": "29882ca4a434cf1f"
+ },
+ "sarab": {
+  "steps": 480,
+  "exact": "bb43536b71464bde"
+ },
+ "cinderhaven": {
+  "steps": 480,
+  "exact": "97a389f281aaecf9"
+ },
+ "kurenai": {
+  "steps": 480,
+  "exact": "13f4163661f2c629"
+ }
+}

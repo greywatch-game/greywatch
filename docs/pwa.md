@@ -8,7 +8,7 @@ for `public/`, `src/pwa/` and the service-worker plugin.
 The build installs to a home screen and launches fullscreen, landscape and offline.
 Four files carry it: `public/manifest.webmanifest`, `public/icons/`,
 `src/pwa/register.ts` and `src/pwa/sw.js`. Nothing in the game knows any of this
-exists — `Game`'s one line is the fullscreen gesture.
+exists — `Game`'s two lines are the fullscreen gesture and the wake lock.
 
 **`public/` is the one place a URL is written by hand.** Vite copies it to `dist/`
 unhashed, which is the point: a manifest names its icons, `index.html` names the
@@ -63,6 +63,17 @@ the version: a hit is the build you already have, a miss is the one you do not, 
 the cache fills itself either way. Offline the fetch rejects at once and the
 precached shell answers, so the flight-mode promise is untouched.
 
+**A link that is merely SLOW gets the previous build, and the settings screen
+says which one answered.** The navigation waits `SHELL_TIMEOUT_MS` (3 s) and
+then draws the cached shell, and the fresh one lands for the next launch only if
+it arrives inside `SHELL_GIVE_UP_MS` — so a phone on a crawling cell can run the
+previous build through every reload (2026-10-16: a fix tested on yesterday's
+build read as no fix). `vite.config.ts` stamps each `index.html` with its commit
+and day (`<meta name="greywatch-build">`, `BUILD_COMMIT` from CI since the
+image has no `.git`), and the settings screen prints it in its corner. Being in
+the shell, it is the build the worker SERVED, and it costs the content-hashed
+bundle nothing.
+
 **It used to be cache-first for the navigation too, and the comment claiming that
 cost "the launch after next" was wrong by a factor of five.** Two assumptions
 underneath it do not hold, and both had to be fixed — either one alone still leaves
@@ -90,8 +101,8 @@ one reload; the new one spends 7.28 MB and shows the new build. The saving is no
 mainly the copying — it is that the running page's own download of the 7.4 MB entry
 IS the precache's copy, instead of the two fetching it separately. What reliably
 survives a deploy is only the assets that import nothing (Havok's wasm, the water
-textures, the collision chunks — about 2.7 MB); Babylon's lazy shader chunks import
-from the entry, so its new name is in their bytes and re-hashes them. Two deploys
+textures, the collision chunks — about 2.7 MB); Babylon's lazy shader chunks imported
+from the entry, so its new name was in their bytes and re-hashed them. Two deploys
 measured, one kept 50 of 52 asset names and the next kept 9.
 
 **Two numbers bound the shell request, and they are not the same number.** A launch
@@ -129,7 +140,18 @@ Details about the phone, each of which was a visible bug first:
   canvas, so fullscreening the canvas plays the game with no tickets, no flags, no
   vitals and no deploy map. It is gated on a coarse pointer: an installed app is
   already fullscreen from the manifest, and on the desktop the pointer lock does the
-  immersing.
+  immersing. **`Game` re-applies the render scale on `fullscreenchange`**, now and
+  300 ms later as on `orientationchange`, because two phone captures drew a canvas
+  that had not followed its window — suspected, not proven, to be the fullscreen
+  step; the profiler's `viewport` (report version 18) says on the next capture.
+- **A round on screen keeps the screen ON** (`keepScreenAwake`, the Screen Wake
+  Lock API), asked from `tick` with `ScreenStack.inRound`: the deploy map, the
+  world, the death cam and a benchmark hold it, and the menu, a pause and the
+  round-over card let the screen sleep on its own timeout. A benchmark is why:
+  nobody touches a phone running one, and a screen that dims mid-run stops it.
+  The browser drops the lock whenever the page is hidden, so it is asked for
+  again on `visibilitychange`; a refusal or a browser without it leaves the
+  screen to its timeout and the game plays either way.
 - **A touch is felt nowhere in `InputManager`, and every screen a phone meets
   carries its own button** — the menu's and the round-over card's Deploy, the deploy
   screen's Deploy plate (`.dp-go`), the kit screen's — each listening for its own
@@ -185,6 +207,13 @@ Three rules come with it:
 Verified against a real build served over localhost, with the worker installed
 off the game's own launch and the context then taken offline: `/` is the game,
 `/profile_viewer.html` is the viewer, and `/nope.html` is still the game.
+
+**No response owes cross-origin isolation any more.** `BABYLON_EXIT.md` X2.5b
+sent COOP `same-origin` and COEP `require-corp` on every response — in four
+places that had to agree, and failed silently when one did not — for the
+`SharedArrayBuffer` its Worker needed; X2.5c C6 took the pair out, because the
+local match's Worker (`src/net/matchHost.ts`) posts JSON and posting needs no
+isolation. Putting it back owes a feature that needs `SharedArrayBuffer`.
 
 ## The controls a phone plays with
 

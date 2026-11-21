@@ -6,14 +6,17 @@
  * different unit for a float format (`r = 2^(exponent(the primitive's own
  * depth) - 23)`, against a constant for a normalised one). Everything in this
  * renderer that is stated in polygon-offset UNITS is therefore stated in a unit
- * that moves when that flag moves, and there are exactly two:
+ * that moves when that flag moves, and there were exactly two:
  *
  *  - `CelMaterialFactory.GLASS_DEPTH_UNITS` (-16), without which glazing past
  *    the far end of the map is not drawn at all;
- *  - `OutlineRenderer`'s own `setZOffset(-1)` / `setZOffsetUnits(-4)`, which is
- *    Babylon's default and is what both of `docs/rendering.md`'s outline
- *    GEOMETRY rules rest on — a walked surface needing real depth behind its
- *    top face, and nothing being laid on an inked surface.
+ *  - `OutlineRenderer`'s own `setZOffset(-1)` / `setZOffsetUnits(-4)`, which was
+ *    Babylon's default and was what both of `docs/rendering.md`'s outline
+ *    GEOMETRY rules rested on — a walked surface needing real depth behind its
+ *    top face, and nothing being laid on an inked surface. No pass of this
+ *    game draws at those offsets any more (the ink is a full-screen pass over
+ *    the depth buffer, and the scene has not rendered since `BABYLON_EXIT.md`
+ *    X5.4f), so the `zoffset` mode that measured them is RETIRED (below).
  *
  * **Run this after anything that changes the depth format, and nothing else
  * re-derives these.** `bank.mjs` will not: a pane that has quietly stopped
@@ -55,6 +58,19 @@
  * they no longer agree with each other: a road marking sits ~20 mm under its
  * slab's ink shell and is swallowed down the whole street, and a board deck's
  * shell sits 185 mm under its own top face and is not swallowed anywhere.
+ *
+ * **Both modes are Babylon meshes, and RETIRED with no scene** (X6.1a): the scene
+ * is asked of the frame adapter (`harness.mjs`' `babylon()`), and a page with
+ * none fails each mode with a sentence saying so; `glass` already owes a port
+ * (a round's glazing is our renderer's since X4.6e, `FINDINGS.md` 69).
+ * **`zoffset` is RETIRED outright** (X6.1c's review): its subject, the offsets
+ * Babylon's `OutlineRenderer` drew the ink hull at, is no pass of this game
+ * since the scene stopped rendering (X5.4f), and its rig cloned a cel
+ * material, which is a `MaterialKey` of ours since X6.1c (no `clone`, no
+ * `setColor3`). It throws before it starts anything, naming why. Its body —
+ * the ruler the table above was taken with, Babylon meshes off the page's
+ * copy of the package — went with the package (X6.1i); it stands at any tree
+ * before it.
  */
 import { writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -72,6 +88,11 @@ import {
 
 const argv = process.argv.slice(2);
 const MODE = argv.find((a) => !a.startsWith("--")) ?? "glass";
+if (MODE === "zoffset") {
+  throw new Error(
+    "depth.mjs zoffset: RETIRED (BABYLON_EXIT.md X6.1c's review) — it measured the offsets Babylon's OutlineRenderer drew the ink hull at, which no pass of this game draws since the scene stopped rendering (X5.4f), and its rig clones a Babylon cel material, which is a MaterialKey of ours since X6.1c",
+  );
+}
 const HEADED = argv.includes("--headed");
 const list = (flag, fallback) =>
   argv.includes(flag)
@@ -84,10 +105,6 @@ mkdirSync(OUT, { recursive: true });
 
 /** Half-height of the framed region in metres — what holds the on-screen size. */
 const FRAME_HALF_HEIGHT = 8;
-/** Eye height and field of view for the `zoffset` ruler. */
-const EYE = 1.65;
-const FOV = 60;
-const DECK_LEN = 200;
 
 const vite = await startDevServer(root);
 const browser = await launchClient({ headed: HEADED });
@@ -142,8 +159,16 @@ if (MODE === "glass") {
   await settle(page, 6);
 
   // The biggest sheet count on the map, which is a tower's whole curtain wall.
+  // **This mode reads Babylon's glazing MESHES, and a round has none since
+  // `BABYLON_EXIT.md` X4.6e**: its panes are our renderer's (`GlassDraw`),
+  // their bias pipeline state (`GLASS_DEPTH_BIAS`) and their walls ours since
+  // X3.7b (which `map.visuals` no longer holds). It owes a port; until then it
+  // says so rather than measuring nothing.
   const target = await page.evaluate(() => {
     const g = window.__celshock;
+    if (g.map.paneGroups.some((grp) => !grp.mesh)) {
+      throw new Error("depth.mjs glass: a round's glazing is our renderer's since BABYLON_EXIT.md X4.6e, and this mode reads Babylon's meshes — it owes a port");
+    }
     const rows = g.map.paneGroups.map((grp, i) => {
       const m = grp.mesh;
       m.computeWorldMatrix(true);
@@ -182,7 +207,11 @@ if (MODE === "glass") {
       for (const grp of g.map.paneGroups) {
         if (grp.mesh !== pane) grp.mesh.setEnabled(false);
       }
-      const Colour = g.scene.ambientColor.constructor;
+      // Babylon's scene through the frame adapter (`harness.mjs`, X6.1a): this
+      // mode is Babylon's meshes, RETIRED with no scene.
+      const B = window.__refFrame().babylon();
+      if (!B) throw new Error("depth.mjs glass: no scene — this mode reads Babylon's meshes (retired, BABYLON_EXIT.md X6.1a)");
+      const Colour = B.scene.ambientColor.constructor;
       pane.material.setColor3("baseColor", new Colour(1, 0, 0));
       if (pane.material.name.includes("-on-")) {
         pane.material.setColor3("glassBackdrop", new Colour(1, 0, 0));
@@ -260,115 +289,6 @@ if (MODE === "glass") {
     });
     console.log(String(u).padStart(5) + row.join(""));
   }
-} else if (MODE === "zoffset") {
-  const DELTAS = list("--deltas", [0.002, 0.005, 0.02, 0.05, 0.15, 0.5]);
-  const { page } = await bootMap(browser, vite.url, "hollowmere");
-  await installRound(page);
-  await waitUntilDrawn(page);
-  await settle(page, 6);
-  await freeze(page);
-  await settle(page, 6);
-  // The app's OWN Babylon, by the url it was already loaded from — a second
-  // copy mints classes the materials reject (`VERIFYING.md`).
-  const babylon = await page.evaluate(() =>
-    performance
-      .getEntriesByType("resource")
-      .map((r) => r.name)
-      .find((n) => /babylonjs_core/i.test(n)),
-  );
-
-  const frames = [];
-  for (const delta of DELTAS) {
-    await page.evaluate(
-      async ([url, d, len, eye, fov]) => {
-        const B = await import(url);
-        const g = window.__celshock;
-        window.__depthRig?.forEach((m) => m.dispose());
-        const top = 60;
-        const src = g.scene.materials.find((m) => /^cel-#/.test(m.name));
-        const deck = (name, y, colour, biased) => {
-          const box = B.MeshBuilder.CreateBox(
-            name,
-            { width: 60, height: 2, depth: len },
-            g.scene,
-          );
-          box.position.set(0, y - 1, len / 2 - 4);
-          box.isPickable = false;
-          box.material = src.clone(`${name}-mat`);
-          box.material.setColor3("baseColor", colour);
-          if (biased) {
-            // Exactly what `OutlineRenderer.render` sets before its own draw.
-            box.material.zOffset = -1;
-            box.material.zOffsetUnits = -4;
-          }
-          return box;
-        };
-        window.__depthRig = [
-          deck("depth-plain", top, new B.Color3(0.35, 0.35, 0.38), false),
-          deck("depth-biased", top - d, new B.Color3(1, 0, 0), true),
-        ];
-        const cam = g.cameraSys.camera;
-        cam.position.set(0, top + eye, -4);
-        cam.setTarget(new B.Vector3(0, top, len));
-        cam.fov = (fov * Math.PI) / 180;
-        g.cameraSys.yaw = cam.rotation.y;
-        g.cameraSys.pitch = cam.rotation.x;
-        g.mats.updateCamera(cam.position);
-        g.lighting.update(0.05, cam.position, g.mats);
-      },
-      [babylon, delta, DECK_LEN, EYE, FOV],
-    );
-    await waitUntilDrawn(page);
-    await settle(page, 4);
-    const path = join(OUT, `delta-${String(delta).replace(".", "_")}.png`);
-    writeFileSync(path, await page.screenshot({ type: "png" }));
-    frames.push({ delta, path });
-  }
-  await browser.close();
-  await vite.stop();
-
-  const grader = await chromium.launch({ headless: true });
-  const gp = await grader.newPage();
-  const H = 1080;
-  const distForRow = (y) => {
-    const t = ((y - H / 2) / (H / 2)) * Math.tan((FOV * Math.PI) / 360);
-    return t <= 0 ? Infinity : EYE / t;
-  };
-  console.log("separation   the offset wins from\n");
-  for (const f of frames) {
-    const rows = await gp.evaluate(async (src) => {
-      const img = await new Promise((res, rej) => {
-        const i = new Image();
-        i.onload = () => res(i);
-        i.onerror = rej;
-        i.src = src;
-      });
-      const canvas = new OffscreenCanvas(img.width, img.height);
-      const ctx = canvas.getContext("2d", { willReadFrequently: true });
-      ctx.drawImage(img, 0, 0);
-      const d = ctx.getImageData(0, 0, img.width, img.height).data;
-      const out = new Array(img.height).fill(0);
-      for (let y = 0; y < img.height; y++) {
-        for (let x = 0; x < img.width; x++) {
-          const i = (y * img.width + x) * 4;
-          if (d[i] - Math.max(d[i + 1], d[i + 2]) > 40) out[y]++;
-        }
-      }
-      return out;
-    }, `data:image/png;base64,${readFileSync(f.path).toString("base64")}`);
-    let near = -1;
-    for (let y = H - 1; y >= 0; y--) {
-      if (rows[y] > 200) {
-        near = y;
-        break;
-      }
-    }
-    console.log(
-      `${String(f.delta).padStart(8)} m   ` +
-        `${near < 0 ? `never, inside ${DECK_LEN} m` : `${distForRow(near).toFixed(1)} m`}`,
-    );
-  }
-  await grader.close();
 } else {
   console.error(`depth.mjs: unknown mode "${MODE}" — glass or zoffset`);
   await browser.close();
