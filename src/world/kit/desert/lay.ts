@@ -4,33 +4,39 @@
  * an elevation's points and outlines (`fp`, `fdir`, `slabOn`, `pointed`,
  * `above`); the arch ring and its striped `ring`, the star, square kufic,
  * the blind bay, the stepped merlons, a parapet's pierced `triangles` and the
- * pocks; the round solids (`band`, `disc`, `drum`, and a dome's
+ * pocks and a pasted `poster`; the round solids (`band`, `disc`, `drum`, and a dome's
  * `domeProfile` laid in `courses`); a wall's `socle` and its dog-tooth `cornice`; render, stains
- * and water (`spall`, `blob`, `within`, `spout`); a `lobe` laid on a level
- * surface; and round members on any axis (`log`, `eye`). Part of the
+ * and water (`spall` over a `Bond`, `blob`, `within`, `spout`); a `lobe` laid on a level
+ * surface; a `ragged` outline for a hole or a burn; and round members on
+ * any axis (`log`, `eye`, and a bar, `rod`). Part of the
  * desert-town set: follows the contract in kit/core.ts
  * and the set's rules in `./index.ts`. Invariants: VISUAL only — nothing here
  * declares a collider; every face is planar, as the cel shader's per-facet
  * light needs. Never builds a building, and never imports one.
  */
 import {
+  AWNING,
   Build,
   IRON,
   Mesher,
   StoneBatch,
   archArc,
   hideBack,
+  orient,
   outward,
   runsAlongX,
+  type Point3,
   type Side,
   type V3,
 } from "../core";
-import { MUDBRICK, MUDBRICK_DARK, PALM_BEAM, PLINTH, SCORCH, WINDOW_VOID } from "./shared";
+import { MUDBRICK, MUDBRICK_DARK, PALM_BEAM, PLINTH, SCORCH, WHITEWASH, WINDOW_VOID } from "./shared";
 
 /** A whole turn. */
 export const TAU = Math.PI * 2;
 /** The underside of a thing standing on a roof or a floor, which nothing sees. */
 export const HIDE_DOWN = 1 << 3;
+/** A bar's two end caps, which are its local Z faces and a few millimetres square. */
+export const NO_ENDS = (1 << 4) | (1 << 5);
 
 // --- the batch -----------------------------------------------------------------
 //
@@ -341,6 +347,16 @@ export function pocks(lay: Lay, s: Side, plane: number, u0: number, u1: number, 
   }
 }
 
+/** A poster pasted on a face at `out`: a sheet, a portrait on it and two lines under that. */
+export function poster(lay: Lay, s: Side, plane: number, u: number, y: number, out: number, rnd: () => number): void {
+  const back = hideBack(s);
+  const tilt = (rnd() - 0.5) * 0.08;
+  lay.sb.onFace(s, plane, u, y, 0.44, 0.6, 0.008, out + 0.004, WHITEWASH, tilt, 0, back);
+  lay.sb.onFace(s, plane, u, y + 0.08, 0.22, 0.28, 0.008, out + 0.012, SCORCH, tilt, 0, back);
+  lay.sb.onFace(s, plane, u, y - 0.17, 0.34, 0.05, 0.008, out + 0.012, AWNING, tilt, 0, back);
+  lay.sb.onFace(s, plane, u, y - 0.24, 0.26, 0.03, 0.008, out + 0.012, SCORCH, tilt, 0, back);
+}
+
 /**
  * One blind bay: a pointed arch frame round a recess with a grilled window
  * low in it and a lancet over that, from `lo` (the dado's head) to `hi`
@@ -462,6 +478,18 @@ export function cornice(lay: Lay, s: Side, plane: number, a: number, c: number, 
 /** One course of brick where the render has come away. */
 export const COURSE = 0.09;
 
+/** What a wall is laid in under its render: the joint's colour, the unit's, a course, a unit and its pitch along the course. */
+export interface Bond {
+  ground: string;
+  unit: string;
+  course: number;
+  len: number;
+  pitch: number;
+}
+
+/** Brick, which the mud and limewashed walls are laid in. */
+export const BRICK: Bond = { ground: MUDBRICK_DARK, unit: MUDBRICK, course: COURSE, len: 0.24, pitch: 0.26 };
+
 /**
  * A palm-log spout through the parapet's foot, and the streak under it,
  * running down to a ragged foot `foot` (and up to 0.3 m more) over the ground
@@ -546,6 +574,18 @@ export function lobe(m: Mesher, x: number, y: number, z: number, a: number, b: n
   }
 }
 
+/** A ragged outline round `(u, y)`, `a` by `bb`, for a hole or a burn on a face. */
+export function ragged(u: number, y: number, a: number, bb: number, n: number, rnd: () => number): [number, number][] {
+  const pts: [number, number][] = [];
+  const p = rnd() * TAU;
+  for (let i = 0; i < n; i++) {
+    const t = (i / n) * TAU;
+    const kk = 0.75 + 0.2 * Math.sin(3 * t + p) + rnd() * 0.3;
+    pts.push([u + Math.cos(t) * a * kk, y + Math.sin(t) * bb * kk]);
+  }
+  return pts;
+}
+
 /** Whether `(u, y)` is inside a closed outline. */
 export function within(pts: readonly (readonly [number, number])[], u: number, y: number): boolean {
   let inside = false;
@@ -562,8 +602,9 @@ export function within(pts: readonly (readonly [number, number])[], u: number, y
  * slow wave in its edge, a dark mortar ground with courses of brick laid
  * across it, and a lip of render standing round the outside, which is the
  * step that makes it a HOLE in the plaster rather than a brown stain on it.
+ * `bond` is what the wall is laid in: brick unless it says otherwise.
  */
-export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu: number, hy: number, skin: string, rnd: () => number): void {
+export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu: number, hy: number, skin: string, rnd: () => number, bond: Bond = BRICK): void {
   const back = hideBack(s);
   const lobes: { c: [number, number]; pts: [number, number][] }[] = [];
   const lobe = (lu: number, ly: number, a: number, b: number): void => {
@@ -585,7 +626,7 @@ export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu
     lobe(u + side * hu * (0.55 + rnd() * 0.35), y + (rnd() - 0.5) * hy * 0.7, hu * (0.4 + rnd() * 0.3), hy * (0.55 + rnd() * 0.3));
   }
   lobes.forEach((l, li) => {
-    blob(lay, s, plane, l.c, l.pts, 0, 0.006, MUDBRICK_DARK);
+    blob(lay, s, plane, l.c, l.pts, 0, 0.006, bond.ground);
     // The lip, where no other lobe has taken the render away.
     const n = l.pts.length;
     for (let i = 0; i < n; i++) {
@@ -604,7 +645,7 @@ export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu
   const lo = Math.min(...ys);
   const hi = Math.max(...ys);
   let row = 0;
-  for (let yc = lo + COURSE * 0.7; yc < hi - COURSE * 0.5; yc += COURSE, row++) {
+  for (let yc = lo + bond.course * 0.7; yc < hi - bond.course * 0.5; yc += bond.course, row++) {
     const spans: [number, number][] = [];
     for (const l of lobes) {
       const xs: number[] = [];
@@ -627,16 +668,22 @@ export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu
       else merged.push([sp[0], sp[1]]);
     }
     for (const [a, c] of merged) {
-      // Bricks in stretcher bond, the joints staggered course to course.
-      let uu = a - (row % 2 ? 0.13 : 0) + ((a * 7.3) % 0.26);
+      // Units in stretcher bond, the joints staggered course to course.
+      let uu = a - (row % 2 ? bond.pitch / 2 : 0) + ((a * 7.3) % bond.pitch);
       while (uu < c) {
         const b0 = Math.max(a, uu);
-        const b1 = Math.min(c, uu + 0.24);
-        if (b1 - b0 > 0.05) lay.sb.onFace(s, plane, (b0 + b1) / 2, yc, b1 - b0, COURSE - 0.022, 0.02, 0.014, MUDBRICK, 0, 0, back);
-        uu += 0.26;
+        const b1 = Math.min(c, uu + bond.len);
+        if (b1 - b0 > 0.05) lay.sb.onFace(s, plane, (b0 + b1) / 2, yc, b1 - b0, bond.course - 0.022, 0.02, 0.014, bond.unit, 0, 0, back);
+        uu += bond.pitch;
       }
     }
   }
+}
+
+/** A bar from `a` to `c`: rebar, a conduit, an aerial's element. */
+export function rod(lay: Lay, a: Point3, c: Point3, r: number, color: string = IRON): void {
+  const o = orient(a, c);
+  lay.sb.box(r, r, o.len, o.mid[0], o.mid[1], o.mid[2], color, o.rot, NO_ENDS);
 }
 
 /** A round member from `a` to `c` with planar facets and closed ends. */

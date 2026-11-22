@@ -2114,11 +2114,13 @@ src/
                         #   batch a colour), the elevation's outlines, the arch
                         #   ring, the star, square kufic, the blind bay, the
                         #   merlons, a parapet's pierced `triangles`, the
-                        #   pocks and the round solids, a dome's
-                        #   `domeProfile` laid in `courses`, the socle, the
-                        #   dog-tooth cornice, `spall`, `blob`, `spout`, a
-                        #   `lobe` on a level surface, and `log`/`eye` for
-                        #   round members on any axis
+                        #   pocks, a pasted `poster` and the round solids, a
+                        #   dome's `domeProfile` laid in `courses`, the socle,
+                        #   the dog-tooth cornice, `spall` over a `Bond`
+                        #   (brick, or the kiosk's block), `blob`, a `ragged`
+                        #   outline, `spout`, a `lobe` on a level surface, and
+                        #   `log`/`eye`/`rod` for round and square members on
+                        #   any axis
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled RC apartment block,
                         #   its shops, rooms and sheared corner
@@ -2140,7 +2142,10 @@ src/
       granary.ts        #   buildGranary — the mud silos in the alley
       qubba.ts          #   buildQubba — the saint's domed tomb, limewashed
       graves.ts         #   buildGraves — one row of kerbed graves and steles
-      fuelStation.ts    #   buildFuelStation — the highway's canopy and kiosk
+      fuelStation.ts    #   buildFuelStation — the highway's state fuel station:
+                        #   a panelled, lettered canopy on clad columns, two
+                        #   pump islands, the kiosk with its vent stacks, the
+                        #   water tank, the tyres and the pylon sign
       tent.ts           #   buildTent — the herders' black goat-hair tent
       walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags,
                         #   buildPylon. `pylon` is the odd one: a power pole

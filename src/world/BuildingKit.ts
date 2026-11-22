@@ -333,7 +333,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * to the ground. The saint's tomb seeds which side its lamp niche is on, the
  * rags on its grilles, its spalls, its pocks, its spouts and its roof's
  * patches off where it stands, and carries its plinth's face and the
- * half-step at its door down to the ground.
+ * half-step at its door down to the ground. The fuel station seeds its
+ * soffit's gaps and fittings, its fascia, its panes, its dials, its drifts,
+ * stains and scars off where it stands, and carries its forecourt's edge,
+ * its tank's feet and its sign's plinth down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -382,4 +385,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "caravanserai",
   "shellBlock",
   "qubba",
+  "fuelStation",
 ] as const);

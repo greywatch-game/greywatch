@@ -23,13 +23,11 @@ import {
   Mesher,
   carve,
   hideBack,
-  orient,
   outward,
   runsAlongX,
   streetSeed,
   type BuildCtx,
   type BuildParams,
-  type Point3,
   type Side,
   type Structure,
   type V3,
@@ -54,7 +52,7 @@ import {
   clothHash,
   drape,
 } from "./shared";
-import { HIDE_DOWN, Lay, TAU, blob, eye, fdir, fp, kufic, log, opp, pocks } from "./lay";
+import { HIDE_DOWN, Lay, TAU, blob, eye, fdir, fp, kufic, log, opp, pocks, poster, ragged, rod } from "./lay";
 
 /** Storey height for a reinforced-concrete frame. */
 const STOREY_RC = 3.2;
@@ -81,8 +79,6 @@ const ALL = 63;
 const ONLY_UP = ALL & ~HIDE_UP;
 /** Only the face looking out along side `s`: paint or lettering standing a hair off its ground. */
 const onlyFront = (s: Side): number => ALL & ~hideBack(opp(s));
-/** A bar's two end caps, which are its local Z faces and a few millimetres square. */
-const NO_ENDS = (1 << 4) | (1 << 5);
 
 /**
  * The shelled block: a reinforced-concrete apartment block with its top
@@ -422,12 +418,6 @@ const LONG: readonly Side[] = ["-z", "+z"];
 
 // --- small words -------------------------------------------------------------------
 
-/** A bar from `a` to `c`: rebar, a conduit, an aerial's element. */
-function rod(lay: Lay, a: Point3, c: Point3, r: number, color: string = IRON): void {
-  const o = orient(a, c);
-  lay.sb.box(r, r, o.len, o.mid[0], o.mid[1], o.mid[2], color, o.rot, NO_ENDS);
-}
-
 /** A broken lump of concrete or block lying at `(x, z)` on `y`. */
 function chunk(lay: Lay, x: number, y: number, z: number, size: number, color: string, rnd: () => number): void {
   const h = Math.min(0.22, size * (0.35 + rnd() * 0.4));
@@ -465,28 +455,6 @@ function lobe(m: Mesher, x: number, y: number, z: number, a: number, bb: number,
     m.tri([x, y, z], [ax, y, az], [bx, y, bz], face);
     m.quad([ax, back, az], [bx, back, bz], [bx, y, bz], [ax, y, az], [(ax + bx) / 2 - x, 0, (az + bz) / 2 - z]);
   }
-}
-
-/** A ragged outline round `(u, y)`, `a` by `bb`, for a hole or a burn on a face. */
-function ragged(u: number, y: number, a: number, bb: number, n: number, rnd: () => number): [number, number][] {
-  const pts: [number, number][] = [];
-  const p = rnd() * TAU;
-  for (let i = 0; i < n; i++) {
-    const t = (i / n) * TAU;
-    const kk = 0.75 + 0.2 * Math.sin(3 * t + p) + rnd() * 0.3;
-    pts.push([u + Math.cos(t) * a * kk, y + Math.sin(t) * bb * kk]);
-  }
-  return pts;
-}
-
-/** A poster pasted on a face at `out`: a sheet, a portrait on it and two lines under that. */
-function poster(lay: Lay, s: Side, plane: number, u: number, y: number, out: number, rnd: () => number): void {
-  const back = hideBack(s);
-  const tilt = (rnd() - 0.5) * 0.08;
-  lay.sb.onFace(s, plane, u, y, 0.44, 0.6, 0.008, out + 0.004, WHITEWASH, tilt, 0, back);
-  lay.sb.onFace(s, plane, u, y + 0.08, 0.22, 0.28, 0.008, out + 0.012, SCORCH, tilt, 0, back);
-  lay.sb.onFace(s, plane, u, y - 0.17, 0.34, 0.05, 0.008, out + 0.012, AWNING, tilt, 0, back);
-  lay.sb.onFace(s, plane, u, y - 0.24, 0.26, 0.03, 0.008, out + 0.012, SCORCH, tilt, 0, back);
 }
 
 // --- the plinth --------------------------------------------------------------------
