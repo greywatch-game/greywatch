@@ -3,10 +3,11 @@
  * buildings share: `Lay`, the one batch a building's drawing is laid into;
  * an elevation's points and outlines (`fp`, `fdir`, `slabOn`, `pointed`,
  * `above`); the arch ring, the star, square kufic, the blind bay, the
- * stepped merlons and the pocks; the round solids (`band`, `disc`, `drum`,
- * and a dome's `domeProfile` laid in `courses`); a wall's `socle` and its
- * dog-tooth `cornice`; render, stains and water (`spall`, `blob`, `within`,
- * `spout`); and round members on any axis (`log`, `eye`). Part of the
+ * stepped merlons, a parapet's pierced `triangles` and the pocks; the round
+ * solids (`band`, `disc`, `drum`, and a dome's `domeProfile` laid in
+ * `courses`); a wall's `socle` and its dog-tooth `cornice`; render, stains
+ * and water (`spall`, `blob`, `within`, `spout`); a `lobe` laid on a level
+ * surface; and round members on any axis (`log`, `eye`). Part of the
  * desert-town set: follows the contract in kit/core.ts
  * and the set's rules in `./index.ts`. Invariants: VISUAL only — nothing here
  * declares a collider; every face is planar, as the cel shader's per-facet
@@ -373,6 +374,20 @@ export function merlons(lay: Lay, s: Side, plane: number, u: number, len: number
   }
 }
 
+/**
+ * A row of triangles pierced through a parapet along side `s`, from `a` to
+ * `c` with their bases on `y`, one every `pitch` or a little more: the holes
+ * a mud parapet is lightened with and the wind cools a roof through.
+ */
+export function triangles(lay: Lay, s: Side, plane: number, a: number, c: number, y: number, pitch = 0.5): void {
+  const n = Math.floor((c - a) / pitch);
+  const step = (c - a) / n;
+  for (let i = 0; i < n; i++) {
+    const u = a + (i + 0.5) * step;
+    slabOn(lay, s, plane, [[u - 0.11, y], [u + 0.11, y], [u, y + 0.22]], 0, 0.014, WINDOW_VOID);
+  }
+}
+
 // --- render, stains and round members ----------------------------------------
 
 /**
@@ -416,12 +431,16 @@ export function cornice(lay: Lay, s: Side, plane: number, a: number, c: number, 
 /** One course of brick where the render has come away. */
 export const COURSE = 0.09;
 
-/** A palm-log spout through the parapet's foot, and the streak under it. */
-export function spout(lay: Lay, s: Side, plane: number, u: number, y: number, streakTop: number, rnd: () => number): void {
+/**
+ * A palm-log spout through the parapet's foot, and the streak under it,
+ * running down to a ragged foot `foot` (and up to 0.3 m more) over the ground
+ * — a storey's worth on a one-storey wall, raised on a taller one.
+ */
+export function spout(lay: Lay, s: Side, plane: number, u: number, y: number, streakTop: number, rnd: () => number, foot = 2.15): void {
   lay.sb.onFace(s, plane, u, y, 0.16, 0.14, 0.62, 0.27, PALM_BEAM, 0, 0, hideBack(s));
   // The wash it leaves: broad under the string course, spreading as it runs
   // and stopping in a ragged foot well above the socle.
-  const lo = 2.15 + rnd() * 0.3;
+  const lo = foot + rnd() * 0.3;
   const wa = 0.13 + rnd() * 0.06;
   blob(lay, s, plane, [u, (streakTop + lo) / 2], [
     [u - wa, streakTop],
@@ -465,6 +484,34 @@ export function blob(
     const my = (a[1] + b[1]) / 2 - centre[1];
     const sg = dy * mu - du * my > 0 ? 1 : -1;
     m.quad(fp(s, plane, a[0], a[1], out0), fp(s, plane, b[0], b[1], out0), fp(s, plane, b[0], b[1], out1), fp(s, plane, a[0], a[1], out1), fdir(s, sg * dy, -sg * du, 0));
+  }
+}
+
+/**
+ * A lobe of something laid on a level surface, its top at `y` and its sides
+ * down 2.5 cm: an ellipse `a` by `b` turned `yaw`, with a slow wave in its
+ * edge. Fanned from its centre, from which it is star-shaped.
+ */
+export function lobe(m: Mesher, x: number, y: number, z: number, a: number, b: number, yaw: number, rnd: () => number): void {
+  const p1 = rnd() * TAU;
+  const p2 = rnd() * TAU;
+  const N = 14;
+  const c = Math.cos(yaw);
+  const sn = Math.sin(yaw);
+  const pts: [number, number][] = [];
+  for (let i = 0; i < N; i++) {
+    const t = (i / N) * TAU;
+    const kk = 1 + 0.18 * Math.sin(2 * t + p1) + 0.1 * Math.sin(3 * t + p2);
+    const u = Math.cos(t) * a * kk;
+    const v = Math.sin(t) * b * kk;
+    pts.push([x + u * c - v * sn, z + u * sn + v * c]);
+  }
+  const up: V3 = [0, 1, 0];
+  for (let i = 0; i < N; i++) {
+    const [ax, az] = pts[i];
+    const [bx, bz] = pts[(i + 1) % N];
+    m.tri([x, y, z], [ax, y, az], [bx, y, bz], up);
+    m.quad([ax, y - 0.025, az], [bx, y - 0.025, bz], [bx, y, bz], [ax, y, az], [(ax + bx) / 2 - x, 0, (az + bz) / 2 - z]);
   }
 }
 

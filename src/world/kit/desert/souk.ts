@@ -18,7 +18,6 @@ import {
   AWNING,
   Build,
   IRON,
-  Mesher,
   TEAK,
   hideBack,
   type BuildParams,
@@ -57,11 +56,12 @@ import {
   cornice,
   disc,
   eye,
+  lobe,
   log,
   pocks,
-  slabOn,
   socle,
   spout,
+  triangles,
 } from "./lay";
 
 /** The awnings' two cloths, taken in turn down the arcade. */
@@ -476,20 +476,6 @@ function carpet(lay: Lay, s: Side, plane: number, u: number, top: number, wd: nu
 // --- the elevations ---------------------------------------------------------------
 
 /**
- * A row of triangles pierced through a parapet along side `s`, from `a` to
- * `c` with their bases on `y`: the holes a mud parapet is lightened with and
- * the wind cools a roof through.
- */
-function triangles(lay: Lay, s: Side, plane: number, a: number, c: number, y: number): void {
-  const n = Math.floor((c - a) / 0.5);
-  const step = (c - a) / n;
-  for (let i = 0; i < n; i++) {
-    const u = a + (i + 0.5) * step;
-    slabOn(lay, s, plane, [[u - 0.11, y], [u + 0.11, y], [u, y + 0.22]], 0, 0.014, WINDOW_VOID);
-  }
-}
-
-/**
  * The street front: the cornice on the roof's edge, iron straps on the front
  * beam each side of every girder's end, the pierced parapet on both its
  * faces, spouts over two piers, and carpets hung on the piers.
@@ -615,34 +601,6 @@ function roof(lay: Lay, k: Souk): void {
   const fz = (rnd() - 0.5) * (len - 6);
   for (let i = 0; i < 6; i++) {
     lay.sb.box(0.07, 0.05, 2.4 + rnd() * 0.6, x0 - 0.15 + i * 0.07, roofY + 0.025 + (i % 2) * 0.035, fz + (rnd() - 0.5) * 0.3, PALM_BEAM, { y: (rnd() - 0.5) * 0.1 }, HIDE_DOWN);
-  }
-}
-
-/**
- * A lobe of something laid on a level surface, its top at `y` and its sides
- * down 2.5 cm: an ellipse `a` by `b` turned `yaw`, with a slow wave in its
- * edge. Fanned from its centre, from which it is star-shaped.
- */
-function lobe(m: Mesher, x: number, y: number, z: number, a: number, b: number, yaw: number, rnd: () => number): void {
-  const p1 = rnd() * TAU;
-  const p2 = rnd() * TAU;
-  const N = 14;
-  const c = Math.cos(yaw);
-  const sn = Math.sin(yaw);
-  const pts: [number, number][] = [];
-  for (let i = 0; i < N; i++) {
-    const t = (i / N) * TAU;
-    const kk = 1 + 0.18 * Math.sin(2 * t + p1) + 0.1 * Math.sin(3 * t + p2);
-    const u = Math.cos(t) * a * kk;
-    const v = Math.sin(t) * b * kk;
-    pts.push([x + u * c - v * sn, z + u * sn + v * c]);
-  }
-  const up: V3 = [0, 1, 0];
-  for (let i = 0; i < N; i++) {
-    const [ax, az] = pts[i];
-    const [bx, bz] = pts[(i + 1) % N];
-    m.tri([x, y, z], [ax, y, az], [bx, y, bz], up);
-    m.quad([ax, y - 0.025, az], [bx, y - 0.025, bz], [bx, y, bz], [ax, y, az], [(ax + bx) / 2 - x, 0, (az + bz) / 2 - z]);
   }
 }
 

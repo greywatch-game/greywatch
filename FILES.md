@@ -2113,10 +2113,12 @@ src/
       lay.ts            #   What the detailed ones are drawn with: `Lay` (one
                         #   batch a colour), the elevation's outlines, the arch
                         #   ring, the star, square kufic, the blind bay, the
-                        #   merlons, the pocks and the round solids, a
-                        #   dome's `domeProfile` laid in `courses`, the socle,
-                        #   the dog-tooth cornice, `spall`, `blob`, `spout`,
-                        #   and `log`/`eye` for round members on any axis
+                        #   merlons, a parapet's pierced `triangles`, the
+                        #   pocks and the round solids, a dome's
+                        #   `domeProfile` laid in `courses`, the socle, the
+                        #   dog-tooth cornice, `spall`, `blob`, `spout`, a
+                        #   `lobe` on a level surface, and `log`/`eye` for
+                        #   round members on any axis
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled RC apartment block,
                         #   its shops, rooms and sheared corner
@@ -2126,7 +2128,9 @@ src/
       souk.ts           #   buildSouk — the market hall with a walked roof:
                         #   bracketed piers, a pole-and-mat ceiling, the
                         #   trade on its floor, framed awnings, a blind back
-      windTower.ts      #   buildWindTower — the house with a barjeel on its deck
+      windTower.ts      #   buildWindTower — the merchant's house with a barjeel
+                        #   on its deck: a shanasheel over the door, grilled
+                        #   and shuttered windows, a pierced parapet
       caravanserai.ts   #   buildCaravanserai — the khan: a portal between two
                         #   towers, a paved court with a well, arcaded ranges
                         #   and a walked terrace; and `arcade`, its inner walls
