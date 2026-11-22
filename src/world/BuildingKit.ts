@@ -327,7 +327,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * it stands, and carries every pole, stake and wall foot down to the ground.
  * The caravanserai seeds its scars, its postern, its crater, its paving and
  * its pocks off where it stands, and carries its plinth's face and the ramp
- * at its gate down to the ground.
+ * at its gate down to the ground. The shelled block seeds its render, its
+ * shops and their signs, what is left in every window and every room, its
+ * scars and its roof off where it stands, and carries its plinth's face down
+ * to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -374,4 +377,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "graves",
   "tent",
   "caravanserai",
+  "shellBlock",
 ] as const);

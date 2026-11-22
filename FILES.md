@@ -2118,7 +2118,8 @@ src/
                         #   the dog-tooth cornice, `spall`, `blob`, `spout`,
                         #   and `log`/`eye` for round members on any axis
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
-      shellBlock.ts     #   buildShellBlock — the shelled concrete slab
+      shellBlock.ts     #   buildShellBlock — the shelled RC apartment block,
+                        #   its shops, rooms and sheared corner
       mosque.ts         #   buildMosque, buildMinaret — the domed hall, its
                         #   arcaded portico and tiled kufic, and the banded
                         #   minaret nobody climbs

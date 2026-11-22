@@ -104,7 +104,7 @@ export const STOREY = 2.9;
 /** The stair lane's width. See the set's header. */
 const LANE = 2.0;
 /** The least floor between a flight's top tread and the wall it climbs to. */
-const LANDING = 1.8;
+export const LANDING = 1.8;
 /** Parapet height and thickness: chest cover on every roof in the town. */
 export const PARAPET = 0.95;
 export const PARAPET_T = 0.4;
