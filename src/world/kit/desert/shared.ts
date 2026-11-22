@@ -71,6 +71,20 @@ export const TILE_BLUE = "#2f6f83";
  */
 export const CLOTH = "#c9bda3";
 
+/**
+ * Woven goat hair: the black tent's roof and walls, and nothing else.
+ *
+ * **An eleventh colour, and it is a MATERIAL rather than a shade.** Every
+ * other dark in this palette is a hole (`WINDOW_VOID`) or a burn (`SCORCH`),
+ * and a tent drawn in either reads as one of them: a black box on the sand is
+ * a doorway with nothing round it. Goat hair is brown-black with a dusty
+ * bloom on it, a step lighter than the void so the tent's own open front —
+ * which IS a void — still reads darker than its roof, and warmer than the
+ * scorch so it is never mistaken for a burnt-out shell. It is one material
+ * for every tent on the map, so it costs one draw a block.
+ */
+export const GOAT_HAIR = "#2f2823";
+
 // --- the shared geometry -----------------------------------------------------
 
 /** Wall thickness. Mud brick is thick, and 0.45 m is what reads as thick. */

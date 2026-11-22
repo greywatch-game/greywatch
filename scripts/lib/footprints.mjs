@@ -185,6 +185,14 @@ export const FOOT = {
   souk: (p) => [-(p.width ?? 11) / 2 - 2.55, (p.width ?? 11) / 2 + 0.3, -(p.length ?? 30) / 2 - 0.4, (p.length ?? 30) / 2 + 0.4],
   compoundWall: (p) => [-(p.length ?? 14) / 2 - 0.35, (p.length ?? 14) / 2 + 0.35, -0.35, 0.35],
   blastWall: (p) => [-(p.length ?? 12) / 2 - 0.2, (p.length ?? 12) / 2 + 0.2, -0.8, 0.8],
+  // The plinth stands 0.2 m proud of the cube on every side.
+  qubba: (p) => [-(p.width ?? 6) / 2 - 0.2, (p.width ?? 6) / 2 + 0.2, -(p.width ?? 6) / 2 - 0.2, (p.width ?? 6) / 2 + 0.2],
+  // A row along X; each grave is 2 m long across it, the family plot's wall a
+  // hand outside that.
+  graves: (p) => [-(p.length ?? 12) / 2 - 0.1, (p.length ?? 12) / 2 + 0.1, -1.2, 1.2],
+  fuelStation: (p) => [-(p.width ?? 18) / 2 - 0.3, (p.width ?? 18) / 2 + 0.3, -(p.depth ?? 14) / 2 - 0.3, (p.depth ?? 14) / 2 + 0.3],
+  // The guy ropes reach a metre past the roof to their stakes.
+  tent: (p) => [-(p.width ?? 9) / 2 - 1.2, (p.width ?? 9) / 2 + 1.2, -(p.depth ?? 5) / 2 - 1.2, (p.depth ?? 5) / 2 + 1.2],
 };
 
 /**
@@ -235,6 +243,7 @@ export const DOOR_FACES = {
   hammam: ["-z"],
   caravanserai: ["-z"],
   mosque: ["-z", "-x", "+x"],
+  qubba: ["-z"],
 };
 
 /** Kinds with a front door: the ones a door check holds to somewhere a body can walk. */

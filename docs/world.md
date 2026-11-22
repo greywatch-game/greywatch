@@ -170,9 +170,23 @@ opens onto a street or onto open ground, or the house is not built**
 rule enforced while the rows are laid is the only one that survives a re-roll.
 The TELL is the other half of it, and it is ground rather than kit: a summit
 ten metres up with the Great Mosque (flag A) inside the citadel wall, a terrace
-ring of houses at five, and a glacis below that carries the town's dead and its
-terraced gardens rather than buildings, because a placement samples the floor
-once and a slope is somewhere only a wall, a gravestone or a palm can stand.
+ring of houses at five, and a glacis below that carries terraced gardens
+rather than buildings, because a placement samples the floor once and a slope
+is somewhere only a wall or a palm can stand.
+
+**A WALL IS A LINE, and an enclosure is whole or it is not built.** A wall run
+placed as one candidate is refused whole when either end touches anything, and
+a road claims a metre and a half past its kerb — so the piece beside every gate
+went, and every compound side near a lane, and 156 of 353 runs became stubs
+standing in the sand. `wallLine` walks the line and cuts it only where
+something actually stands across it (a road through a wall is a gate the
+road's width), and `enclosure` takes back every run it laid when it could not
+lay most of what it asked for. **And every wall belongs to something**: the
+country outside the town is farm HAMLETS on the tracks out of it — a house in
+the corner of a walled yard, placed first, the yard only if the house stood —
+walled palm gardens down both banks of the wadi with a party wall between each
+plot, and the burial ground beside the caravan road out of the west gate,
+never in front of it and never inside the walls.
 
 **The wadi runs dry except in the three basins deep enough to have kept
 something**, and the fourth body is the BIRKAT, a reservoir dug into the west

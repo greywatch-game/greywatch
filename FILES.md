@@ -2120,6 +2120,10 @@ src/
                         #   `arcade`, its punched inner walls
       hammam.ts         #   buildHammam — the bathhouse and its domed deck
       granary.ts        #   buildGranary — the mud silos in the alley
+      qubba.ts          #   buildQubba — the saint's domed tomb, limewashed
+      graves.ts         #   buildGraves — one row of kerbed graves and steles
+      fuelStation.ts    #   buildFuelStation — the highway's canopy and kiosk
+      tent.ts           #   buildTent — the herders' black goat-hair tent
       walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags,
                         #   buildPylon. `pylon` is the odd one: a power pole
                         #   that carries the SPAN of wire ahead of it

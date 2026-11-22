@@ -57,14 +57,18 @@ import {
   buildBlastWall,
   buildCaravanserai,
   buildCompoundWall,
+  buildFuelStation,
   buildGranary,
+  buildGraves,
   buildHammam,
   buildMinaret,
   buildMosque,
   buildPylon,
+  buildQubba,
   buildSandbags,
   buildShellBlock,
   buildSouk,
+  buildTent,
   buildWindTower,
 } from "./kit/desert";
 import {
@@ -186,6 +190,10 @@ export const BUILDERS = {
   blastWall: buildBlastWall,
   sandbags: buildSandbags,
   pylon: buildPylon,
+  qubba: buildQubba,
+  graves: buildGraves,
+  fuelStation: buildFuelStation,
+  tent: buildTent,
   // The volcanic-coast set — see kit/harbour/, whose header owns the rule
   // that everything walked in it (the smelter's deck and its flight) obeys
   // kit/terrain.ts, and the argument for why nothing else in it is climbed.
@@ -312,7 +320,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * her topsides are tarred or oiled, where her tarpaulin begins, her oars, her
  * port letters and what lies on the hard beside her off where she stands, and
  * carries her cribbing's footings, her shores' soles and that clutter down to
- * the ground under each.
+ * the ground under each. A row of graves seeds each grave's kerb, mound and
+ * steles off where it stands, stands every grave on the ground under it and
+ * steps its one low collider with the ground (`groundRun`). The black tent
+ * seeds its sag, its rolled end, its curtain and what is inside it off where
+ * it stands, and carries every pole, stake and wall foot down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -356,4 +368,6 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "planter",
   "crane",
   "careenedHull",
+  "graves",
+  "tent",
 ] as const);

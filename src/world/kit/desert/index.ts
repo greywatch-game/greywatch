@@ -4,16 +4,19 @@
  * minaret, the souk arcade, the four pieces that give a quarter a face — the
  * wind-tower house, the caravanserai, the hammam and the granary — and the two
  * pieces of hard furniture a contested town grows, the T-wall run and the
- * sandbag emplacement.
+ * sandbag emplacement — and what stands round a town rather than in it: the
+ * saint's domed tomb (`qubba`), a row of graves, the highway's fuel station
+ * and the herders' black tent.
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata, colliders declared not created) and the
  * four rules in kit/city/index.ts's header about buildings that stack walked
  * floors.
  *
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
- * the thirteen builders from here, and each building is a file of its own
+ * the seventeen builders from here, and each building is a file of its own
  * beside it (`adobe.ts`, `shellBlock.ts`, `souk.ts`, `windTower.ts`,
- * `caravanserai.ts`, `hammam.ts`, `granary.ts`), with the mosque and its
+ * `caravanserai.ts`, `hammam.ts`, `granary.ts`, `qubba.ts`, `graves.ts`,
+ * `fuelStation.ts`, `tent.ts`), with the mosque and its
  * minaret together in `mosque.ts` and the runs and furniture — the compound
  * wall, the T-wall run, the sandbags and the power pole — in `walls.ts`. What
  * more than one of them is measured or dressed by — the palette, the wall,
@@ -105,6 +108,13 @@
  * reaches in this town, it merges into one group per block because every drape
  * in the set shares it, and it is pale and unsaturated for the two reasons on
  * the constant itself.
+ *
+ * **The eleventh is `GOAT_HAIR`, and only the tent wears it**: a material no
+ * other colour here can stand in for, since every other dark in the palette
+ * is a hole or a burn (the constant argues it). The fuel station is the one
+ * piece built of the CITY kit's materials — concrete, alloy, enamel, glass and
+ * `AWNING` for its faded band — because it is the one piece a highway put
+ * there rather than the town.
  */
 export { buildAdobeHouse } from "./adobe";
 export { buildCompoundWall, buildBlastWall, buildSandbags, buildPylon } from "./walls";
@@ -115,3 +125,7 @@ export { buildWindTower } from "./windTower";
 export { buildCaravanserai } from "./caravanserai";
 export { buildHammam } from "./hammam";
 export { buildGranary } from "./granary";
+export { buildQubba } from "./qubba";
+export { buildGraves } from "./graves";
+export { buildFuelStation } from "./fuelStation";
+export { buildTent } from "./tent";
