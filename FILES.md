@@ -2113,14 +2113,18 @@ src/
       lay.ts            #   What the detailed ones are drawn with: `Lay` (one
                         #   batch a colour), the elevation's outlines, the arch
                         #   ring, the star, square kufic, the blind bay, the
-                        #   merlons, the pocks and the round solids, and a
-                        #   dome's `domeProfile` laid in `courses`
+                        #   merlons, the pocks and the round solids, a
+                        #   dome's `domeProfile` laid in `courses`, the socle,
+                        #   the dog-tooth cornice, `spall`, `blob`, `spout`,
+                        #   and `log`/`eye` for round members on any axis
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled concrete slab
       mosque.ts         #   buildMosque, buildMinaret — the domed hall, its
                         #   arcaded portico and tiled kufic, and the banded
                         #   minaret nobody climbs
-      souk.ts           #   buildSouk — the colonnade with a walked roof
+      souk.ts           #   buildSouk — the market hall with a walked roof:
+                        #   bracketed piers, a pole-and-mat ceiling, the
+                        #   trade on its floor, framed awnings, a blind back
       windTower.ts      #   buildWindTower — the house with a barjeel on its deck
       caravanserai.ts   #   buildCaravanserai — the khan: a portal between two
                         #   towers, a paved court with a well, arcaded ranges

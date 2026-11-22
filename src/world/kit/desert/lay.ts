@@ -3,8 +3,11 @@
  * buildings share: `Lay`, the one batch a building's drawing is laid into;
  * an elevation's points and outlines (`fp`, `fdir`, `slabOn`, `pointed`,
  * `above`); the arch ring, the star, square kufic, the blind bay, the
- * stepped merlons and the pocks; and the round solids (`band`, `disc`,
- * `drum`, and a dome's `domeProfile` laid in `courses`). Part of the desert-town set: follows the contract in kit/core.ts
+ * stepped merlons and the pocks; the round solids (`band`, `disc`, `drum`,
+ * and a dome's `domeProfile` laid in `courses`); a wall's `socle` and its
+ * dog-tooth `cornice`; render, stains and water (`spall`, `blob`, `within`,
+ * `spout`); and round members on any axis (`log`, `eye`). Part of the
+ * desert-town set: follows the contract in kit/core.ts
  * and the set's rules in `./index.ts`. Invariants: VISUAL only — nothing here
  * declares a collider; every face is planar, as the cel shader's per-facet
  * light needs. Never builds a building, and never imports one.
@@ -21,7 +24,7 @@ import {
   type Side,
   type V3,
 } from "../core";
-import { MUDBRICK, MUDBRICK_DARK, PALM_BEAM, SCORCH, WINDOW_VOID } from "./shared";
+import { MUDBRICK, MUDBRICK_DARK, PALM_BEAM, PLINTH, SCORCH, WINDOW_VOID } from "./shared";
 
 /** A whole turn. */
 export const TAU = Math.PI * 2;
@@ -367,5 +370,228 @@ export function merlons(lay: Lay, s: Side, plane: number, u: number, len: number
     const uu = u - len / 2 + ((i + 0.5) * len) / n;
     lay.sb.onFace(s, plane, uu, y + band + 0.18, 0.36, 0.36, 0.28, -0.15, skin, 0, 0, HIDE_DOWN);
     lay.sb.onFace(s, plane, uu, y + band + 0.43, 0.18, 0.14, 0.28, -0.15, skin, 0, 0, HIDE_DOWN);
+  }
+}
+
+// --- render, stains and round members ----------------------------------------
+
+/**
+ * A socle along side `s` from `u = a` to `c`, standing on the plinth: two
+ * courses of dressed stone over a mortar ground, the stones lighter than
+ * their joints, and a chamfered weathering course on them.
+ */
+export function socle(lay: Lay, s: Side, plane: number, a: number, c: number, rnd: () => number): void {
+  const back = hideBack(s);
+  lay.sb.onFace(s, plane, (a + c) / 2, PLINTH + 0.31, c - a, 0.62, 0.04, 0.012, MUDBRICK_DARK, 0, 0, back);
+  for (let row = 0; row < 2; row++) {
+    const y0 = PLINTH + row * 0.31;
+    let u = a + (row ? 0.0 : 0.02);
+    while (u < c - 0.1) {
+      const len = Math.min(c - u - 0.02, 0.48 + rnd() * 0.42);
+      if (len > 0.12) lay.sb.onFace(s, plane, u + len / 2, y0 + 0.155, len, 0.285, 0.04, 0.034, MUDBRICK, 0, 0, back);
+      u += len + 0.025;
+    }
+  }
+  lay.sb.onFace(s, plane, (a + c) / 2, PLINTH + 0.66, c - a + 0.04, 0.08, 0.1, 0.05, MUDBRICK_DARK, 0, 0, back);
+}
+
+/**
+ * The cornice of a brick wall head along side `s`, from `u = a` to `c`,
+ * standing on `y`: a course, a band of bricks laid on their corners — the
+ * dog-tooth every brick wall head in the province wears — and a corbelled
+ * course over it. Runs shorter than 0.3 m get none.
+ */
+export function cornice(lay: Lay, s: Side, plane: number, a: number, c: number, y: number): void {
+  if (c - a < 0.3) return;
+  const back = hideBack(s);
+  lay.sb.onFace(s, plane, (a + c) / 2, y + 0.045, c - a, 0.09, 0.12, 0.0, MUDBRICK, 0, 0, back);
+  const n = Math.max(1, Math.floor((c - a - 0.1) / 0.3));
+  const step = (c - a) / n;
+  for (let i = 0; i < n; i++) {
+    lay.sb.onFace(s, plane, a + (i + 0.5) * step, y + 0.19, 0.16, 0.17, 0.16, 0.0, MUDBRICK, 0, Math.PI / 4, back);
+  }
+  lay.sb.onFace(s, plane, (a + c) / 2, y + 0.33, c - a + 0.06, 0.1, 0.2, 0.04, MUDBRICK, 0, 0, back);
+}
+
+/** One course of brick where the render has come away. */
+export const COURSE = 0.09;
+
+/** A palm-log spout through the parapet's foot, and the streak under it. */
+export function spout(lay: Lay, s: Side, plane: number, u: number, y: number, streakTop: number, rnd: () => number): void {
+  lay.sb.onFace(s, plane, u, y, 0.16, 0.14, 0.62, 0.27, PALM_BEAM, 0, 0, hideBack(s));
+  // The wash it leaves: broad under the string course, spreading as it runs
+  // and stopping in a ragged foot well above the socle.
+  const lo = 2.15 + rnd() * 0.3;
+  const wa = 0.13 + rnd() * 0.06;
+  blob(lay, s, plane, [u, (streakTop + lo) / 2], [
+    [u - wa, streakTop],
+    [u + wa, streakTop],
+    [u + wa + 0.1, lo + 0.22],
+    [u + 0.16, lo + 0.04],
+    [u + 0.02, lo + 0.14],
+    [u - 0.14, lo],
+    [u - wa - 0.06, lo + 0.18],
+  ], 0, 0.006, MUDBRICK_DARK);
+}
+
+/**
+ * An outline laid on a face, fanned from `centre` (from which it must be
+ * star-shaped) rather than from its first point, as `slabOn` is: a lobe with
+ * a wave in its edge is not convex.
+ */
+export function blob(
+  lay: Lay,
+  s: Side,
+  plane: number,
+  centre: readonly [number, number],
+  pts: readonly (readonly [number, number])[],
+  out0: number,
+  out1: number,
+  color: string,
+): void {
+  const m = lay.m(color);
+  const fwd = fdir(s, 0, 0, 1);
+  const c = fp(s, plane, centre[0], centre[1], out1);
+  const n = pts.length;
+  for (let i = 0; i < n; i++) {
+    const j = (i + 1) % n;
+    const a = pts[i];
+    const b = pts[j];
+    m.tri(c, fp(s, plane, a[0], a[1], out1), fp(s, plane, b[0], b[1], out1), fwd);
+    // The edge's side, facing away from the centre.
+    const du = b[0] - a[0];
+    const dy = b[1] - a[1];
+    const mu = (a[0] + b[0]) / 2 - centre[0];
+    const my = (a[1] + b[1]) / 2 - centre[1];
+    const sg = dy * mu - du * my > 0 ? 1 : -1;
+    m.quad(fp(s, plane, a[0], a[1], out0), fp(s, plane, b[0], b[1], out0), fp(s, plane, b[0], b[1], out1), fp(s, plane, a[0], a[1], out1), fdir(s, sg * dy, -sg * du, 0));
+  }
+}
+
+/** Whether `(u, y)` is inside a closed outline. */
+export function within(pts: readonly (readonly [number, number])[], u: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const [ui, yi] = pts[i];
+    const [uj, yj] = pts[j];
+    if (yi > y !== yj > y && u < ((uj - ui) * (y - yi)) / (yj - yi) + ui) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Render lost back to the brick: two or three overlapping lobes, each with a
+ * slow wave in its edge, a dark mortar ground with courses of brick laid
+ * across it, and a lip of render standing round the outside, which is the
+ * step that makes it a HOLE in the plaster rather than a brown stain on it.
+ */
+export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu: number, hy: number, skin: string, rnd: () => number): void {
+  const back = hideBack(s);
+  const lobes: { c: [number, number]; pts: [number, number][] }[] = [];
+  const lobe = (lu: number, ly: number, a: number, b: number): void => {
+    const p1 = rnd() * TAU;
+    const p2 = rnd() * TAU;
+    const N = 16;
+    const pts: [number, number][] = [];
+    for (let i = 0; i < N; i++) {
+      const t = (i / N) * TAU;
+      const k = 1 + 0.2 * Math.sin(2 * t + p1) + 0.1 * Math.sin(3 * t + p2) + (rnd() - 0.5) * 0.08;
+      pts.push([lu + Math.cos(t) * a * k, ly + Math.sin(t) * b * k]);
+    }
+    lobes.push({ c: [lu, ly], pts });
+  };
+  lobe(u, y, hu, hy);
+  const extra = 1 + Math.floor(rnd() * 2);
+  for (let i = 0; i < extra; i++) {
+    const side = i % 2 ? -1 : 1;
+    lobe(u + side * hu * (0.55 + rnd() * 0.35), y + (rnd() - 0.5) * hy * 0.7, hu * (0.4 + rnd() * 0.3), hy * (0.55 + rnd() * 0.3));
+  }
+  lobes.forEach((l, li) => {
+    blob(lay, s, plane, l.c, l.pts, 0, 0.006, MUDBRICK_DARK);
+    // The lip, where no other lobe has taken the render away.
+    const n = l.pts.length;
+    for (let i = 0; i < n; i++) {
+      const [ua, ya] = l.pts[i];
+      const [ub, yb] = l.pts[(i + 1) % n];
+      const mu = (ua + ub) / 2;
+      const my = (ya + yb) / 2;
+      if (lobes.some((o, oi) => oi !== li && within(o.pts, mu, my))) continue;
+      const a = Math.atan2(yb - ya, ub - ua);
+      const tilt = a > Math.PI / 2 ? a - Math.PI : a <= -Math.PI / 2 ? a + Math.PI : a;
+      lay.sb.onFace(s, plane, mu, my, Math.hypot(ub - ua, yb - ya) + 0.03, 0.045, 0.035, 0.0175, skin, tilt, 0, back);
+    }
+  });
+  // The courses: each row the union of where it crosses the lobes.
+  const ys = lobes.flatMap((l) => l.pts.map((q) => q[1]));
+  const lo = Math.min(...ys);
+  const hi = Math.max(...ys);
+  let row = 0;
+  for (let yc = lo + COURSE * 0.7; yc < hi - COURSE * 0.5; yc += COURSE, row++) {
+    const spans: [number, number][] = [];
+    for (const l of lobes) {
+      const xs: number[] = [];
+      const n = l.pts.length;
+      for (let i = 0; i < n; i++) {
+        const [ua, ya] = l.pts[i];
+        const [ub, yb] = l.pts[(i + 1) % n];
+        if (ya > yc !== yb > yc) xs.push(ua + ((ub - ua) * (yc - ya)) / (yb - ya));
+      }
+      xs.sort((p, q) => p - q);
+      for (let i = 0; i + 1 < xs.length; i += 2) {
+        if (xs[i + 1] - xs[i] > 0.14) spans.push([xs[i] + 0.035, xs[i + 1] - 0.035]);
+      }
+    }
+    spans.sort((p, q) => p[0] - q[0]);
+    const merged: [number, number][] = [];
+    for (const sp of spans) {
+      const last = merged[merged.length - 1];
+      if (last && sp[0] <= last[1]) last[1] = Math.max(last[1], sp[1]);
+      else merged.push([sp[0], sp[1]]);
+    }
+    for (const [a, c] of merged) {
+      // Bricks in stretcher bond, the joints staggered course to course.
+      let uu = a - (row % 2 ? 0.13 : 0) + ((a * 7.3) % 0.26);
+      while (uu < c) {
+        const b0 = Math.max(a, uu);
+        const b1 = Math.min(c, uu + 0.24);
+        if (b1 - b0 > 0.05) lay.sb.onFace(s, plane, (b0 + b1) / 2, yc, b1 - b0, COURSE - 0.022, 0.02, 0.014, MUDBRICK, 0, 0, back);
+        uu += 0.26;
+      }
+    }
+  }
+}
+
+/** A round member from `a` to `c` with planar facets and closed ends. */
+export function log(m: Mesher, a: V3, c: V3, r: number, n: number): void {
+  eye(m, a, [c[0] - a[0], c[1] - a[1], c[2] - a[2]], r, r, Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]), n, true, true);
+}
+
+/**
+ * A frustum along an arbitrary axis: from radius `r0` at `at` to `r1` at
+ * `len` along `dir`, `n` planar sides, and a cap on its far end (and its
+ * near one, when asked). A dome's glass eye is two of them.
+ */
+export function eye(m: Mesher, at: V3, dir: V3, r0: number, r1: number, len: number, n: number, cap = true, base = false): void {
+  const l = Math.hypot(dir[0], dir[1], dir[2]);
+  const ax: V3 = [dir[0] / l, dir[1] / l, dir[2] / l];
+  const t: V3 = Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const e1n: V3 = [ax[1] * t[2] - ax[2] * t[1], ax[2] * t[0] - ax[0] * t[2], ax[0] * t[1] - ax[1] * t[0]];
+  const el = Math.hypot(e1n[0], e1n[1], e1n[2]);
+  const e1: V3 = [e1n[0] / el, e1n[1] / el, e1n[2] / el];
+  const e2: V3 = [ax[1] * e1[2] - ax[2] * e1[1], ax[2] * e1[0] - ax[0] * e1[2], ax[0] * e1[1] - ax[1] * e1[0]];
+  const p = (a: number, r: number, h: number): V3 => {
+    const c = Math.cos(a) * r;
+    const s = Math.sin(a) * r;
+    return [at[0] + ax[0] * h + e1[0] * c + e2[0] * s, at[1] + ax[1] * h + e1[1] * c + e2[1] * s, at[2] + ax[2] * h + e1[2] * c + e2[2] * s];
+  };
+  const tip: V3 = [at[0] + ax[0] * len, at[1] + ax[1] * len, at[2] + ax[2] * len];
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * TAU;
+    const a1 = ((i + 1) / n) * TAU;
+    const am = (a0 + a1) / 2;
+    const out: V3 = [e1[0] * Math.cos(am) + e2[0] * Math.sin(am), e1[1] * Math.cos(am) + e2[1] * Math.sin(am), e1[2] * Math.cos(am) + e2[2] * Math.sin(am)];
+    m.quad(p(a0, r0, 0), p(a1, r0, 0), p(a1, r1, len), p(a0, r1, len), out);
+    if (cap) m.tri(tip, p(a0, r1, len), p(a1, r1, len), ax);
+    if (base) m.tri(at, p(a1, r0, 0), p(a0, r0, 0), [-ax[0], -ax[1], -ax[2]]);
   }
 }

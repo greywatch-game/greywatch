@@ -232,7 +232,8 @@ granite carving, one surface per colour — `solid`, `lathe`, `petals`,
 `leafRow`, `tube`, `lichen`, `leaf`); and `Joinery` (`joinery.ts`, the carpentry under a tiled curved hip — brackets, purlins, a
 frog-leg strut, two layers of rafters, hip beams with wind bells, the tiles
 and ridges, the sheet), which the temple gate and the bell tower share. In `desert/lay.ts`: `Lay` (the
-one batch a mosque, the khan or the hammam is drawn into), `slabOn`, `pointed`, `above`,
-`archRing`, `star`, `kufic`, `blindBay`, `merlons`, `pocks`, and `band`,
+one batch a mosque, the khan, the hammam or the souk is drawn into), `slabOn`, `pointed`, `above`,
+`archRing`, `star`, `kufic`, `blindBay`, `merlons`, `pocks`, `socle`, `cornice` (dog-tooth),
+`spall`, `blob`, `spout`, `log` and `eye` (a round member on any axis), and `band`,
 `disc`, `drum` for anything round, and `domeProfile` laid in `courses` for a dome. Moving a helper to core.ts is
 the right fix for a second caller; a copy is not.
