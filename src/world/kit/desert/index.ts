@@ -100,8 +100,8 @@
  * differing in hue: mud brick, its own shade, its limewashed variant, a roof, a
  * beam, a window with nothing behind it, poured concrete's two greys borrowed
  * from `kit/core.ts`, sandbag hessian, scorch, bleached cloth — and one
- * saturated accent, the dome, which is the only chroma on the map and the thing
- * you navigate by from four hundred metres.
+ * saturated accent, the mosques' tile, which is the only chroma on the map and
+ * the thing you navigate by from four hundred metres.
  *
  * **The tenth is `CLOTH` and it is the only one that MOVES**, which is why it
  * is a colour of its own rather than a reuse: it is the whole of what the wind

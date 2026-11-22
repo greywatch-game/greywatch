@@ -42,7 +42,8 @@ export const SANDBAG = "#8a7d5e";
 /** Scorch: the wall beside a window that burned, a shelled block's stains. */
 export const SCORCH = "#3d3730";
 /**
- * The dome's glazed tile, and the one saturated colour in the town.
+ * The mosques' glazed tile — their domes, their minarets' caps and the
+ * kufic bands across them — and the one saturated colour in the town.
  *
  * It is the map's landmark by construction: the environment lays a bleached
  * warm haze over everything out to `fogEnd`, and a cool chroma is the only

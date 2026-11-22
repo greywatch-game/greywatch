@@ -2112,8 +2112,9 @@ src/
                         #   `clothHash` and `drape`, the parapets, `windowRow`
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled concrete slab
-      mosque.ts         #   buildMosque, buildMinaret — the dome and the shaft
-                        #   nobody climbs
+      mosque.ts         #   buildMosque, buildMinaret — the domed hall, its
+                        #   arcaded portico and tiled kufic, and the banded
+                        #   minaret nobody climbs
       souk.ts           #   buildSouk — the colonnade with a walked roof
       windTower.ts      #   buildWindTower — the house with a barjeel on its deck
       caravanserai.ts   #   buildCaravanserai — the inn built as a fort, and

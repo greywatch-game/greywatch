@@ -1721,6 +1721,31 @@ export const STENCIL: Record<string, readonly (readonly [number, number, number,
   "9": [[0, 4, 3, 5], [0, 2, 3, 3], [0, 0, 3, 1], [0, 2, 1, 5], [2, 0, 3, 5]],
 };
 
+/**
+ * The two arcs of a pointed arch over a span `S` with a `rise`, as the points
+ * along the LEFT one at radius `R + grow` from springing to apex (the right
+ * one is its mirror about `u`). Two-centred: each arc is struck from a centre
+ * on the springing line `c` past the middle, which is equilateral when the
+ * rise is `S * sqrt(3) / 2` and a lancet above that.
+ *
+ * **A rise under half the span has no two-centred arch**: `c` goes negative,
+ * each arc peaks short of the middle and the two meet in a DIP — a cupid's bow
+ * where the apex should be, which is what the first cut of the doorway drew.
+ * So `c` is clamped at zero, and such a rise is drawn as the semicircle over
+ * the span: the caller that wants a flatter head owes a four-centred one.
+ */
+export function archArc(u: number, ys: number, S: number, rise: number, grow: number, n: number): [number, number][] {
+  const c = Math.max(0, (rise * rise - (S * S) / 4) / S);
+  const R = c + S / 2 + grow;
+  const end = c > 0 ? Math.atan2(rise, -c) : Math.PI / 2;
+  const pts: [number, number][] = [];
+  for (let i = 0; i <= n; i++) {
+    const a = Math.PI + ((end - Math.PI) * i) / n;
+    pts.push([u + c + R * Math.cos(a), ys + R * Math.sin(a)]);
+  }
+  return pts;
+}
+
 export const outward = (s: Side): number => (s === "+z" || s === "+x" ? 1 : -1);
 export const runsAlongX = (s: Side): boolean => s === "-z" || s === "+z";
 

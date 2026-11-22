@@ -1,13 +1,14 @@
 /**
  * kit/buildings/gothic.ts — The chapel's words: a point, a polygon and a block
- * on an elevation, the pyramid a spire is, the pointed arch and its ring, the
- * lancet and the buttress — and `inside`, which the stilt hut borrows.
+ * on an elevation, the pyramid a spire is, the pointed arch's ring (its arcs
+ * are core.ts's `archArc`), the lancet and the buttress — and `inside`, which the stilt hut borrows.
  * Invariants: VISUAL, except where a caller asks a buttress for the two boxes
  * that make it one to a body and a round.
  */
 import {
   Build,
   type Point3,
+  archArc,
   convexSolid,
   onFace,
   outward,
@@ -123,31 +124,6 @@ export function pyramid(
 
 /** A tilt in the face plane, folded into `(-pi/2, pi/2]` — a box has no ends. */
 export const fold = (a: number): number => (a > Math.PI / 2 ? a - Math.PI : a <= -Math.PI / 2 ? a + Math.PI : a);
-
-/**
- * The two arcs of a pointed arch over a span `S` with a `rise`, as the points
- * along the LEFT one at radius `R + grow` from springing to apex (the right
- * one is its mirror about `u`). Two-centred: each arc is struck from a centre
- * on the springing line `c` past the middle, which is equilateral when the
- * rise is `S * sqrt(3) / 2` and a lancet above that.
- *
- * **A rise under half the span has no two-centred arch**: `c` goes negative,
- * each arc peaks short of the middle and the two meet in a DIP — a cupid's bow
- * where the apex should be, which is what the first cut of the doorway drew.
- * So `c` is clamped at zero, and such a rise is drawn as the semicircle over
- * the span: the caller that wants a flatter head owes a four-centred one.
- */
-function archArc(u: number, ys: number, S: number, rise: number, grow: number, n: number): [number, number][] {
-  const c = Math.max(0, (rise * rise - (S * S) / 4) / S);
-  const R = c + S / 2 + grow;
-  const end = c > 0 ? Math.atan2(rise, -c) : Math.PI / 2;
-  const pts: [number, number][] = [];
-  for (let i = 0; i <= n; i++) {
-    const a = Math.PI + ((end - Math.PI) * i) / n;
-    pts.push([u + c + R * Math.cos(a), ys + R * Math.sin(a)]);
-  }
-  return pts;
-}
 
 /** Stones laid along both arcs of an arch: its voussoirs, or its hood mould. */
 export function archRing(

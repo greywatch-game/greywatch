@@ -219,8 +219,8 @@ chain — roots, stems, cables), `heading`, `stepAlong`, `fern`, `curtain` (cree
 hung down a face), plus `FIG_*`;
 `convexSolid` (a solid between two matching faces), `Mesher` (finished
 triangles wound against an outward hint, one surface per colour), and the elevations' words
-`onFace` (a member laid on one of four faces), `Side`, `Hole`, `CASEMENT` and
-`DOOR_PAINTS`. In `buildings/` (set-local, move to core.ts if a second
+`onFace` (a member laid on one of four faces), `archArc` (a pointed arch's two
+arcs), `Side`, `Hole`, `CASEMENT` and `DOOR_PAINTS`. In `buildings/` (set-local, move to core.ts if a second
 set needs one): `offFace`, `casement`, `doorway`, `framing` (`village.ts`),
 `facePoly`, `archRing`, `lancet`, `buttress` (`gothic.ts`), the rubble words
 (`rubble.ts`), and `renderFace`, `wallHead`, `toothing`, `quoins`
