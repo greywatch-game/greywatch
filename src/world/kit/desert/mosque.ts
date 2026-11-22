@@ -48,7 +48,9 @@ import {
   archRing,
   band,
   blindBay,
+  courses,
   disc,
+  domeProfile,
   drum,
   kufic,
   merlons,
@@ -83,46 +85,6 @@ function flatBox(
   lay.sb.box(along, tall, thick, sa * r + ca * u, y, ca * r - sa * u, color, { y: a, z: tilt }, hide);
 }
 
-
-/**
- * A dome laid in COURSES along a profile `[apothem, y][]`: each course a
- * frustum, each set a few centimetres inside the head of the one below, so
- * the up-facing ledge between them is a lit line round the dome — the bed
- * joint of a course of tile, and what the cel bands would otherwise draw as
- * contour rings on a smooth shell.
- */
-function courses(m: Mesher, n: number, phase: number, prof: readonly [number, number][], step: number, cx = 0, cz = 0): void {
-  for (let i = 0; i + 1 < prof.length; i++) {
-    const [r0, y0] = prof[i];
-    const [r1, y1] = prof[i + 1];
-    const last = i + 2 === prof.length;
-    const lo = i === 0 ? r0 : r0 - step / 2;
-    const hi = last ? r1 : r1 + step / 2;
-    band(m, n, phase, lo, y0, hi, y1, cx, cz);
-    if (!last) disc(m, n, phase, hi, r1 - step / 2, y1, true, cx, cz);
-    else if (r1 > 0) disc(m, n, phase, r1, 0, y1, true, cx, cz);
-  }
-}
-
-/**
- * A pointed dome's profile over apothem `R` at `y0`, `H` to the apex: a
- * short vertical stilt, then a two-centred arc in `count` courses, which is
- * the shape of every tiled dome between Baghdad and Isfahan.
- */
-function domeProfile(R: number, y0: number, H: number, stilt: number, count: number): [number, number][] {
-  const h = H - stilt;
-  const rho = (R * R + h * h) / (2 * R);
-  const top = Math.acos((rho - R) / rho);
-  const out: [number, number][] = [
-    [R, y0],
-    [R, y0 + stilt],
-  ];
-  for (let i = 1; i <= count; i++) {
-    const th = (top * i) / count;
-    out.push([Math.max(0, R - rho + rho * Math.cos(th)), y0 + stilt + rho * Math.sin(th)]);
-  }
-  return out;
-}
 
 /** The finial every dome and minaret is crowned with: three brass balls on a rod, and a crescent. */
 function alem(lay: Lay, y: number, s: number): void {

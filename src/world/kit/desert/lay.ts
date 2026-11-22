@@ -4,7 +4,7 @@
  * an elevation's points and outlines (`fp`, `fdir`, `slabOn`, `pointed`,
  * `above`); the arch ring, the star, square kufic, the blind bay, the
  * stepped merlons and the pocks; and the round solids (`band`, `disc`,
- * `drum`). Part of the desert-town set: follows the contract in kit/core.ts
+ * `drum`, and a dome's `domeProfile` laid in `courses`). Part of the desert-town set: follows the contract in kit/core.ts
  * and the set's rules in `./index.ts`. Invariants: VISUAL only — nothing here
  * declares a collider; every face is planar, as the cel shader's per-facet
  * light needs. Never builds a building, and never imports one.
@@ -254,6 +254,46 @@ export function disc(m: Mesher, n: number, phase: number, rOut: number, rIn: num
 export function drum(m: Mesher, n: number, phase: number, r0: number, y0: number, r1: number, y1: number): void {
   band(m, n, phase, r0, y0, r1, y1);
   disc(m, n, phase, r1, 0, y1);
+}
+
+/**
+ * A dome laid in COURSES along a profile `[apothem, y][]`: each course a
+ * frustum, each set a few centimetres inside the head of the one below, so
+ * the up-facing ledge between them is a lit line round the dome — the bed
+ * joint of a course of tile, and what the cel bands would otherwise draw as
+ * contour rings on a smooth shell.
+ */
+export function courses(m: Mesher, n: number, phase: number, prof: readonly [number, number][], step: number, cx = 0, cz = 0): void {
+  for (let i = 0; i + 1 < prof.length; i++) {
+    const [r0, y0] = prof[i];
+    const [r1, y1] = prof[i + 1];
+    const last = i + 2 === prof.length;
+    const lo = i === 0 ? r0 : r0 - step / 2;
+    const hi = last ? r1 : r1 + step / 2;
+    band(m, n, phase, lo, y0, hi, y1, cx, cz);
+    if (!last) disc(m, n, phase, hi, r1 - step / 2, y1, true, cx, cz);
+    else if (r1 > 0) disc(m, n, phase, r1, 0, y1, true, cx, cz);
+  }
+}
+
+/**
+ * A pointed dome's profile over apothem `R` at `y0`, `H` to the apex: a
+ * short vertical stilt, then a two-centred arc in `count` courses, which is
+ * the shape of every tiled dome between Baghdad and Isfahan.
+ */
+export function domeProfile(R: number, y0: number, H: number, stilt: number, count: number): [number, number][] {
+  const h = H - stilt;
+  const rho = (R * R + h * h) / (2 * R);
+  const top = Math.acos((rho - R) / rho);
+  const out: [number, number][] = [
+    [R, y0],
+    [R, y0 + stilt],
+  ];
+  for (let i = 1; i <= count; i++) {
+    const th = (top * i) / count;
+    out.push([Math.max(0, R - rho + rho * Math.cos(th)), y0 + stilt + rho * Math.sin(th)]);
+  }
+  return out;
 }
 
 /** Bullet and splinter pocks on a face: small dark chips where the render has gone. */

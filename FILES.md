@@ -2113,7 +2113,8 @@ src/
       lay.ts            #   What the detailed ones are drawn with: `Lay` (one
                         #   batch a colour), the elevation's outlines, the arch
                         #   ring, the star, square kufic, the blind bay, the
-                        #   merlons, the pocks and the round solids
+                        #   merlons, the pocks and the round solids, and a
+                        #   dome's `domeProfile` laid in `courses`
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled concrete slab
       mosque.ts         #   buildMosque, buildMinaret — the domed hall, its
@@ -2124,7 +2125,9 @@ src/
       caravanserai.ts   #   buildCaravanserai — the khan: a portal between two
                         #   towers, a paved court with a well, arcaded ranges
                         #   and a walked terrace; and `arcade`, its inner walls
-      hammam.ts         #   buildHammam — the bathhouse and its domed deck
+      hammam.ts         #   buildHammam — the bathhouse: its portal and
+                        #   inscription, the furnace, the domed deck with its
+                        #   glass eyes, and the hot room
       granary.ts        #   buildGranary — the mud silos in the alley
       qubba.ts          #   buildQubba — the saint's domed tomb, limewashed
       graves.ts         #   buildGraves — one row of kerbed graves and steles
