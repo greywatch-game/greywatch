@@ -2110,6 +2110,10 @@ src/
                         #   palette, T, PLINTH, SLAB, STOREY, the lane, PARAPET,
                         #   GRADE, `laneFlight` and `assertClimbable`,
                         #   `clothHash` and `drape`, the parapets, `windowRow`
+      lay.ts            #   What the detailed ones are drawn with: `Lay` (one
+                        #   batch a colour), the elevation's outlines, the arch
+                        #   ring, the star, square kufic, the blind bay, the
+                        #   merlons, the pocks and the round solids
       adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
       shellBlock.ts     #   buildShellBlock — the shelled concrete slab
       mosque.ts         #   buildMosque, buildMinaret — the domed hall, its
@@ -2117,8 +2121,9 @@ src/
                         #   minaret nobody climbs
       souk.ts           #   buildSouk — the colonnade with a walked roof
       windTower.ts      #   buildWindTower — the house with a barjeel on its deck
-      caravanserai.ts   #   buildCaravanserai — the inn built as a fort, and
-                        #   `arcade`, its punched inner walls
+      caravanserai.ts   #   buildCaravanserai — the khan: a portal between two
+                        #   towers, a paved court with a well, arcaded ranges
+                        #   and a walked terrace; and `arcade`, its inner walls
       hammam.ts         #   buildHammam — the bathhouse and its domed deck
       granary.ts        #   buildGranary — the mud silos in the alley
       qubba.ts          #   buildQubba — the saint's domed tomb, limewashed

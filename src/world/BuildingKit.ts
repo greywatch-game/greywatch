@@ -325,6 +325,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * steps its one low collider with the ground (`groundRun`). The black tent
  * seeds its sag, its rolled end, its curtain and what is inside it off where
  * it stands, and carries every pole, stake and wall foot down to the ground.
+ * The caravanserai seeds its scars, its postern, its crater, its paving and
+ * its pocks off where it stands, and carries its plinth's face and the ramp
+ * at its gate down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -370,4 +373,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "careenedHull",
   "graves",
   "tent",
+  "caravanserai",
 ] as const);

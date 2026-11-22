@@ -21,8 +21,10 @@
  * wall, the T-wall run, the sandbags and the power pole — in `walls.ts`. What
  * more than one of them is measured or dressed by — the palette, the wall,
  * the slab, the storey, the stair lane and its helpers, the parapets, the
- * window row and the cloth — is `shared.ts`. A builder never imports another
- * builder.
+ * window row and the cloth — is `shared.ts`, and what the detailed ones are
+ * DRAWN with — the batch, the elevation's outlines, the arch ring, kufic,
+ * the blind bay, the merlons and the pocks — is `lay.ts`. A builder never
+ * imports another builder.
  *
  * ## Why a set rather than parameters on the village kit
  *

@@ -231,5 +231,8 @@ own: `curvedRoof` and `roofHeight` (`roof.ts`); `Lapidary` (`lapidary.ts`,
 granite carving, one surface per colour — `solid`, `lathe`, `petals`,
 `leafRow`, `tube`, `lichen`, `leaf`); and `Joinery` (`joinery.ts`, the carpentry under a tiled curved hip — brackets, purlins, a
 frog-leg strut, two layers of rafters, hip beams with wind bells, the tiles
-and ridges, the sheet), which the temple gate and the bell tower share. Moving a helper to core.ts is
+and ridges, the sheet), which the temple gate and the bell tower share. In `desert/lay.ts`: `Lay` (the
+one batch a mosque or the khan is drawn into), `slabOn`, `pointed`, `above`,
+`archRing`, `star`, `kufic`, `blindBay`, `merlons`, `pocks`, and `band`,
+`disc`, `drum` for anything round. Moving a helper to core.ts is
 the right fix for a second caller; a copy is not.
