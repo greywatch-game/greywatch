@@ -18,7 +18,6 @@ import {
   ALLOY,
   Build,
   IRON,
-  archArc,
   carve,
   hideBack,
   type BuildParams,
@@ -63,6 +62,7 @@ import {
   merlons,
   pocks,
   pointed,
+  ring,
   slabOn,
   socle,
   spall,
@@ -394,40 +394,6 @@ function vent(lay: Lay, s: Side, plane: number, u: number, sill: number, rnd: ()
     [u - half * 1.1, top],
     [u - half, (y0 + top) / 2],
   ], 0, 0.006, MUDBRICK_DARK);
-}
-
-/**
- * A ring of voussoirs round a pointed arch struck from `ys`, in `colors`
- * taken in turn — two of them is the ablaq a portal is striped in, one is a
- * plain ring. Like `archRing`, it sits outside the arc it is struck on.
- */
-function ring(
-  lay: Lay,
-  s: Side,
-  plane: number,
-  u: number,
-  ys: number,
-  span: number,
-  rise: number,
-  width: number,
-  thick: number,
-  out: number,
-  colors: readonly string[],
-): void {
-  const pts = archArc(u, ys, span, rise, width / 2, 4);
-  for (const side of [-1, 1]) {
-    for (let i = 0; i + 1 < pts.length; i++) {
-      const [ua, ya] = pts[i];
-      const [ub, yb] = pts[i + 1];
-      const u0 = side < 0 ? ua : 2 * u - ua;
-      const u1 = side < 0 ? ub : 2 * u - ub;
-      let a = Math.atan2(yb - ya, u1 - u0);
-      if (a > Math.PI / 2) a -= Math.PI;
-      else if (a <= -Math.PI / 2) a += Math.PI;
-      const col = colors[i % colors.length];
-      lay.sb.onFace(s, plane, (u0 + u1) / 2, (ya + yb) / 2, Math.hypot(u1 - u0, yb - ya) + 0.03, width, thick, out, col, a, 0, hideBack(s));
-    }
-  }
 }
 
 // --- the portal -------------------------------------------------------------------

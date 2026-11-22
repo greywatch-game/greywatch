@@ -2,10 +2,10 @@
  * kit/desert/lay.ts — The drawing's words the desert set's detailed
  * buildings share: `Lay`, the one batch a building's drawing is laid into;
  * an elevation's points and outlines (`fp`, `fdir`, `slabOn`, `pointed`,
- * `above`); the arch ring, the star, square kufic, the blind bay, the
- * stepped merlons, a parapet's pierced `triangles` and the pocks; the round
- * solids (`band`, `disc`, `drum`, and a dome's `domeProfile` laid in
- * `courses`); a wall's `socle` and its dog-tooth `cornice`; render, stains
+ * `above`); the arch ring and its striped `ring`, the star, square kufic,
+ * the blind bay, the stepped merlons, a parapet's pierced `triangles` and the
+ * pocks; the round solids (`band`, `disc`, `drum`, and a dome's
+ * `domeProfile` laid in `courses`); a wall's `socle` and its dog-tooth `cornice`; render, stains
  * and water (`spall`, `blob`, `within`, `spout`); a `lobe` laid on a level
  * surface; and round members on any axis (`log`, `eye`). Part of the
  * desert-town set: follows the contract in kit/core.ts
@@ -172,6 +172,37 @@ export function archRing(
       const u0 = k < 0 ? ua : 2 * u - ua;
       const u1 = k < 0 ? ub : 2 * u - ub;
       lay.sb.onFace(s, plane, (u0 + u1) / 2, (ya + yb) / 2, Math.hypot(u1 - u0, yb - ya) + 0.04, width, thick, out, color, lean(Math.atan2(yb - ya, u1 - u0)), 0, hideBack(s));
+    }
+  }
+}
+
+/**
+ * A ring of voussoirs round a pointed arch struck from `ys`, in `colors`
+ * taken in turn — two of them is the ablaq a portal is striped in, one is a
+ * plain ring. Like `archRing`, it sits outside the arc it is struck on.
+ */
+export function ring(
+  lay: Lay,
+  s: Side,
+  plane: number,
+  u: number,
+  ys: number,
+  span: number,
+  rise: number,
+  width: number,
+  thick: number,
+  out: number,
+  colors: readonly string[],
+): void {
+  const pts = archArc(u, ys, span, rise, width / 2, 4);
+  for (const side of [-1, 1]) {
+    for (let i = 0; i + 1 < pts.length; i++) {
+      const [ua, ya] = pts[i];
+      const [ub, yb] = pts[i + 1];
+      const u0 = side < 0 ? ua : 2 * u - ua;
+      const u1 = side < 0 ? ub : 2 * u - ub;
+      const col = colors[i % colors.length];
+      lay.sb.onFace(s, plane, (u0 + u1) / 2, (ya + yb) / 2, Math.hypot(u1 - u0, yb - ya) + 0.03, width, thick, out, col, lean(Math.atan2(yb - ya, u1 - u0)), 0, hideBack(s));
     }
   }
 }
