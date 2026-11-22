@@ -117,22 +117,21 @@ export const MAP_SHOTS: Readonly<Record<string, MapShot>> = {
     url: harrowmeadShot,
     vantage: { pos: [32, 12, -10], target: [-12, 4, 30], fov: 62 },
   },
-  // Off the east highway's verge, looking north-west up the length of the town:
-  // the souk's two arcades and their awnings in the near ground, the old town's
-  // roofs behind them, and the minaret and the blue dome on the axis with the
-  // basin rim in haze behind everything.
+  // From over the south boulevard, looking north-west into the old town: the
+  // town wall and its towers along the bottom, the souk's square and its two
+  // arcades inside the south gate, and the TELL behind them with the Great
+  // Mosque's dome and minaret on its summit, the gardens on the bench to the
+  // left.
   //
   // It is the only shot in this table whose subject is the EXTENT as well as a
-  // building — four hundred metres of town in one frame from nine metres up,
-  // which is the thing this map is and no other map here can be photographed
-  // doing. **The frame to preserve is the two landmarks on the axis**: the
-  // minaret and the dome are the only saturated things on a 1,500 m map and are
-  // what a player navigates by, so a re-frame that loses them has lost the
-  // picture whatever else is in it. The shelf was the other candidate and it
-  // put a shelled block's roof across the bottom third.
+  // building — a walled town and the mound it grew on, in one frame from
+  // fourteen metres up. **The frame to preserve is the tell with the mosque on
+  // it**: the dome and the minaret are the only saturated things on a 1,500 m
+  // map and the summit is the map's high ground, so a re-frame that loses them
+  // has lost the picture whatever else is in it.
   sarab: {
     url: sarabShot,
-    vantage: { pos: [96, 9, 30], target: [-190, 12, 150], fov: 56 },
+    vantage: { pos: [60, 14, 10], target: [-112, 20, 140], fov: 58 },
   },
   // CINDER BAY from Netstrand's beach, looking west-north-west across the
   // water: the bay road curving out of the near corner with the net sheds and

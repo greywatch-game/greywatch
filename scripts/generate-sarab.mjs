@@ -68,12 +68,16 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { FOOT } from "./lib/footprints.mjs";
 import {
   centredRectDist,
   leadKind,
   lineKind,
   makeGrade,
+  makeRelief,
+  makeWorldFoot,
   n2,
+  turnOf,
   printTally,
   section,
   seeded,
@@ -335,7 +339,7 @@ function poolCut(x, z) {
 }
 
 /**
- * The BIRKAT: the walled reservoir the mosque quarter is built around, as a
+ * The BIRKAT: the walled reservoir the west quarter is built around, as a
  * basin dug into the floor.
  *
  * **It is terrain and not a builder, and that is forced rather than chosen.**
@@ -347,9 +351,9 @@ function poolCut(x, z) {
  * is a hole in the ground with a plane over it, and a hole in the ground is
  * this file's business.
  *
- * What it is FOR is the quarter it stands in. The mosque quarter is the oldest
- * fabric on the map — 32 m plots, walls everywhere, nothing you can see over —
- * and a maze with no landmark in it is a maze you cannot learn. This is its
+ * What it is FOR is the quarter it stands in. The west quarter is rows of
+ * houses on lanes four to six metres wide, nothing you can see over, and a
+ * maze with no landmark in it is a maze you cannot learn. This is its
  * one open space, it is 2.7 m DOWN, and standing in it is standing below every
  * wall around you: a place worth crossing to and a bad place to be caught.
  *
@@ -368,7 +372,46 @@ function poolCut(x, z) {
  * rays sample, so the pool returns mud brick instead of haze. Do not open the
  * precinct out, and do not widen the basin past it.
  */
-const BIRKAT = { x: -186, z: 70, halfW: 10, halfD: 8, skirt: 15, depth: 2.8 };
+const BIRKAT = { x: -255, z: 78, halfW: 10, halfD: 8, skirt: 15, depth: 2.8 };
+
+/**
+ * The TELL: the mound the town began on, and the one hill inside its walls.
+ *
+ * **It is an artificial hill and that is what makes it the right shape.** A
+ * tell is ten thousand years of a town built on its own rubble, so it is flat
+ * on top — the citadel stands there — and it steps: the summit's wall, a ring
+ * of houses on a TERRACE halfway down where the town climbed the mound, and the
+ * glacis below that, which nobody built on because it was the citadel's field
+ * of fire. Erbil's is the one everybody has seen; most towns in this part of
+ * the world have one under them somewhere.
+ *
+ * Three numbers decide it and every one of them is a gradient. The summit is
+ * `top` over the town, the terrace `ledge`; each slope is a smoothstep over
+ * its run, whose steepest point is 1.5 x rise / run — 0.34 for both here,
+ * inside the 0.4 the nav graph links across and the emit below enforces, so
+ * the whole mound is walked up on any bearing and the three roads up it are
+ * the easy line rather than the only one. The terrace is `ring` metres of
+ * DEAD LEVEL ground, which is what a row of houses on it needs: a placement
+ * samples the floor once, and a house on a slope floats at a corner.
+ *
+ * The summit's half extents are a rounded rectangle's (`centredRectDist`), so
+ * the straight sides carry rows and the corners are arcs nothing is built on.
+ * It is added LAST, over the levelled old town, so nothing else in the floor
+ * ever has to agree with it.
+ */
+const TELL = { x: -112, z: 128, hw: 42, hd: 32, top: 10, ledge: 5, upper: 22, ring: 16, lower: 22 };
+
+/** How far the tell stands over the town at a point, 0 off its foot. */
+function tellRise(x, z) {
+  const d = centredRectDist(x, z, TELL);
+  const a = TELL.upper;
+  const b = a + TELL.ring;
+  const c = b + TELL.lower;
+  if (d >= c) return 0;
+  if (d >= b) return TELL.ledge * (1 - smooth((d - b) / TELL.lower));
+  if (d >= a) return TELL.ledge;
+  return TELL.ledge + (TELL.top - TELL.ledge) * (1 - smooth(d / TELL.upper));
+}
 
 /** How far the birkat's basin is cut below grade at a point. */
 function birkatCut(x, z) {
@@ -389,26 +432,25 @@ function birkatCut(x, z) {
  * down on the town from every window.
  */
 const DISTRICTS = [
-  { name: "old town", x: 28, z: 120, hw: 92, hd: 88, level: 0, skirt: 65 },
-  { name: "mosque quarter", x: -183, z: 122, hw: 110, hd: 88, level: 0, skirt: 65 },
-  { name: "north town", x: -55, z: 279, hw: 195, hd: 61, level: 0, skirt: 65 },
+  // The old town inside the boulevards, one level from the west gate to the
+  // east street: the tell stands on it and the birkat is dug into it, both
+  // added after (see `heightAt`).
+  { name: "old town", x: -97.5, z: 143, hw: 217.5, hd: 107, level: 0, skirt: 60 },
+  // The new town north of the north boulevard.
+  { name: "new town", x: 1, z: 345, hw: 261, hd: 75, level: 0, skirt: 50 },
   // The southern group, on the wadi's own lower terrace — see `SOUTH_TERRACE`.
   // All three are one level because they are one bench: the south bank and the
   // Crossing OVERLAP outright, and T0's yard is 49 m off the south bank's
   // corner, which is inside the ~53 m the blend below needs to keep two levels
   // apart.
-  { name: "south bank", x: 0, z: -187, hw: 262, hd: 35, level: SOUTH_TERRACE, skirt: 60 },
+  { name: "south bank", x: 0, z: -208, hw: 262, hd: 56, level: SOUTH_TERRACE, skirt: 60 },
   { name: "the crossing", x: 190, z: -135, hw: 70, hd: 45, level: SOUTH_TERRACE, skirt: 55 },
-  // The high one, and the map's only relief outside the wadi. Its core stands
-  // 80 m clear of every other core, so the weighted blend below never has to
-  // average 7 against 0 inside one of them — see `land`, where that constraint
-  // is the whole design.
-  //
-  // **The skirt went 85 to 95 when the dunes were raised**, and it is the same
-  // trade the wadi's bench makes one constant up: the approach absorbs the
-  // shelf's 7 m PLUS whatever swell is standing at the foot of it, so widening
-  // the run is what keeps a 12 m worst case inside a 0.19 gradient.
-  { name: "martyrs shelf", x: 255, z: 150, hw: 55, hd: 60, level: 7, skirt: 95 },
+  // The shelf: the Martyrs' Quarter seven metres over the town. Its core
+  // stands 80 m clear of the old town's, so the weighted blend below never
+  // averages 7 against 0 inside either — see `land`, where that constraint is
+  // the whole design. The skirt is the approach and absorbs the shelf's 7 m
+  // PLUS whatever swell stands at its foot.
+  { name: "martyrs shelf", x: 255, z: 150, hw: 55, hd: 60, level: 7, skirt: 75 },
   { name: "home sw", x: -318, z: -318, hw: 48, hd: 48, level: SOUTH_TERRACE, skirt: 48 },
   { name: "home ne", x: 318, z: 318, hw: 48, hd: 48, level: 0, skirt: 48 },
 ];
@@ -474,7 +516,7 @@ function heightAt(x, z) {
       h += (bed - h) * w;
     }
   }
-  return h - birkatCut(x, z);
+  return h - birkatCut(x, z) + tellRise(x, z);
 }
 
 // --- what is already there ---------------------------------------------------
@@ -484,32 +526,38 @@ function heightAt(x, z) {
  *
  * A placement is refused rather than nudged. Nudging is what turns a street
  * grid into a heap — the candidate that did not fit is one building in a town
- * of six hundred, and the alley it would have been shoved into is the thing
- * that makes the quarter readable.
+ * of a thousand, and the lane it would have been shoved into is the thing that
+ * makes the quarter readable.
  */
 const claimed = [];
 /**
  * Every candidate the claim list turned down, for the console line at the end.
  *
- * A quarter's recipe is allowed to ask for more than fits — that is what makes
- * the fabric read as a town rather than as a filled grid — so refusals are
- * expected in the hundreds. What the log is FOR is the set pieces: a mosque
- * that quietly did not get placed is a flag with nothing on it, and the only
- * way to see one is to print the list.
+ * A row is allowed to ask for more than fits — that is what makes the fabric
+ * read as a town rather than as a filled grid — so refusals are expected in
+ * the hundreds. What the log is FOR is the set pieces: a mosque that quietly
+ * did not get placed is a flag with nothing on it, and the only way to see one
+ * is to print the list.
  */
 const refused = [];
 
-function free(x, z, w, d, pad = 1.6) {
-  const x0 = x - w / 2 - pad;
-  const x1 = x + w / 2 + pad;
-  const z0 = z - d / 2 - pad;
-  const z1 = z + d / 2 + pad;
+/** Whether an edge rectangle, grown by `pad`, is inside the play square and clear of every claim. */
+function freeRect(r, pad = 1.6) {
+  const x0 = r.x0 - pad;
+  const x1 = r.x1 + pad;
+  const z0 = r.z0 - pad;
+  const z1 = r.z1 + pad;
   if (Math.max(Math.abs(x0), Math.abs(x1)) > HALF - 14) return false;
   if (Math.max(Math.abs(z0), Math.abs(z1)) > HALF - 14) return false;
   for (const c of claimed) {
     if (x1 > c.x0 && x0 < c.x1 && z1 > c.z0 && z0 < c.z1) return false;
   }
   return true;
+}
+
+/** `freeRect` for a centred `w` x `d` rectangle. */
+function free(x, z, w, d, pad = 1.6) {
+  return freeRect({ x0: x - w / 2, x1: x + w / 2, z0: z - d / 2, z1: z + d / 2 }, pad);
 }
 
 /**
@@ -533,6 +581,38 @@ function claim(x, z, w, d, pad = 0, low = false) {
 /** How steep the ground is at a point, as the larger of the two axial slopes. */
 const grade = makeGrade(heightAt, 2);
 
+/** A kind's footprint in the world, off the one footprint table. */
+const worldFoot = makeWorldFoot(FOOT);
+
+/** How far the floor falls across a footprint from its centre's own height. */
+const relief = makeRelief(heightAt, [0, 0.25, 0.5, 0.75, 1]);
+
+/**
+ * The kinds that stand on ONE height — sampled at their own centre — and so
+ * owe a level plot. Everything else in this set either steps down the ground
+ * (`CONFORMS_TO_TERRAIN`: the walls, the poles, the stalls) or is small enough
+ * that a car's worth of tilt is a car on a camber.
+ *
+ * **This is the check the map shipped without**, and the audit found fifty
+ * houses floating on a corner or buried at one. A plinth is 0.3 m, so that is
+ * what a footprint may fall across before the drawing shows daylight under it.
+ */
+const STANDS_LEVEL = new Set([
+  "adobeHouse",
+  "windTower",
+  "granary",
+  "hammam",
+  "caravanserai",
+  "shellBlock",
+  "mosque",
+  "minaret",
+  "souk",
+  "silo",
+  "depot",
+  "monument",
+]);
+const LEVEL_PLINTH = 0.25;
+
 // --- the placement list ------------------------------------------------------
 
 const placements = [];
@@ -541,18 +621,29 @@ const scatter = [];
 /**
  * Emit one placement, claiming its footprint first.
  *
- * `w` and `d` are the builder's own local extents; a quarter turn swaps them,
- * which is what stops a 16 m house rotated onto a 9 m plot from standing in the
- * alley beside it.
+ * The footprint is the kind's row in the one table (`scripts/lib/footprints.mjs`)
+ * where it has one — the plinth, the portal, the awning over the street — and
+ * the builder's own `w` x `d` turned onto the plot where it does not. A quarter
+ * turn swaps them, which is what stops a 16 m house rotated onto a 9 m plot
+ * from standing in the alley beside it.
  */
 function place(kind, x, z, turn, w, d, params, pad = 1.6, force = false) {
-  const fw = turn % 2 === 0 ? w : d;
-  const fd = turn % 2 === 0 ? d : w;
-  if (!force && !free(x, z, fw, fd, pad)) {
+  const r = FOOT[kind]
+    ? worldFoot(kind, x, z, turn, params ?? {})
+    : (() => {
+        const fw = turn % 2 === 0 ? w : d;
+        const fd = turn % 2 === 0 ? d : w;
+        return { x0: x - fw / 2, x1: x + fw / 2, z0: z - fd / 2, z1: z + fd / 2 };
+      })();
+  if (!force && !freeRect(r, pad)) {
     refused.push(`${kind} at (${x.toFixed(0)}, ${z.toFixed(0)})`);
     return false;
   }
-  claim(x, z, fw, fd);
+  if (!force && STANDS_LEVEL.has(kind) && relief(r) > LEVEL_PLINTH) {
+    refused.push(`${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) on a slope`);
+    return false;
+  }
+  claimed.push({ ...r, low: false });
   const ps = params
     ? Object.entries(params)
         .map(([k, v]) => {
@@ -577,15 +668,27 @@ function place(kind, x, z, turn, w, d, params, pad = 1.6, force = false) {
  * which works for a mosque and does not work for a kind the fabric also makes:
  * a wind tower authored onto the Martyrs' shelf was silently dropped for
  * overlapping the flag's own claimed ring, and the count came out right anyway
- * because the block recipes had made nine of them somewhere else. So anything
- * placed at a coordinate somebody chose goes through here.
+ * because the rows had made nine of them somewhere else. So anything placed at
+ * a coordinate somebody chose goes through here.
  */
-function must(kind, x, z, turn, w, d, params, pad) {
+function must(kind, x, z, turn, w, d, params, pad = 1.6) {
   if (place(kind, x, z, turn, w, d, params, pad)) return;
+  const r = FOOT[kind] ? worldFoot(kind, x, z, turn, params ?? {}) : null;
+  if (r) {
+    const hits = claimed.filter(
+      (c) => r.x1 + pad > c.x0 && r.x0 - pad < c.x1 && r.z1 + pad > c.z0 && r.z0 - pad < c.z1,
+    );
+    console.error(
+      `  ${kind} footprint x ${r.x0.toFixed(2)}..${r.x1.toFixed(2)} z ${r.z0.toFixed(2)}..${r.z1.toFixed(2)}, ` +
+        `relief ${relief(r).toFixed(2)} m; overlaps ` +
+        hits.map((c) => `[x ${c.x0.toFixed(2)}..${c.x1.toFixed(2)} z ${c.z0.toFixed(2)}..${c.z1.toFixed(2)}${c.low ? " low" : ""}]`).join(" "),
+    );
+  }
   throw new Error(
     `set piece: ${kind} at (${x.toFixed(0)}, ${z.toFixed(0)}) was refused — ` +
-      "something already claimed that ground. Move the piece; the claim list " +
-      "is in authored order and the flags, spawns and hardstandings claim first.",
+      "something already claimed that ground, or it stands on a slope. Move the " +
+      "piece; the claim list is in authored order and the flags, spawns, roads " +
+      "and hardstandings claim first.",
   );
 }
 
@@ -600,13 +703,19 @@ const RENDERS = [
   "#7b6a51",
   "#6d5b41",
 ];
+/**
+ * What the NEW town is rendered in: cement and limewash, paler and greyer
+ * than the brick inside the old walls, which is the line a real one draws
+ * between the two at a glance from any roof.
+ */
+const CEMENT = ["#b6a68f", "#a59c8c", "#c2b8a6", "#9a8f7d", "#8d7757"];
 
 /**
  * One courtyard house, sized and turned for the plot it is going on.
  *
  * A house is given a stair only when its footprint can hold one — the builder
  * throws in a DEV build below 12.7 m of depth, and this is the one place that
- * number is decided rather than discovered. Roughly a third of the town can be
+ * number is decided rather than discovered. Over half the deep houses can be
  * climbed, which is what makes a roofscape a route rather than a set of
  * islands: a terrace of roofs at one level links across its own party walls,
  * so one stair serves everything it touches.
@@ -627,15 +736,15 @@ function house(x, z, turn, opts = {}) {
   }
   const tint = opts.tint ?? pick(RENDERS);
   if (tint !== "#8d7757") params.tint = tint;
-  return place("adobeHouse", x, z, turn, w, d, params);
+  return place("adobeHouse", x, z, turn, w, d, params, opts.pad ?? 1.6);
 }
 
-/** A run of compound wall, turned to lie along X or Z. */
+/** A run of compound wall, turned to lie along X (turn 0) or Z (turn 1). */
 function wallRun(x, z, turn, len, opts = {}) {
   const params = { length: len };
   if (opts.height) params.height = opts.height;
   if (opts.tint) params.tint = opts.tint;
-  return place("compoundWall", x, z, turn, len, 0.8, params, 0.6);
+  return place("compoundWall", x, z, turn, len, 0.8, params, opts.pad ?? 0.6);
 }
 
 /**
@@ -692,22 +801,17 @@ function poleRun(axis, at, from, to, pitch) {
   // rather than a wider footprint on the first.** A pole claims two metres of
   // ground and the wire it pays out crosses forty-six, so a run whose stations
   // both found ground can still have its cable drawn straight through a
-  // building standing between them — which is what the first version of this
-  // did through the souk's arcade, in the map's own menu photograph. The
-  // segment is sampled instead, and a span that is not clear ENDS the run: a
-  // line that stops at the edge of a quarter and picks up on the far side is
-  // what a line crossing a built-up area does, and is the same answer the
-  // chunking above already gives for a station that found nowhere to stand.
+  // building standing between them. The segment is sampled instead, and a
+  // span that is not clear ENDS the run: a line that stops at the edge of a
+  // quarter and picks up on the far side is what a line crossing a built-up
+  // area does.
   const spanClear = (a, b) => {
     for (let k = 1; k < 6; k++) {
       const t = a + ((b - a) * k) / 6;
       const [x, z] = put(t);
       for (const c of claimed) {
         // A `low` claim is ground nothing stands on — a carriageway, a capture
-        // ring, a yard — and a line crosses all three. That exemption is the
-        // whole reason `claim` carries the flag: without it the span test
-        // broke every run at the first road it crossed, which is the one place
-        // a power line is guaranteed to be.
+        // ring, a yard — and a line crosses all three.
         if (c.low) continue;
         if (x + 1.5 > c.x0 && x - 1.5 < c.x1 && z + 1.5 > c.z0 && z - 1.5 < c.z1) {
           return false;
@@ -755,18 +859,17 @@ function poleRun(axis, at, from, to, pitch) {
 }
 
 /**
- * A walled compound around a courtyard: one or two houses, a wall on three
- * sides with the fourth left open, and whatever a yard has in it.
+ * A walled compound around a courtyard: a wall on four sides with a gate in
+ * each, and one side left open entirely.
  *
  * The open side is the design and not a saving. A sealed compound is a wall the
  * nav grid routes bots the whole way around, and a town of sealed compounds is
  * a town with no interior at all — every yard here has a way in, and which way
- * it faces is what decides how the alley outside it plays.
+ * it faces is what decides how the lane outside it plays.
  */
 function compound(cx, cz, hw, hd, opts = {}) {
   const open = opts.open ?? randInt(0, 3);
   const gate = 5.5;
-  // The four walls, each split where a gate or the open side is.
   const sides = [
     { turn: 0, x: cx, z: cz - hd, len: hw * 2, along: "x" },
     { turn: 1, x: cx + hw, z: cz, len: hd * 2, along: "z" },
@@ -792,73 +895,164 @@ function compound(cx, cz, hw, hd, opts = {}) {
   return sides[open];
 }
 
+/** A rubble heap round a shelled plot. Blocking, because a heap is cover. */
+function rubble(x, z, r, count) {
+  scatter.push(
+    `  { prop: "rubble", x: ${n2(x)}, z: ${n2(z)}, radius: ${n2(r)}, count: ${count}, ` +
+      `scale: [0.8, 1.25], blocking: true, clearance: 1.1 },`,
+  );
+}
+
 /**
- * One block of the town: a plot with houses on it, drawn from six recipes.
+ * Where the shelling went, as the chance a plot there is a ruin.
  *
- * **The plot is 26 m and every recipe is sized against it**, which is the one
- * thing to keep true when editing. A candidate that does not fit is DROPPED
- * rather than nudged (see `claimed`), so a recipe whose buildings are a metre
- * too wide does not look wrong — it silently produces half a block, and the
- * quarter thins out with nothing to say why.
- *
- * The mix is the quarter's character, and the empty and ruined recipes are as
- * load-bearing as the built ones: a quarter with a building on every plot has
- * no ground in it to fight over, and the long looks this town has are all down
- * streets a shelled plot opened.
+ * **The damage tells one story rather than a percentage of every quarter.**
+ * The guns were on the eastern highway and the Martyrs' shelf, firing west, so
+ * the east of the old town is broken and the west is nearly whole; the souk,
+ * which both sides fought over first, is worse than anything round it; and the
+ * new town north of the boulevard was hit along its southern edge and hardly
+ * at all beyond. The tell is the exception the story needs: nobody shelled the
+ * Great Mosque, which is why everybody is fighting over it.
  */
-function oldTownBlock(cx, cz, core) {
-  const h = core / 2;
-  const roll = rng();
+function ruinChance(x, z) {
+  let p = 0.03 + 0.15 * smooth((x + 40) / 220);
+  const dC = Math.hypot(x - C.x, z - C.z);
+  if (dC < 110) p += 0.1 * (1 - dC / 110);
+  if (z > 258) p *= 1 - smooth((z - 270) / 90) * 0.7;
+  if (centredRectDist(x, z, TELL) < TELL.upper + TELL.ring) p *= 0.3;
+  return p;
+}
 
-  if (roll < 0.12) {
-    // A bombed-out plot: one ruin, and what came out of it.
-    house(cx + rand(-2, 2), cz + rand(-2, 2), randInt(0, 3), {
-      w: randInt(10, 14),
-      d: randInt(9, 12),
-      ruined: true,
-    });
-    scatter.push(
-      `  { prop: "rubble", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${n2(h - 2)}, count: 4, ` +
-        `scale: [0.8, 1.25], blocking: true, clearance: 1.1 },`,
-    );
-    compound(cx, cz, h - 1, h - 1, { open: randInt(0, 3) });
-    return;
-  }
-
-  if (roll < 0.2) {
-    // An open yard: the block that is not a building, which is what a town has
-    // instead of a park. A third of them are the household's GRAIN STORE, which
-    // is what a yard in this vernacular is actually for — and, standing in an
-    // alley 7 m wide, the thing that stops you seeing down the whole of it.
-    compound(cx, cz, h - 1, h - 1, { open: randInt(0, 3) });
-    if (chance(0.46)) {
-      place("granary", cx, cz, randInt(0, 3), 8, 7, { height: rnd(4.2, 6.2) }, 1.4);
-    } else if (chance(0.5)) {
-      place("well", cx, cz, 0, 2.6, 2.6, null, 1.2);
-    } else {
-      place("crates", cx + rand(-5, 5), cz + rand(-5, 5), randInt(0, 3), 3, 2.4, null, 1.0);
+/**
+ * Whether the three metres in front of a door are clear of everything SOLID:
+ * a lane, a street, a yard or a square is somewhere a door may open onto, and
+ * the back wall of a bathhouse built first is not.
+ *
+ * `fx, fz` is the door's outward direction and `(x, z)` the middle of the
+ * front face. The probe is a strip the width of a doorway and a doorstep
+ * deep, so a neighbour's plinth beside the door does not count against it.
+ */
+function doorClear(x, z, fx, fz) {
+  // A door opens onto a STREET: a lane, a road, a square, a yard held open —
+  // every one of which is a `low` claim laid before the rows. A row whose
+  // front faces nothing (the back of a khan the lane was cut at, a wall the
+  // quarter ran up against) does not get the house.
+  const street = [1.0, 2.0].some((t) => {
+    const px = x + fx * t;
+    const pz = z + fz * t;
+    return claimed.some((c) => c.low && px > c.x0 && px < c.x1 && pz > c.z0 && pz < c.z1);
+  });
+  // …or onto OPEN ground: nothing claimed at all for eight metres, which is
+  // the glacis, the bench, the edge of the desert. What it refuses is a door
+  // three to eight metres from a wall it cannot get past.
+  if (!street) {
+    for (let t = 0.4; t <= 8.0; t += 0.8) {
+      const px = x + fx * t;
+      const pz = z + fz * t;
+      if (claimed.some((c) => px > c.x0 - 0.6 && px < c.x1 + 0.6 && pz > c.z0 - 0.6 && pz < c.z1 + 0.6)) return false;
     }
-    return;
+    return true;
   }
+  for (let t = 0.4; t <= 3.0; t += 0.65) {
+    const px = x + fx * t;
+    const pz = z + fz * t;
+    for (const c of claimed) {
+      if (c.low) continue;
+      if (px + 0.9 > c.x0 && px - 0.9 < c.x1 && pz + 0.9 > c.z0 && pz - 0.9 < c.z1) {
+        if (Math.abs(fx) > 0 ? pz >= c.z0 && pz <= c.z1 : px >= c.x0 && px <= c.x1) return false;
+      }
+    }
+  }
+  return true;
+}
 
-  if (roll < 0.44) {
-    // One courtyard house standing on most of the plot, with a stair to its
-    // roof: the recipe that makes the roofscape reachable.
-    //
-    // **Over half of them carry a wind tower**, which sounds like a lot and is
-    // about a dozen across nine hundred metres — this branch is under a quarter
-    // of the blocks, the block recipes above take most of the rest, and a
-    // fourteen-metre building in a twenty-six-metre core is refused often
-    // enough to matter. A dozen is what the skyline needed: every one is 2.8 m
-    // of solid brick standing in the middle of a roof deck (see
-    // kit/desert/windTower.ts), so at this rate no quarter is without one and no two quarters have them
-    // in the same places. At one in ten nobody would learn to expect one; at
-    // three in four they would be a texture rather than a landmark.
-    const turn = randInt(0, 3);
-    const w = randInt(14, Math.floor(core - 6));
-    const d = randInt(14, Math.floor(core - 6));
-    if (chance(0.55)) {
-      place("windTower", cx, cz, turn, w, d, {
+/**
+ * Hold the ground in front of a set piece's door open, so the fabric laid
+ * after it cannot build a row across it: a `low` claim, which is ground
+ * nothing stands on, `depth` metres out from the front and `w` across.
+ */
+function forecourt(kind, x, z, turn, params, w, depth) {
+  const [, , z0] = FOOT[kind](params ?? {});
+  const [fx, fz] = turnOf(0, -1, turn);
+  const [sx, sz] = turnOf(0, z0, turn);
+  const cx = x + sx + (fx * depth) / 2;
+  const cz = z + sz + (fz * depth) / 2;
+  const across = turn % 2 === 0;
+  claim(cx, cz, across ? w : depth, across ? depth : w, 0, true);
+}
+
+/**
+ * A ROW of houses standing shoulder to shoulder along one side of a block,
+ * every front door on the lane in front of it.
+ *
+ * **This is the whole of what makes the town dense**, and the first version of
+ * the map did not have it: a block there was one building on a 26 m plot with
+ * sand on all four sides, so a quarter read as houses scattered on a beach
+ * rather than as streets. Here a row runs the length of its block with the
+ * houses' plinths touching — half a metre between two walls is a party wall
+ * from the lane and too narrow for a body — and what breaks it is what breaks
+ * a real one: a gap where a yard is, a DERB (a dead-end alley into the block,
+ * four metres wide) every so often, a ruin, and a house set back a hand's
+ * breadth further than its neighbour.
+ *
+ * `face` is the lane the row opens onto — "s" the row's front is its south
+ * face, "n" its north, "w" its west, "e" its east — and `edge` is that front's
+ * coordinate; `a0..a1` is the run along it and `depth` how far it reaches back
+ * into the block. Houses deeper than 13 m get stairs, which is what a row is
+ * sized to give them: see `block`.
+ */
+function houseRow(face, a0, a1, edge, depth, style) {
+  const turn = { s: 0, w: 1, n: 2, e: 3 }[face];
+  const alongX = face === "s" || face === "n";
+  const inward = face === "s" || face === "w" ? 1 : -1;
+  // A tenth of a metre in from both ends, so the end houses stand off the
+  // cross lanes rather than on their kerb.
+  let a = a0 + 0.1;
+  a1 -= 0.1;
+  while (a1 - a >= style.wMin + 0.5) {
+    // A derb: the lane's dead-end branch into the block. Not every row gets
+    // one — a block is two rows back to back, so the branch stops at the
+    // spine — and it is never the first plot, so a corner is always built.
+    if (a > a0 + 1 && a1 - a > 24 && chance(style.derb ?? 0.05)) {
+      a += rand(3.8, 4.8);
+      continue;
+    }
+    // A yard between two houses, walled on its street side: the household's
+    // own ground, and the one place in a row a body can stand off the lane.
+    if (a > a0 + 1 && chance(style.yard ?? 0.05)) {
+      const yw = Math.min(randInt(5, 9), a1 - a);
+      if (yw >= 4) {
+        const mid = a + yw / 2;
+        const front = edge + inward * 0.6;
+        const [x, z] = alongX ? [mid, front] : [front, mid];
+        wallRun(x, z, alongX ? 0 : 1, yw - 0.8, { height: rnd(2.2, 2.7), pad: 0 });
+        a += yw + 0.1;
+        continue;
+      }
+    }
+    const w = Math.min(randInt(style.wMin, style.wMax), Math.floor(a1 - a - 0.5));
+    // Ten centimetres off the lane's edge at least, so a plinth never stands
+    // on the paving, and up to most of a metre further now and then.
+    const set = 0.1 + (chance(0.4) ? rand(0, 0.7) : 0);
+    const d = Math.max(7, Math.floor(depth - 0.6 - set));
+    const along = a + 0.25 + w / 2;
+    const across = edge + inward * (set + 0.35 + d / 2);
+    const [x, z] = alongX ? [along, across] : [across, along];
+    const ruined = chance(ruinChance(x, z));
+    // The door is on the row's front, and a row runs along a lane — but a set
+    // piece standing in the lane, or a building somebody put across the end
+    // of a derb, is a wall the door would open onto. Such a plot is tried a
+    // little further along instead.
+    const [fx, fz] = turnOf(0, -1, turn);
+    const frontAt = alongX ? [along, edge + inward * set] : [edge + inward * set, along];
+    if (!doorClear(frontAt[0], frontAt[1], fx, fz)) {
+      refused.push(`adobeHouse at (${x.toFixed(0)}, ${z.toFixed(0)}) door`);
+      a += 1.5;
+      continue;
+    }
+    let ok;
+    if (!ruined && w >= 11 && d >= 13 && chance(style.wind ?? 0.08)) {
+      ok = place("windTower", x, z, turn, w, d, {
         width: w,
         depth: d,
         floors: chance(0.3) ? 2 : 1,
@@ -866,66 +1060,312 @@ function oldTownBlock(cx, cz, core) {
         rampSide: chance(0.5) ? 1 : -1,
         height: rnd(5.2, 7.6),
         ...(chance(0.3) ? { tint: "#b6a68f" } : {}),
-      }, 1.6);
-      return;
+      }, 0);
+    } else {
+      ok = house(x, z, turn, {
+        w,
+        d,
+        ruined,
+        floors: chance(style.tall ?? 0.3) ? 2 : 1,
+        stair: d >= 13 ? chance(style.stair ?? 0.6) : false,
+        enterable: chance(0.55),
+        tint: pick(style.renders ?? RENDERS),
+        pad: 0,
+      });
+      if (ok && ruined && chance(0.6)) rubble(x, z, Math.max(w, d) * 0.6, randInt(2, 4));
     }
-    house(cx, cz, turn, { w, d, stair: true, enterable: true, floors: chance(0.35) ? 2 : 1 });
+    // A refused plot is tried again a little further along, narrower, rather
+    // than leaving its whole frontage open: what refused it is a set piece
+    // or a street standing in the row, and the row should close up to it the
+    // way a real one builds up to whatever was there first.
+    a += ok ? w + 0.52 + (chance(style.gapP ?? 0.25) ? rand(style.gapMin ?? 0.3, style.gapMax ?? 1.2) : 0) : 1.5;
+  }
+}
+
+/**
+ * One BLOCK of the town between its lanes, built as two rows back to back
+ * along its long side — or one row, if it is too thin for two — or, now and
+ * then, as the thing a block is when it is not houses.
+ *
+ * The rows split the block's depth between them a little off the middle, so
+ * the spine where their backs meet does not line up from one block to the next
+ * and the roofscape steps rather than ruling a line.
+ */
+function block(r, style) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  if (w < 9 || d < 9) return;
+  const cx = (r.x0 + r.x1) / 2;
+  const cz = (r.z0 + r.z1) / 2;
+  const roll = rng();
+  let acc = 0;
+  for (const [p, kind] of style.specials ?? []) {
+    acc += p;
+    if (roll < acc) {
+      if (special(kind, r, cx, cz, style)) return;
+      break;
+    }
+  }
+  const alongX = w >= d;
+  const short = alongX ? d : w;
+  const dMin = style.dMin ?? 8.5;
+  if (short >= 2 * dMin + 0.6) {
+    const split = Math.max(dMin + 0.6, Math.min(short - dMin - 0.6, short / 2 + rand(-1.8, 1.8)));
+    if (alongX) {
+      houseRow("s", r.x0, r.x1, r.z0, split, style);
+      houseRow("n", r.x0, r.x1, r.z1, short - split, style);
+    } else {
+      houseRow("w", r.z0, r.z1, r.x0, split, style);
+      houseRow("e", r.z0, r.z1, r.x1, short - split, style);
+    }
     return;
   }
+  // Too thin for two: one row, facing whichever lane the style prefers.
+  if (alongX) houseRow(chance(0.5) ? "s" : "n", r.x0, r.x1, chance(0.5) ? r.z0 : r.z1, short, style);
+  else houseRow(chance(0.5) ? "w" : "e", r.z0, r.z1, chance(0.5) ? r.x0 : r.x1, short, style);
+}
 
-  if (roll < 0.66) {
-    // Two houses back to back across the plot — the terrace this town is made
-    // of. Their roofs are at one level and their party walls touch, so the nav
-    // graph links across them and one stair serves both.
-    const along = chance(0.5);
-    const w = randInt(16, 20);
-    const d = randInt(9, 11);
-    const off = d / 2 + 2;
-    for (const sgn of [-1, 1]) {
-      const x = along ? cx : cx + sgn * off;
-      const z = along ? cz + sgn * off : cz;
-      house(x, z, along ? 0 : 1, { w, d, stair: false });
+/**
+ * The blocks that are not two rows of houses. Each returns false when the
+ * block will not take it, and the block is built as rows instead.
+ */
+function special(kind, r, cx, cz, style) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  if (kind === "maydan") {
+    // A little square: what a quarter has at the meeting of its lanes, with
+    // the well it grew round, a tree and somebody selling something. Built
+    // only where the block is small enough that an open one reads as a square
+    // rather than as a gap.
+    if (w * d > 800) return false;
+    place("well", cx + rand(-2, 2), cz + rand(-2, 2), 0, 2.6, 2.6, null, 1.2);
+    for (let i = 0; i < randInt(1, 3); i++) {
+      place("stall", cx + rand(-w / 2 + 3, w / 2 - 3), cz + rand(-d / 2 + 3, d / 2 - 3), randInt(0, 3), 4.4, 3, null, 1.0);
     }
-    return;
+    scatter.push(
+      `  { prop: "palm", x: ${n2(cx + rand(-3, 3))}, z: ${n2(cz + rand(-3, 3))}, radius: ${n2(Math.min(w, d) / 3)}, ` +
+        `count: ${randInt(1, 3)}, scale: [0.95, 1.2], blocking: true, clearance: 3.0 },`,
+    );
+    return true;
   }
+  if (kind === "garden") {
+    // A walled garden with the house it belongs to: the one kind of plot in a
+    // town of rows where there is more ground than building.
+    if (w < 22 || d < 22) return false;
+    compound(cx, cz, w / 2 - 0.8, d / 2 - 0.8, { open: randInt(0, 3), height: rnd(2.4, 2.9), tint: pick(style.renders ?? RENDERS) });
+    house(cx + rand(-w / 6, w / 6), cz + rand(-d / 6, d / 6), randInt(0, 3), {
+      w: randInt(10, 13),
+      d: randInt(13, 14),
+      floors: 2,
+      stair: true,
+      tint: pick(style.renders ?? RENDERS),
+    });
+    scatter.push(
+      `  { prop: "palm", x: ${n2(cx)}, z: ${n2(cz)}, width: ${n2(w - 4)}, depth: ${n2(d - 4)}, ` +
+        `count: ${randInt(3, 6)}, scale: [0.9, 1.2], blocking: true, clearance: 3.0 },`,
+    );
+    return true;
+  }
+  if (kind === "shelled") {
+    // A plot the shelling took: the houses still standing in it are shells
+    // and the rest is in the lane.
+    for (let i = 0; i < randInt(2, 3); i++) {
+      house(cx + rand(-w / 4, w / 4), cz + rand(-d / 4, d / 4), randInt(0, 3), {
+        w: randInt(8, 12),
+        d: randInt(8, 11),
+        ruined: true,
+        tint: pick(style.renders ?? RENDERS),
+      });
+    }
+    rubble(cx, cz, Math.min(w, d) / 2 - 1, randInt(5, 8));
+    return true;
+  }
+  if (kind === "granary") {
+    // The quarter's grain store in its walled yard — and, standing in a lane
+    // six metres wide, the thing that stops you seeing down the whole of it.
+    if (w < 14 || d < 14) return false;
+    compound(cx, cz, w / 2 - 0.8, d / 2 - 0.8, { open: randInt(0, 3) });
+    place("granary", cx, cz, randInt(0, 3), 8, 7, { height: rnd(4.4, 6.2) }, 1.4);
+    return true;
+  }
+  if (kind === "lot") {
+    // A walled plot with nothing in it: bought, walled, and never built on,
+    // or built on and cleared. What the edge of a growing town is full of.
+    if (w < 14 || d < 14) return false;
+    compound(cx, cz, w / 2 - 0.8, d / 2 - 0.8, { open: randInt(0, 3), height: rnd(2.0, 2.6), tint: pick(style.renders ?? RENDERS) });
+    if (chance(0.5)) rubble(cx, cz, Math.min(w, d) / 2 - 2, randInt(2, 4));
+    return true;
+  }
+  if (kind === "flats") {
+    // A block of flats: what the new town built where it could afford to, and
+    // the reason the north has a skyline of its own.
+    if (w < 26 || d < 21) return false;
+    const along = w >= d;
+    const bw = along ? Math.min(26, Math.floor(w - 4)) : Math.min(18, Math.floor(d - 4));
+    const bd = along ? Math.min(17, Math.floor(d - 4)) : Math.min(26, Math.floor(w - 4));
+    if (bd < 14) return false;
+    return place(
+      "shellBlock",
+      cx,
+      cz,
+      along ? (chance(0.5) ? 0 : 2) : chance(0.5) ? 1 : 3,
+      bw,
+      bd,
+      { width: along ? bw : bd, depth: along ? bd : bw, floors: randInt(2, 4), rampSide: chance(0.5) ? 1 : -1 },
+      1.2,
+    );
+  }
+  return false;
+}
 
-  if (roll < 0.9) {
-    // Four small houses on the plot's own quarters, with the alley between them
-    // — the tightest thing on the map, and the one a hull cannot follow you
-    // into.
-    for (const sx of [-1, 1]) {
-      for (const sz of [-1, 1]) {
-        house(cx + sx * (h / 2), cz + sz * (h / 2), randInt(0, 3), {
-          w: randInt(8, 9),
-          d: randInt(8, 9),
-        });
+/**
+ * The lanes of a quarter: split a rectangle across its longer side, again and
+ * again, until every piece is a block two rows of houses can fill.
+ *
+ * **That is how an old town's plan actually reads from the air**, which is
+ * why it is the generator rather than a grid: a lane runs the whole length of
+ * the parcel it divided and stops at the lane that divided THAT one, so every
+ * junction is a T, no two lanes line up across a third, and the sightline
+ * down any of them is one block long. The first cut through a quarter is a
+ * street (`street` wide, room for a truck); the ones under it are lanes four
+ * to six metres across, which is a truck's and not a tank's.
+ *
+ * `out` receives the blocks and `lanes` the gaps, for the dressing.
+ */
+function subdivide(r, opt, depth = 0, out = [], lanes = []) {
+  const w = r.x1 - r.x0;
+  const d = r.z1 - r.z0;
+  if (Math.min(w, d) <= opt.maxShort && Math.max(w, d) <= opt.maxLong) {
+    out.push(r);
+    return { out, lanes };
+  }
+  const cutX = w >= d;
+  const span = cutX ? w : d;
+  const lane = depth < (opt.streets ?? 1) ? opt.street : rand(opt.laneMin, opt.laneMax);
+  if (span < 2 * 9 + lane) {
+    out.push(r);
+    return { out, lanes };
+  }
+  const lo = cutX ? r.x0 : r.z0;
+  const at = lo + span * rand(0.36, 0.64);
+  if (cutX) {
+    lanes.push({ x0: at - lane / 2, x1: at + lane / 2, z0: r.z0, z1: r.z1 });
+    subdivide({ ...r, x1: at - lane / 2 }, opt, depth + 1, out, lanes);
+    subdivide({ ...r, x0: at + lane / 2 }, opt, depth + 1, out, lanes);
+  } else {
+    lanes.push({ x0: r.x0, x1: r.x1, z0: at - lane / 2, z1: at + lane / 2 });
+    subdivide({ ...r, z1: at - lane / 2 }, opt, depth + 1, out, lanes);
+    subdivide({ ...r, z0: at + lane / 2 }, opt, depth + 1, out, lanes);
+  }
+  return { out, lanes };
+}
+
+/** Every lane any quarter cut, for the dressing at the end. */
+const LANES = [];
+
+/**
+ * Lay a quarter: cut it into lanes and blocks, pave every lane, and build
+ * every block.
+ *
+ * **A lane is a ROAD, and that is not decoration.** It is the one thing that
+ * says a gap between two rows is a street rather than a gap: the audit's door
+ * check asks for a carriageway in front of every door and the eye asks for
+ * the same thing, and a lane drawn in the same sand as the open desert reads
+ * as a crack between two buildings. Inside the walls they are the old
+ * town's paving; outside, packed earth.
+ */
+function quarter(r, opt, style) {
+  const { out, lanes } = subdivide(r, opt);
+  LANES.push(...lanes);
+  for (const l of lanes) {
+    // A lane is cut where a set piece already stands across it — the khan,
+    // a mosque, the birkat's basin — so it ENDS against that wall, as a lane
+    // in a real one does, rather than running through it. What is left either
+    // side is paved if it is long enough to be a lane at all.
+    const ns = l.z1 - l.z0 >= l.x1 - l.x0;
+    const [a0, a1] = ns ? [l.z0, l.z1] : [l.x0, l.x1];
+    const blocked = (t) => {
+      const r = ns
+        ? { x0: l.x0, x1: l.x1, z0: t, z1: t + 1 }
+        : { x0: t, x1: t + 1, z0: l.z0, z1: l.z1 };
+      return claimed.some(
+        (c) =>
+          (!c.low || c.noRoad) && r.x1 > c.x0 && r.x0 < c.x1 && r.z1 > c.z0 && r.z0 < c.z1,
+      );
+    };
+    const runs = [];
+    let start = null;
+    for (let t = a0; t < a1; t += 1) {
+      const b = blocked(t);
+      if (!b && start === null) start = t;
+      if (b && start !== null) {
+        runs.push([start, t]);
+        start = null;
       }
     }
-    return;
-  }
-
-  // One house in a walled yard: the plot with room left over.
-  house(cx + rand(-3, 3), cz + rand(-3, 3), randInt(0, 3), {
-    w: randInt(10, 14),
-    d: randInt(10, 13),
-  });
-  compound(cx, cz, h - 1, h - 1, { open: randInt(0, 3) });
-}
-
-/** Runs a block recipe over a rectangular quarter on a street pitch. */
-function quarter(x0, z0, x1, z1, pitch, alley, recipe) {
-  const nx = Math.max(1, Math.floor((x1 - x0) / pitch));
-  const nz = Math.max(1, Math.floor((z1 - z0) / pitch));
-  const ox = x0 + ((x1 - x0) - nx * pitch) / 2;
-  const oz = z0 + ((z1 - z0) - nz * pitch) / 2;
-  for (let j = 0; j < nz; j++) {
-    for (let i = 0; i < nx; i++) {
-      const cx = ox + (i + 0.5) * pitch;
-      const cz = oz + (j + 0.5) * pitch;
-      recipe(cx, cz, pitch - alley, i, j);
+    if (start !== null) runs.push([start, a1]);
+    for (const [r0, r1] of runs) {
+      if (r1 - r0 < 5) continue;
+      const len = r1 - r0;
+      const mid = (r0 + r1) / 2;
+      const width = ns ? l.x1 - l.x0 : l.z1 - l.z0;
+      const [x, z] = ns ? [(l.x0 + l.x1) / 2, mid] : [mid, (l.z0 + l.z1) / 2];
+      claim(x, z, ns ? width : len, ns ? len : width, 0, true);
+      placements.push(
+        `  { kind: "road", x: ${n2(x)}, z: ${n2(z)}${ns ? "" : TURN[1]}, ` +
+          `params: { length: ${n2(len)}, width: ${n2(width)}, surface: "${style.lane ?? "dirt"}" } },`,
+      );
     }
   }
+  for (const b of out) block(b, style);
 }
+
+/** The old town's houses: brick, close, a third of them two storeys. */
+const MEDINA = {
+  lane: "cobble",
+  wMin: 7,
+  wMax: 13,
+  dMin: 8.5,
+  tall: 0.32,
+  stair: 0.62,
+  wind: 0.2,
+  derb: 0.05,
+  yard: 0.04,
+  specials: [
+    [0.05, "maydan"],
+    [0.02, "granary"],
+    [0.02, "garden"],
+    [0.03, "shelled"],
+  ],
+};
+/** The lanes inside the old walls. */
+const MEDINA_LANES = { maxShort: 34, maxLong: 64, street: 6, laneMin: 4.2, laneMax: 5.6, streets: 1 };
+
+/**
+ * The new town's houses: cement, wider, two storeys more often than not, and
+ * built with a gap between them rather than a party wall — a 1970s plot is a
+ * detached house on a plan somebody drew.
+ */
+const SUBURB = {
+  wMin: 9,
+  wMax: 14,
+  dMin: 10,
+  tall: 0.62,
+  stair: 0.6,
+  wind: 0.02,
+  derb: 0,
+  yard: 0.1,
+  gapP: 0.65,
+  gapMin: 1.0,
+  gapMax: 3.5,
+  renders: CEMENT,
+  specials: [
+    [0.12, "flats"],
+    [0.06, "garden"],
+    [0.04, "shelled"],
+    [0.03, "maydan"],
+  ],
+};
 
 // =============================================================================
 // The map, laid out in the order it is emitted.
@@ -933,7 +1373,9 @@ function quarter(x0, z0, x1, z1, pitch, alley, recipe) {
 
 /** The five objectives, and the town's own names for them. */
 const FLAGS = [
-  { id: "A", name: "The Great Mosque", x: -192, z: 150, r: 16 },
+  // On the TELL's summit, in the court of the mosque the citadel was built
+  // round — see `TELL`.
+  { id: "A", name: "The Great Mosque", x: TELL.x, z: TELL.z - 16, r: 16 },
   { id: "B", name: "The Fuel Depot", x: -120, z: -180, r: 15 },
   { id: "C", name: "The Souk", x: 28, z: 66, r: 17 },
   { id: "D", name: "Martyrs' Quarter", x: 250, z: 140, r: 16 },
@@ -955,29 +1397,77 @@ placements.push(
   "  // baked structure. The one thing it rejects is something ROOTED sown on",
   "  // top of it (see `world/roads.ts`), and every quarter and every scatter",
   "  // region below was generated against the rectangles these claim anyway.",
-  "  // The two asphalt routes are the town's spine and the rest are graded",
-  "  // dirt.",
   "  //",
-  "  // ALL FOUR N-S routes FORD the wadi, and that is the map's answer to a",
-  "  // watercourse across the middle of it: the bed is 3.6 m down over a 26 m",
-  "  // bank, a 0.14 gradient, so a hull takes any of them at speed and the",
-  "  // crossings are landmarks rather than the only ways over. A bridge would",
-  "  // have made four chokepoints out of a feature whose whole job is to be",
-  "  // crossable everywhere and unpleasant to be caught in.",
+  "  // **The asphalt goes ROUND the old town and never through it**, which is",
+  "  // what a real one's does: the boulevards are where the walls were, the",
+  "  // highways stop at them, and inside there is the souk street, the straight",
+  "  // street from the south gate to the north one, the citadel street up the",
+  "  // tell, and then lanes. Outside the walls the new town is a grid, because",
+  "  // somebody with a ruler drew it.",
+  "  //",
+  "  // ALL FOUR N-S routes south of the town FORD the wadi: the bed is a 0.135",
+  "  // gradient, so a hull takes any of them at speed and the crossings are",
+  "  // landmarks rather than the only ways over.",
 );
 
+/** The SOUTH BOULEVARD, the NORTH one, and the line of the old south wall. */
+const SOUTH_BLVD = 30;
+const NORTH_BLVD = 258;
+const WALL_Z = 39.5;
+/** The straight street, the east street, and the souk street's line. */
+const STRAIGHT_X = 28;
+/**
+ * Where the straight street runs on north of the khan street: ten metres east
+ * of where it came in, because an old street JOGS where it meets another, and
+ * because a street ruled straight from the south gate to the north one is a
+ * 230 m lane of fire through the middle of the town.
+ */
+const NORTH_X = 40;
+const EAST_X = 130;
+const SOUK_Z = 66;
+const KHAN_Z = 190;
+
 const ROADS = [
-  // The two highways, north to south, either side of the old town.
-  { kind: "ns", at: -66, from: -430, to: 430, w: 14, surface: "asphalt" },
+  // The two highways. The east one runs the whole length of the map and is
+  // the Crossing's road; the west one comes up out of the wadi to the south
+  // boulevard and stops at the old town, and carries on north of it.
   { kind: "ns", at: 190, from: -430, to: 430, w: 14, surface: "asphalt" },
-  // The cross route, east to west along the town's south edge.
-  { kind: "ew", at: 30, from: -430, to: 430, w: 12, surface: "asphalt" },
-  // The north street, and the road along the south bank.
-  { kind: "ew", at: 208, from: -430, to: 430, w: 8, surface: "dirt" },
+  { kind: "ns", at: -66, from: -430, to: SOUTH_BLVD, w: 14, surface: "asphalt" },
+  { kind: "ns", at: -66, from: NORTH_BLVD, to: 430, w: 14, surface: "asphalt" },
+  // The two boulevards, along the line of the walls.
+  { kind: "ew", at: SOUTH_BLVD, from: -430, to: 430, w: 12, surface: "asphalt" },
+  { kind: "ew", at: NORTH_BLVD, from: -430, to: 430, w: 10, surface: "asphalt" },
+  // The road along the south bank.
   { kind: "ew", at: -230, from: -430, to: 430, w: 8, surface: "dirt" },
-  // The two outer links, each running out through a home yard.
+  // The two outer links, each running out through a home yard. The western one
+  // is also the old town's west edge.
   { kind: "ns", at: -318, from: -400, to: 300, w: 7, surface: "dirt" },
   { kind: "ns", at: 318, from: -300, to: 400, w: 7, surface: "dirt" },
+  // Inside the walls.
+  { kind: "ns", at: STRAIGHT_X, from: SOUTH_BLVD, to: KHAN_Z + 3, w: 7, surface: "cobble" },
+  { kind: "ns", at: NORTH_X, from: KHAN_Z - 3, to: NORTH_BLVD, w: 7, surface: "cobble" },
+  { kind: "ns", at: EAST_X, from: SOUTH_BLVD, to: NORTH_BLVD, w: 8, surface: "dirt" },
+  { kind: "ew", at: SOUK_Z, from: 58, to: EAST_X, w: 7, surface: "cobble" },
+  { kind: "ew", at: KHAN_Z, from: TELL.x + TELL.hw + TELL.upper + TELL.ring + TELL.lower, to: EAST_X, w: 6, surface: "dirt" },
+  // The long souk from the west gate to the tell, and on up it to the
+  // citadel's west gate; the citadel street up its east face; the south ramp
+  // from the boulevard through the wall to the citadel's south gate.
+  { kind: "ew", at: TELL.z, from: -318, to: TELL.x - TELL.hw, w: 7, surface: "cobble" },
+  { kind: "ew", at: TELL.z, from: TELL.x + TELL.hw, to: STRAIGHT_X, w: 6, surface: "cobble" },
+  { kind: "ns", at: TELL.x, from: SOUTH_BLVD, to: TELL.z - TELL.hd, w: 6, surface: "cobble" },
+  // The new town's grid north of the boulevard.
+  ...[304, 348, 392].map((z) => ({ kind: "ew", at: z, from: -262, to: 262, w: 8, surface: "dirt" })),
+  ...[-230, -170, -116, -10, 50, 110].map((x) => ({ kind: "ns", at: x, from: NORTH_BLVD, to: 420, w: 7, surface: "dirt" })),
+  // The south bank's own street, broken by the Depot's yard, and the track
+  // along the top of the bank behind it.
+  { kind: "ew", at: -187, from: -74, to: 262, w: 7, surface: "dirt" },
+  { kind: "ew", at: -148, from: -262, to: -166, w: 6, surface: "dirt" },
+  { kind: "ew", at: -148, from: -74, to: 136, w: 6, surface: "dirt" },
+  // The back lane behind the roadside strip south of the south road.
+  { kind: "ew", at: -272, from: -262, to: 262, w: 6, surface: "dirt" },
+  // The Martyrs' shelf's two streets.
+  { kind: "ew", at: 100, from: 197, to: 312, w: 6, surface: "dirt" },
+  { kind: "ew", at: 182, from: 197, to: 312, w: 6, surface: "dirt" },
 ];
 for (const r of ROADS) {
   const len = r.to - r.from;
@@ -987,6 +1477,22 @@ for (const r of ROADS) {
   placements.push(
     `  { kind: "road", x: ${n2(x)}, z: ${n2(z)}${TURN[turn]}, ` +
       `params: { length: ${n2(len)}, width: ${n2(r.w)}, surface: "${r.surface}" } },`,
+  );
+}
+/**
+ * The souk's square, the one paved rectangle inside the walls: every street
+ * that meets it ends in its paving, as a square's do.
+ */
+const SQUARE = { x0: 0, x1: 56, z0: 48, z1: 92 };
+{
+  const w = SQUARE.x1 - SQUARE.x0;
+  const d = SQUARE.z1 - SQUARE.z0;
+  const x = (SQUARE.x0 + SQUARE.x1) / 2;
+  const z = (SQUARE.z0 + SQUARE.z1) / 2;
+  // NOT claimed: the square's furniture stands on its paving, and the quarters
+  // round it are laid in rectangles that stop at its edge.
+  placements.push(
+    `  { kind: "road", x: ${n2(x)}, z: ${n2(z)}, params: { length: ${n2(d)}, width: ${n2(w)}, surface: "cobble" } },`,
   );
 }
 
@@ -999,16 +1505,33 @@ for (const r of ROADS) {
 // What `surfaceAt` needs is that the flag's own position is not inside a
 // collider; what the ROUND needs is that the middle of a capture zone is
 // ground rather than building. 26 m answers both and leaves the rest of the
-// zone free for the stalls, the walls and the wrecks that make a flag a place
-// — a ring sized to the whole zone refused every one of them and left five
-// flags standing on bare sand.
+// zone free for the stalls, the walls and the wrecks that make a flag a place.
 for (const f of FLAGS) claim(f.x, f.z, 26, 26, 0, true);
+
+/**
+ * One spawn per objective, just outside its capture ring, so deploying onto a
+ * flag you hold does not drop you on top of whoever is contesting it — and on
+ * the side of it that faces the fight it feeds. Claimed here, with the flags,
+ * so nothing is built on one.
+ */
+const FLAG_SPAWNS = [
+  // On the summit, inside the citadel's east gate: A's reinforcements leave by
+  // the citadel street toward the Souk.
+  [0, 22, -2, "-Math.PI / 2"],
+  [1, 6, 34, "Math.PI"],
+  // Inside the south gate, on the square's own paving.
+  [2, 0, -22, "0"],
+  [3, -8, -38, "0"],
+  // E's is on the SOUTH side, because the north side is the wadi's bank: a
+  // spawn on a 0.14 slope is legal and lands you looking at the sky.
+  [4, -6, -40, "0"],
+];
+for (const [i, dx, dz] of FLAG_SPAWNS) claim(FLAGS[i].x + dx, FLAGS[i].z + dz, 7, 7, 0, true);
 
 // The birkat's DISTURBED ground, claimed before anything is built anywhere
 // near it. What has to be kept clear is not the water but the SKIRT: a
 // placement samples the floor once at its own centre, so a house on the lip of
-// a 2.7 m basin floats at one corner and buries itself at the other. The
-// rectangle is the core plus the whole skirt plus a metre.
+// a 2.7 m basin floats at one corner and buries itself at the other.
 claim(
   BIRKAT.x,
   BIRKAT.z,
@@ -1017,6 +1540,8 @@ claim(
   0,
   true,
 );
+// …and no lane is paved down into it either.
+claimed[claimed.length - 1].noRoad = true;
 
 // The spawns and the hardstandings, computed here rather than at the end,
 // because they have to claim their ground before the yard is dressed around
@@ -1044,16 +1569,9 @@ for (const h of HOMES) {
   // `crew.boardRadius` rather than any of the geometry**. A bot is never given
   // a vehicle as a DESTINATION — the crew is whoever walks past — so a
   // hardstanding nobody walks within 18 m of is a hardstanding that never gets
-  // crewed, which is exactly what the first version of this was: 21 m off the
-  // nearest spawn, and both trucks sat on their pads for a whole round while
-  // the tanks drove 200 m. This one is 14.6 m from the nearest spawn and 31.6
-  // from its own team's tank, so a reinforcement walking out of the yard is
-  // inside one circle or the other from the frame it deploys.
-  //
-  // The offsets are the same expression on both sides, so the two pads are
-  // mirrors — which is what makes them equally level: 1.1 cm across the
-  // footprint here against Harrowmead's 8 cm standard. A smaller claim than
-  // the tank's because it is a smaller vehicle: 12 m against 16.
+  // crewed. This one is 14.6 m from the nearest spawn and 31.6 from its own
+  // team's tank, so a reinforcement walking out of the yard is inside one
+  // circle or the other from the frame it deploys.
   const kx = h.x + h.s * 4;
   const kz = h.z - h.s * 12;
   claim(kx, kz, 12, 12, 0, true);
@@ -1062,27 +1580,11 @@ for (const h of HOMES) {
       `${n2(Number(heightAt(kx, kz).toFixed(2)))}, ${n2(kz)}), ` +
       `yaw: ${h.yaw}, kind: "truck" },`,
   );
-  // …and the HELIPAD, on the far side of the yard from the tank.
-  //
-  // **What it owes is different from the other two's, and shorter.** It owes
-  // nothing at all to the departure-corridor argument above: a helicopter does
-  // not leave a yard, it leaves straight UP, so what replaces that check is
-  // overhead clearance — the gatehouse is the tallest thing in here at 34 m out
-  // and the disc's edge stops 7 m short of it.
-  //
-  // What it does still owe is `crew.boardRadius`, for the truck's reason with
-  // one twist. A bot may man the chin gun and may never fly one
-  // (`VehicleCrew.board`), and the second chair is only offered once somebody
-  // IS flying — so this circle is not there to get the machine crewed while it
-  // sits, but so that a pilot who has just lifted picks a gunner up on the way.
-  // 23.3 m to the nearest infantry spawn, inside the 24 m sweep, with the
-  // next at 24.2 — so it is ONE circle rather than two, and deliberately: a
-  // machine nobody can fly does not want a queue of bots walking past it.
-  //
-  // 18 m against the tank's 16, because what has to be clear is the ROTOR DISC
-  // (10.4 m across — `drive.collideRadius`) rather than the fuselage. It stands
-  // 3 m clear of the tank's pad in x, 11 m clear of the truck's in z, and 7.5 m
-  // and 8.5 m clear of the two nearest spawns.
+  // …and the HELIPAD, on the far side of the yard from the tank. It owes
+  // overhead clearance rather than a departure corridor, and `boardRadius` so
+  // a pilot who has just lifted picks a gunner up on the way: 23.3 m to the
+  // nearest infantry spawn. 18 m because what has to be clear is the ROTOR
+  // DISC (10.4 m across) rather than the fuselage.
   const gx = h.x - h.s * 6;
   const gz = h.z + h.s * 14;
   claim(gx, gz, 18, 18, 0, true);
@@ -1093,182 +1595,262 @@ for (const h of HOMES) {
   );
 }
 
-// --- A — the Great Mosque ----------------------------------------------------
+// --- A — the Great Mosque, on the tell ---------------------------------------
 
-section(placements, "A - the Great Mosque");
+section(placements, "A - the Great Mosque, on the tell");
 placements.push(
-  "  // The haram: a walled precinct with the prayer hall along its west side and",
-  "  // the minaret on the south-west corner. The flag stands in the open court,",
-  "  // which is the only large flat ground in the quarter and is overlooked from",
-  "  // every roof around it — a flag you can hold and cannot hide on. The",
-  "  // minaret is the map's landmark and is deliberately not climbable; see",
-  "  // kit/desert/mosque.ts.",
-);
-place("mosque", A.x - 40, A.z, 1, 26, 26, { width: 26, depth: 20, height: 7.4 }, 2.5);
-place("minaret", A.x - 40, A.z - 46, 0, 7, 7, { height: 27 }, 2);
-compound(A.x + 6, A.z, 58, 50, { open: 1, height: 3.0, tint: "#b6a68f" });
-place("well", A.x + 26, A.z + 16, 0, 2.6, 2.6, null, 1.2);
-place("shrine", A.x + 30, A.z - 22, 0, 2.4, 2.4, null, 1.2);
-for (let i = 0; i < 8; i++) {
-  place("stall", A.x + rand(4, 46), A.z + rand(-40, 40), randInt(0, 3), 4.4, 3, null, 1.2);
-}
-for (let i = 0; i < 4; i++) {
-  place("planter", A.x + rand(6, 42), A.z + rand(-36, 36), randInt(0, 3), 2.8, 1.6, null, 1.0);
-}
-place("crates", A.x + 34, A.z + 34, 0, 3, 2.4, null, 1.1);
-place("car", A.x + 40, A.z - 34, 1, 4.4, 2.2, { tint: "#5d4a3a" }, 1.4);
-// The cemetery, across the north road from the precinct.
-compound(A.x + 6, A.z + 100, 46, 24, { open: 2, height: 1.9 });
-scatter.push(
-  `  { prop: "gravestone", x: ${n2(A.x + 6)}, z: ${n2(A.z + 100)}, width: 84, depth: 40, ` +
-    `count: 48, scale: [0.8, 1.25], blocking: true, clearance: 0.6 },`,
-);
-
-// --- the birkat, and the bathhouse beside it ---------------------------------
-
-section(placements, "the birkat - the quarter's reservoir, and its hammam");
-placements.push(
-  "  // The one open space in the oldest quarter on the map, and the only ground",
-  "  // in the town that is DOWN. The basin itself is terrain (see the",
-  "  // generator's `BIRKAT`) — water in this engine is a hole in the floor with",
-  "  // a plane over it — so what is placed here is only what stands on the lip:",
-  "  // the precinct wall along the north, the draw-well that feeds it, the",
-  "  // stalls a watering place grows, and the bathhouse on its east side, which",
-  "  // is the one building in the town that puts its plumbing where you can see",
-  "  // it.",
+  "  // The citadel: the mound the town began on, ten metres over the roofs, with",
+  "  // the Great Mosque on its summit inside what is left of the citadel wall.",
+  "  // The flag is in the mosque's court, between the two arcades (riwaq) that",
+  "  // run down either side of it, and the hall closes the court's north end.",
+  "  // Three gates and three ways up — the long souk to the west gate, the",
+  "  // citadel street to the east one and the south ramp from the boulevard",
+  "  // through the town wall — and the whole of every slope is walkable,",
+  "  // which is the point and the problem: the glacis is the barest ground in",
+  "  // the town, and it is under the guns of everybody on the summit.",
   "  //",
-  "  // Nothing stands INSIDE the claimed rectangle and nothing may be added",
-  "  // there: it is the skirt as well as the water, and a placement samples the",
-  "  // floor once at its own centre.",
+  "  // The minaret is the map's landmark, forty metres over the town, and is",
+  "  // deliberately NOT climbable; see kit/desert/mosque.ts.",
 );
-// The precinct: a head-high wall right round the basin, on the flat ground past
-// the skirt, with the usual gates in it. It is what makes the water read as
-// water — see `BIRKAT` — and it is also what a town does with the only drinking
-// water for four hundred metres.
-const bkHW = BIRKAT.halfW + BIRKAT.skirt + 5;
-const bkHD = BIRKAT.halfD + BIRKAT.skirt + 5;
-compound(BIRKAT.x, BIRKAT.z, bkHW, bkHD, { open: 2, height: 3.0, tint: "#b6a68f" });
-const bkE = BIRKAT.x + bkHW;
-const bkW = BIRKAT.x - bkHW;
-place("well", bkW - 5, BIRKAT.z + 6, 0, 2.6, 2.6, null, 1.2);
-place("shrine", bkW - 6, BIRKAT.z - 18, 0, 2.4, 2.4, null, 1.2);
-for (const [sx, sz] of [
-  [-1, 1],
-  [1, 1],
-  [-1, -1],
-]) {
-  place(
-    "stall",
-    BIRKAT.x + sx * rand(20, 28),
-    BIRKAT.z + sz * (bkHD + 6),
-    randInt(0, 3),
-    4.4,
-    3,
-    null,
-    1.2,
-  );
+{
+  const top = { x0: TELL.x - TELL.hw, x1: TELL.x + TELL.hw, z0: TELL.z - TELL.hd, z1: TELL.z + TELL.hd };
+  // The hall, across the court's north end with its portal on the court.
+  must("mosque", A.x, top.z1 - 17.5, 0, 26, 20, { width: 26, depth: 20, height: 7.4 }, 0.2);
+  must("minaret", A.x - 24, top.z1 - 20, 0, 7, 7, { height: 30 }, 0.2);
+  // The riwaq, an arcade down either side of the court, the awning on the
+  // court side and the roof walked: the two best positions on the summit, and
+  // the two a squad on the flag has to watch.
+  must("souk", top.x0 + 7.6, A.z + 1, 2, 9, 26, { length: 26, width: 9, rampSide: -1 }, 0.2);
+  must("souk", top.x1 - 7.6, A.z + 1, 0, 9, 26, { length: 26, width: 9, rampSide: 1 }, 0.2);
+  // The citadel wall, along the summit's edge with a gate on three sides and
+  // the hall's back against the fourth. A gate is the only way through it on
+  // the level and the wall is head-high from inside — so the summit is a
+  // room, and the glacis is the ground it commands from its roofs.
+  const ih = TELL.hw - 1.4;
+  const id = TELL.hd - 1.4;
+  const wallOpts = { height: 4.2, tint: "#7b6a51", pad: 0.05 };
+  const gate = 7;
+  for (const sz of [-1, 1]) {
+    const z = TELL.z + sz * id;
+    if (sz < 0) {
+      const seg = (2 * ih - gate) / 2;
+      wallRun(TELL.x - gate / 2 - seg / 2, z, 0, seg, wallOpts);
+      wallRun(TELL.x + gate / 2 + seg / 2, z, 0, seg, wallOpts);
+    } else {
+      wallRun(TELL.x, z, 0, 2 * ih, wallOpts);
+    }
+  }
+  for (const sx of [-1, 1]) {
+    const x = TELL.x + sx * ih;
+    const seg = (2 * id - gate) / 2;
+    wallRun(x, TELL.z - gate / 2 - seg / 2, 1, seg, wallOpts);
+    wallRun(x, TELL.z + gate / 2 + seg / 2, 1, seg, wallOpts);
+  }
+  // Two bastions on the north corners, behind the hall: the solid towers a
+  // citadel wall turns its corners on.
+  for (const sx of [-1, 1]) {
+    must("granary", TELL.x + sx * (ih - 5), top.z1 - 6, 0, 8, 7, { height: 6.4, tint: "#7b6a51" }, 0.2);
+  }
+  // The court's paving, between the riwaq and up to the portal: the one
+  // flagged floor on the summit, which is the flag's.
+  {
+    const cw = 2 * TELL.hw - 2 * 15.3;
+    const cz0 = TELL.z - TELL.hd + 1.6;
+    const cz1 = top.z1 - 17.5 - 14.6;
+    placements.push(
+      `  { kind: "road", x: ${n2(TELL.x)}, z: ${n2((cz0 + cz1) / 2)}, params: { length: ${n2(cz1 - cz0)}, ` +
+        `width: ${n2(cw)}, surface: "cobble" } },`,
+    );
+  }
+  place("well", A.x - 19, A.z - 9, 0, 2.6, 2.6, null, 0.6);
+  place("crates", A.x + 19, A.z + 12, 1, 3, 2.4, null, 0.6);
 }
-// The hammam, hard against the reservoir's east lip. A bathhouse is where the
-// water is, and this is the only water in the town — putting it anywhere else
-// would be putting it nowhere.
-must("hammam", bkE + 13, BIRKAT.z + 4, 0, 18, 14, {
-  width: 18,
-  depth: 14,
-  rampSide: -1,
-}, 2.0);
-place("granary", bkE + 11, BIRKAT.z - 26, 1, 8, 7, { height: 5.4 }, 1.4);
 
-// --- the mosque quarter ------------------------------------------------------
+// The tell's lower TERRACE, five metres up: a ring of houses facing in onto
+// the lane at the foot of the summit's slope, their backs to the town. It is
+// what makes the mound read as a place people lived rather than as a hill —
+// and it is the cover between the glacis below and the wall above.
+{
+  const lane = 4.5;
+  const inner = TELL.upper + lane;
+  const depth = TELL.ring - lane - 0.4;
+  const span = 12;
+  // The terrace lane, paved: four straight runs at the foot of the summit's
+  // slope, which the rows open onto and the three ramps cross.
+  const at = TELL.upper + lane / 2;
+  for (const [x, z, ns, len] of [
+    [TELL.x, TELL.z + TELL.hd + at, false, 2 * (TELL.hw + span)],
+    [TELL.x, TELL.z - TELL.hd - at, false, 2 * (TELL.hw + span)],
+    [TELL.x - TELL.hw - at, TELL.z, true, 2 * (TELL.hd + span)],
+    [TELL.x + TELL.hw + at, TELL.z, true, 2 * (TELL.hd + span)],
+  ]) {
+    claim(x, z, ns ? lane : len, ns ? len : lane, 0, true);
+    placements.push(
+      `  { kind: "road", x: ${n2(x)}, z: ${n2(z)}${ns ? "" : TURN[1]}, ` +
+        `params: { length: ${n2(len)}, width: ${n2(lane)}, surface: "cobble" } },`,
+    );
+  }
+  // North and south rows run along X; west and east along Z.
+  houseRow("s", TELL.x - TELL.hw - span, TELL.x + TELL.hw + span, TELL.z + TELL.hd + inner, depth, MEDINA);
+  houseRow("n", TELL.x - TELL.hw - span, TELL.x + TELL.hw + span, TELL.z - TELL.hd - inner, depth, MEDINA);
+  houseRow("e", TELL.z - TELL.hd - span, TELL.z + TELL.hd + span, TELL.x - TELL.hw - inner, depth, MEDINA);
+  houseRow("w", TELL.z - TELL.hd - span, TELL.z + TELL.hd + span, TELL.x + TELL.hw + inner, depth, MEDINA);
+}
 
-section(placements, "the mosque quarter");
+// The tell's GLACIS, which nobody built on because it was the citadel's field
+// of fire, and which the town has used since for the two things a slope
+// outside a wall is good for: its dead, on the north and west flanks under the
+// summit, and terraced gardens on the east and south ones — a low wall along
+// each contour and palms on the step behind it. Both are cover a hand high to
+// a man high on ground that would otherwise be the barest in the town, and
+// neither is a building, so neither owes the slope a level plot.
+{
+  const foot = TELL.upper + TELL.ring;
+  const mid = foot + TELL.lower / 2;
+  const span = TELL.lower - 6;
+  // The burial ground: the north flank whole, the west flank either side of
+  // the long souk's ramp.
+  scatter.push(
+    `  { prop: "gravestone", x: ${n2(TELL.x)}, z: ${n2(TELL.z + TELL.hd + mid)}, ` +
+      `width: ${n2(2 * TELL.hw + 24)}, depth: ${n2(span)}, count: 110, scale: [0.8, 1.25], ` +
+      "blocking: true, clearance: 0.6 },",
+  );
+  for (const [z0, z1] of [
+    [TELL.z - TELL.hd - 8, TELL.z - 8],
+    [TELL.z + 8, TELL.z + TELL.hd + 8],
+  ]) {
+    scatter.push(
+      `  { prop: "gravestone", x: ${n2(TELL.x - TELL.hw - mid)}, z: ${n2((z0 + z1) / 2)}, ` +
+        `width: ${n2(span)}, depth: ${n2(z1 - z0)}, count: 34, scale: [0.8, 1.25], ` +
+        "blocking: true, clearance: 0.6 },",
+    );
+  }
+  must("shrine", TELL.x - TELL.hw - foot - 3, TELL.z + TELL.hd + foot + 3, 0, 4, 4, undefined, 0.6);
+  // The gardens: two terrace walls along the east and south flanks, cut where
+  // the citadel street and the south ramp come up through them.
+  const terraceWall = (x, z, turn, len) =>
+    wallRun(x, z, turn, len, { height: 1.3, tint: "#7b6a51", pad: 0.1 });
+  for (const off of [foot + 7, foot + 15]) {
+    // East flank, along Z, broken at the citadel street.
+    const ex = TELL.x + TELL.hw + off;
+    terraceWall(ex, (TELL.z - TELL.hd + TELL.z - 6) / 2, 1, TELL.hd - 6);
+    terraceWall(ex, (TELL.z + 6 + TELL.z + TELL.hd) / 2, 1, TELL.hd - 6);
+    // South flank, along X, broken at the ramp.
+    const sz = TELL.z - TELL.hd - off;
+    terraceWall((TELL.x - TELL.hw + TELL.x - 6) / 2, sz, 0, TELL.hw - 6);
+    terraceWall((TELL.x + 6 + TELL.x + TELL.hw) / 2, sz, 0, TELL.hw - 6);
+  }
+  for (const [x, z, w, d] of [
+    [TELL.x + TELL.hw + foot + 11, TELL.z - TELL.hd / 2 - 3, 6, TELL.hd - 8],
+    [TELL.x + TELL.hw + foot + 11, TELL.z + TELL.hd / 2 + 3, 6, TELL.hd - 8],
+    [TELL.x - TELL.hw / 2 - 3, TELL.z - TELL.hd - foot - 11, TELL.hw - 8, 6],
+    [TELL.x + TELL.hw / 2 + 3, TELL.z - TELL.hd - foot - 11, TELL.hw - 8, 6],
+  ]) {
+    scatter.push(
+      `  { prop: "palm", x: ${n2(x)}, z: ${n2(z)}, width: ${n2(w)}, depth: ${n2(d)}, ` +
+        `count: ${randInt(4, 6)}, scale: [0.85, 1.15], blocking: true, clearance: 2.6 },`,
+    );
+  }
+}
+
+// --- the town wall -----------------------------------------------------------
+
+section(placements, "the town wall, and its gates");
 placements.push(
-  "  // The oldest fabric on the map: narrow plots on a 32 m pitch, walls",
-  "  // everywhere, and almost nothing you can see over. A squad crossing it on",
-  "  // the ground is blind; a squad crossing it on the roofs is not.",
+  "  // What is left of the wall along the old town's south side, facing the",
+  "  // wadi: the other three sides came down for the boulevards and this one",
+  "  // did not, because the bank was in the way. Five gates — the straight",
+  "  // street's, the citadel's ramp, the highway's, and one at either end —",
+  "  // and a solid tower every so often behind it. From the bench it is the",
+  "  // town's face; from inside, the lane along its back is the one straight",
+  "  // line in the quarter.",
 );
-quarter(-288, 44, -80, 200, 32, 6, (cx, cz, core) => oldTownBlock(cx, cz, core));
+{
+  const gates = [
+    [-262, 8],
+    [-112, 10],
+    [-66, 14],
+    [STRAIGHT_X, 12],
+    [92, 8],
+  ];
+  const opts = { height: 4.6, tint: "#7b6a51", pad: 0.05 };
+  let x = -313;
+  for (const [gx, gw] of [...gates, [126, 0]]) {
+    const end = gx - gw / 2;
+    if (end - x > 3) wallRun((x + end) / 2, WALL_Z, 0, end - x, opts);
+    x = gx + gw / 2;
+  }
+  // The west side's stretch, along the link road with the long souk's gate in
+  // it.
+  wallRun(-312.4, (WALL_Z + TELL.z - 7) / 2, 1, TELL.z - 7 - WALL_Z, opts);
+  wallRun(-312.4, (TELL.z + 7 + 248) / 2, 1, 248 - TELL.z - 7, opts);
+  // The towers, behind the wall and flanking the gates.
+  for (const tx of [-280, -244, -200, -30, 16, 40, 76, 120]) {
+    place("granary", tx, WALL_Z + 4.4, 0, 8, 7, { height: rnd(5.6, 6.8), tint: "#7b6a51" }, 0.1);
+  }
+  // The north gate, at the straight street's end on the north boulevard.
+  for (const sx of [-1, 1]) {
+    place("granary", NORTH_X + sx * 9.5, NORTH_BLVD - 11, 0, 8, 7, { height: 7.2, tint: "#7b6a51" }, 0.1);
+  }
+}
 
 // --- C — the Souk ------------------------------------------------------------
 
 section(placements, "C - the Souk");
 placements.push(
-  "  // The market square, and the centre of the map in every sense: four",
-  "  // quarters meet on it, both highways pass within seventy metres of it, and",
-  "  // every other flag is between 210 and 290 m away. Two arcades face each",
-  "  // other across the square with the monument to the north — both are",
-  "  // climbed, so the fight for the middle of this town is a fight for two",
-  "  // roofs and the ground between them.",
+  "  // The market square inside the south gate, and the centre of the map in",
+  "  // every sense: the straight street runs through it, the souk street runs",
+  "  // east out of it under its arcades, and the citadel stands over it one",
+  "  // street to the west. Two arcades face each other across the square and",
+  "  // both are climbed, so the fight for the middle of this town is a fight",
+  "  // for two roofs and the ground between them — with the Great Mosque's",
+  "  // summit looking down on all of it.",
 );
-place("souk", C.x - 32, C.z, 0, 11, 38, { length: 38, width: 11, rampSide: -1 }, 2.5);
-place("souk", C.x + 32, C.z + 4, 2, 11, 34, { length: 34, width: 11, rampSide: 1 }, 2.5);
-place("monument", C.x, C.z + 34, 0, 11, 11, { width: 11 }, 2);
-place("well", C.x - 2, C.z - 20, 0, 2.6, 2.6, null, 1.2);
+must("souk", SQUARE.x0 + 6, C.z - 2, 2, 10, 26, { length: 26, width: 10, rampSide: -1 }, 0.2);
+must("souk", SQUARE.x1 - 6, C.z - 2, 0, 10, 26, { length: 26, width: 10, rampSide: 1 }, 0.2);
+must("monument", SQUARE.x0 + 12, SQUARE.z1 - 7, 0, 11, 11, { width: 11 }, 0.3);
+place("well", SQUARE.x1 - 10, SQUARE.z1 - 6, 0, 2.6, 2.6, null, 0.8);
 for (let i = 0; i < 10; i++) {
   const a = (i / 10) * Math.PI * 2;
-  place(
-    "stall",
-    C.x + Math.cos(a) * rand(24, 46),
-    C.z + Math.sin(a) * rand(24, 46),
-    randInt(0, 3),
-    4.4,
-    3,
-    null,
-    1.2,
-  );
-}
-// The square's own furniture. A market place with nothing on it is a car park,
-// and this one is sixty metres across.
-for (let i = 0; i < 7; i++) {
-  const a = (i / 7) * Math.PI * 2 + 0.4;
-  place(
-    "planter",
-    C.x + Math.cos(a) * rand(16, 34),
-    C.z + Math.sin(a) * rand(16, 34),
-    randInt(0, 3),
-    2.8,
-    1.6,
-    null,
-    1.0,
-  );
-}
-for (let i = 0; i < 5; i++) {
-  place("crates", C.x + rand(-46, 46), C.z + rand(-46, 46), randInt(0, 3), 3, 2.4, null, 1.1);
+  place("stall", C.x + Math.cos(a) * rand(14, 24), C.z + Math.sin(a) * rand(16, 24), randInt(0, 3), 4.4, 3, null, 0.8);
 }
 for (let i = 0; i < 4; i++) {
+  place("planter", rand(SQUARE.x0 + 14, SQUARE.x1 - 14), rand(SQUARE.z0 + 2, SQUARE.z1 - 2), randInt(0, 3), 2.8, 1.6, null, 0.8);
+}
+for (let i = 0; i < 4; i++) {
+  place("crates", rand(SQUARE.x0 + 14, SQUARE.x1 - 14), rand(SQUARE.z0 + 2, SQUARE.z1 - 2), randInt(0, 3), 3, 2.4, null, 0.8);
+}
+for (let i = 0; i < 3; i++) {
   place(
     "car",
-    C.x + rand(-50, 50),
-    C.z + rand(-50, 50),
+    rand(SQUARE.x0 + 14, SQUARE.x1 - 14),
+    rand(SQUARE.z0 + 2, SQUARE.z1 - 2),
     randInt(0, 3),
     4.4,
     2.2,
     { tint: pick(["#6b463a", "#4a4f45", "#5d4a3a", "#3f4b52"]) },
-    1.4,
+    0.8,
   );
 }
-place("barrier", C.x - 24, C.z - 44, 0, 6, 1, { length: 6 }, 1.0);
-place("barrier", C.x + 26, C.z + 46, 0, 6, 1, { length: 6 }, 1.0);
-place("sandbags", C.x + 44, C.z - 28, 1, 8, 1.4, { length: 8 }, 1.2);
+place("sandbags", STRAIGHT_X + 12, SQUARE.z0 + 3, 0, 8, 1.4, { length: 8 }, 0.6);
+place("sandbags", STRAIGHT_X - 12, SQUARE.z1 - 3, 0, 8, 1.4, { length: 8 }, 0.6);
 
-// The four buildings that face the square, taller and paler than the fabric
-// behind them: what a town puts on its market place. The north-east one is the
-// merchant's — a wind tower over the square, which is the thing you can see the
-// middle of the map from every roof in the old town BY.
-for (const [sx, sz] of [
-  [-1, -1],
-  [1, -1],
-  [-1, 1],
-]) {
-  house(C.x + sx * 54, C.z + sz * 52, sx * sz > 0 ? 0 : 1, {
-    w: 14,
-    d: 15,
-    floors: 2,
-    stair: true,
-    enterable: true,
-    tint: "#b6a68f",
-  });
-}
-must("windTower", C.x + 54, C.z + 52, 0, 14, 15, {
+// The souk street, east out of the square under its arcades, with the
+// bathhouse and the shops opposite them.
+section(placements, "the souk street");
+placements.push(
+  "  // Arcades all along its north side, the hammam and a row of shops on its",
+  "  // south, and the merchant's wind tower where it bends: a covered street",
+  "  // you fight along under the awnings and over them.",
+);
+must("souk", 74, SOUK_Z + 13, 3, 10, 30, { length: 30, width: 10, rampSide: -1 }, 0.2);
+must("hammam", 106, SOUK_Z + 3.5 + 1.5 + 7.6 + 0.5, 0, 18, 14, { width: 18, depth: 14, rampSide: 1 }, 0.4);
+// The shops opposite, one room deep between the souk street and the lane
+// behind the town wall.
+houseRow("n", 57.5, EAST_X - 5.5, SOUK_Z - 5, SOUK_Z - 5 - (WALL_Z + 13), MEDINA);
+// The merchant's house: a wind tower over the square, which is the thing you
+// can see the middle of the map from every roof in the old town BY.
+must("windTower", 82, 118, 0, 14, 15, {
   width: 14,
   depth: 15,
   floors: 2,
@@ -1276,52 +1858,175 @@ must("windTower", C.x + 54, C.z + 52, 0, 14, 15, {
   rampSide: 1,
   height: 7.4,
   tint: "#b6a68f",
-}, 2.0);
-// The bathhouse on the square's south-west corner, clear of the cross road.
-must("hammam", C.x - 58, C.z - 18, 0, 18, 14, { width: 18, depth: 14, rampSide: 1 }, 2.0);
+}, 0.4);
+forecourt("windTower", 82, 118, 0, { width: 14, depth: 15 }, 8, 6);
 
-// --- the old town ------------------------------------------------------------
+// --- the old town's set pieces -------------------------------------------------
+
+section(placements, "the old town's set pieces");
+placements.push(
+  "  // What a quarter is organised round: the khans on the two caravan roads in,",
+  "  // the birkat and its bathhouse, a mosque in every quarter with its own",
+  "  // minaret, and the long souk from the west gate to the citadel.",
+);
+// THE KHAN on the khan street, on the way in from the north gate: the only
+// closed enclosure inside the walls. Every other yard here is a compound with
+// a side left open, and this is a rectangle with one arched passage into it
+// and a terrace round the top.
+must("caravanserai", 78, KHAN_Z + 3 + 1.5 + 19.8, 0, 44, 38, { width: 44, depth: 38 }, 0.3);
+// The east quarter's mosque, on the khan street with its minaret beside it.
+must("mosque", 112, KHAN_Z - 3 - 1.5 - 11, 2, 14, 12, { width: 14, depth: 12, height: 5.6 }, 0.3);
+must("minaret", 96, KHAN_Z - 10, 0, 7, 7, { height: 18 }, 0.3);
+// The north quarter's mosque, its portal on the north boulevard.
+must("mosque", -60, NORTH_BLVD - 5 - 1.5 - 11, 2, 14, 12, { width: 14, depth: 12, height: 5.6 }, 0.3);
+must("minaret", -78, NORTH_BLVD - 12, 0, 7, 7, { height: 20 }, 0.3);
+
+// The birkat and its bathhouse.
+section(placements, "the birkat - the west quarter's reservoir, and its hammam");
+placements.push(
+  "  // The one open space in the west quarter, and the only ground inside the",
+  "  // walls that is DOWN. The basin itself is terrain (see the generator's",
+  "  // `BIRKAT`) — water in this engine is a hole in the floor with a plane",
+  "  // over it — so what is placed here is only what stands on the lip: the",
+  "  // precinct wall, the draw-well that feeds it, and the bathhouse on the",
+  "  // long souk behind it.",
+  "  //",
+  "  // Nothing stands INSIDE the claimed rectangle and nothing may be added",
+  "  // there: it is the skirt as well as the water, and a placement samples the",
+  "  // floor once at its own centre.",
+);
+const bkHW = BIRKAT.halfW + BIRKAT.skirt + 5;
+const bkHD = BIRKAT.halfD + BIRKAT.skirt + 5;
+// The precinct: a head-high wall right round the basin, which is what makes the
+// water read as water — see `BIRKAT` — with its open side to the west gate's
+// lane.
+compound(BIRKAT.x, BIRKAT.z, bkHW, bkHD, { open: 3, height: 3.0, tint: "#b6a68f", pad: 0.3 });
+place("well", BIRKAT.x + bkHW - 4, BIRKAT.z - bkHD + 4, 0, 2.6, 2.6, null, 0.6);
+place("shrine", BIRKAT.x - bkHW + 4, BIRKAT.z + bkHD - 4, 0, 2.4, 2.4, null, 0.6);
+must("hammam", BIRKAT.x + 6, TELL.z - 5 - 8.1, 2, 18, 14, { width: 18, depth: 14, rampSide: -1 }, 0.4);
+// The long souk: arcades along it from the west gate, and the second khan
+// behind them with its forecourt opening onto the street.
+must("souk", -291.5, TELL.z - 5 - 1.5 - 7.6, 1, 10, 30, { length: 30, width: 10, rampSide: 1 }, 0.2);
+for (const x of [-291.5, -233.5]) {
+  must("souk", x, TELL.z + 5 + 1.5 + 7.6, 3, 10, 30, { length: 30, width: 10, rampSide: -1 }, 0.2);
+}
+{
+  const kz = TELL.z + 48;
+  must("caravanserai", -263, kz, 0, 44, 38, { width: 44, depth: 38, tint: "#b6a68f" }, 0.3);
+  // The forecourt, held open from the gate to the street.
+  claim(-263, (TELL.z + 5 + kz - 19.5) / 2, 12, kz - 19.5 - TELL.z - 5, 0, true);
+}
+
+// --- the old town --------------------------------------------------------------
+
+// The lanes along the inside of the town wall and the west wall, and the one
+// between the west quarter and the tell's foot: what a walled town keeps clear
+// behind its wall, and what the quarters' outer rows open onto.
+const WALL_LANE = { z0: WALL_Z + 8.5, z1: WALL_Z + 13 };
+const WEST_LANE = { x0: -312, x1: -307.5 };
+/**
+ * The lane round the FOOT of the tell, just off its lowest slope: the line
+ * where the town stops and the glacis starts, which every row on the glacis
+ * side of a quarter opens onto. `TELL_FOOT` is how far out from the summit's
+ * edge it runs.
+ */
+const TELL_FOOT = TELL.upper + TELL.ring + TELL.lower + 0.5;
+const FOOT_W = 4.5;
+const GLACIS = {
+  x0: TELL.x - TELL.hw - TELL_FOOT - FOOT_W,
+  x1: TELL.x + TELL.hw + TELL_FOOT + FOOT_W,
+  z1: TELL.z + TELL.hd + TELL_FOOT + FOOT_W,
+};
+/** The edge of a street's claim: its half width and the 1.5 m every road claims past it. */
+const edge = (w) => w / 2 + 1.5;
+/** Behind the souk street's arcade and hammam, and between the two east quarters. */
+const BACK_LANE = { z0: SOUK_Z + 21, z1: SOUK_Z + 25.5 };
+const SQUARE_LANE = { x0: SQUARE.x1, x1: SQUARE.x1 + 4.5 };
+const lanes = [
+  // The wall lane, broken by the square, whose paving it runs into.
+  [WEST_LANE.x1, SQUARE.x0, WALL_LANE.z0, WALL_LANE.z1],
+  [SQUARE.x1, EAST_X - 4, WALL_LANE.z0, WALL_LANE.z1],
+  [WEST_LANE.x0, WEST_LANE.x1, WALL_Z, NORTH_BLVD - 5],
+  // The tell's foot: its west, north and east sides.
+  [GLACIS.x0, GLACIS.x0 + FOOT_W, WALL_LANE.z1, NORTH_BLVD - 5],
+  [GLACIS.x0 + FOOT_W, GLACIS.x1, GLACIS.z1 - FOOT_W, GLACIS.z1],
+  [GLACIS.x1 - FOOT_W, GLACIS.x1, WALL_LANE.z1, GLACIS.z1 - FOOT_W],
+  [SQUARE_LANE.x0, SQUARE_LANE.x1, BACK_LANE.z0, KHAN_Z - edge(6)],
+  [SQUARE_LANE.x1, EAST_X - 4, BACK_LANE.z0, BACK_LANE.z1],
+];
+for (const [x0, x1, z0, z1] of lanes) {
+  const ns = z1 - z0 >= x1 - x0;
+  const len = ns ? z1 - z0 : x1 - x0;
+  const w = ns ? x1 - x0 : z1 - z0;
+  claim((x0 + x1) / 2, (z0 + z1) / 2, x1 - x0, z1 - z0, 0, true);
+  placements.push(
+    `  { kind: "road", x: ${n2((x0 + x1) / 2)}, z: ${n2((z0 + z1) / 2)}${ns ? "" : TURN[1]}, ` +
+      `params: { length: ${n2(len)}, width: ${n2(w)}, surface: "cobble" } },`,
+  );
+}
+// The square, now its furniture stands on it: held open from here on.
+claim((SQUARE.x0 + SQUARE.x1) / 2, (SQUARE.z0 + SQUARE.z1) / 2, SQUARE.x1 - SQUARE.x0, SQUARE.z1 - SQUARE.z0, 0, true);
 
 section(placements, "the old town");
 placements.push(
-  "  // 30 m plots on a 7 m alley, which is a street you cannot drive a hull down",
-  "  // and can barely turn one in. The quarter is deliberately the densest thing",
-  "  // on the map and deliberately the one place armour is useless.",
+  "  // Two rows of houses back to back in every block, the plinths touching,",
+  "  // every door on a lane — and the lanes four to six metres across, cut so",
+  "  // that every junction is a T and no look runs further than a block. A",
+  "  // squad crossing it on the ground is blind; a squad crossing it on the",
+  "  // roofs is not, because over half the deep houses have a stair.",
 );
-quarter(-52, 44, 176, 196, 32, 6, (cx, cz, core) => oldTownBlock(cx, cz, core));
+const QUARTERS = [
+  // The west quarter, either side of the long souk.
+  { x0: WEST_LANE.x1, x1: GLACIS.x0, z0: WALL_LANE.z1, z1: TELL.z - edge(7) },
+  { x0: WEST_LANE.x1, x1: GLACIS.x0, z0: TELL.z + edge(7), z1: NORTH_BLVD - edge(10) },
+  // North of the tell, under the north boulevard.
+  { x0: GLACIS.x0 + FOOT_W, x1: NORTH_X - edge(7), z0: GLACIS.z1, z1: NORTH_BLVD - edge(10) },
+  // Between the tell's east foot and the straight street, either side of the
+  // citadel street; and north of the khan street up to the tell's foot lane.
+  { x0: GLACIS.x1, x1: STRAIGHT_X - edge(7), z0: SQUARE.z1, z1: TELL.z - edge(6) },
+  { x0: GLACIS.x1, x1: STRAIGHT_X - edge(7), z0: TELL.z + edge(6), z1: KHAN_Z - edge(6) },
+  { x0: GLACIS.x1, x1: NORTH_X - edge(7), z0: KHAN_Z + edge(6), z1: GLACIS.z1 - FOOT_W },
+  // The east quarter, from the straight street to the east street.
+  { x0: STRAIGHT_X + edge(7), x1: SQUARE_LANE.x0, z0: SQUARE.z1, z1: KHAN_Z - edge(6) },
+  { x0: SQUARE_LANE.x1, x1: EAST_X - edge(8), z0: BACK_LANE.z1, z1: KHAN_Z - edge(6) },
+  { x0: NORTH_X + edge(7), x1: EAST_X - edge(8), z0: KHAN_Z + edge(6), z1: NORTH_BLVD - edge(10) },
+  // What is left of the tell's south foot inside the wall.
+  { x0: GLACIS.x0 + FOOT_W, x1: GLACIS.x1 - FOOT_W, z0: WALL_LANE.z1, z1: WALL_LANE.z1 + 16 },
+];
+for (const q of QUARTERS) quarter(q, MEDINA_LANES, MEDINA);
 
-// --- the north town ----------------------------------------------------------
+// --- the new town ----------------------------------------------------------------
 
-section(placements, "the north town");
+section(placements, "the new town");
 placements.push(
-  "  // Newer, looser, and half of it never finished: bigger plots on a 36 m",
-  "  // pitch with a third of them walled and empty. The ground between the old",
-  "  // town and the north edge had to be worth crossing without being another",
-  "  // maze.",
+  "  // North of the boulevard, on a plan: streets every fifty metres each way,",
+  "  // detached houses in cement and limewash with a gap between each, two",
+  "  // storeys more often than not, and blocks of flats where the plan allowed",
+  "  // them. It reads as the old town's opposite from any roof — a grid you",
+  "  // can see down, where the old town is a maze you cannot.",
 );
-// THE KHAN, and the only closed enclosure on the map. Every other yard here is
-// a compound with a side left open — a wall the nav grid routes through — and
-// this is a rectangle with one arched passage into it and a terrace round the
-// top. It stands on the north street rather than in the old town because it is
-// what a caravan road builds: an inn on the way in, where there is room for
-// forty metres of building and a beast park outside it.
-must("caravanserai", 66, 262, 0, 44, 38, { width: 44, depth: 38 }, 4);
-place("granary", 66, 296, 0, 8, 7, { height: 6.0 }, 1.6);
-place("well", 30, 234, 0, 2.6, 2.6, null, 1.4);
-
-quarter(-244, 222, 134, 336, 32, 6, (cx, cz, core) => {
-  if (chance(0.34)) {
-    compound(cx, cz, core / 2 - 1, core / 2 - 1, { open: randInt(0, 3) });
-    if (chance(0.5)) {
-      scatter.push(
-        `  { prop: "rubble", x: ${n2(cx)}, z: ${n2(cz)}, radius: 9, count: 3, ` +
-          `scale: [0.8, 1.2], blocking: true, clearance: 1.1 },`,
-      );
+// The new town's own mosque, white and twice the size of a quarter's, and the
+// school beside it.
+must("mosque", -140, 326, 0, 20, 16, { width: 20, depth: 16, height: 6.6 }, 0.4);
+forecourt("mosque", -140, 326, 0, { width: 20, depth: 16 }, 24, 4);
+must("minaret", -158, 316, 0, 7, 7, { height: 24 }, 0.4);
+must("shellBlock", 80, 326, 0, 26, 15, { width: 26, depth: 15, floors: 2 }, 0.4);
+{
+  const xs = [-262, -230, -170, -116, -66, -10, 50, 110, 190, 262];
+  const zs = [NORTH_BLVD, 304, 348, 392, 422];
+  for (let i = 0; i + 1 < xs.length; i++) {
+    for (let j = 0; j + 1 < zs.length; j++) {
+      const wide = (x) => x === -66 || x === 190;
+      const hw0 = i === 0 ? 0 : wide(xs[i]) ? 8.5 : 5;
+      const hw1 = wide(xs[i + 1]) ? 8.5 : i + 1 === xs.length - 1 ? 0 : 5;
+      const hz0 = j === 0 ? 6.5 : 5.5;
+      const hz1 = j + 1 === zs.length - 1 ? 0 : 5.5;
+      const r = { x0: xs[i] + hw0, x1: xs[i + 1] - hw1, z0: zs[j] + hz0, z1: zs[j + 1] - hz1 };
+      // One lane through a block that is long enough to want one.
+      quarter(r, { maxShort: 36, maxLong: 64, street: 5, laneMin: 4.5, laneMax: 5.5, streets: 0 }, SUBURB);
     }
-    return;
   }
-  oldTownBlock(cx, cz, core);
-});
+}
 
 // --- D — the Martyrs' Quarter ------------------------------------------------
 
@@ -1332,18 +2037,16 @@ placements.push(
   "  // building. Whoever holds it looks down every street in the old town — and",
   "  // is looked at from a hundred and eighty metres of open slope, which is the",
   "  // trade the whole quarter is. The approach from the west is deliberately",
-  "  // bare: there is nothing between the second highway and the yard wall.",
+  "  // bare: there is nothing between the east street and the highway but the",
+  "  // slope up to the shelf.",
 );
-// Clear of the highway's west edge by four metres — the approach to this
-// quarter is meant to be bare, and a block standing in the carriageway would
-// have been silently dropped instead.
 for (const [dx, dz, turn] of [
-  [-30, -46, 0],
-  [42, -42, 0],
-  [-28, 44, 2],
-  [44, 46, 2],
+  [-30, -26, 0],
+  [42, -24, 0],
+  [-28, 22, 2],
+  [44, 24, 2],
 ]) {
-  place(
+  must(
     "shellBlock",
     D.x + dx,
     D.z + dz,
@@ -1351,17 +2054,14 @@ for (const [dx, dz, turn] of [
     22,
     16,
     { width: 22, depth: 16, floors: 3, rampSide: chance(0.5) ? 1 : -1 },
-    3,
+    0.6,
   );
 }
 // The one house on the shelf that is still whole, and the only wind tower with
 // three hundred metres of open ground under it: from its roof you look down
 // every street in the old town, and from every street in the old town you can
 // see which side is standing on it.
-// Clear of the flag's own claimed ring (26 m square about D) as well as of the
-// blocks: a set piece refused is a set piece nothing downstream mentions, and
-// this one was silently dropped once for exactly that overlap.
-must("windTower", D.x - 4, D.z + 34, 0, 15, 16, {
+must("windTower", D.x - 2, D.z + 56, 0, 15, 16, {
   width: 15,
   depth: 16,
   floors: 2,
@@ -1369,53 +2069,41 @@ must("windTower", D.x - 4, D.z + 34, 0, 15, 16, {
   rampSide: -1,
   height: 8.2,
   tint: "#b6a68f",
-}, 2.5);
+}, 0.6);
+forecourt("windTower", D.x - 2, D.z + 56, 0, { width: 15, depth: 16 }, 8, 4);
 // The school: two floors and a wider plate, so the quarter is not four of one
 // building.
-place("shellBlock", D.x - 34, D.z + 2, 1, 26, 15, { width: 26, depth: 15, floors: 2 }, 3);
-// No perimeter wall: a quarter that has been shelled for months has the yard
-// walls it has left, which is two runs and a gap where a hull went through.
-place("compoundWall", D.x + 2, D.z + 66, 0, 44, 1, { length: 44 }, 1.0);
-place("compoundWall", D.x + 54, D.z - 8, 1, 1, 48, { length: 48 }, 1.0);
+must("shellBlock", D.x + 30, D.z + 56, 0, 26, 15, { width: 26, depth: 15, floors: 2 }, 0.6);
 for (let i = 0; i < 6; i++) {
   place(
     "car",
     D.x + rand(-50, 50),
-    D.z + rand(-56, 56),
+    D.z + rand(-34, 34),
     randInt(0, 3),
     4.4,
     2.2,
     { tint: pick(["#2f3338", "#6b463a", "#4a4f45"]) },
-    1.4,
+    0.8,
   );
 }
-place("blastWall", D.x - 6, D.z - 70, 0, 26, 1, { length: 26 }, 1.2);
-place("sandbags", D.x + 30, D.z - 66, 0, 8, 1.4, { length: 8 }, 1.2);
-
-// --- the quarter's own streets -----------------------------------------------
-
-section(placements, "the quarter's own streets");
+place("blastWall", D.x - 8, D.z - 48, 0, 22, 1, { length: 22 }, 0.8);
+place("sandbags", D.x + 26, D.z - 48, 0, 8, 1.4, { length: 8 }, 0.8);
+place("sandbags", D.x - 40, D.z + 4, 1, 8, 1.4, { length: 8 }, 0.8);
+section(placements, "the shelf's own streets");
 placements.push(
-  "  // What is left of the streets around the blocks. Nearly half the plots up",
-  "  // here are ruins, which is the difference between this quarter and the old",
-  "  // town: down there the fabric is intact and the ground is a maze, and up",
-  "  // here the fabric is broken and the sightlines run.",
+  "  // What is left of the streets round the blocks: the new town's plan again,",
+  "  // and broken — the shelf took the shelling the old town got the edge of.",
 );
-quarter(200, 92, 306, 204, 32, 6, (cx, cz, core) => {
-  if (chance(0.45)) {
-    house(cx + rand(-3, 3), cz + rand(-3, 3), randInt(0, 3), {
-      w: randInt(9, 13),
-      d: randInt(9, 12),
-      ruined: true,
-    });
-    scatter.push(
-      `  { prop: "rubble", x: ${n2(cx)}, z: ${n2(cz)}, radius: 11, count: 4, ` +
-        `scale: [0.85, 1.3], blocking: true, clearance: 1.1 },`,
-    );
-    return;
-  }
-  oldTownBlock(cx, cz, core);
-});
+for (const r of [
+  { x0: 199, x1: 312, z0: 103.5 + 1.5, z1: 182 - 4.5 },
+  { x0: 199, x1: 312, z0: 186.5, z1: 214 },
+  { x0: 199, x1: 312, z0: 86, z1: 96.5 },
+]) {
+  quarter(r, { maxShort: 32, maxLong: 56, street: 5, laneMin: 4.5, laneMax: 5.5, streets: 0 }, {
+    ...SUBURB,
+    specials: [[0.15, "shelled"], [0.05, "maydan"]],
+  });
+}
 
 // --- B — the Fuel Depot ------------------------------------------------------
 
@@ -1426,23 +2114,22 @@ placements.push(
   "  // bank. It plays flat and long where every other flag plays vertical, which",
   "  // is what earns it a place on a map whose other four are all rooms.",
 );
-// The tank farm along the north side, clear of the wadi's bank foot.
 for (let i = 0; i < 4; i++) {
-  place("silo", B.x - 46 + i * 13, B.z + 20, 0, 7, 7, null, 2.0);
+  must("silo", B.x - 46 + i * 13, B.z + 20, 0, 7, 7, null, 1.2);
 }
-place("depot", B.x + 30, B.z - 10, 1, 28, 16, { width: 28, depth: 16, height: 8 }, 3);
-place("depot", B.x - 36, B.z - 26, 0, 28, 16, { width: 28, depth: 16, height: 8 }, 3);
+must("depot", B.x + 30, B.z - 10, 1, 28, 16, { width: 28, depth: 16, height: 8 }, 1.2);
+must("depot", B.x - 36, B.z - 26, 0, 28, 16, { width: 28, depth: 16, height: 8 }, 1.2);
 for (let i = 0; i < 3; i++) {
-  place("shed", B.x + rand(-52, -32), B.z + rand(-8, 12), randInt(0, 3), 5, 4, null, 1.5);
+  place("shed", B.x + rand(-52, -32), B.z + rand(-8, 12), randInt(0, 3), 5, 4, null, 1.2);
 }
-place("blastWall", B.x, B.z - 38, 0, 46, 1, { length: 46 }, 1.2);
-place("blastWall", B.x + 36, B.z + 14, 1, 34, 1, { length: 34 }, 1.2);
-place("sandbags", B.x - 16, B.z - 34, 0, 9, 1.4, { length: 9 }, 1.2);
-place("sandbags", B.x + 32, B.z - 20, 1, 8, 1.4, { length: 8 }, 1.2);
+place("blastWall", B.x, B.z - 38, 0, 46, 1, { length: 46 }, 1.0);
+place("blastWall", B.x + 36, B.z + 14, 1, 34, 1, { length: 34 }, 1.0);
+place("sandbags", B.x - 16, B.z - 34, 0, 9, 1.4, { length: 9 }, 1.0);
+place("sandbags", B.x + 32, B.z - 20, 1, 8, 1.4, { length: 8 }, 1.0);
 for (let i = 0; i < 5; i++) {
-  place("crates", B.x + rand(-46, -20), B.z + rand(-30, 16), randInt(0, 3), 3, 2.4, null, 1.2);
+  place("crates", B.x + rand(-46, -20), B.z + rand(-30, 16), randInt(0, 3), 3, 2.4, null, 1.0);
 }
-place("car", B.x + 14, B.z - 30, 1, 4.4, 2.2, { tint: "#6b463a" }, 1.4);
+place("car", B.x + 14, B.z - 30, 1, 4.4, 2.2, { tint: "#6b463a" }, 1.2);
 compound(B.x, B.z, 42, 38, { open: 0, height: 2.4 });
 scatter.push(
   `  { prop: "barrel", x: ${n2(B.x - 22)}, z: ${n2(B.z + 2)}, radius: 14, count: 9, ` +
@@ -1463,25 +2150,22 @@ placements.push(
   "  // narrowest flag on the map — a fight for fourteen metres of road — and the",
   "  // only one a hull can sit outside and shell without ever entering.",
 );
-// The T-walls stand EITHER SIDE of the carriageway with the gap at the road,
-// which is what a checkpoint is: the highway is 14 m wide here and the walls
-// stop 4 m short of it on both sides.
 for (const z of [E.z + 18, E.z - 26]) {
-  place("blastWall", E.x - 27, z, 0, 24, 1, { length: 24 }, 1.2);
-  place("blastWall", E.x + 27, z, 0, 24, 1, { length: 24 }, 1.2);
+  place("blastWall", E.x - 27, z, 0, 24, 1, { length: 24 }, 1.0);
+  place("blastWall", E.x + 27, z, 0, 24, 1, { length: 24 }, 1.0);
 }
-place("sandbags", E.x - 20, E.z + 4, 0, 9, 1.4, { length: 9 }, 1.2);
-place("sandbags", E.x + 22, E.z - 12, 0, 9, 1.4, { length: 9 }, 1.2);
-place("watchtower", E.x - 46, E.z + 4, 0, 7, 8, null, 2.0);
+place("sandbags", E.x - 20, E.z + 4, 0, 9, 1.4, { length: 9 }, 1.0);
+place("sandbags", E.x + 22, E.z - 12, 0, 9, 1.4, { length: 9 }, 1.0);
+must("watchtower", E.x - 46, E.z + 4, 0, 7, 8, null, 1.2);
 place("adobeHouse", E.x + 44, E.z - 18, 1, 14, 15, {
   width: 14,
   depth: 15,
   floors: 2,
   enterable: true,
   rampSide: -1,
-}, 2.5);
-place("shed", E.x + 46, E.z - 44, 0, 5, 4, null, 1.5);
-place("kiln", E.x - 48, E.z - 30, 0, 4, 4, null, 1.5);
+}, 1.2);
+place("shed", E.x + 46, E.z - 44, 0, 5, 4, null, 1.2);
+place("kiln", E.x - 48, E.z - 30, 0, 4, 4, null, 1.2);
 compound(E.x + 40, E.z - 20, 26, 22, { open: 3, height: 2.4 });
 for (let i = 0; i < 4; i++) {
   place(
@@ -1492,33 +2176,51 @@ for (let i = 0; i < 4; i++) {
     4.4,
     2.2,
     { tint: pick(["#2f3338", "#4a4f45", "#5d4a3a"]) },
-    1.4,
+    1.2,
   );
 }
-place("barrier", E.x - 10, E.z + 34, 1, 6, 1, { length: 6 }, 1.0);
-place("barrier", E.x + 10, E.z - 44, 1, 6, 1, { length: 6 }, 1.0);
+place("barrier", E.x - 10, E.z + 34, 1, 6, 1, { length: 6 }, 0.8);
+place("barrier", E.x + 10, E.z - 44, 1, 6, 1, { length: 6 }, 0.8);
 
 // --- the south bank ----------------------------------------------------------
 
 section(placements, "the south bank");
 placements.push(
-  "  // What is left of the suburb between the wadi and the desert: a third of it",
-  "  // walled plots with nothing in them, which is what a town looks like where",
-  "  // it was still being built when the fighting reached it.",
+  "  // The suburb between the wadi and the desert, 2.6 m below the town: rows",
+  "  // along the south road and the bank street, garages and yards between",
+  "  // them, a third of the plots walled and empty — which is what a town looks",
+  "  // like where it was still being built when the fighting reached it.",
 );
-// The second khan, on the south bank's own terrace and 2.6 m below the town —
-// see `SOUTH_TERRACE`. It is 95 m west of the Depot, which is deliberate: B is
+// The second khan, on the south bank's terrace 95 m west of the Depot: B is
 // the one flag with no roofs over it and plays flat and long, and a walled
 // terrace within a rush of it is the cover that fight was missing.
-must("caravanserai", -215, -187, 0, 44, 38, { width: 44, depth: 38, tint: "#b6a68f" }, 4);
-
-quarter(-256, -222, 256, -152, 32, 6, (cx, cz, core) => {
-  if (chance(0.38)) {
-    compound(cx, cz, core / 2 - 1, core / 2 - 1, { open: randInt(0, 3) });
-    return;
+must("caravanserai", -215, -187, 0, 44, 38, { width: 44, depth: 38, tint: "#b6a68f" }, 0.3);
+// Its gate's forecourt, out to the south road.
+forecourt("caravanserai", -215, -187, 0, { width: 44, depth: 38 }, 14, 19);
+{
+  const SOUTH = {
+    ...SUBURB,
+    renders: [...CEMENT, ...RENDERS],
+    tall: 0.35,
+    yard: 0.14,
+    specials: [
+      [0.1, "lot"],
+      [0.06, "shelled"],
+      [0.05, "garden"],
+      [0.03, "granary"],
+    ],
+  };
+  for (const r of [
+    { x0: -262, x1: -165, z0: -230 + 4 + 1.5, z1: -148 - 4.5 },
+    { x0: -73, x1: 262, z0: -230 + 4 + 1.5, z1: -187 - 5 },
+    { x0: -73, x1: 262, z0: -187 + 5, z1: -148 - 4.5 },
+    // The roadside strip: garages and houses facing the south road, the
+    // back lane behind them, and the desert behind that.
+    { x0: -262, x1: 262, z0: -272 + 3 + 1.5, z1: -230 - 4 - 1.5 },
+  ]) {
+    quarter(r, { maxShort: 36, maxLong: 60, street: 6, laneMin: 4.5, laneMax: 6, streets: 1 }, SOUTH);
   }
-  oldTownBlock(cx, cz, core);
-});
+}
 
 // --- the home yards ----------------------------------------------------------
 
@@ -1535,17 +2237,69 @@ placements.push(
 for (const h of HOMES) {
   const s = h.s;
   place("gatehouse", h.x, h.z + s * 34, s > 0 ? 2 : 0, 12, 8, { teamColor: h.color }, 0, true);
-  place("blastWall", h.x - s * 40, h.z + s * 8, 1, 36, 1, { length: 36 }, 1.2);
-  place("blastWall", h.x + s * 24, h.z + s * 40, 0, 28, 1, { length: 28 }, 1.2);
-  place("sandbags", h.x + s * 30, h.z - s * 24, 0, 10, 1.4, { length: 10 }, 1.2);
-  place("shed", h.x + s * 34, h.z + s * 14, 0, 5, 4, null, 1.6);
-  place("shed", h.x + s * 22, h.z + s * 26, 1, 5, 4, null, 1.6);
-  place("shed", h.x - s * 30, h.z - s * 30, 0, 5, 4, null, 1.6);
-  place("crates", h.x + s * 16, h.z + s * 30, 0, 3, 2.4, null, 1.2);
-  place("car", h.x - s * 36, h.z + s * 26, 1, 4.4, 2.2, { tint: "#4a4f45" }, 1.4);
-  place("compoundWall", h.x + s * 48, h.z + s * 6, 1, 1, 34, { length: 34 }, 1.0);
-  place("compoundWall", h.x - s * 12, h.z - s * 44, 0, 34, 1, { length: 34 }, 1.0);
+  place("blastWall", h.x - s * 40, h.z + s * 8, 1, 36, 1, { length: 36 }, 1.0);
+  place("blastWall", h.x + s * 24, h.z + s * 40, 0, 28, 1, { length: 28 }, 1.0);
+  place("sandbags", h.x + s * 30, h.z - s * 24, 0, 10, 1.4, { length: 10 }, 1.0);
+  place("shed", h.x + s * 34, h.z + s * 14, 0, 5, 4, null, 1.2);
+  place("shed", h.x + s * 22, h.z + s * 26, 1, 5, 4, null, 1.2);
+  place("shed", h.x - s * 30, h.z - s * 30, 0, 5, 4, null, 1.2);
+  place("crates", h.x + s * 16, h.z + s * 30, 0, 3, 2.4, null, 1.0);
+  place("car", h.x - s * 36, h.z + s * 26, 1, 4.4, 2.2, { tint: "#4a4f45" }, 1.2);
+  place("compoundWall", h.x + s * 48, h.z + s * 6, 1, 1, 34, { length: 34 }, 0.8);
+  place("compoundWall", h.x - s * 12, h.z - s * 44, 0, 34, 1, { length: 34 }, 0.8);
 }
+
+// --- the gardens -------------------------------------------------------------
+
+section(placements, "the gardens on the bench");
+placements.push(
+  "  // The bustan: walled palm gardens on the flood bench between the town wall",
+  "  // and the wadi's bank, each a plot of dates in a mud wall with its gate",
+  "  // on the boulevard and a gardener's house in some. It is what a town on a",
+  "  // watercourse has outside its south wall, and it is what makes the bench",
+  "  // a place you cross under cover rather than two hundred metres of sand.",
+);
+for (let x = -300; x <= 170; x += 30) {
+  if (Math.abs(x + 66) < 22 || Math.abs(x - STRAIGHT_X) < 12) continue;
+  const lip = wadiZ(x) + WADI_LIP - 4;
+  const hi = SOUTH_BLVD - 17;
+  if (hi - lip < 14) continue;
+  const cz = (lip + hi) / 2;
+  const hd = (hi - lip) / 2 - 0.8;
+  const hw = rand(11, 13.5);
+  const cx = x + rand(-1.5, 1.5);
+  if (!free(cx, cz, 2 * hw, 2 * hd, 0.6)) continue;
+  compound(cx, cz, hw, hd, { open: 2, height: rnd(1.7, 2.2), tint: pick(RENDERS), pad: 0.2 });
+  scatter.push(
+    `  { prop: "palm", x: ${n2(cx)}, z: ${n2(cz)}, width: ${n2(2 * hw - 4)}, depth: ${n2(2 * hd - 4)}, ` +
+      `count: ${randInt(5, 9)}, scale: [0.85, 1.2], blocking: true, clearance: 2.6 },`,
+  );
+  if (chance(0.3)) {
+    house(cx + rand(-hw / 3, hw / 3), cz + rand(-hd / 3, hd / 3), 2, { w: randInt(7, 9), d: randInt(7, 8), stair: false });
+  } else if (chance(0.2)) {
+    place("granary", cx, cz, randInt(0, 3), 8, 7, { height: rnd(4.2, 5.4) }, 0.8);
+  }
+}
+
+// --- the burial ground -------------------------------------------------------
+
+section(placements, "the burial ground");
+/**
+ * The town's burial ground, outside its west gate across the link road: a
+ * low wall round three hundred headstones with a saint's tomb at its head,
+ * which is where every town in this part of the world buries its dead — on
+ * the road out, past the gate.
+ */
+const GRAVES = { x: -372, z: 150 };
+must("shrine", GRAVES.x - 30, GRAVES.z, 0, 4, 4, undefined, 1.2);
+compound(GRAVES.x, GRAVES.z, 40, 34, { open: 1, height: 1.6, pad: 0.3 });
+scatter.push(
+  `  { prop: "gravestone", x: ${n2(GRAVES.x + 4)}, z: ${n2(GRAVES.z)}, width: 66, depth: 60, ` +
+    `count: 96, scale: [0.8, 1.25], blocking: true, clearance: 0.6 },`,
+  `  { prop: "palm", x: ${n2(GRAVES.x - 30)}, z: ${n2(GRAVES.z)}, radius: 9, count: 3, ` +
+    `scale: [0.95, 1.2], blocking: true, clearance: 3.0 },`,
+);
+
 
 // --- the outskirts -----------------------------------------------------------
 
@@ -1556,22 +2310,13 @@ placements.push(
   "  // sparse: the country outside the town is TRANSIT, and 900 m of play needs",
   "  // some of it to be ground you cross rather than ground you clear.",
 );
-for (let i = 0; i < 440; i++) {
+for (let i = 0; i < 320; i++) {
   const a = rng() * Math.PI * 2;
-  // **The ring reaches further IN than it used to** (was 214), and that is the
-  // half of the sparseness the dead ground could not fix. A quarter's edge is
-  // a wall and then nothing for two hundred metres, so what a crossing needed
-  // was not more thorn on it but somewhere in the middle to be going: a yard
-  // at 190 m is a place, and a place two hundred metres from the last one is
-  // what makes the ground between them a route rather than a gap.
-  const r = rand(186, 422);
+  const r = rand(220, 422);
   const cx = Math.cos(a) * r;
   const cz = Math.sin(a) * r;
   if (Math.abs(cx) > 415 || Math.abs(cz) > 415) continue;
   if (Math.abs(cz - wadiZ(cx)) < WADI_LIP + 14) continue;
-  // 0.16 rather than 0.13, because the drift terms this map's floor gained
-  // put more of the open ground on a gentle grade than there used to be and
-  // the old bar was turning down flat-enough yards for it.
   if (grade(cx, cz) > 0.16) continue;
   const hw = rand(13, 22);
   const hd = rand(12, 20);
@@ -1585,10 +2330,6 @@ for (let i = 0; i < 440; i++) {
       ruined: chance(0.35),
     });
   }
-  // The grain store, on about a third of them. A smallholding out here is a
-  // wall, a house and the year's barley, and the silos are the part of it worth
-  // a collider at four hundred metres — they are the only thing in the
-  // outskirts tall enough to break a look down the open ground.
   if (chance(0.34)) {
     place(
       "granary",
@@ -1607,49 +2348,32 @@ for (let i = 0; i < 440; i++) {
 
 section(placements, "the wayside");
 placements.push(
-  "  // The half-dozen things standing on the open desert that are not a",
-  "  // smallholding, and they exist for a reason the dead ground's thorn and",
-  "  // stone cannot serve: a crossing needs somewhere to be GOING, not just",
-  "  // something to look at on the way. Every one of these is a shape you can",
-  "  // see from four hundred metres and get behind at four, put where the map",
-  "  // is otherwise nothing — the burial ground on the western flat, the three",
+  "  // The things standing on the open desert that are not a smallholding, and",
+  "  // they exist for a reason thorn and stone cannot serve: a crossing needs",
+  "  // somewhere to be GOING. The two burial grounds outside the gates, the",
   "  // cisterns the tracks out of town were dug for, the convoy that did not",
   "  // make the ford, and the stock pens on the northern approach.",
-  "  //",
-  "  // Authored rather than lattice-generated, and that is the whole point of",
-  "  // them: what the grid is good at is TEXTURE, and a landmark is the thing",
-  "  // texture cannot be. The one piece placed with `must` is the shrine at the",
-  "  // head of the burial ground, because that is the piece the ground is FOR",
-  "  // and a silent refusal would leave a walled plot with nothing in it; every",
-  "  // other line here is dressing on ground that reads without it, and is",
-  "  // allowed to lose to something the fabric already grew.",
 );
 
-/**
- * The burial ground: a low wall round a plot of headstones with a shrine at
- * its head, out on the western flat where the map had nothing at all.
- *
- * The wall is DELIBERATELY low and broken by the compound's open side — a
- * sealed rectangle out here is a box bots route the long way round, and the
- * whole value of a landmark is that people go to it.
- */
+/** The old burial ground on the western flat by the wadi. */
 const CEMETERY = { x: -300, z: -108 };
 must("shrine", CEMETERY.x, CEMETERY.z + 18, 0, 4, 4, undefined, 2);
 compound(CEMETERY.x, CEMETERY.z, 22, 16, { open: 0, height: 1.5 });
 place("well", CEMETERY.x - 14, CEMETERY.z - 8, 0, 3, 3, undefined, 1.4);
+scatter.push(
+  `  { prop: "gravestone", x: ${n2(CEMETERY.x)}, z: ${n2(CEMETERY.z - 2)}, width: 38, depth: 22, ` +
+    `count: 30, scale: [0.8, 1.2], blocking: true, clearance: 0.6 },`,
+);
 
 /**
- * The three cisterns on the open ground, each with its trough and its palm.
- *
- * A well in a desert is the strongest landmark there is because it is the only
- * one that explains itself: the road bends to it, the ground round it is worn,
- * and it is the one place on a crossing anybody would have had a reason to
- * stand. They are held well off the wadi on purpose — water at the surface is
- * the wadi's own story and a cistern is what you dig where there is none.
+ * The cisterns on the open ground, each with its trough and its palm. A well
+ * in a desert is the strongest landmark there is because it is the only one
+ * that explains itself: the track bends to it and it is the one place on a
+ * crossing anybody would have had a reason to stand.
  */
 const CISTERNS = [
   { x: 96, z: -318 },
-  { x: -156, z: 330 },
+  { x: -404, z: 290 },
   { x: 330, z: -212 },
 ];
 for (const c of CISTERNS) {
@@ -1666,17 +2390,14 @@ for (const c of CISTERNS) {
 /**
  * The convoy that did not make the ford: five burnt hulls, a T-wall somebody
  * dragged across afterwards and the drums they were carrying, on the open
- * ground short of the eastern highway's crossing.
- *
- * The only cluster on the map that is COVER in the middle of open ground
- * rather than at the edge of it, which is what makes the eastern approach to
- * the Crossing crossable at all.
+ * ground short of the eastern highway's crossing — the only cluster on the
+ * map that is cover in the middle of open ground rather than at its edge.
  */
-const CONVOY = { x: 268, z: -60 };
+const CONVOY = { x: 214, z: -60 };
 for (let i = 0; i < 5; i++) {
   place(
     "car",
-    CONVOY.x + rand(-16, 16),
+    CONVOY.x + rand(-11, 11),
     CONVOY.z + i * 9 - 18 + rand(-3, 3),
     randInt(0, 3),
     4.4,
@@ -1695,21 +2416,19 @@ scatter.push(
 );
 
 /**
- * The stock pens on the northern approach: three empty enclosures and the
- * feed store beside them, which is a compound with no house in it and reads
- * from the air as the edge of a town rather than as a building nobody
- * finished.
+ * The stock pens on the northern approach, past the new town: three empty
+ * enclosures and the feed store, which reads from the air as the edge of a
+ * town rather than as a building nobody finished.
  */
-const PENS = { x: 60, z: 372 };
+const PENS = { x: 250, z: 408 };
 for (let i = 0; i < 3; i++) {
-  compound(PENS.x + i * 34 - 34, PENS.z + (i % 2) * 10, 15, 11, {
+  compound(PENS.x + i * 34 - 34, PENS.z + (i % 2) * 6 - 3, 15, 11, {
     open: (i + 1) % 4,
     height: 1.7,
   });
-  place("trough", PENS.x + i * 34 - 34, PENS.z + (i % 2) * 10, 0, 3.2, 1.2, undefined, 1.2);
+  place("trough", PENS.x + i * 34 - 34, PENS.z + (i % 2) * 6 - 3, 0, 3.2, 1.2, undefined, 1.2);
 }
 place("granary", PENS.x + 44, PENS.z - 6, 0, 8, 7, { height: 5.0 }, 1.4);
-place("shed", PENS.x - 52, PENS.z + 4, 1, 6, 5, undefined, 1.4);
 
 // --- the roadside ------------------------------------------------------------
 
@@ -1718,29 +2437,17 @@ placements.push(
   "  // The power line, the burnt-out vehicles along the two highways and the",
   "  // checkpoints between them. The wrecks are placed ON the verge rather",
   "  // than in the carriageway on purpose: a wreck across a road is cover on",
-  "  // the one line every hull on the map takes, and this map already has four",
-  "  // fords to be caught in.",
+  "  // the one line every hull on the map takes.",
   "  //",
-  "  // THE POLES ARE THE MIDDLE DISTANCE and are worth more than they look.",
-  "  // 900 m of play square with quarters in it is 900 m of open ground",
-  "  // between them, and open ground with nothing standing on it reads as no",
-  "  // distance at all — there is nothing between the body and the haze for",
-  "  // the eye to measure against, which is exactly what made this map read as",
-  "  // sparse from the air. A line of poles at a known pitch is the cheapest",
-  "  // ruler there is: it states the scale of the ground it crosses and it says",
-  "  // which way the road goes from four hundred metres, and it costs no draw",
-  "  // call, because every part of it is in the map's own palette and merges",
-  "  // into whichever block it stands in. See `buildPylon`, which carries the",
-  "  // span AHEAD of each pole, and `poleRun`, which is what stops a refused",
-  "  // pole leaving a wire hanging in the air.",
+  "  // THE POLES ARE THE MIDDLE DISTANCE: a line of them at a known pitch is",
+  "  // the cheapest ruler there is, stating the scale of the ground it crosses",
+  "  // and which way the road goes from four hundred metres. See `buildPylon`,",
+  "  // which carries the span AHEAD of each pole, and `poleRun`, which is what",
+  "  // stops a refused pole leaving a wire hanging in the air.",
 );
-// The two asphalt highways and the cross route. 46 m of pitch, which is a
-// span the sag term is tuned for and a spacing that puts eight or nine poles
-// inside `fogEnd` from any point on the road — enough of a line to read as one
-// and few enough that the run is not a fence.
-poleRun("z", -80, -414, 414, 46);
-poleRun("z", 204, -414, 414, 46);
-poleRun("x", 44, -414, 414, 46);
+poleRun("z", -80, -414, 12, 46);
+poleRun("z", 176, -414, 414, 46);
+poleRun("x", 18, -414, 414, 46);
 for (let i = 0; i < 30; i++) {
   const road = chance(0.5) ? -66 : 190;
   const side = chance(0.5) ? 1 : -1;
@@ -1764,7 +2471,7 @@ for (let i = 0; i < 14; i++) {
   const x = road + side * rand(11, 14);
   const z = rand(-380, 380);
   if (Math.abs(z - wadiZ(x)) < WADI_BED + 4) continue;
-  place("barrier", x, z, 1, 6, 1, { length: 6 }, 1.0);
+  place("barrier", x, z, 0, 6, 1, { length: 6 }, 1.0);
 }
 
 // =============================================================================
@@ -1793,39 +2500,31 @@ scatter.push(
     `count: 8, scale: [0.85, 1.15], blocking: true, clearance: 2.6 },`,
   `  { prop: "palm", x: ${n2(196)}, z: ${n2(Number(wadiZ(196).toFixed(1)))}, radius: 26, ` +
     `count: 8, scale: [0.85, 1.15], blocking: true, clearance: 2.6 },`,
-  // The two the town keeps: a courtyard palm is the biggest thing growing in a
-  // quarter and is meant to read as one tree rather than as a stand.
-  `  { prop: "palm", x: ${n2(A.x + 18)}, z: ${n2(A.z + 4)}, radius: 9, count: 3, ` +
-    `scale: [1.0, 1.2], blocking: true, clearance: 3.0 },`,
-  `  { prop: "palm", x: ${n2(C.x + 4)}, z: ${n2(C.z + 40)}, radius: 8, count: 3, ` +
-    `scale: [1.0, 1.2], blocking: true, clearance: 3.0 },`,
+  // The square's own: one palm a corner, the biggest thing growing in the
+  // middle of the town.
+  `  { prop: "palm", x: ${n2(SQUARE.x0 + 16)}, z: ${n2(SQUARE.z0 + 4)}, radius: 3, count: 1, ` +
+    `scale: [1.05, 1.2], blocking: true, clearance: 3.0 },`,
+  `  { prop: "palm", x: ${n2(SQUARE.x1 - 16)}, z: ${n2(SQUARE.z0 + 4)}, radius: 3, count: 1, ` +
+    `scale: [1.05, 1.2], blocking: true, clearance: 3.0 },`,
+  // The two in the mosque's court, either side of the portal.
+  `  { prop: "palm", x: ${n2(A.x - 19)}, z: ${n2(A.z + 13)}, radius: 2, count: 1, ` +
+    `scale: [1.1, 1.25], blocking: true, clearance: 3.0 },`,
+  `  { prop: "palm", x: ${n2(A.x + 19)}, z: ${n2(A.z + 4)}, radius: 2, count: 1, ` +
+    `scale: [1.1, 1.25], blocking: true, clearance: 3.0 },`,
 );
 
 section(scatter, "the dead ground");
 scatter.push(
-  "  // The open desert between the quarters, and it is dressed on a GRID",
-  "  // rather than by hand for the reason every other bulk pass in this file",
-  "  // is: ten authored patches over 810,000 square metres is one patch every",
-  "  // three hundred metres, which from the ground is bare sand with an",
-  "  // occasional bush in it — and bare sand with an occasional bush in it is",
-  "  // what made this map read as unfinished. A 62 m lattice with a character",
-  "  // drawn per cell covers the same ground at a density the eye reads as",
-  "  // continuous while leaving one cell in eight EMPTY, which is what keeps a",
-  "  // desert a desert: what is wanted is ground that goes somewhere, not",
-  "  // ground that is full.",
+  "  // The open desert between the town and the edge, and it is dressed on a",
+  "  // GRID rather than by hand: a 62 m lattice with a character drawn per cell",
+  "  // covers it at a density the eye reads as continuous while leaving one cell",
+  "  // in eight EMPTY, which is what keeps a desert a desert.",
   "  //",
   "  // **Almost all of it is non-blocking, and that is the budget.** A prop",
   "  // with no collider emits no `WorldBox`, costs no ray, no nav cell and no",
   "  // cover query, and its geometry merges into whichever 96 m block it",
-  "  // stands in — so the whole of this pass is VERTICES in meshes that were",
-  "  // already being drawn, and `WorldCulling` drops them past `fogEnd` with",
-  "  // the block they belong to. The one kind that does block is the stone",
-  "  // field, deliberately: an open crossing with nothing to get behind is a",
-  "  // crossing nobody makes twice, and the boulders are the only cover on it.",
-  "  //",
-  "  // Held off the carriageways by hand, because `blocking` and `boulder`",
-  "  // between them are the case the builder cannot cover: it sows nothing",
-  "  // ROOTED on a road, and a boulder is not rooted.",
+  "  // stands in. The one kind that does block is the stone field: an open",
+  "  // crossing with nothing to get behind is a crossing nobody makes twice.",
 );
 
 /** How far a point is from the nearest carriageway EDGE, 0 if it is on one. */
@@ -1840,17 +2539,9 @@ function roadDist(x, z) {
 }
 
 /**
- * How many things have already claimed ground within `reach` of a point.
- *
- * **This is the test for "is this a street", and a district is NOT that test**,
- * which is the thing a first version of this pass got wrong. `DISTRICTS` are
- * the rectangles the FLOOR is flattened over, and two of them are enormous —
- * the south bank is 524 m wide and the north town 390 — because a terrace is
- * a shape the ground takes, not a shape the town fills. Keying the dead
- * ground off them threw away more than half of the open desert as though it
- * were built up, which is the same emptiness this pass exists to fix. What
- * says a cell is a street is that there are BUILDINGS in it, and the claim
- * list is where that is written down.
+ * How many things have already claimed ground within `reach` of a point: the
+ * test for "is this a street". A district is the shape the FLOOR takes and not
+ * the shape the town fills, so the claim list is what says a cell is built.
  */
 function claimsNear(x, z, reach) {
   let n = 0;
@@ -1866,30 +2557,18 @@ for (let gx = -7; gx <= 7; gx++) {
     const cx = Math.round(gx * DEAD_PITCH + rand(-15, 15));
     const cz = Math.round(gz * DEAD_PITCH + rand(-15, 15));
     if (Math.abs(cx) > 406 || Math.abs(cz) > 406) continue;
-    // A quarter is where the CLAIMS are, and 12 inside 40 m is the knee: a
-    // town block runs to twenty and past, a smallholding on the outskirts is
-    // six or seven, and thorn growing round a smallholding is the point.
     if (claimsNear(cx, cz, 40) >= 12) continue;
     if (roadDist(cx, cz) < 13) continue;
     const roll = rng();
-    // One cell in eight is left bare on purpose — see the head of this block.
     if (roll > 0.87) continue;
     const inBed = Math.abs(cz - wadiZ(cx)) < WADI_BED;
     const r = randInt(34, 46);
     if (roll < 0.34) {
-      // Thorn: the commonest thing growing out here, and the only one of the
-      // four characters that is nothing but drawing — no cover in it at any
-      // scale, which is what makes it the one safe to put anywhere.
       scatter.push(
         `  { prop: "bramble", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${r}, ` +
           `count: ${randInt(16, 30)}, scale: [0.7, 1.5] },`,
       );
     } else if (roll < 0.66) {
-      // A stone field, and it is the WORKHORSE of this pass rather than the
-      // thorn: a boulder is two polyhedra where a bramble is nine cylinders,
-      // so it is a quarter of the vertices for something that reads at four
-      // hundred metres instead of at forty. Non-blocking and small, so it is
-      // drawing only — nothing here is cover, and nothing here costs a ray.
       scatter.push(
         `  { prop: "boulder", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${r}, ` +
           `count: ${randInt(14, 26)}, scale: [0.28, 0.66], clearance: 1.0 },`,
@@ -1902,10 +2581,6 @@ for (let gx = -7; gx <= 7; gx++) {
         );
       }
     } else if (roll < 0.79) {
-      // The cover cell: boulders big enough to get behind, which is the one
-      // thing in this pass that changes how the ground plays rather than how
-      // it looks. Held well off the roads above, and it is the ONLY blocking
-      // region the lattice makes.
       scatter.push(
         `  { prop: "boulder", x: ${n2(cx)}, z: ${n2(cz)}, radius: ${randInt(16, 24)}, ` +
           `count: ${randInt(4, 7)}, scale: [0.95, 1.5], blocking: true, clearance: 1.0 },`,
@@ -1913,14 +2588,10 @@ for (let gx = -7; gx <= 7; gx++) {
           `count: ${randInt(12, 20)}, scale: [0.28, 0.62], clearance: 1.0 },`,
       );
     } else {
-      // Dead standing timber, and it is the RAREST of the four on purpose: the
-      // prop is `BARK` at #4a4238, which is a wet valley's tree, and against
-      // bleached sand under a high sun it silhouettes almost black. A few of
-      // them across a quarter of a mile is a landmark; a lattice of them is a
-      // rash of dark spiders on pale ground. A wadi bed gets DRIFTWOOD instead
-      // — the same prop laid along the run rather than in a clump, because
-      // what collects in a watercourse arrived in one, and lying down it reads
-      // as debris rather than as a tree that should not be there.
+      // Dead standing timber, the rarest of the four: against bleached sand
+      // under a high sun it silhouettes almost black, so a few across a
+      // quarter of a mile is a landmark and a lattice of them a rash. A wadi
+      // bed gets DRIFTWOOD instead — the same prop laid along the run.
       scatter.push(
         inBed
           ? `  { prop: "deadTree", x: ${n2(cx)}, z: ${n2(cz)}, width: ${r * 2}, ` +
@@ -1938,17 +2609,8 @@ for (let gx = -7; gx <= 7; gx++) {
 section(scatter, "the wadi bed");
 scatter.push(
   "  // Gravel bars and dry thorn down the whole run of the bed, and every",
-  "  // region here is NON-BLOCKING without exception. That is the wadi's own",
-  "  // rule restated rather than a budget: the bed is a ROUTE, its only cover",
-  "  // is the palm boles, and a watercourse you cannot be caught in is not the",
-  "  // feature this map put across its middle. What was missing was never",
-  "  // cover — it was that 900 m of dry channel had the same bare floor as the",
-  "  // open desert either side of it, so nothing said it was a channel at all",
-  "  // until you were standing in it.",
-  "  //",
-  "  // Small stone at a high count is what a bar of shingle is, and it is also",
-  "  // the cheapest thing in the prop table: two polyhedra, no collider, no",
-  "  // `WorldBox`, no ray and no nav cell.",
+  "  // region here is NON-BLOCKING without exception: the bed is a ROUTE, and",
+  "  // its only cover is the palm boles.",
 );
 for (let x = -400; x <= 400; x += 46) {
   const z = wadiZ(x);
@@ -1971,20 +2633,21 @@ section(scatter, "the streets");
 scatter.push(
   "  // Urban clutter, and almost all of it non-blocking on purpose: a prop with",
   "  // no collider emits no `WorldBox` and costs no ray anything, which is what",
-  "  // makes a town this size dressable at all. See coldharbour/layout.ts, which",
-  "  // is where that argument was measured.",
+  "  // makes a town this size dressable at all. The lanes get a share of it each,",
+  "  // which is what stops a lane between two clean walls reading as a model.",
 );
 const STREETS = [
-  [C.x, C.z, 60],
-  [C.x - 60, C.z + 40, 46],
-  [C.x + 60, C.z - 40, 46],
-  [A.x + 10, A.z, 50],
+  [C.x, C.z, 30],
+  [90, SOUK_Z, 34],
+  [-262, TELL.z, 40],
+  [A.x, A.z, 30],
   [D.x, D.z, 66],
   [E.x, E.z, 40],
   [B.x, B.z, 46],
-  [-60, 200, 50],
-  [70, 220, 50],
-  [-200, 210, 44],
+  [STRAIGHT_X, 150, 30],
+  [NORTH_X, 220, 30],
+  [-140, 280, 50],
+  [60, 300, 50],
   [-40, -200, 46],
   [60, -190, 42],
 ];
@@ -2001,18 +2664,26 @@ for (const [x, z, r] of STREETS) {
       `count: ${randInt(4, 8)}, scale: [0.9, 1.1], clearance: 1.1 },`,
   );
 }
+for (const l of LANES) {
+  if (!chance(0.4)) continue;
+  const w = l.x1 - l.x0;
+  const d = l.z1 - l.z0;
+  scatter.push(
+    `  { prop: "litter", x: ${n2((l.x0 + l.x1) / 2)}, z: ${n2((l.z0 + l.z1) / 2)}, ` +
+      `width: ${n2(Math.max(2, w - 1.5))}, depth: ${n2(Math.max(2, d - 1.5))}, ` +
+      `count: ${Math.max(2, Math.round((w * d) / 60))}, scale: [0.8, 1.2], clearance: 1.0 },`,
+  );
+}
 scatter.push(
   `  { prop: "palletStack", x: ${n2(B.x + 10)}, z: ${n2(B.z + 18)}, radius: 16, count: 3, scale: [0.9, 1.2], blocking: true, clearance: 1.6 },`,
-  `  { prop: "skip", x: ${n2(D.x - 20)}, z: ${n2(D.z + 20)}, radius: 22, count: 3, scale: [0.9, 1.1], blocking: true, clearance: 2.4 },`,
-  `  { prop: "skip", x: ${n2(C.x + 40)}, z: ${n2(C.z + 30)}, radius: 18, count: 2, scale: [0.9, 1.1], blocking: true, clearance: 2.4 },`,
-  `  { prop: "binPair", x: ${n2(C.x - 44)}, z: ${n2(C.z - 34)}, radius: 20, count: 4, scale: [0.9, 1.15], blocking: true, clearance: 1.4 },`,
-  `  { prop: "binPair", x: ${n2(A.x + 30)}, z: ${n2(A.z - 40)}, radius: 18, count: 3, scale: [0.9, 1.15], blocking: true, clearance: 1.4 },`,
+  `  { prop: "skip", x: ${n2(D.x - 20)}, z: ${n2(D.z + 6)}, radius: 22, count: 3, scale: [0.9, 1.1], blocking: true, clearance: 2.4 },`,
+  `  { prop: "binPair", x: ${n2(C.x)}, z: ${n2(C.z)}, radius: 22, count: 3, scale: [0.9, 1.15], blocking: true, clearance: 1.4 },`,
+  `  { prop: "binPair", x: ${n2(-40)}, z: ${n2(330)}, radius: 40, count: 6, scale: [0.9, 1.15], blocking: true, clearance: 1.4 },`,
 );
 
 // APPENDED, and it has to stay appended: `MapBuilder.scatterRegion` draws every
 // region from one seeded stream in array order, so a region inserted above this
-// point re-rolls every field below it. That is the rule the head of this block
-// states and this is the block it was written for.
+// point re-rolls every field below it.
 section(scatter, "the water");
 scatter.push(
   "  // The dates, round the two places on this map where the water is at the",
@@ -2034,7 +2705,7 @@ for (const [sx, sz] of [
 ]) {
   scatter.push(
     `  { prop: "palm", x: ${n2(BIRKAT.x + sx * 26)}, z: ${n2(BIRKAT.z + sz * 24)}, ` +
-      `radius: 10, count: ${randInt(3, 5)}, scale: [1.0, 1.25], blocking: true, ` +
+      `radius: 4, count: ${randInt(1, 2)}, scale: [1.0, 1.25], blocking: true, ` +
       "clearance: 3.0 },",
   );
 }
@@ -2142,7 +2813,7 @@ for (const pool of POOLS) {
   );
 }
 water.push(
-  "  // The birkat: the mosque quarter's reservoir, and the only water in the",
+  "  // The birkat: the west quarter's reservoir, and the only water in the",
   "  // town itself. Its basin is dug 2.7 m into flat district ground, so this is",
   "  // the one body on the map whose whole area is out of the shore band.",
 );
@@ -2199,10 +2870,11 @@ grass.push(
   // which is where reeds are.
   `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z + 20)}, width: 50, depth: 16, height: 1.1 },`,
   `  { x: ${n2(BIRKAT.x)}, z: ${n2(BIRKAT.z - 20)}, width: 50, depth: 16, height: 1.1 },`,
-  `  { x: ${n2(A.x - 6)}, z: ${n2(A.z + 92)}, width: 80, depth: 44, density: 0.4, height: 0.8 },`,
+  `  { x: ${n2(GRAVES.x)}, z: ${n2(GRAVES.z)}, width: 80, depth: 68, density: 0.35, height: 0.7 },`,
   "  { x: -300, z: 24, width: 70, depth: 60, density: 0.22, height: 0.6 },",
-  "  { x: 120, z: 40, width: 80, depth: 70, density: 0.22, height: 0.6 },",
-  "  { x: -60, z: 330, width: 110, depth: 60, density: 0.2, height: 0.6 },",
+  "  // The gardens on the bench under the town wall: what grows under the palms.",
+  "  { x: -160, z: -2, width: 230, depth: 26, density: 0.32, height: 0.7 },",
+  "  { x: -400, z: 210, width: 60, depth: 120, density: 0.2, height: 0.6 },",
   "  // This patch crosses the eastern wadi pool, and is open desert scrub rather",
   "  // than a margin: it stops at the water (`GrassRect.dry`) instead of growing",
   "  // on into it as reeds.",
@@ -2216,20 +2888,6 @@ const NAMED = FLAGS.map(
     `${n2(Number(heightAt(f.x, f.z).toFixed(2)))}, ${n2(f.z)}), radius: ${f.r} },`,
 );
 
-/**
- * One spawn per objective, just outside its capture ring, so deploying onto a
- * flag you hold does not drop you on top of whoever is contesting it. The home
- * spawns and the hardstandings were computed with the claims, at the top.
- */
-const FLAG_SPAWNS = [
-  [0, 36, -10, "-Math.PI / 2"],
-  [1, 6, 34, "Math.PI"],
-  [2, -6, -38, "0"],
-  [3, -8, -38, "0"],
-  // E's is on the SOUTH side, because the north side is the wadi's bank: a
-  // spawn on a 0.14 slope is legal and lands you looking at the sky.
-  [4, -6, -40, "0"],
-];
 for (const [i, dx, dz, yaw] of FLAG_SPAWNS) {
   const f = FLAGS[i];
   const x = f.x + dx;
@@ -2321,18 +2979,20 @@ writeFileSync(
  * ${CELLS}x${CELLS} cells of ${CELL} m over the ${PLAY} m play square, so ${row}x${row} vertices.
  * \`size * cell\` must equal \`MapLayout.size\`; see \`Heightfield.cell\`.
  *
- * **The shape is five passes laid over one another IN ORDER** (see
+ * **The shape is six passes laid over one another IN ORDER** (see
  * \`heightAt\` in the generator, where the order is the argument): dunes over
- * the open desert, ~5 m of swell with three knolls in it; each quarter
+ * the open desert, ~5 m of swell with three knolls in it; each district
  * flattened DEAD LEVEL inside its own core and blended out over a skirt,
  * because a placement samples the ground once at its own centre and a building
- * on a grade floats at one corner and buries itself at the other — and the
- * southern group of quarters is flattened to a terrace 2.6 m BELOW the rest;
+ * on a grade floats at one corner and buries itself at the other — the
+ * southern group 2.6 m BELOW the town and the Martyrs' shelf 7 m above it;
  * the wadi's own flood bench levelled 70 m either side of that, so the bank
  * below is cut into flat ground rather than into a dune; the channel cut
  * through the bench, 5.4 m down and 52 m across, which is a 0.135 gradient a
- * hull takes at any point along its run; and the four basins that hold water —
- * three pools in the bed and the birkat dug into the mosque quarter.
+ * hull takes at any point along its run; the four basins that hold water —
+ * three pools in the bed and the birkat dug into the west quarter; and last
+ * the TELL, the citadel mound in the old town: a summit ten metres up, a
+ * terrace ring at five, and a glacis below it, each slope a 0.34 gradient.
  *
  * **The basins are what \`MapLayout.water\` is measured against**, so a hand
  * edit here moves four shorelines: \`WaterSystem\` bakes its bed-depth map off
@@ -2342,7 +3002,7 @@ writeFileSync(
  * The steepest single-cell step in this grid is ${worstStep.toFixed(2)} m over ${CELL} m — a
  * ${worstGrade.toFixed(3)} gradient against \`MAX_WALKABLE_GRADE\`'s ${MAX_GRADE}, checked by
  * the generator, which refuses to write a floor it cannot walk. The ground runs
- * from ${lo.toFixed(2)} m in the deepest pool to ${hi.toFixed(2)} m on the northern knoll.
+ * from ${lo.toFixed(2)} m in the deepest pool to ${hi.toFixed(2)} m on the tell's summit.
  */
 import type { Heightfield } from "../layout";
 
@@ -2405,8 +3065,8 @@ import type {
 } from "../layout";
 
 /**
- * SARAB — a town in a desert basin, an hour before noon, some months into being
- * fought over.
+ * SARAB — a walled town on a wadi in a desert basin, an hour before noon, some
+ * months into being fought over.
  *
  * **${PLAY} x ${PLAY} m of PLAY inside ${PLAY + 2 * MARGIN} x ${PLAY + 2 * MARGIN} m of ground**, origin at the souk,
  * +Z north. By a wide margin the biggest map in the tree — 5.1 times
@@ -2418,27 +3078,46 @@ import type {
  * \`\`\`
  *                                    N
  *   +--------------------------------------------------------------+  z 450
- *   | ~ smallholdings ~      ~ the north town ~      x T1 HOME YARD |
+ *   |  ~ the new town: a grid of streets and flats ~   x T1 HOME YARD|
  *   |                                                    (318,318)  |
- *   |  ---------------------- north street ----------------------   |  z 208
- *   |  [A] GREAT MOSQUE       the old town    [D] MARTYRS' QUARTER  |
- *   |     (-192,150)                              (250,140)  +7 m   |
- *   |  ~ mosque quarter ~      [C] SOUK        ~ the shelf ~        |
- *   |                           (28,66)                             |
- *   |  ----------------------- cross road -----------------------   |  z 30
- *   |  ~~~ ford ~~~~~~~~~ THE WADI ~~~~~~ ford ~~~~~~~~~~~~~~~~~~   |
+ *   |  ===================== north boulevard ===================== |  z 258
+ *   |  west quarter   .-- THE TELL --.  east quarter                |
+ *   |  khan, birkat   | [A] GREAT    |  khan, mosque  [D] MARTYRS'  |
+ *   |  long souk ---> |   MOSQUE     |                 QUARTER +7 m |
+ *   |                 '--(-112,112)--'  [C] SOUK      (250,140)     |
+ *   |  ~~~~~~~~~~~~~~ the town wall ~~~~~ (28,66) ~~~                |  z 40
+ *   |  ===================== south boulevard ===================== |  z 30
+ *   |  bustan  ~~~ ford ~~~~~~~ THE WADI ~~~~~~ ford ~~~~~~~~~~~~~   |
  *   |  [B] FUEL DEPOT      ~ the south bank ~   [E] THE CROSSING    |
  *   |     (-120,-180)                              (190,-114)       |
  *   |  ----------------------- south road -----------------------   |  z -230
- *   |  x T0 HOME YARD                                               |
+ *   |  x T0 HOME YARD     ~ the roadside strip ~                    |
  *   |     (-318,-318)              x = -66            x = 190       |
  *   +--------------------------------------------------------------+  z -450
  * \`\`\`
  *
- * The two vertical rules are the ASPHALT: highways at x -66 and x 190, running
- * the whole length of the map and fording the wadi. The two outer dirt links at
- * x ±318 run out through the home yards and ford it as well, which is why there
- * are FOUR crossings on a map with no bridge.
+ * **It is laid out the way a real town in this part of the world is.** The old
+ * town is inside its boulevards, which are where its walls were — only the
+ * south wall, facing the wadi, still stands — and it grew round a TELL, the
+ * mound ten thousand years of the town built itself on, with the citadel and
+ * the Great Mosque on top. A long souk runs in from the west gate to the
+ * tell's foot; the straight street runs from the south gate through the
+ * market square to the north gate, jogging where it crosses the khan street;
+ * the khans stand on the two caravan roads in, the bathhouses by the water and
+ * the souk, a mosque in every quarter. Everything else is houses, two rows
+ * back to back in every block with a lane four to six metres wide in front,
+ * cut so every junction is a T. North of the boulevard the new town is the
+ * opposite: a grid somebody drew, detached houses in cement, flats where the
+ * plan allowed them. Outside, palm gardens on the bench under the wall, the
+ * burial grounds past the gates, the strip along the south road, then
+ * smallholdings and the desert.
+ *
+ * The two vertical rules are the ASPHALT: highways at x -66 and x 190, fording
+ * the wadi. The east one runs the whole length of the map; the west one stops
+ * at the south boulevard and goes on from the north one, because the asphalt
+ * goes ROUND the old town and never through it. The two outer dirt links at
+ * x ±318 run out through the home yards and ford the wadi as well, which is why
+ * there are FOUR crossings on a map with no bridge.
  *
  * ## What the extent buys, and what it costs
  *
@@ -2457,50 +3136,54 @@ import type {
  *
  * ## The ground, which is what makes ${PLAY} m readable
  *
- * Three features and nothing else. **The WADI** runs east to west across the
- * south, a dry bed 5.4 m down and 52 m across with banks over 40 m either side
- * — a 0.135 gradient, so it is waded and driven at every point along it and the
- * four fords are landmarks rather than the only ways over. It is what separates
- * the two southern flags from the three northern ones without walling them off,
- * and it runs DRY except in the three basins deep enough to have kept
- * something: standing pools between the fords, ~2.1 m at the middle of each,
- * which is water you wade round rather than through.
+ * **The TELL** is the town's hill and the Great Mosque's: a summit ten metres
+ * over the roofs inside what is left of the citadel wall, a TERRACE five metres
+ * up where a ring of houses climbed the mound, and a glacis below that nobody
+ * built on — the citadel's field of fire, used since for the town's dead on its
+ * north and west flanks and for terraced gardens on the other two. Every slope
+ * on it is a 0.34 gradient, walked on any bearing; the three roads up it (the
+ * long souk to the west gate, the citadel street to the east one, the south
+ * ramp from the boulevard) are the easy line rather than the only one.
+ * **The WADI** runs east to west across the south, a dry bed 5.4 m down and
+ * 52 m across with banks over 40 m either side — a 0.135 gradient, so it is
+ * waded and driven at every point along it and the four fords are landmarks
+ * rather than the only ways over. It is what separates the two southern flags
+ * from the three northern ones without walling them off, and it runs DRY
+ * except in the three basins deep enough to have kept something: standing
+ * pools between the fords, ~2.1 m at the middle of each.
  * **The two banks are not the same height.** The southern one climbs 2.8 m out
  * of the bed and the northern 5.4, because the whole southern group — the south
  * bank, the Crossing and T0's yard — sits on a terrace 2.6 m below the town.
  * From the Souk's roofs you look DOWN at the Depot; from the Depot the old town
- * is a skyline.
+ * and the tell over it are a skyline.
  * **The SHELF** stands 7 m over the town in the north-east and the Martyrs'
- * Quarter is on it — a 0.082 gradient up an 85 m skirt, which is a slope you
- * climb without noticing and a quarter that looks down every street in the old
- * town. **Everything else is dunes**, flattened dead level under each quarter
- * because a placement samples the ground once at its own centre and a building
- * on a grade floats at one corner. It is TWO scales and the second is the one
- * a body on the ground can see: 5 m of long swell at 150 to 1,200 m, read from
- * a roof and from the air, and 0.85 m of wind DRIFT at 79 and 132 m, which is
- * the band the eye actually reaches across — without it a two-hundred-metre
- * walk between quarters crossed no feature at all and the sand read as a
- * table. Both are aligned to one prevailing wind. Then three knolls in the
- * only three places with room for one, and the BIRKAT: a 2.7 m basin dug into
- * the mosque quarter, which is the only ground in the town that is down and
- * the only water in it.
+ * Quarter is on it — a slope up a 75 m skirt you climb without noticing, and a
+ * quarter that looks down every street in the old town. **Everything else is
+ * dunes**, flattened dead level under each district because a placement
+ * samples the ground once at its own centre and a building on a grade floats
+ * at one corner. It is TWO scales: 5 m of long swell at 150 to 1,200 m, read
+ * from a roof and from the air, and 0.85 m of wind DRIFT at 79 and 132 m,
+ * which is the band the eye actually reaches across. Then three knolls in the
+ * open desert, and the BIRKAT: a 2.7 m basin dug into the west quarter, which
+ * is the only ground inside the walls that is down and the only water in it.
  *
  * ## Design intent per flag
  *
- * - **A The Great Mosque** — a walled precinct with the hall on one side and
- *   the minaret on the corner. The flag is in the open court, overlooked from
- *   every roof around it: a flag you can hold and cannot hide on. The minaret
- *   is the map's landmark and is deliberately NOT climbable.
+ * - **A The Great Mosque** — on the tell's summit, in the mosque's court
+ *   between its two arcades, inside the citadel wall. The map's high ground
+ *   and the hardest flag to walk up to: the glacis is the barest ground in the
+ *   town and the summit's roofs command all of it. The minaret is the map's
+ *   landmark, forty metres over the town, and is deliberately NOT climbable.
  * - **B The Fuel Depot** — the one industrial site and the only flag with no
  *   roofs over it. Tanks, silos, two warehouses and T-walls on the wadi's south
  *   bank. It plays flat and long where the other four play vertical.
- * - **C The Souk** — the middle of the map in every sense: two arcades facing
- *   each other across the market square, both of them climbed, with the
- *   monument between. Every other flag is 200 to 290 m away, which is the
- *   whole of why it is where it is.
+ * - **C The Souk** — the market square inside the south gate, where the
+ *   straight street and the souk street meet: two climbed arcades facing each
+ *   other across it, the monument at its north end, and the tell looking down
+ *   on all of it from one street west.
  * - **D The Martyrs' Quarter** — four shelled apartment blocks on the shelf,
  *   three walked floors each, and the only real interiors on the map. Holding
- *   it means being seen from four hundred metres of open approach.
+ *   it means being seen from the open slope up to it.
  * - **E The Crossing** — the checkpoint on the east highway, on the flat twenty
  *   metres south of the wadi's bank. T-walls either side of the carriageway
  *   with the gap AT the road, sandbags in the gap, the pump compound behind.
@@ -2517,6 +3200,9 @@ import type {
  *   stair lane every climbed building here is built around.
  * - Compound walls are authored in runs with GAPS. A sealed compound is a wall
  *   the nav grid routes bots the whole way around.
+ * - Every house door opens onto a street, a lane, a square or open ground, and
+ *   the generator refuses a row house whose door would not: the lanes are
+ *   ROADS for exactly that reason (and so they read as streets).
  * - No lamps: the sun is nearly overhead, and a carried flame would spend one
  *   of the sixteen light slots proving nothing. Harrowmead's rule and Greyfen's
  *   before it.
@@ -2576,8 +3262,8 @@ ${spawns.join("\n")}
  *
  * A 900 m play square is what earns them. The ground between the flags is
  * transit rather than fighting, which is exactly the problem a vehicle exists
- * to answer — and the town answers back: the old town's alleys are seven
- * metres wide and a TANK cannot turn in one, the wadi's fords are three places
+ * to answer — and the town answers back: the old town's lanes are four to
+ * six metres wide and a TANK cannot turn in one, the wadi's fords are three places
  * a driver is committed and slow, and the Crossing is a flag a hull can shell
  * from outside and never take.
  *
@@ -2782,18 +3468,20 @@ export const SarabLayout: MapLayout = {
  * eyeballed in the log.
  */
 const REQUIRED = {
-  mosque: 1,
-  minaret: 1,
-  souk: 2,
+  // The Great Mosque, a mosque in the east and north quarters, and the new
+  // town's; each with its own minaret.
+  mosque: 4,
+  minaret: 4,
+  // Two on the square, one on the souk street, three on the long souk and
+  // the two riwaq on the summit.
+  souk: 8,
   monument: 1,
-  caravanserai: 2,
+  caravanserai: 3,
   hammam: 2,
-  shellBlock: 5,
   depot: 2,
   silo: 4,
   gatehouse: 2,
   watchtower: 1,
-  road: ROADS.length,
 };
 
 /**
@@ -2808,12 +3496,23 @@ const REQUIRED = {
  * way that turns into two is somebody widening a quarter's plots or moving a
  * road, which is a change with no visible connection to the roofline it broke.
  */
-const AT_LEAST = { windTower: 6, granary: 6 };
+const AT_LEAST = {
+  windTower: 6,
+  granary: 6,
+  shellBlock: 7,
+  // Every road in `ROADS`, the two pavings and the terrace lane's four sides;
+  // the lanes the quarters cut come on top.
+  road: ROADS.length + 6,
+};
 
 const byKind = tally(placements, lineKind);
 printTally(byKind, refused, leadKind);
 for (const r of refused) {
-  if (!r.startsWith("adobeHouse") && !r.startsWith("compoundWall")) console.log("    x " + r);
+  // `--refusals` prints the fabric's too: the rows ask for more than fits on
+  // purpose, so by default only a refused set-piece kind is worth a line.
+  if (process.argv.includes("--refusals") || (!r.startsWith("adobeHouse") && !r.startsWith("compoundWall"))) {
+    console.log("    x " + r);
+  }
 }
 
 for (const [kind, want] of Object.entries(REQUIRED)) {

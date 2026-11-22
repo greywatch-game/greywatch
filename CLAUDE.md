@@ -206,7 +206,7 @@ npm run proving    # regenerate the DEV-ONLY proving ground (committed source).
 # source; `maps:check` holds the files to it), and owe
 # `npm run collision -- <map>` after it. `--probe` (and greyfen's `--at` and
 # `--point`) print the floor and write nothing; the script's header has the rest.
-npm run sarab        # ENGINE_UPGRADE.md S11
+npm run sarab        # `--refusals`: every row house refused and why
 npm run cinderhaven  # `--probe`: the floor as a plan, a section and a survey
                      #   (how you iterate on a coastline); `--roads`: how far
                      #   every dry, in-play square is from a carriageway

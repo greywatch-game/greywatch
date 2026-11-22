@@ -167,6 +167,24 @@ export const FOOT = {
   // Lying over on its bilge with its shores out to both sides; the stem and
   // the stern rise clear of the ground off either end and are not.
   careenedHull: (p) => [-2.95, 2.95, -(p.length ?? 11) / 2 - 0.3, (p.length ?? 11) / 2 + 0.3],
+
+  // --- the desert kit (Sarab) -------------------------------------------------
+  // The plinth stands 0.25 m proud of every wall, and the door's beam 0.35.
+  adobeHouse: (p) => [-(p.width ?? 10) / 2 - 0.25, (p.width ?? 10) / 2 + 0.25, -(p.depth ?? 9) / 2 - 0.35, (p.depth ?? 9) / 2 + 0.25],
+  windTower: (p) => [-(p.width ?? 13) / 2 - 0.25, (p.width ?? 13) / 2 + 0.25, -(p.depth ?? 14) / 2 - 0.35, (p.depth ?? 14) / 2 + 0.25],
+  granary: (p) => [-(p.width ?? 8) / 2, (p.width ?? 8) / 2, -(p.depth ?? 7) / 2, (p.depth ?? 7) / 2],
+  // The boiler house and its flue stand off the -X end.
+  hammam: (p) => [-(p.width ?? 18) / 2 - 1.25, (p.width ?? 18) / 2 + 0.4, -(p.depth ?? 14) / 2 - 0.6, (p.depth ?? 14) / 2 + 0.4],
+  caravanserai: (p) => [-(p.width ?? 44) / 2 - 0.3, (p.width ?? 44) / 2 + 0.3, -(p.depth ?? 38) / 2 - 0.3, (p.depth ?? 38) / 2 + 0.3],
+  shellBlock: (p) => [-(p.width ?? 20) / 2 - 0.45, (p.width ?? 20) / 2 + 0.45, -(p.depth ?? 15) / 2 - 0.45, (p.depth ?? 15) / 2 + 0.45],
+  // The portal stands proud of the -Z front.
+  mosque: (p) => [-(p.width ?? 26) / 2 - 1.25, (p.width ?? 26) / 2 + 1.25, -(p.depth ?? 20) / 2 - 4.55, (p.depth ?? 20) / 2 + 1.25],
+  // The gallery overhangs the shaft's foot by most of a metre.
+  minaret: () => [-3.9, 3.9, -3.9, 3.9],
+  // The awnings on the -X side are hung over the street, above head height.
+  souk: (p) => [-(p.width ?? 11) / 2 - 2.55, (p.width ?? 11) / 2 + 0.3, -(p.length ?? 30) / 2 - 0.4, (p.length ?? 30) / 2 + 0.4],
+  compoundWall: (p) => [-(p.length ?? 14) / 2 - 0.35, (p.length ?? 14) / 2 + 0.35, -0.35, 0.35],
+  blastWall: (p) => [-(p.length ?? 12) / 2 - 0.2, (p.length ?? 12) / 2 + 0.2, -0.8, 0.8],
 };
 
 /**
@@ -212,6 +230,11 @@ export const DOOR_FACES = {
   depot: ["+z", "-x"],
   netLoft: ["-z"],
   lighthouse: ["-z"],
+  adobeHouse: ["-z"],
+  windTower: ["-z"],
+  hammam: ["-z"],
+  caravanserai: ["-z"],
+  mosque: ["-z", "-x", "+x"],
 };
 
 /** Kinds with a front door: the ones a door check holds to somewhere a body can walk. */

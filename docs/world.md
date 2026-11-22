@@ -143,17 +143,39 @@ of what that document bought: it states `blockSize` and `terrainBlock` (96, S6),
 `surfaces: 5`, a `fogEnd` of 560 INSIDE its own 1,273 m diagonal — the first
 time block visibility has had anything to cull on any map here — and a
 `bodyDrawDistance` of 300 inside that, which nothing else in the tree states.
-Its ground is five passes laid over one another — dunes with three knolls in
-them, each quarter flattened dead level, the whole SOUTHERN group of quarters
-flattened to a terrace 2.6 m below the rest, a flood bench levelled either side
-of the watercourse, and the wadi cut through all of it; its boundary is
+Its ground is six passes laid over one another — dunes with three knolls in
+them, each district flattened dead level, the whole SOUTHERN group flattened to
+a terrace 2.6 m below the rest and the Martyrs' shelf 7 m above it, a flood
+bench levelled either side of the watercourse, the wadi cut through all of it,
+and last the TELL, the citadel mound the old town grew round; its boundary is
 Harrowmead's open one at nearly four times the margin, for a different reason
 (see that section). It also needed a fourth VERNACULAR — `kit/desert/`, whose
 flat WALKED roof is the first in this kit and is what makes a town of them a
 second surface over the whole map — and one scatter prop, the date palm.
 
+**It is laid out as a real town of its region rather than as quarters on a
+grid**, and the re-lay that made it one found three rules general enough to
+keep. **A town is ROWS, not plots**: the first layout stood one building on
+each 26 m plot with sand all round it, so 900 m of town read as houses
+scattered on a beach; `houseRow` in the generator stands houses shoulder to
+shoulder along a block's edge, two rows back to back in every block, and the
+blocks come from cutting a quarter across its longer side until each is two
+rows deep (`subdivide`), which is why every junction in the old town is a T.
+**A lane is a ROAD**: a gap between rows drawn in the same sand as the desert
+reads as a crack rather than a street, and the door check needs a street to
+find, so every lane the quarters cut is a `road` (cobble inside the walls,
+dirt outside), clipped where a set piece already stands across it. **A door
+opens onto a street or onto open ground, or the house is not built**
+(`doorClear`): the audit found 87 doors onto walls in the first layout, and a
+rule enforced while the rows are laid is the only one that survives a re-roll.
+The TELL is the other half of it, and it is ground rather than kit: a summit
+ten metres up with the Great Mosque (flag A) inside the citadel wall, a terrace
+ring of houses at five, and a glacis below that carries the town's dead and its
+terraced gardens rather than buildings, because a placement samples the floor
+once and a slope is somewhere only a wall, a gravestone or a palm can stand.
+
 **The wadi runs dry except in the three basins deep enough to have kept
-something**, and the fourth body is the BIRKAT, a reservoir dug into the mosque
+something**, and the fourth body is the BIRKAT, a reservoir dug into the west
 quarter. Both are worth knowing about outside this map, because the rule they
 found is general: **water in this engine is a hole in the FLOOR with a plane
 over it**, since `WaterSystem.bakeDepth` reads depth, shore and probe site off

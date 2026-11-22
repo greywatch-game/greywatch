@@ -25,8 +25,8 @@
  * Four things follow from the hour and each of them is a decision:
  *
  * - **The sun is high** (52 degrees), which is S8's cheap answer. Shadow length
- *   is `h / tan(elevation)`, so the 27 m minaret — the tallest thing on the map
- *   — throws 21 m and a house throws 3. **What that buys is not a small window,
+ *   is `h / tan(elevation)`, so the 30 m minaret — the tallest thing on the map
+ *   — throws 23 m and a house throws 3. **What that buys is not a small window,
  *   which is the thing this map got wrong for a while**: short shadows off tall
  *   rubble is a LOOK the map wants, and it says nothing about how far away the
  *   ground you can see them on is. `shadowWindow` is 240 — see it — and what
@@ -54,7 +54,7 @@
  * - **The `water` block is the map's SECOND chroma, and it owes the paragraph
  *   at the bottom of this header an answer.** It did not exist while the wadi
  *   was dry; there are four bodies now — three standing pools between the fords
- *   and the birkat dug into the mosque quarter — and every one of them is a
+ *   and the birkat dug into the west quarter — and every one of them is a
  *   dark, low-chroma body with a mirror on it rather than a blue rectangle. The
  *   dome stays the thing you navigate by, because water is drawn almost
  *   entirely as REFLECTED SKY at the angles a player sees it from and the sky
@@ -105,7 +105,7 @@ export const SarabEnvironment: EnvironmentSpec = {
    * Warm dust, and the number this whole file is written around.
    *
    * `fogStart` is far enough out that nothing inside a quarter is tinted — the
-   * old town's alleys are seven metres wide and a haze that reached into them
+   * old town's lanes are four to six metres wide and a haze that reached into them
    * would read as smoke — and `fogEnd` at 560 is inside the play square's own
    * 1,273 m diagonal, which is the first time that has been true in this tree.
    * See the header.
