@@ -360,7 +360,9 @@ export type BuilderKind = keyof typeof BUILDERS;
  * posts and a bucket down to the ground. The barrier seeds each unit's
  * offset, its paint, its loops and every scuff, strike and spall off where
  * it stands, and beds a unit standing over a dip on a pad carried down to
- * the ground.
+ * the ground. The courtyard house seeds its door, its windows' joinery, its
+ * scars and pocks, what stands on its roofline and which way its dish looks
+ * off where it stands, and carries its plinth's face down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -416,4 +418,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "townGate",
   "trough",
   "barrier",
+  "adobeHouse",
 ] as const);

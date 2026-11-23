@@ -2122,10 +2122,15 @@ src/
                         #   dome's `domeProfile` laid in `courses`, the socle,
                         #   the dog-tooth cornice, `spall` over a `Bond`
                         #   (brick, or the kiosk's block), `blob`, a `ragged`
-                        #   outline, `spout`, a `lobe` on a level surface, and
-                        #   `log`/`eye`/`rod` for round and square members on
-                        #   any axis
-      adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten
+                        #   outline, `spout` and its `streak`, a `lobe` on a
+                        #   level surface, and `log`/`eye`/`rod` for round and
+                        #   square members on any axis
+      fittings.ts       #   a house's HARDWARE as `Fitting`s — door, window
+                        #   joinery, spout, meter, tank, dish, aerial, cooler —
+                        #   each a drawing of its kind and variant alone in a
+                        #   frame (an instance transform), laid by `fit`
+      adobe.ts          #   buildAdobeHouse — the courtyard house, nine in ten:
+                        #   masonry drawn here, its hardware as fittings
       shellBlock.ts     #   buildShellBlock — the shelled RC apartment block,
                         #   its shops, rooms and sheared corner
       mosque.ts         #   buildMosque, buildMinaret — the domed hall, its

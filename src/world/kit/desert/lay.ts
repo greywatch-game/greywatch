@@ -4,7 +4,7 @@
  * `above`); the arch ring and its striped `ring`, the star, square kufic,
  * the blind bay, the stepped merlons, a parapet's pierced `triangles` and the
  * pocks and a pasted `poster`; a wall's `socle` and its dog-tooth `cornice`; render, stains
- * and water (`spall` over a `Bond`, `blob`, `within`, `spout`); a `lobe` laid on a level
+ * and water (`spall` over a `Bond`, `blob`, `within`, `spout` and its `streak`); a `lobe` laid on a level
  * surface; and a `ragged` outline for a hole or a burn. It RE-EXPORTS what
  * kit/core.ts holds for every set: `Lay`, the one batch a building's drawing
  * is laid into, the round solids (`band`, `disc`, `drum`, and a dome's
@@ -392,8 +392,16 @@ export const BRICK: Bond = { ground: MUDBRICK_DARK, unit: MUDBRICK, course: COUR
  */
 export function spout(lay: Lay, s: Side, plane: number, u: number, y: number, streakTop: number, rnd: () => number, foot = 2.15): void {
   lay.sb.onFace(s, plane, u, y, 0.16, 0.14, 0.62, 0.27, PALM_BEAM, 0, 0, hideBack(s));
-  // The wash it leaves: broad under the string course, spreading as it runs
-  // and stopping in a ragged foot well above the socle.
+  streak(lay, s, plane, u, streakTop, rnd, foot);
+}
+
+/**
+ * The wash a spout leaves down the wall under it: broad under the string
+ * course at `streakTop`, spreading as it runs and stopping in a ragged foot
+ * at `foot` (and up to 0.3 m more) over the ground, well above the socle.
+ * Apart from `spout` for a builder that draws the spout itself.
+ */
+export function streak(lay: Lay, s: Side, plane: number, u: number, streakTop: number, rnd: () => number, foot = 2.15): void {
   const lo = foot + rnd() * 0.3;
   const wa = 0.13 + rnd() * 0.06;
   blob(lay, s, plane, [u, (streakTop + lo) / 2], [
@@ -498,14 +506,28 @@ export function within(pts: readonly (readonly [number, number])[], u: number, y
  * across it, and a lip of render standing round the outside, which is the
  * step that makes it a HOLE in the plaster rather than a brown stain on it.
  * `bond` is what the wall is laid in: brick unless it says otherwise.
+ * `shape` is for a building placed by the hundred: `n` points to each lobe's
+ * edge rather than sixteen, and `extra` lobes rather than one or two drawn.
  */
-export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu: number, hy: number, skin: string, rnd: () => number, bond: Bond = BRICK): void {
+export function spall(
+  lay: Lay,
+  s: Side,
+  plane: number,
+  u: number,
+  y: number,
+  hu: number,
+  hy: number,
+  skin: string,
+  rnd: () => number,
+  bond: Bond = BRICK,
+  shape?: { n: number; extra: number },
+): void {
   const back = hideBack(s);
   const lobes: { c: [number, number]; pts: [number, number][] }[] = [];
   const lobe = (lu: number, ly: number, a: number, b: number): void => {
     const p1 = rnd() * TAU;
     const p2 = rnd() * TAU;
-    const N = 16;
+    const N = shape?.n ?? 16;
     const pts: [number, number][] = [];
     for (let i = 0; i < N; i++) {
       const t = (i / N) * TAU;
@@ -515,7 +537,7 @@ export function spall(lay: Lay, s: Side, plane: number, u: number, y: number, hu
     lobes.push({ c: [lu, ly], pts });
   };
   lobe(u, y, hu, hy);
-  const extra = 1 + Math.floor(rnd() * 2);
+  const extra = shape ? shape.extra : 1 + Math.floor(rnd() * 2);
   for (let i = 0; i < extra; i++) {
     const side = i % 2 ? -1 : 1;
     lobe(u + side * hu * (0.55 + rnd() * 0.35), y + (rnd() - 0.5) * hy * 0.7, hu * (0.4 + rnd() * 0.3), hy * (0.55 + rnd() * 0.3));
