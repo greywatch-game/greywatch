@@ -68,7 +68,7 @@ for (let j = 0; j < rows; j++) {
 const COL = {
   cottage: "#b08c64", townhouse: "#be7a5a", tavern: "#dca03c", smithy: "#9696a0", chapel: "#c8c8dc",
   barn: "#a04632", mill: "#78a0c8", ruin: "#6e5a50", silo: "#969696", watchtower: "#8c6e46",
-  gatehouse: "#e63c3c", shed: "#826e50", boathouse: "#5a7870", stoneWall: "#7a7a6e", fence: "#96785a",
+  gatehouse: "#e63c3c", townGate: "#e63c3c", shed: "#826e50", boathouse: "#5a7870", stoneWall: "#7a7a6e", fence: "#96785a",
   bridge: "#b4966e", jetty: "#a08262", kiln: "#b4643c", lamp: "#ffd060",
   tower: "#8a94a6", office: "#5e86b4", shophouse: "#c08a6a", depot: "#8a7a5e", parkade: "#7a8a8a",
   monument: "#d8d8d0", quay: "#9a9a92", lighthouse: "#f0f0e8", crane: "#c0603a", netLoft: "#6a5a46",
@@ -81,7 +81,7 @@ for (const p of layout.placements) {
   const burnt = p.kind === "ruin" || (p.params?.ruined && p.kind !== "cart");
   if (c) {
     let tick = null;
-    if (BUILDINGS.has(p.kind) && !["silo", "gatehouse", "watchtower"].includes(p.kind)) {
+    if (BUILDINGS.has(p.kind) && !["silo", "gatehouse", "townGate", "watchtower"].includes(p.kind)) {
       const [z0, sign] = frontOf(p);
       const [ax, az] = rotate(0, z0, p.rotY ?? 0);
       const [fx, fz] = rotate(0, 2.5 * sign, p.rotY ?? 0);

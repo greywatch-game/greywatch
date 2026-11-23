@@ -69,6 +69,7 @@ import {
   buildShellBlock,
   buildSouk,
   buildTent,
+  buildTownGate,
   buildWindTower,
 } from "./kit/desert";
 import {
@@ -194,6 +195,7 @@ export const BUILDERS = {
   graves: buildGraves,
   fuelStation: buildFuelStation,
   tent: buildTent,
+  townGate: buildTownGate,
   // The volcanic-coast set — see kit/harbour/, whose header owns the rule
   // that everything walked in it (the smelter's deck and its flight) obeys
   // kit/terrain.ts, and the argument for why nothing else in it is climbed.
@@ -348,7 +350,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * The parked car seeds whether its front wheels were left turned, which
  * wheels have lost their hubcaps, its roof rack, its aerial, its second
  * mirror and a sun visor left down off where it stands; it stands on a
- * street and carries nothing to the ground.
+ * street and carries nothing to the ground. The town gate seeds which pier
+ * the shell found, its lamps' glass, its pocks, its sign's wound, the
+ * inscriptions and what each barricade has gathered off where it stands,
+ * and carries its piers' plinths and every barricade's bottom course down
+ * to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -401,4 +407,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "granary",
   "silo",
   "car",
+  "townGate",
 ] as const);

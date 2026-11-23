@@ -6,17 +6,18 @@
  * pieces of hard furniture a contested town grows, the T-wall run and the
  * sandbag emplacement — and what stands round a town rather than in it: the
  * saint's domed tomb (`qubba`), a row of graves, the highway's fuel station
- * and the herders' black tent.
+ * and the herders' black tent — and the town gate over the highway, which is
+ * a side's home gate and plays as the village kit's `gatehouse` does.
  * All follow the contract in kit/core.ts (origin-local geometry, no
  * solid/pickable/collisions metadata, colliders declared not created) and the
  * four rules in kit/city/index.ts's header about buildings that stack walked
  * floors.
  *
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
- * the seventeen builders from here, and each building is a file of its own
+ * the eighteen builders from here, and each building is a file of its own
  * beside it (`adobe.ts`, `shellBlock.ts`, `souk.ts`, `windTower.ts`,
  * `caravanserai.ts`, `hammam.ts`, `granary.ts`, `qubba.ts`, `graves.ts`,
- * `fuelStation.ts`, `tent.ts`, `pylon.ts`), with the mosque and its
+ * `fuelStation.ts`, `tent.ts`, `pylon.ts`, `townGate.ts`), with the mosque and its
  * minaret together in `mosque.ts` and the runs and furniture — the compound
  * wall, the T-wall run and the sandbags — in `walls.ts`. What
  * more than one of them is measured or dressed by — the palette, the wall,
@@ -132,3 +133,4 @@ export { buildQubba } from "./qubba";
 export { buildGraves } from "./graves";
 export { buildFuelStation } from "./fuelStation";
 export { buildTent } from "./tent";
+export { buildTownGate } from "./townGate";

@@ -77,6 +77,8 @@ export const FOOT = {
   silo: () => [-3.2, 3.2, -3.2, 3.2],
   watchtower: () => [-2.8, 2.8, -18.2, 2.8],
   gatehouse: () => [-11.3, 11.3, -8.2, 2.6],
+  // The gatehouse's piers and barricades, restated: the same ground.
+  townGate: () => [-11.3, 11.3, -8.2, 2.6],
   shed: (p) => {
     const w = p.width ?? 3.4;
     const d = p.depth ?? 2.8;

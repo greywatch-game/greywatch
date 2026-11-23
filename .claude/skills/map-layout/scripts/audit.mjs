@@ -27,7 +27,7 @@ if (!ids.length) {
 
 /** Pieces that may reach over the water on purpose, and pieces that are the road or stand on its kerb. */
 const WET_OK = new Set(["mill", "boathouse", "jetty", "bridge", "ramp", "quay", "careenedHull"]);
-const ROAD_OK = new Set(["lamp", "bridge", "stall", "well", "cart", "crates", "trough", "barrel", "gatehouse", "car", "streetLight"]);
+const ROAD_OK = new Set(["lamp", "bridge", "stall", "well", "cart", "crates", "trough", "barrel", "gatehouse", "townGate", "car", "streetLight"]);
 /** Kerb furniture a body steps round: it does not block a door. */
 const FURNITURE = new Set(["lamp", "streetLight", "car", "planter", "barrier", "crates", "stall", "cart", "trough", "barrel"]);
 /**

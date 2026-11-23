@@ -2148,6 +2148,9 @@ src/
                         #   pump islands, the kiosk with its vent stacks, the
                         #   water tank, the tyres and the pylon sign
       tent.ts           #   buildTent — the herders' black goat-hair tent
+      townGate.ts       #   buildTownGate — a side's home gate: the town's
+                        #   1980s highway arch made a checkpoint, on the
+                        #   `gatehouse`'s nine colliders
       walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags
       pylon.ts          #   buildPylon — the grid's precast H-section pole: a
                         #   power pole that carries the SPAN of line ahead of

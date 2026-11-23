@@ -1194,14 +1194,14 @@ const placements: Placement[] = [
   { kind: "compoundWall", x: 244.9, z: -236.1, params: { length: 5.2, height: 2.56 } },
   { kind: "adobeHouse", x: 253.25, z: -242.71, rotY: Math.PI, params: { width: 10, depth: 13, floors: 2, ruined: true, tint: "#b6a68f" } },
   // ===== the home yards ============================================================
-  // A staging area a side, walled, with the gatehouse that carries the team's
+  // A staging area a side, walled, with the town gate that carries the team's
   // colour arching over the road out — Harrowmead's arrangement, and the one
   // placement on this map deliberately allowed to stand IN a road. The
   // hardstanding is on the inner edge of each yard and the three infantry
   // spawns are eight metres off it, which is Coldharbour's spacing and for
   // its reason: a hull arriving on the respawn timer must not land where
   // somebody has just deployed.
-  { kind: "gatehouse", x: -318, z: -352, params: { teamColor: "#c8873a" } },
+  { kind: "townGate", x: -318, z: -352, params: { teamColor: "#c8873a" } },
   { kind: "blastWall", x: -278, z: -326, rotY: Math.PI / 2, params: { length: 36 } },
   { kind: "sandbags", x: -348, z: -294, params: { length: 10 } },
   { kind: "shed", x: -352, z: -332 },
@@ -1210,7 +1210,7 @@ const placements: Placement[] = [
   { kind: "crates", x: -334, z: -348 },
   { kind: "car", x: -282, z: -344, rotY: Math.PI / 2, params: { tint: "#4a4f45" } },
   { kind: "compoundWall", x: -366, z: -324, rotY: Math.PI / 2, params: { length: 34 } },
-  { kind: "gatehouse", x: 318, z: 352, rotY: Math.PI, params: { teamColor: "#3f7f9c" } },
+  { kind: "townGate", x: 318, z: 352, rotY: Math.PI, params: { teamColor: "#3f7f9c" } },
   { kind: "blastWall", x: 278, z: 326, rotY: Math.PI / 2, params: { length: 36 } },
   { kind: "sandbags", x: 348, z: 294, params: { length: 10 } },
   { kind: "shed", x: 352, z: 332 },

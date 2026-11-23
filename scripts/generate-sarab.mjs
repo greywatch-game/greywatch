@@ -2350,7 +2350,7 @@ must("fuelStation", 190 + 7 + 1.5 + 0.6 + 7.3, -252, 1, 18, 14, { width: 18, dep
 
 section(placements, "the home yards");
 placements.push(
-  "  // A staging area a side, walled, with the gatehouse that carries the team's",
+  "  // A staging area a side, walled, with the town gate that carries the team's",
   "  // colour arching over the road out — Harrowmead's arrangement, and the one",
   "  // placement on this map deliberately allowed to stand IN a road. The",
   "  // hardstanding is on the inner edge of each yard and the three infantry",
@@ -2360,7 +2360,7 @@ placements.push(
 );
 for (const h of HOMES) {
   const s = h.s;
-  place("gatehouse", h.x, h.z + s * 34, s > 0 ? 2 : 0, 12, 8, { teamColor: h.color }, 0, true);
+  place("townGate", h.x, h.z + s * 34, s > 0 ? 2 : 0, 12, 8, { teamColor: h.color }, 0, true);
   place("blastWall", h.x - s * 40, h.z + s * 8, 1, 36, 1, { length: 36 }, 1.0);
   place("blastWall", h.x + s * 24, h.z + s * 40, 0, 28, 1, { length: 28 }, 1.0);
   place("sandbags", h.x + s * 30, h.z - s * 24, 0, 10, 1.4, { length: 10 }, 1.0);
@@ -3904,7 +3904,7 @@ const REQUIRED = {
   hammam: 2,
   depot: 2,
   silo: 4,
-  gatehouse: 2,
+  townGate: 2,
   watchtower: 1,
 };
 

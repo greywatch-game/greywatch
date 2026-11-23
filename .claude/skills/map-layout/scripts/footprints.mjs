@@ -22,7 +22,7 @@ export function frontOf(p) {
 }
 
 /** Kinds that are buildings: the ones a slope check applies to strictly. */
-export const BUILDINGS = new Set([...DOORS, "silo", "watchtower", "gatehouse", "shed", "kiln", "parkade", "crane", "monument"]);
+export const BUILDINGS = new Set([...DOORS, "silo", "watchtower", "gatehouse", "townGate", "shed", "kiln", "parkade", "crane", "monument"]);
 
 /** The world offset of a local one under a placement's `rotY` (Babylon's rotation.y). */
 export function rotate(lx, lz, rotY = 0) {

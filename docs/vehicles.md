@@ -3227,7 +3227,7 @@ Sarab states SIX, a tank, a gun truck and a helicopter a side. What a map owes t
 **A pad for something that FLIES owes a shorter list, and one item the others
 do not have.** It owes nothing at all to the departure-bearing argument above —
 a helicopter does not leave a yard, it leaves straight up — and what replaces
-that is OVERHEAD clearance, which on Sarab is the gatehouse at 34 m out against
+that is OVERHEAD clearance, which on Sarab is the town gate at 34 m out against
 a disc that stops 7 m short of it. It still owes level ground (both of Sarab's
 are dead level, 0.0 cm across the whole 10.4 m disc, because the home yards are
 flattened terraces) and it still owes `crew.boardRadius` — but for a different
