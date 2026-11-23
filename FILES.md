@@ -2147,13 +2147,14 @@ src/
                         #   pump islands, the kiosk with its vent stacks, the
                         #   water tank, the tyres and the pylon sign
       tent.ts           #   buildTent — the herders' black goat-hair tent
-      walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags,
-                        #   buildPylon. `pylon` is the odd one: a power pole
-                        #   that carries the SPAN of wire ahead of it
-                        #   (`length`), so a chain of them draws one line across
-                        #   ground a placement cannot otherwise reach off the
-                        #   end of, and it samples `BuildCtx.terrain` for the
-                        #   far end's height
+      walls.ts          #   buildCompoundWall, buildBlastWall, buildSandbags
+      pylon.ts          #   buildPylon — the grid's precast H-section pole: a
+                        #   power pole that carries the SPAN of line ahead of
+                        #   it (`length`), so a chain of them draws one line
+                        #   across ground a placement cannot otherwise reach
+                        #   off the end of. Every height a span meets is a
+                        #   constant, and it samples `BuildCtx.terrain` for the
+                        #   far end's ground
     NavGrid.ts          # Walkable-surface graph + precomputed flow fields
                         #   (the offline page's build has the graph and NO
                         #   fields — `BuildOptions.navFields`; the core's world

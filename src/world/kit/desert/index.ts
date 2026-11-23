@@ -16,9 +16,9 @@
  * the seventeen builders from here, and each building is a file of its own
  * beside it (`adobe.ts`, `shellBlock.ts`, `souk.ts`, `windTower.ts`,
  * `caravanserai.ts`, `hammam.ts`, `granary.ts`, `qubba.ts`, `graves.ts`,
- * `fuelStation.ts`, `tent.ts`), with the mosque and its
+ * `fuelStation.ts`, `tent.ts`, `pylon.ts`), with the mosque and its
  * minaret together in `mosque.ts` and the runs and furniture — the compound
- * wall, the T-wall run, the sandbags and the power pole — in `walls.ts`. What
+ * wall, the T-wall run and the sandbags — in `walls.ts`. What
  * more than one of them is measured or dressed by — the palette, the wall,
  * the slab, the storey, the stair lane and its helpers, the parapets, the
  * window row and the cloth — is `shared.ts`, and what the detailed ones are
@@ -119,7 +119,8 @@
  * there rather than the town.
  */
 export { buildAdobeHouse } from "./adobe";
-export { buildCompoundWall, buildBlastWall, buildSandbags, buildPylon } from "./walls";
+export { buildCompoundWall, buildBlastWall, buildSandbags } from "./walls";
+export { buildPylon } from "./pylon";
 export { buildShellBlock } from "./shellBlock";
 export { buildMosque, buildMinaret } from "./mosque";
 export { buildSouk } from "./souk";
