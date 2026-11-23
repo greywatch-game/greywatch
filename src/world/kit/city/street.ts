@@ -1,6 +1,7 @@
 /**
  * kit/city/street.ts — The street furniture that makes a roadway read as one:
- * buildBarrier, buildQuay and buildStreetLight; the parked car is `car.ts`.
+ * buildQuay and buildStreetLight; the parked car is `car.ts` and the
+ * barrier `barrier.ts`.
  * Part of the downtown set: follows the contract in kit/core.ts and the set's
  * rules in `./index.ts` — a street light carries a lens always and a light
  * only when a layout marks it `lit`.
@@ -16,33 +17,6 @@ import {
   KERB_WORN,
   LAMP_SODIUM,
 } from "../core";
-
-/**
- * A run of jersey barrier: roadworks, a closed lane, a checkpoint that was.
- *
- * Chest-high cover you can put anywhere, and the one piece of city furniture
- * whose whole job is to break an avenue's sightline at the ground plane. The
- * taper is two boxes rather than a chamfered profile; at 0.9 m it is read as a
- * silhouette from eye height and never from the side.
- */
-export function buildBarrier(
-  mats: CelMaterialFactory,
-  p: BuildParams = {},
-): Structure {
-  const b = new Build(mats, "barrier");
-  const len = p.length ?? 6;
-  const h = 0.9;
-  const units = Math.max(1, Math.round(len / 3));
-  for (let i = 0; i < units; i++) {
-    const z = -len / 2 + (i + 0.5) * (len / units);
-    const unit = len / units - 0.1;
-    b.box(0.62, 0.34, unit, 0, 0.17, z, CONCRETE);
-    b.box(0.36, h - 0.34, unit, 0, 0.34 + (h - 0.34) / 2, z, CONCRETE);
-  }
-  b.block({ w: 0.62, h, d: len, x: 0, y: h / 2, z: 0 });
-  return b;
-}
-
 
 /**
  * A QUAY: the retaining mass a waterfront city stands on, the parapet along its

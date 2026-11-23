@@ -1,7 +1,7 @@
 /**
- * kit/structures/small.ts — The seven structures that are a few dozen lines
+ * kit/structures/small.ts — The six structures that are a few dozen lines
  * apiece: buildFence, buildStoneWall, buildHaystack, buildLampPost,
- * buildCrates, buildTrough and buildShrine.
+ * buildCrates and buildShrine.
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
  */
@@ -22,7 +22,6 @@ import {
   MOSS_STONE,
   PLANK,
   SLATE,
-  STONE,
   THATCH,
   TIMBER,
 } from "../core";
@@ -214,27 +213,6 @@ export function buildCrates(
   b.surface(cask.wood.transform(at), PLANK);
   b.surface(cask.head.transform(at), TIMBER);
   b.surface(cask.iron.transform(at), IRON);
-  return b;
-}
-
-/** Stone water trough and hitching rail. Low cover — cross it, don't hide. */
-export function buildTrough(mats: CelMaterialFactory): Structure {
-  const b = new Build(mats, "trough");
-  b.box(3.0, 0.7, 1.1, 0, 0.35, 0, STONE);
-  for (const sx of [-1, 1]) {
-    b.box(0.18, 0.34, 1.1, (sx * 3.0) / 2, 0.87, 0, STONE);
-  }
-  for (const sz of [-1, 1]) {
-    b.box(3.0, 0.34, 0.18, 0, 0.87, (sz * 1.1) / 2, STONE);
-  }
-  b.box(2.6, 0.06, 0.8, 0, 0.88, 0, DARK_STONE); // standing water
-  b.block({ w: 3.0, h: 1.0, d: 1.1, x: 0, y: 0.5, z: 0 });
-  // Hitching rail behind it.
-  for (const sx of [-1, 1]) {
-    b.box(0.16, 1.4, 0.16, sx * 1.3, 0.7, 1.6, TIMBER);
-  }
-  b.box(3.0, 0.14, 0.12, 0, 1.25, 1.6, TIMBER);
-  b.block({ w: 3.0, h: 1.4, d: 0.4, x: 0, y: 0.7, z: 1.6 });
   return b;
 }
 

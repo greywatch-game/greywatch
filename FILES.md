@@ -2004,8 +2004,10 @@ src/
       index.ts          #   The set's header and barrel: the cover heights a
                         #   layout picks from, and a ROUND prop's collider sized
                         #   off its silhouette rather than its circumdiameter
-      small.ts          #   silo, fence, stoneWall, haystack, lamp, crates,
-                        #   trough, shrine — a few dozen lines apiece
+      small.ts          #   fence, stoneWall, haystack, lamp, crates, shrine
+                        #   — a few dozen lines apiece
+      trough.ts         #   buildTrough — the stone cattle trough and its
+                        #   hitching rail
       cartParts.ts      #   reframe/about, and the cart's wheel, sack, fork and
                         #   cask; the stall borrows the sack and reframe
       templeStone.ts    #   The temple ruin's sandstone and laterite, and its
@@ -2095,7 +2097,8 @@ src/
       parkade.ts        #   buildParkade — three open decks
       depot.ts          #   buildDepot — the goods shed and its gallery
       planter.ts        #   buildPlanter — the precast council trough
-      street.ts         #   buildBarrier, buildQuay, buildStreetLight
+      street.ts         #   buildQuay, buildStreetLight
+      barrier.ts        #   buildBarrier — precast jersey units, pinned
       car.ts            #   buildCar — the parked seventies saloon, a lofted body
       monument.ts       #   buildMonument — the war memorial
     kit/desert/         #   the desert-town set, and the first vernacular here

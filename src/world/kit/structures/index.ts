@@ -7,7 +7,7 @@
  *
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
  * the seventeen builders from here. The ones big enough to argue for
- * themselves are a file each; the seven that are a few dozen lines apiece
+ * themselves are a file each; the six that are a few dozen lines apiece
  * share `small.ts`. Two files are words rather than builders:
  * `cartParts.ts` (the cart's wheel, sack, fork and cask, and `reframe`,
  * which the stall places its wares with) and `templeStone.ts` (the temple
@@ -55,9 +55,9 @@ export {
   buildHaystack,
   buildLampPost,
   buildCrates,
-  buildTrough,
   buildShrine,
 } from "./small";
+export { buildTrough } from "./trough";
 export { buildSilo } from "./silo";
 export { buildWell } from "./well";
 export { buildStall } from "./stall";

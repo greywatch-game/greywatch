@@ -354,7 +354,13 @@ export type BuilderKind = keyof typeof BUILDERS;
  * the shell found, its lamps' glass, its pocks, its sign's wound, the
  * inscriptions and what each barricade has gathered off where it stands,
  * and carries its piers' plinths and every barricade's bottom course down
- * to the ground.
+ * to the ground. The trough seeds which end its valve chamber is at, where
+ * its rim is worn, a mended crack, its overflow, what floats in it and what
+ * is left at its rail off where it stands, and carries its plinth, its
+ * posts and a bucket down to the ground. The barrier seeds each unit's
+ * offset, its paint, its loops and every scuff, strike and spall off where
+ * it stands, and beds a unit standing over a dip on a pad carried down to
+ * the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -408,4 +414,6 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "silo",
   "car",
   "townGate",
+  "trough",
+  "barrier",
 ] as const);
