@@ -336,7 +336,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * half-step at its door down to the ground. The fuel station seeds its
  * soffit's gaps and fittings, its fascia, its panes, its dials, its drifts,
  * stains and scars off where it stands, and carries its forecourt's edge,
- * its tank's feet and its sign's plinth down to the ground.
+ * its tank's feet and its sign's plinth down to the ground. The granary
+ * seeds where each bin's lifts break, which way its hatch faces and whether
+ * it is shut, what stops its filling hole, its stains, pocks and gouge, the
+ * hands and the tally on it and what lies on its platform off where it
+ * stands, and carries its platform's face down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -386,4 +390,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "shellBlock",
   "qubba",
   "fuelStation",
+  "granary",
 ] as const);
