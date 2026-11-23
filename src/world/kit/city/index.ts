@@ -7,8 +7,8 @@
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
  * the eleven builders from here, and each building is a file of its own
  * beside it (`tower.ts`, `office.ts`, `shophouse.ts`, `parkade.ts`,
- * `depot.ts`, `planter.ts`, `monument.ts`), with the street furniture
- * together in `street.ts`. What more than one of them is measured by — the
+ * `depot.ts`, `planter.ts`, `monument.ts`, and the parked car, `car.ts`),
+ * with the rest of the street furniture together in `street.ts`. What more than one of them is measured by — the
  * storey, the slab, the grade, the landing, the doorway and the stair lane —
  * is `shared.ts`. A builder never imports another builder.
  *
@@ -208,5 +208,6 @@ export { buildShophouse } from "./shophouse";
 export { buildParkade } from "./parkade";
 export { buildDepot } from "./depot";
 export { buildPlanter } from "./planter";
-export { buildBarrier, buildQuay, buildCar, buildStreetLight } from "./street";
+export { buildBarrier, buildQuay, buildStreetLight } from "./street";
+export { buildCar } from "./car";
 export { buildMonument } from "./monument";

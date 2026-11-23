@@ -2095,7 +2095,8 @@ src/
       parkade.ts        #   buildParkade — three open decks
       depot.ts          #   buildDepot — the goods shed and its gallery
       planter.ts        #   buildPlanter — the precast council trough
-      street.ts         #   buildBarrier, buildQuay, buildCar, buildStreetLight
+      street.ts         #   buildBarrier, buildQuay, buildStreetLight
+      car.ts            #   buildCar — the parked seventies saloon, a lofted body
       monument.ts       #   buildMonument — the war memorial
     kit/desert/         #   the desert-town set, and the first vernacular here
                         #   whose ROOF is walked, which is what it exists for: a

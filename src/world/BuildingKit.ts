@@ -345,6 +345,10 @@ export type BuilderKind = keyof typeof BUILDERS;
  * rises, its lug columns, its spalled staves, its damp and rust, a shell's
  * bite and what fell, its vent and its spare staves off where it stands, and
  * carries its footing and the apron at its chute's foot down to the ground.
+ * The parked car seeds whether its front wheels were left turned, which
+ * wheels have lost their hubcaps, its roof rack, its aerial, its second
+ * mirror and a sun visor left down off where it stands; it stands on a
+ * street and carries nothing to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -396,4 +400,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "fuelStation",
   "granary",
   "silo",
+  "car",
 ] as const);
