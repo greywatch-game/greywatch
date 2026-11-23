@@ -7,7 +7,7 @@
  *
  * This file is the set's contract and its barrel: `BuildingKit.ts` imports
  * the seventeen builders from here. The ones big enough to argue for
- * themselves are a file each; the eight that are a few dozen lines apiece
+ * themselves are a file each; the seven that are a few dozen lines apiece
  * share `small.ts`. Two files are words rather than builders:
  * `cartParts.ts` (the cart's wheel, sack, fork and cask, and `reframe`,
  * which the stall places its wares with) and `templeStone.ts` (the temple
@@ -38,8 +38,9 @@
  * and leave the cap, the neck and any hoop banding outside it — the same trade
  * `PROP_BODIES` in MapBuilder.ts argues for scatter, where too small costs a
  * round clipping a silhouette and too large costs shots that visibly should
- * have landed. The silo has always done this (its box is the nominal `dia`,
- * not the 1.06 it splays to at the foot); it is the pattern to copy. The well
+ * have landed. The silo has always done this (its box is the drum's nominal
+ * `dia`, and what stands off the drum is drawn on the diagonals, inside the
+ * box's corners); it is the pattern to copy. The well
  * goes one further, a dodecagon of six bars rather than one box, because a
  * square round a 3.3 m drum is 0.7 m of air on every diagonal.
  *
@@ -49,7 +50,6 @@
  * on the COLLIDER of anything pitched, not just on the visual.
  */
 export {
-  buildSilo,
   buildFence,
   buildStoneWall,
   buildHaystack,
@@ -58,6 +58,7 @@ export {
   buildTrough,
   buildShrine,
 } from "./small";
+export { buildSilo } from "./silo";
 export { buildWell } from "./well";
 export { buildStall } from "./stall";
 export { buildBridge } from "./bridge";

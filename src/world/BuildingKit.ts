@@ -340,7 +340,11 @@ export type BuilderKind = keyof typeof BUILDERS;
  * seeds where each bin's lifts break, which way its hatch faces and whether
  * it is shut, what stops its filling hole, its stains, pocks and gouge, the
  * hands and the tally on it and what lies on its platform off where it
- * stands, and carries its platform's face down to the ground.
+ * stands, and carries its platform's face down to the ground. The silo
+ * seeds which diagonal carries its chute and which side its blower pipe
+ * rises, its lug columns, its spalled staves, its damp and rust, a shell's
+ * bite and what fell, its vent and its spare staves off where it stands, and
+ * carries its footing and the apron at its chute's foot down to the ground.
  */
 export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "road",
@@ -391,4 +395,5 @@ export const CONFORMS_TO_TERRAIN: ReadonlySet<BuilderKind> = new Set([
   "qubba",
   "fuelStation",
   "granary",
+  "silo",
 ] as const);

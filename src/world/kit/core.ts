@@ -2177,3 +2177,149 @@ export function creeperClimb(b: Build, seed: number, x: number, z: number, y0: n
     y += 0.18 + r * 0.04;
   }
 }
+
+// --- round solids, bars and the batch they are laid into ---------------------
+//
+// Words for anything round drawn in planar facets, and the one batch a
+// detailed building lays its drawing into. Shared by the desert set and the
+// structures set (the silo). All VISUAL: nothing here declares a collider.
+
+/** A whole turn. */
+export const TAU = Math.PI * 2;
+/** The underside of a thing standing on a roof or a floor, which nothing sees. */
+export const HIDE_DOWN = 1 << 3;
+/** A bar's two end caps, which are its local Z faces and a few millimetres square. */
+export const NO_ENDS = (1 << 4) | (1 << 5);
+
+/** The batch every piece of a building drawn with these words is laid into. */
+export class Lay {
+  readonly sb = new StoneBatch();
+  private readonly ms = new Map<string, Mesher>();
+
+  m(color: string): Mesher {
+    let m = this.ms.get(color);
+    if (!m) this.ms.set(color, (m = new Mesher()));
+    return m;
+  }
+
+  flush(b: Build): void {
+    this.sb.flush(b);
+    for (const [color, m] of this.ms) b.surface(m.data(), color);
+    this.ms.clear();
+  }
+}
+
+/**
+ * The sides of an `n`-sided frustum from apothem `r0` at `y0` to `r1` at
+ * `y1`, flat 0 facing `phase`. Every facet is a planar trapezoid, which is
+ * what the cel shader's per-facet light needs from anything round.
+ */
+export function band(m: Mesher, n: number, phase: number, r0: number, y0: number, r1: number, y1: number, cx = 0, cz = 0): void {
+  const k0 = 1 / Math.cos(Math.PI / n);
+  const slope = (r0 - r1) / (y1 - y0);
+  for (let k = 0; k < n; k++) {
+    const a0 = phase + ((k - 0.5) * TAU) / n;
+    const a1 = phase + ((k + 0.5) * TAU) / n;
+    const am = phase + (k * TAU) / n;
+    const p = (a: number, r: number, y: number): V3 => [cx + Math.sin(a) * r * k0, y, cz + Math.cos(a) * r * k0];
+    m.quad(p(a0, r0, y0), p(a1, r0, y0), p(a1, r1, y1), p(a0, r1, y1), [Math.sin(am), slope, Math.cos(am)]);
+  }
+}
+
+/** A flat ring between apothems `rOut` and `rIn` at `y`, facing up (or down). */
+export function disc(m: Mesher, n: number, phase: number, rOut: number, rIn: number, y: number, up = true, cx = 0, cz = 0): void {
+  const k0 = 1 / Math.cos(Math.PI / n);
+  for (let k = 0; k < n; k++) {
+    const a0 = phase + ((k - 0.5) * TAU) / n;
+    const a1 = phase + ((k + 0.5) * TAU) / n;
+    const p = (a: number, r: number): V3 => [cx + Math.sin(a) * r * k0, y, cz + Math.cos(a) * r * k0];
+    m.quad(p(a0, rOut), p(a1, rOut), p(a1, rIn), p(a0, rIn), [0, up ? 1 : -1, 0]);
+  }
+}
+
+/** A closed drum: its sides and its top. */
+export function drum(m: Mesher, n: number, phase: number, r0: number, y0: number, r1: number, y1: number): void {
+  band(m, n, phase, r0, y0, r1, y1);
+  disc(m, n, phase, r1, 0, y1);
+}
+
+/**
+ * A dome laid in COURSES along a profile `[apothem, y][]`: each course a
+ * frustum, each set a few centimetres inside the head of the one below, so
+ * the up-facing ledge between them is a lit line round the dome — the bed
+ * joint of a course of tile, and what the cel bands would otherwise draw as
+ * contour rings on a smooth shell.
+ */
+export function courses(m: Mesher, n: number, phase: number, prof: readonly [number, number][], step: number, cx = 0, cz = 0): void {
+  for (let i = 0; i + 1 < prof.length; i++) {
+    const [r0, y0] = prof[i];
+    const [r1, y1] = prof[i + 1];
+    const last = i + 2 === prof.length;
+    const lo = i === 0 ? r0 : r0 - step / 2;
+    const hi = last ? r1 : r1 + step / 2;
+    band(m, n, phase, lo, y0, hi, y1, cx, cz);
+    if (!last) disc(m, n, phase, hi, r1 - step / 2, y1, true, cx, cz);
+    else if (r1 > 0) disc(m, n, phase, r1, 0, y1, true, cx, cz);
+  }
+}
+
+/**
+ * A pointed dome's profile over apothem `R` at `y0`, `H` to the apex: a
+ * short vertical stilt, then a two-centred arc in `count` courses, which is
+ * the shape of every tiled dome between Baghdad and Isfahan.
+ */
+export function domeProfile(R: number, y0: number, H: number, stilt: number, count: number): [number, number][] {
+  const h = H - stilt;
+  const rho = (R * R + h * h) / (2 * R);
+  const top = Math.acos((rho - R) / rho);
+  const out: [number, number][] = [
+    [R, y0],
+    [R, y0 + stilt],
+  ];
+  for (let i = 1; i <= count; i++) {
+    const th = (top * i) / count;
+    out.push([Math.max(0, R - rho + rho * Math.cos(th)), y0 + stilt + rho * Math.sin(th)]);
+  }
+  return out;
+}
+
+/** A bar from `a` to `c`: rebar, a conduit, an aerial's element. */
+export function rod(lay: Lay, a: Point3, c: Point3, r: number, color: string = IRON): void {
+  const o = orient(a, c);
+  lay.sb.box(r, r, o.len, o.mid[0], o.mid[1], o.mid[2], color, o.rot, NO_ENDS);
+}
+
+/** A round member from `a` to `c` with planar facets and closed ends. */
+export function log(m: Mesher, a: V3, c: V3, r: number, n: number): void {
+  eye(m, a, [c[0] - a[0], c[1] - a[1], c[2] - a[2]], r, r, Math.hypot(c[0] - a[0], c[1] - a[1], c[2] - a[2]), n, true, true);
+}
+
+/**
+ * A frustum along an arbitrary axis: from radius `r0` at `at` to `r1` at
+ * `len` along `dir`, `n` planar sides, and a cap on its far end (and its
+ * near one, when asked). A dome's glass eye is two of them.
+ */
+export function eye(m: Mesher, at: V3, dir: V3, r0: number, r1: number, len: number, n: number, cap = true, base = false): void {
+  const l = Math.hypot(dir[0], dir[1], dir[2]);
+  const ax: V3 = [dir[0] / l, dir[1] / l, dir[2] / l];
+  const t: V3 = Math.abs(ax[1]) < 0.9 ? [0, 1, 0] : [1, 0, 0];
+  const e1n: V3 = [ax[1] * t[2] - ax[2] * t[1], ax[2] * t[0] - ax[0] * t[2], ax[0] * t[1] - ax[1] * t[0]];
+  const el = Math.hypot(e1n[0], e1n[1], e1n[2]);
+  const e1: V3 = [e1n[0] / el, e1n[1] / el, e1n[2] / el];
+  const e2: V3 = [ax[1] * e1[2] - ax[2] * e1[1], ax[2] * e1[0] - ax[0] * e1[2], ax[0] * e1[1] - ax[1] * e1[0]];
+  const p = (a: number, r: number, h: number): V3 => {
+    const c = Math.cos(a) * r;
+    const s = Math.sin(a) * r;
+    return [at[0] + ax[0] * h + e1[0] * c + e2[0] * s, at[1] + ax[1] * h + e1[1] * c + e2[1] * s, at[2] + ax[2] * h + e1[2] * c + e2[2] * s];
+  };
+  const tip: V3 = [at[0] + ax[0] * len, at[1] + ax[1] * len, at[2] + ax[2] * len];
+  for (let i = 0; i < n; i++) {
+    const a0 = (i / n) * TAU;
+    const a1 = ((i + 1) / n) * TAU;
+    const am = (a0 + a1) / 2;
+    const out: V3 = [e1[0] * Math.cos(am) + e2[0] * Math.sin(am), e1[1] * Math.cos(am) + e2[1] * Math.sin(am), e1[2] * Math.cos(am) + e2[2] * Math.sin(am)];
+    m.quad(p(a0, r0, 0), p(a1, r0, 0), p(a1, r1, len), p(a0, r1, len), out);
+    if (cap) m.tri(tip, p(a0, r1, len), p(a1, r1, len), ax);
+    if (base) m.tri(at, p(a1, r0, 0), p(a0, r0, 0), [-ax[0], -ax[1], -ax[2]]);
+  }
+}

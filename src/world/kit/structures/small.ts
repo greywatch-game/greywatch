@@ -1,6 +1,6 @@
 /**
- * kit/structures/small.ts — The eight structures that are a few dozen lines
- * apiece: buildSilo, buildFence, buildStoneWall, buildHaystack, buildLampPost,
+ * kit/structures/small.ts — The seven structures that are a few dozen lines
+ * apiece: buildFence, buildStoneWall, buildHaystack, buildLampPost,
  * buildCrates, buildTrough and buildShrine.
  * Part of the structures set: follows the contract in kit/core.ts, and the
  * cover heights and round-collider rule in `./index.ts`.
@@ -26,20 +26,6 @@ import {
   THATCH,
   TIMBER,
 } from "../core";
-
-/** Grain silo: a tall corrugated cylinder. Pure cover, not enterable. */
-export function buildSilo(mats: CelMaterialFactory): Structure {
-  const b = new Build(mats, "silo");
-  const h = 12;
-  const dia = 6;
-  b.cyl(h, dia, dia * 1.06, 10, 0, h / 2, 0, DARK_STONE);
-  for (let i = 1; i < 5; i++) {
-    b.cyl(0.25, dia * 1.05, dia * 1.05, 10, 0, (i * h) / 5, 0, IRON);
-  }
-  b.cyl(2.4, 0.6, dia * 1.02, 10, 0, h + 1.2, 0, SLATE);
-  b.block({ w: dia, h, d: dia, x: 0, y: h / 2, z: 0 });
-  return b;
-}
 
 /**
  * Post-and-rail fence run along X. Blocks movement, not sight, and stops a
@@ -154,8 +140,8 @@ export function buildStoneWall(
  * 2.90 there, and a heptagon is about 0.95 of its own circumdiameter however
  * you stand to it). This is `PROP_BODIES`' rule in `MapBuilder.ts` — the trunk
  * at chest height rather than the flare it stands on — and the same rule the
- * silo next door already follows by taking its nominal `dia` rather than the
- * 1.06 it splays to at the foot. It errs small by about 4 cm abreast, which is
+ * silo (`./silo.ts`) already follows by taking its drum's nominal `dia`
+ * rather than its corners. It errs small by about 4 cm abreast, which is
  * the cheap side of that file's trade: too small costs a round clipping a
  * silhouette, too large costs shots that visibly should have landed.
  *
